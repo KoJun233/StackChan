@@ -1,0 +1,7 @@
+services:
+  server:
+    environment:
+      COMPANION_PRODUCTION: "true"
+      SPRING_PROFILES_ACTIVE: production
+      SERVER_SERVLET_SESSION_COOKIE_SECURE: "true"
+      SERVER_FORWARD_HEADERS_STRATEGY: framework

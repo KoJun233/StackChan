@@ -1,0 +1,27 @@
+{
+  "name": "stackchan-dashboard",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@vitejs/plugin-vue": "latest",
+    "lucide-vue-next": "latest",
+    "typescript": "^5.7.3",
+    "vite": "latest",
+    "vue": "latest",
+    "vue-tsc": "latest"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "latest",
+    "@testing-library/vue": "latest",
+    "@types/node": "latest",
+    "jsdom": "latest",
+    "vitest": "latest"
+  }
+}

@@ -1,0 +1,69 @@
+name: 检查 PR 提交策略
+
+on:
+  pull_request:
+    branches:
+      - master
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - edited
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  policy:
+    name: 检查单提交和中文说明
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检查 PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_COMMIT_COUNT: ${{ github.event.pull_request.commits }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        shell: bash
+        run: |
+          if [ "$PR_COMMIT_COUNT" -ne 1 ]; then
+            echo "::error::合并到 master 的任务分支必须压缩为一个提交，当前有 $PR_COMMIT_COUNT 个提交。"
+            exit 1
+          fi
+
+          COMMIT_MESSAGE="$(gh api "/repos/$REPOSITORY/commits/$HEAD_SHA" --jq '.commit.message')"
+          export COMMIT_MESSAGE
+
+          python3 - <<'PY'
+          import os
+          import re
+          import sys
+
+          conventional = re.compile(
+              r"^(feat|fix|docs|style|refactor|perf|test|build|ci|revert|chore)"
+              r"(?:\([^\r\n)]+\))?!?:\s*.+$"
+          )
+          chinese = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+          failures = []
+
+          for label, value in (
+              ("PR 标题", os.environ["PR_TITLE"]),
+              ("提交标题", os.environ["COMMIT_MESSAGE"].splitlines()[0]),
+          ):
+              if not conventional.match(value):
+                  failures.append(f"{label}必须使用 Conventional Commit 格式：{value!r}")
+              if not chinese.search(value):
+                  failures.append(f"{label}必须包含中文说明：{value!r}")
+
+          commit_lines = os.environ["COMMIT_MESSAGE"].splitlines()
+          commit_body = "\n".join(commit_lines[1:]).strip()
+          if commit_body and not chinese.search(commit_body):
+              failures.append("提交正文存在内容时必须包含中文说明")
+
+          if failures:
+              for failure in failures:
+                  print(f"::error::{failure}")
+              sys.exit(1)
+          PY

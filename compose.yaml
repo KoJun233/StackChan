@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres@sha256:c2d42a104eb6b37b286a2d9c5cf83f349de4d6516d513d00a2bd9610e2c2e5e4
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: stackchan
+      POSTGRES_USER: stackchan
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - stackchan-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stackchan -d stackchan"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${COMPANION_BIND_ADDRESS:-127.0.0.1}:8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/stackchan
+      SPRING_DATASOURCE_USERNAME: stackchan
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      SPRING_WEB_RESOURCES_STATIC_LOCATIONS: file:/app/public/
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-development}
+      COMPANION_PRODUCTION: ${COMPANION_PRODUCTION:-false}
+      COMPANION_LAN_DEVELOPMENT: ${COMPANION_LAN_DEVELOPMENT:-false}
+      COMPANION_DEVICE_TOKEN_SECRET: ${COMPANION_DEVICE_TOKEN_SECRET:?set COMPANION_DEVICE_TOKEN_SECRET in .env}
+      # 仅供本地开发；部署前请替换成随机生成的 32 字节 Base64 密钥。
+      COMPANION_SECRETS_ENCRYPTION_KEY: ${COMPANION_SECRETS_ENCRYPTION_KEY:?set COMPANION_SECRETS_ENCRYPTION_KEY in .env}
+      COMPANION_ADMIN_INITIAL_PASSWORD: ${COMPANION_ADMIN_INITIAL_PASSWORD:-}
+      SERVER_SERVLET_SESSION_COOKIE_HTTP_ONLY: "true"
+      SERVER_SERVLET_SESSION_COOKIE_SAME_SITE: lax
+      SERVER_SERVLET_SESSION_COOKIE_SECURE: ${COMPANION_PRODUCTION:-false}
+      SERVER_FORWARD_HEADERS_STRATEGY: ${SERVER_FORWARD_HEADERS_STRATEGY:-none}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  stackchan-postgres-data:
+    external: true

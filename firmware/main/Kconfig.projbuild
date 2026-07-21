@@ -1,0 +1,35 @@
+menu "StackChan firmware"
+
+config STACKCHAN_PROTOCOL_TESTS
+    bool "Build protocol Unity tests"
+    default n
+    help
+        Enables the on-target Unity test menu for device protocol validation.
+        This option is for test builds only and does not initialize device hardware.
+
+config STACKCHAN_LAN_TEST_CERT
+    bool "Trust an embedded LAN test certificate"
+    default n
+    help
+        Enables only the local LAN test profile. The profile trusts the
+        ignored lan-test-server.pem file instead of the public certificate
+        bundle. Do not enable this for a production firmware image.
+
+config STACKCHAN_LAN_HTTP_MODE
+    bool "Allow private-IPv4 HTTP/WS development transport"
+    default n
+    help
+        Enables a separate development firmware that accepts only literal
+        private IPv4 HTTP origins and uses plain TCP transport. Never enable
+        this option for a production firmware image.
+
+config STACKCHAN_SCREENSAVER_IDLE_SECONDS
+    int "Idle seconds before the local screensaver"
+    range 30 3600
+    default 300
+    help
+        Lowers the CoreS3 display brightness after this period and moves only
+        the two small pupil regions at a low refresh rate. Touch, voice
+        activity, and reminders restore the normal face and brightness.
+
+endmenu

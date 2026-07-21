@@ -1,0 +1,13 @@
+.git/
+.env
+.env.*
+.tools/
+**/target/
+**/dist/
+**/node_modules/
+*.dump
+*.pem
+*.key
+*.p12
+*.pfx
+stackchan-backups/

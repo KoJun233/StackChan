@@ -1,0 +1,8 @@
+services:
+  server:
+    ports: !override
+      - "0.0.0.0:8080:8080"
+    environment:
+      COMPANION_LAN_DEVELOPMENT: "true"
+      COMPANION_PRODUCTION: "false"
+      SERVER_SERVLET_SESSION_COOKIE_SECURE: "false"

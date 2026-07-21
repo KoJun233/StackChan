@@ -1,0 +1,225 @@
+#include "device_protocol.h"
+
+#include <ctype.h>
+#include <string.h>
+
+#include "cJSON.h"
+
+static bool is_nonblank(const char *value)
+{
+    if (value == NULL) {
+        return false;
+    }
+    for (const char *cursor = value; *cursor != '\0'; ++cursor) {
+        if (!isspace((unsigned char)*cursor)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool is_valid_firmware_version(const char *firmware_version)
+{
+    size_t length = firmware_version == NULL ? 0 : strnlen(firmware_version, 81);
+    if (length == 0 || length > 80) {
+        return false;
+    }
+    for (size_t index = 0; index < length; ++index) {
+        unsigned char character = (unsigned char)firmware_version[index];
+        if (!isalnum(character) && character != '.' && character != '_' && character != '-') {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool is_valid_command_id(const char *command_id)
+{
+    size_t command_id_size = command_id == NULL ? 0 : strnlen(command_id, DEVICE_PROTOCOL_COMMAND_ID_MAX_LEN);
+    return command_id_size > 0 && command_id_size < DEVICE_PROTOCOL_COMMAND_ID_MAX_LEN &&
+           is_nonblank(command_id);
+}
+
+static bool is_valid_uuid(const char *value)
+{
+    if (value == NULL || strlen(value) != 36) {
+        return false;
+    }
+    for (size_t index = 0; index < 36; ++index) {
+        unsigned char character = (unsigned char)value[index];
+        if (index == 8 || index == 13 || index == 18 || index == 23) {
+            if (character != '-') {
+                return false;
+            }
+        } else if (!isxdigit(character)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool is_integer_in_range(const cJSON *value, int minimum, int maximum)
+{
+    return cJSON_IsNumber(value) && value->valuedouble == (double)value->valueint &&
+           value->valueint >= minimum && value->valueint <= maximum;
+}
+
+static esp_err_t print_json(cJSON *root, char *output, size_t output_size)
+{
+    if (root == NULL || output == NULL || output_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(output, 0, output_size);
+    return cJSON_PrintPreallocated(root, output, output_size, false) ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
+esp_err_t device_protocol_encode_heartbeat(char *output,
+                                           size_t output_size,
+                                           uint32_t sequence,
+                                           int battery_percent,
+                                           int rssi,
+                                           const char *firmware_version)
+{
+    if (output == NULL || output_size == 0 || sequence == 0 || battery_percent < 0 || battery_percent > 100 ||
+        !is_valid_firmware_version(firmware_version)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    bool complete = cJSON_AddStringToObject(root, "type", "heartbeat") != NULL &&
+                    cJSON_AddNumberToObject(root, "sequence", sequence) != NULL &&
+                    cJSON_AddNumberToObject(root, "battery_percent", battery_percent) != NULL &&
+                    cJSON_AddNumberToObject(root, "rssi", rssi) != NULL &&
+                    cJSON_AddStringToObject(root, "safety_state", "motion_disabled") != NULL &&
+                    cJSON_AddStringToObject(root, "firmware_version", firmware_version) != NULL;
+    esp_err_t err = complete ? print_json(root, output, output_size) : ESP_ERR_NO_MEM;
+    cJSON_Delete(root);
+    return err;
+}
+
+bool device_protocol_parse_stop_motion(const char *payload,
+                                       size_t payload_size,
+                                       char *command_id,
+                                       size_t command_id_size)
+{
+    if (command_id == NULL || command_id_size < DEVICE_PROTOCOL_COMMAND_ID_MAX_LEN) {
+        return false;
+    }
+    command_id[0] = '\0';
+
+    device_command_t command = {0};
+    if (!device_protocol_parse_command(payload, payload_size, &command) ||
+        command.type != DEVICE_COMMAND_STOP_MOTION) {
+        return false;
+    }
+    memcpy(command_id, command.command_id, strlen(command.command_id) + 1);
+    return true;
+}
+
+bool device_protocol_parse_command(const char *payload,
+                                   size_t payload_size,
+                                   device_command_t *command)
+{
+    if (command == NULL) {
+        return false;
+    }
+    memset(command, 0, sizeof(*command));
+
+    if (payload == NULL || payload_size == 0 || payload_size >= DEVICE_PROTOCOL_MAX_MESSAGE_LEN ||
+        memchr(payload, '\0', payload_size) != NULL) {
+        return false;
+    }
+
+    const char *parse_end = NULL;
+    cJSON *root = cJSON_ParseWithLengthOpts(payload, payload_size, &parse_end, false);
+    if (root == NULL || !cJSON_IsObject(root) || parse_end == NULL) {
+        cJSON_Delete(root);
+        return false;
+    }
+
+    while (parse_end < payload + payload_size) {
+        if (!isspace((unsigned char)*parse_end)) {
+            cJSON_Delete(root);
+            return false;
+        }
+        ++parse_end;
+    }
+
+    cJSON *type = cJSON_GetObjectItemCaseSensitive(root, "type");
+    cJSON *id = cJSON_GetObjectItemCaseSensitive(root, "command_id");
+    bool valid = cJSON_IsString(type) && type->valuestring != NULL && cJSON_IsString(id) &&
+                 id->valuestring != NULL && is_valid_command_id(id->valuestring);
+    if (valid && strcmp(type->valuestring, "stop_motion") == 0 && cJSON_GetArraySize(root) == 2) {
+        command->type = DEVICE_COMMAND_STOP_MOTION;
+    } else if (valid && strcmp(type->valuestring, "speak_reminder") == 0 && cJSON_GetArraySize(root) == 3) {
+        cJSON *reminder_id = cJSON_GetObjectItemCaseSensitive(root, "reminder_id");
+        valid = cJSON_IsString(reminder_id) && reminder_id->valuestring != NULL &&
+                is_valid_uuid(reminder_id->valuestring);
+        if (valid) {
+            command->type = DEVICE_COMMAND_SPEAK_REMINDER;
+            memcpy(command->reminder_id, reminder_id->valuestring, DEVICE_PROTOCOL_REMINDER_ID_MAX_LEN);
+        }
+    } else if (valid && strcmp(type->valuestring, "configure_voice_detection") == 0 &&
+               cJSON_GetArraySize(root) == 5) {
+        cJSON *wake_sensitivity = cJSON_GetObjectItemCaseSensitive(root, "wake_sensitivity");
+        cJSON *speech_start_threshold = cJSON_GetObjectItemCaseSensitive(root, "speech_start_threshold");
+        cJSON *speech_silence_threshold = cJSON_GetObjectItemCaseSensitive(root, "speech_silence_threshold");
+        valid = cJSON_IsString(wake_sensitivity) && wake_sensitivity->valuestring != NULL &&
+                is_integer_in_range(speech_start_threshold,
+                                    DEVICE_PROTOCOL_SPEECH_START_THRESHOLD_MIN,
+                                    DEVICE_PROTOCOL_SPEECH_START_THRESHOLD_MAX) &&
+                is_integer_in_range(speech_silence_threshold,
+                                    DEVICE_PROTOCOL_SPEECH_SILENCE_THRESHOLD_MIN,
+                                    DEVICE_PROTOCOL_SPEECH_SILENCE_THRESHOLD_MAX) &&
+                speech_silence_threshold->valueint < speech_start_threshold->valueint;
+        if (valid && strcmp(wake_sensitivity->valuestring, "NORMAL") == 0) {
+            command->wake_sensitivity = DEVICE_WAKE_SENSITIVITY_NORMAL;
+        } else if (valid && strcmp(wake_sensitivity->valuestring, "SENSITIVE") == 0) {
+            command->wake_sensitivity = DEVICE_WAKE_SENSITIVITY_SENSITIVE;
+        } else {
+            valid = false;
+        }
+        if (valid) {
+            command->type = DEVICE_COMMAND_CONFIGURE_VOICE_DETECTION;
+            command->speech_start_threshold = speech_start_threshold->valueint;
+            command->speech_silence_threshold = speech_silence_threshold->valueint;
+        }
+    } else {
+        valid = false;
+    }
+    if (valid) {
+        memcpy(command->command_id, id->valuestring, strlen(id->valuestring) + 1);
+    }
+    cJSON_Delete(root);
+    if (!valid) {
+        memset(command, 0, sizeof(*command));
+    }
+    return valid;
+}
+
+esp_err_t device_protocol_encode_command_ack(char *output,
+                                             size_t output_size,
+                                             uint32_t sequence,
+                                             const char *command_id,
+                                             bool accepted)
+{
+    if (output == NULL || output_size == 0 || sequence == 0 ||
+        !is_valid_command_id(command_id)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    bool complete = cJSON_AddStringToObject(root, "type", "command_ack") != NULL &&
+                    cJSON_AddNumberToObject(root, "sequence", sequence) != NULL &&
+                    cJSON_AddStringToObject(root, "command_id", command_id) != NULL &&
+                    cJSON_AddBoolToObject(root, "accepted", accepted) != NULL;
+    esp_err_t err = complete ? print_json(root, output, output_size) : ESP_ERR_NO_MEM;
+    cJSON_Delete(root);
+    return err;
+}
