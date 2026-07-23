@@ -104,6 +104,23 @@ bool device_endpoint_build_reminder_audio_url(const char *server_base_url,
     return written > 0 && (size_t)written < size;
 }
 
+bool device_endpoint_build_wake_model_url(const char *server_base_url,
+                                          const char *job_id,
+                                          char *url,
+                                          size_t size)
+{
+    if (url == NULL || size == 0) {
+        return false;
+    }
+    url[0] = '\0';
+    if (!device_identity_is_valid_server_base_url(server_base_url) || !is_canonical_uuid(job_id)) {
+        return false;
+    }
+    int written = snprintf(url, size, "%.*s/api/v1/device/wake-models/%s/artifact",
+                           (int)canonical_origin_length(server_base_url), server_base_url, job_id);
+    return written > 0 && (size_t)written < size;
+}
+
 void device_endpoint_configure_http_client(esp_http_client_config_t *config)
 {
     if (config == NULL) {

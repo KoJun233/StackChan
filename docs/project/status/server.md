@@ -1,14 +1,14 @@
 # 服务端工作流
 
-- 状态：STABLE
-- 最后更新：2026-07-21
-- 当前分支：`master`
-- 基准提交：`ROOT`
-- 最后验证提交：`ROOT`
+- 状态：ACTIVE
+- 最后更新：2026-07-26
+- 当前分支：`codex/custom-wake-word`
+- 基准提交：`dae6015`
+- 最后验证提交：`dae6015`
 
 ## 当前目标
 
-维护 OpenAI-compatible 与阿里云百炼原生语音适配、设备语音回合、持久提醒调度和设备播放确认。
+维护语音适配、设备语音回合和持久提醒，并只从锁定的 ESP-SR 2.4.6 内置目录打包可信 WakeNet 模型，完成鉴权下载和设备安装状态编排。
 
 ## 已完成
 
@@ -29,25 +29,44 @@
 - `e41a40f` 增加百炼非实时 ASR 的同步多模态 HTTP 请求、实时 TTS WebSocket 生命周期和二进制 WAV 聚合，并继续执行 16 kHz 单声道 WAV 标准化。
 - `06a67ab` 增加 Flyway v10，为语音设置保存唤醒灵敏度、开始说话阈值和静音阈值；保存后向在线设备广播严格的 `configure_voice_detection` 命令，设备重连时也会补发当前配置。
 - `06a67ab` 对本地语音参数执行服务端范围和交叉校验，配置命令沿用既有 `command_ack`，但不会改变提醒交付状态。
+- 当前任务保留 Flyway V11 持久任务和三槽 OTA，取消任意短语生成、第三方生成器与模型包上传接口。
+- 增加固定内置模型目录 API；创建任务只接受白名单模型名，服务端从随镜像发布的 ESP-SR 2.4.6 目录读取三个官方模型文件并现场生成连续 `srmodels.bin`。
+- 首批 13 个选项覆盖 WakeNet9/WakeNet9l，包括 `wn9_xiao3feng1xiao3feng1_tts3`；每个选项均通过真实文件打包、SHA-256、结构和 1 MiB 上限测试。
+- 服务端通过固定同源 URL 下发安装命令，接收设备重启后的安装/回退状态，且 WebSocket 重连补报保持幂等；提醒 ACK 路由不受影响。
+- 部署验证发现 READY 任务调度器在事务外执行悲观锁查询；当前任务树已将候选任务读取放入 `TransactionTemplate`，并补充事务次数回归断言，部署后未再出现 `Query requires transaction be in progress`。
+- V12 仅作为已经部署过的迁移历史保留；V13 终止旧版活动任务并删除临时 `source` 字段，最终 API 和实体不再暴露生成或上传来源。
 
 ## 正在进行
 
-`06a67ab` 已部署到当前 `stackchan-foundation` LAN server，Flyway 成功从 v9 升至 v10，健康检查返回 200。CoreS3 当前运行 `e33a0d4` 并持续报告 `motion_disabled` 心跳，重连时成功收到灵敏度与 `350/200` 阈值；服务端无需重建。
+内置目录实现已通过全量验证并部署到既有 `stackchan-foundation` LAN server。Flyway 已升至 V13，容器内有 13 组模型；管理员创建的“小峰小峰”任务已完成 `READY -> INSTALLING -> INSTALLED`，CoreS3 继续运行三槽引导镜像 `0398073` 并报告 `motion_disabled`，没有重新刷写固件。
 
 ## 下一步操作
 
-保持当前 LAN server 在线；让用户在唤醒后靠近设备并稍大声说一句短问题，继续验证 `Speech captured`、回复播放和 WakeNet 恢复。若峰值仍低于开始阈值 `350`，等待用户决定是否降低该后台配置。
+用户实体呼叫“小峰小峰”，完成安装后的声学唤醒验收。
 
 ## 阻塞项
 
-没有服务端软件阻塞。实体闭环验收依赖用户明确授权刷写新固件并配合发出唤醒词；不得在证据中记录配置秘密、供应商响应正文、音频或完整异常载荷。
+没有模型文件、生成器、固件引导或任务编排阻塞。首次真机切换已经由管理员主动触发并安装成功，当前只等待实体声学验收。不得在证据中记录秘密、音频或完整认证载荷。
 
 ## 关键文件
 
 - `server/`
+- `server/src/main/java/com/kj/stackchan/wakeword/`
+- `server/src/main/resources/db/migration/V11__wake_word_model_ota.sql`
+- `server/src/main/resources/db/migration/V12__wake_word_model_job_sources.sql`
+- `server/src/main/resources/db/migration/V13__retire_generated_wake_models.sql`
+- `server/src/main/java/com/kj/stackchan/wakeword/EspSrWakeWordModelCatalog.java`
+- `server/wakenet-models/`
 
 ## 验证命令与最近结果
 
+- 当前任务针对测试 20/20、Maven 全量 198/198 通过；全新 PostgreSQL 成功从空库应用 Flyway 至 V11。调度事务修复后针对测试再次通过 20/20。
+- 本地上传增量针对测试 20/20、Maven 全量 205/205 通过；全新 PostgreSQL 成功从空库应用全部 12 个迁移。部署后 `/api/v1/health` 与网页根地址为 200、Flyway `12|true`、服务端近两分钟错误数为 0，设备心跳保持 `0398073` / `motion_disabled`。
+- 内置目录专项测试通过；其中目录测试对全部 13 个真实 ESP-SR 模型执行打包和 1 MiB 容量校验。“小峰小峰”与出厂回退组合可被服务端和固件包校验器接受。
+- 内置目录版本 Maven 全量 205/205 通过；全新 PostgreSQL 验证 13 个迁移并成功到 V13。部署后健康和网页根地址为 200、Flyway `13|true`、模型目录 13 组、近两分钟错误数为 0。
+- 2026-07-26 恢复正式 LAN Compose overlay 后，设备自动重连并接受既有 `READY` 任务；命令 ACK 为成功，设备重启补报安装状态后任务进入 `INSTALLED`，目标模型为 `wn9_xiao3feng1xiao3feng1_tts3`。
+- 2026-07-26 LAN 部署：网页根地址和 `/api/v1/health` 均返回 200、Flyway 为 `11|true`；调度器持续运行未出现事务异常，CoreS3 恢复 `e33a0d4` / `motion_disabled` 心跳。
+- 2026-07-26 CoreS3 完成一次性三槽引导后，数据库收到 `0398073` / `motion_disabled` 心跳；模型 OTA 服务端仍等待真实生成器制品。
 - `& 'E:\maven-3.9.16\bin\mvn.cmd' -f server\pom.xml test`：在 `f0dcecd` 通过 170/170；WAV 针对测试 16/16 通过。
 - 管理页面 `POST /api/v1/settings/speech/test`：2026-07-20 21:34（Asia/Shanghai）真实通过，服务端仅记录安全的 `DASHSCOPE` 成功事件。
 - 在线提醒：2026-07-20 22:36（Asia/Shanghai）一次调度后收到成功播放 ACK，状态为 `DELIVERED`、`attempt_count=1`、无失败码。
@@ -71,6 +90,8 @@
 - [0009：服务端增加阿里云百炼原生语音适配器](../decisions/0009-native-dashscope-speech-adapter.md)
 - [0011：语音协议只由显式接入方式决定](../decisions/0011-explicit-speech-access-modes.md)
 - [0012：机器人本地唤醒与录音判定参数由管理员配置](../decisions/0012-configurable-device-voice-detection.md)
+- [0015：运行时生成并安全 OTA 自定义唤醒模型](../decisions/0015-runtime-wake-model-generation-and-ota.md)
+- [0016：唤醒词仅从 ESP-SR 内置模型目录选择并安全 OTA](../decisions/0016-built-in-esp-sr-wake-model-catalog.md)
 
 ## 安全与兼容性约束
 

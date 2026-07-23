@@ -117,6 +117,30 @@ public class DeviceConnectionRegistry {
         return sendPayload(deviceId, payload);
     }
 
+    public boolean sendWakeModelInstall(
+            UUID deviceId,
+            UUID jobId,
+            String modelName,
+            String sha256,
+            int artifactSize,
+            String commandId
+    ) {
+        String payload;
+        try {
+            payload = objectMapper.writeValueAsString(new InstallWakeModelCommand(
+                    "install_wake_model",
+                    commandId,
+                    jobId.toString(),
+                    modelName,
+                    sha256,
+                    artifactSize
+            ));
+        } catch (JsonProcessingException exception) {
+            return false;
+        }
+        return sendPayload(deviceId, payload);
+    }
+
     public int broadcastVoiceConfiguration(
             VoiceWakeSensitivity wakeSensitivity,
             int speechStartThreshold,
@@ -449,6 +473,16 @@ public class DeviceConnectionRegistry {
     }
 
     private record SpeakReminderCommand(String type, String command_id, String reminder_id) {
+    }
+
+    private record InstallWakeModelCommand(
+            String type,
+            String command_id,
+            String job_id,
+            String model_name,
+            String sha256,
+            int artifact_size
+    ) {
     }
 
     private record ConfigureVoiceDetectionCommand(

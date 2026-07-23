@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <string.h>
 
 #include "cJSON.h"
@@ -14,6 +15,7 @@
 #include "strict_json.h"
 #include "voice_control.h"
 #include "voice_protocol.h"
+#include "wake_word_model.h"
 
 #if CONFIG_STACKCHAN_LAN_HTTP_MODE
 #define TEST_SERVER_BASE_URL "http://192.168.137.1:8080"
@@ -100,6 +102,7 @@ TEST_CASE("fixed endpoints stay same-origin and credentials stay out of URIs", "
     char refresh[256] = {0};
     char voice[256] = {0};
     char reminder[256] = {0};
+    char wake_model[256] = {0};
     char websocket[256] = {0};
     TEST_ASSERT_TRUE(device_endpoint_build_http_url(identity.server_base_url,
                                                     DEVICE_ENDPOINT_PAIRING_CLAIM_PATH,
@@ -115,12 +118,19 @@ TEST_CASE("fixed endpoints stay same-origin and credentials stay out of URIs", "
         "f20b6177-3f7a-466a-9eae-70120bbf1912",
         reminder,
         sizeof(reminder)));
+    TEST_ASSERT_TRUE(device_endpoint_build_wake_model_url(
+        identity.server_base_url,
+        "550e8400-e29b-41d4-a716-446655440000",
+        wake_model,
+        sizeof(wake_model)));
     TEST_ASSERT_TRUE(device_endpoint_build_websocket_uri(&identity, websocket, sizeof(websocket)));
     TEST_ASSERT_NOT_NULL(strstr(claim, "/api/v1/pairing/claim"));
     TEST_ASSERT_NOT_NULL(strstr(refresh, "/api/v1/devices/token:refresh"));
     TEST_ASSERT_NOT_NULL(strstr(voice, "/api/v1/device/voice/turn"));
     TEST_ASSERT_NOT_NULL(strstr(reminder,
-                                "/api/v1/device/reminders/f20b6177-3f7a-466a-9eae-70120bbf1912/audio"));
+                                 "/api/v1/device/reminders/f20b6177-3f7a-466a-9eae-70120bbf1912/audio"));
+    TEST_ASSERT_NOT_NULL(strstr(wake_model,
+                                "/api/v1/device/wake-models/550e8400-e29b-41d4-a716-446655440000/artifact"));
     TEST_ASSERT_EQUAL_STRING(TEST_WEBSOCKET_URL, websocket);
     TEST_ASSERT_NULL(strchr(websocket, '?'));
     TEST_ASSERT_NULL(strstr(websocket, identity.access_token));
@@ -128,6 +138,8 @@ TEST_CASE("fixed endpoints stay same-origin and credentials stay out of URIs", "
                                                      claim, sizeof(claim)));
     TEST_ASSERT_FALSE(device_endpoint_build_reminder_audio_url(
         identity.server_base_url, "../voice/turn", reminder, sizeof(reminder)));
+    TEST_ASSERT_FALSE(device_endpoint_build_wake_model_url(
+        identity.server_base_url, "../voice/turn", wake_model, sizeof(wake_model)));
 }
 
 TEST_CASE("compiled mode selects one redirect-safe transport profile", "[device_endpoint]")
@@ -580,6 +592,108 @@ TEST_CASE("voice control rejects unsafe detection settings before applying them"
                       voice_control_configure(VOICE_WAKE_SENSITIVITY_NORMAL, 300, 300));
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG,
                       voice_control_configure((voice_wake_sensitivity_t)99, 350, 200));
+}
+
+TEST_CASE("wake model installation accepts only the strict bounded schema", "[device_protocol]")
+{
+    const char *sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    char valid[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
+    snprintf(valid, sizeof(valid),
+             "{\"type\":\"install_wake_model\",\"command_id\":\"cmd-model\","
+             "\"job_id\":\"550e8400-e29b-41d4-a716-446655440000\","
+             "\"model_name\":\"wn9l_stackchan_custom\",\"sha256\":\"%s\","
+             "\"artifact_size\":1048576}", sha256);
+    device_command_t command = {0};
+
+    TEST_ASSERT_TRUE(device_protocol_parse_command(valid, strlen(valid), &command));
+    TEST_ASSERT_EQUAL(DEVICE_COMMAND_INSTALL_WAKE_MODEL, command.type);
+    TEST_ASSERT_EQUAL_STRING("cmd-model", command.command_id);
+    TEST_ASSERT_EQUAL_STRING("550e8400-e29b-41d4-a716-446655440000", command.wake_model_job_id);
+    TEST_ASSERT_EQUAL_STRING("wn9l_stackchan_custom", command.wake_model_name);
+    TEST_ASSERT_EQUAL_STRING(sha256, command.wake_model_sha256);
+    TEST_ASSERT_EQUAL_INT(1048576, command.wake_model_artifact_size);
+
+    const char *invalid[] = {
+        "{\"type\":\"install_wake_model\",\"command_id\":\"cmd-model\",\"job_id\":\"../bad\",\"model_name\":\"wn9l_stackchan_custom\",\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"artifact_size\":100}",
+        "{\"type\":\"install_wake_model\",\"command_id\":\"cmd-model\",\"job_id\":\"550e8400-e29b-41d4-a716-446655440000\",\"model_name\":\"WN9L_CUSTOM\",\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"artifact_size\":100}",
+        "{\"type\":\"install_wake_model\",\"command_id\":\"cmd-model\",\"job_id\":\"550e8400-e29b-41d4-a716-446655440000\",\"model_name\":\"wn9l_custom\",\"sha256\":\"ABCDEF\",\"artifact_size\":100}",
+        "{\"type\":\"install_wake_model\",\"command_id\":\"cmd-model\",\"job_id\":\"550e8400-e29b-41d4-a716-446655440000\",\"model_name\":\"wn9l_custom\",\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"artifact_size\":0}",
+        "{\"type\":\"install_wake_model\",\"command_id\":\"cmd-model\",\"job_id\":\"550e8400-e29b-41d4-a716-446655440000\",\"model_name\":\"wn9l_custom\",\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"artifact_size\":1048577}",
+        "{\"type\":\"install_wake_model\",\"command_id\":\"cmd-model\",\"job_id\":\"550e8400-e29b-41d4-a716-446655440000\",\"model_name\":\"wn9l_custom\",\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"artifact_size\":100,\"url\":\"https://evil.example/model\"}",
+    };
+    for (size_t index = 0; index < sizeof(invalid) / sizeof(invalid[0]); ++index) {
+        TEST_ASSERT_FALSE(device_protocol_parse_command(invalid[index], strlen(invalid[index]), &command));
+        TEST_ASSERT_EQUAL(DEVICE_COMMAND_NONE, command.type);
+    }
+}
+
+TEST_CASE("wake model status preserves verified model identity", "[device_protocol]")
+{
+    const char *sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    char payload[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
+    TEST_ASSERT_EQUAL(ESP_OK, device_protocol_encode_wake_model_status(
+                                  payload, sizeof(payload), 10,
+                                  "550e8400-e29b-41d4-a716-446655440000", "ROLLED_BACK",
+                                  "wn9l_stackchan_custom", sha256));
+
+    cJSON *root = cJSON_Parse(payload);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_EQUAL_UINT(6, cJSON_GetArraySize(root));
+    TEST_ASSERT_EQUAL_STRING("wake_model_status",
+                             cJSON_GetObjectItemCaseSensitive(root, "type")->valuestring);
+    TEST_ASSERT_EQUAL_INT(10, cJSON_GetObjectItemCaseSensitive(root, "sequence")->valueint);
+    TEST_ASSERT_EQUAL_STRING("ROLLED_BACK",
+                             cJSON_GetObjectItemCaseSensitive(root, "status")->valuestring);
+    TEST_ASSERT_EQUAL_STRING("wn9l_stackchan_custom",
+                             cJSON_GetObjectItemCaseSensitive(root, "model_name")->valuestring);
+    TEST_ASSERT_EQUAL_STRING(sha256,
+                             cJSON_GetObjectItemCaseSensitive(root, "sha256")->valuestring);
+    cJSON_Delete(root);
+
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, device_protocol_encode_wake_model_status(
+                                                   payload, sizeof(payload), 10,
+                                                   "550e8400-e29b-41d4-a716-446655440000", "FAILED",
+                                                   "wn9l_stackchan_custom", sha256));
+}
+
+TEST_CASE("wake word selection uses exact packaged names and an explicit fallback", "[wake_word]")
+{
+    const char *models[] = {
+        "mn7_cn",
+        WAKE_WORD_DEFAULT_MODEL_NAME,
+        "wn9l_custom_companion_tts3",
+    };
+
+    wake_word_model_selection_t custom = wake_word_model_select(
+        models, 3, "wn9l_custom_companion_tts3", WAKE_WORD_DEFAULT_MODEL_NAME);
+    TEST_ASSERT_EQUAL_STRING("wn9l_custom_companion_tts3", custom.name);
+    TEST_ASSERT_FALSE(custom.used_fallback);
+
+    wake_word_model_selection_t missing = wake_word_model_select(
+        models, 3, "wn9l_missing_tts3", WAKE_WORD_DEFAULT_MODEL_NAME);
+    TEST_ASSERT_EQUAL_STRING(WAKE_WORD_DEFAULT_MODEL_NAME, missing.name);
+    TEST_ASSERT_TRUE(missing.used_fallback);
+
+    wake_word_model_selection_t invalid = wake_word_model_select(
+        models, 3, "../mn7_cn", WAKE_WORD_DEFAULT_MODEL_NAME);
+    TEST_ASSERT_EQUAL_STRING(WAKE_WORD_DEFAULT_MODEL_NAME, invalid.name);
+    TEST_ASSERT_TRUE(invalid.used_fallback);
+
+    wake_word_model_selection_t missing_version = wake_word_model_select(
+        models, 3, "wn_custom_companion", WAKE_WORD_DEFAULT_MODEL_NAME);
+    TEST_ASSERT_EQUAL_STRING(WAKE_WORD_DEFAULT_MODEL_NAME, missing_version.name);
+    TEST_ASSERT_TRUE(missing_version.used_fallback);
+}
+
+TEST_CASE("wake word selection never substitutes an arbitrary speech model", "[wake_word]")
+{
+    const char *models[] = {"mn7_cn", "wn9l_other_tts3"};
+
+    wake_word_model_selection_t selection = wake_word_model_select(
+        models, 2, "wn9l_missing_tts3", WAKE_WORD_DEFAULT_MODEL_NAME);
+    TEST_ASSERT_NULL(selection.name);
+    TEST_ASSERT_FALSE(selection.used_fallback);
+    TEST_ASSERT_NULL(wake_word_model_find(models, 2, "WN9L_OTHER_TTS3"));
 }
 
 TEST_CASE("command acknowledgement preserves the playback result boolean", "[device_protocol]")

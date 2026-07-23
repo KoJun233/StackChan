@@ -1,12 +1,12 @@
 # 全局工作流总览
 
 - 状态：ACTIVE
-- 最后更新：2026-07-21
-- 当前分支：`master`
-- 实现基准：`ROOT`
-- 最后验证提交：`ROOT`
-- 当前验证范围：当前根初始化提交的完整变更树。
-- 当前优先级：P1 完成实体唤醒、语音回复、动态瞳孔屏保和离线提醒补发验收
+- 最后更新：2026-07-26
+- 当前分支：`codex/custom-wake-word`
+- 实现基准：`dae6015`
+- 最后验证提交：`dae6015`
+- 当前验证范围：ESP-SR 内置唤醒词目录、可信服务端打包、安全模型 OTA、健康确认、自动回退，以及当前 LAN server 部署。
+- 当前优先级：P1 内置唤醒词下拉、LAN server 部署和“小峰小峰”首次真机 OTA 闭环已完成；下一步由用户进行实体唤醒验收。
 - 当前部署：LAN HTTP development mode。
 - 生产边界：HTTPS-only。
 
@@ -14,12 +14,14 @@
 
 | 工作流 | 状态 | 状态文件 | 当前分支 | 下一步 |
 | --- | --- | --- | --- | --- |
-| 服务端 | STABLE | [server.md](server.md) | `master` | 保持 v10 LAN server 在线并在新固件重连时补发本地语音配置。 |
-| 前端 | STABLE | [frontend.md](frontend.md) | `master` | 刷新页面并确认唤醒灵敏度和两项录音阈值可配置。 |
-| 固件 | ACTIVE | [firmware.md](firmware.md) | `master` | `e33a0d4` 已刷入；继续实体语音回复、屏保和提醒验收。 |
-| 部署 | STABLE | [deployment.md](deployment.md) | `master` | 保持 `06a67ab` LAN server 在线以配合固件刷写和实体 smoke test。 |
+| 服务端 | STABLE | [server.md](server.md) | `codex/custom-wake-word` | 已部署 V13；“小峰小峰”任务已进入 `INSTALLED`。 |
+| 前端 | STABLE | [frontend.md](frontend.md) | `codex/custom-wake-word` | 已部署下拉界面；重新登录后可选择“小峰小峰”等词。 |
+| 固件 | STABLE | [firmware.md](firmware.md) | `codex/custom-wake-word` | `0398073` 已安装“小峰小峰”；等待实体唤醒验收。 |
+| 部署 | STABLE | [deployment.md](deployment.md) | `codex/custom-wake-word` | LAN overlay 与设备连接已恢复；保留本地 V12 回退镜像。 |
 
-`e33a0d4` 已以正确 Quad LAN HTTP 完整镜像刷入 CoreS3，五个分区通过哈希校验；启动确认版本、8 MB PSRAM / 80 MHz、内存测试、CoreS3 外设、`threshold_milli=496`、Wi-Fi/WebSocket 和 `motion_disabled`。首个 180 秒窗口与后续 120 秒窗口均无 `ESP_ERR_TIMEOUT`、任务看门狗或崩溃，证明短帧超时回归已消失。首个窗口命中两次唤醒并两次恢复 WakeNet，但一次发生在 Wi-Fi 尚未连接，另一次峰值能量 `313` 低于开始阈值 `350`；完整录音和语音回复仍待用户实体复测。
+唤醒词入口现改为“选择 ESP-SR 2.4.6 内置短语、服务端从锁定目录可信打包、设备双槽 OTA、重启健康确认、失败自动回退”。任意文本生成、第三方生成器和模型包上传均已从最终代码与页面移除；V12 只保留为已部署迁移历史，V13 清理临时字段。下拉包含“Hi, Stack Chan”“小峰小峰”等 13 项。CoreS3 的 `0398073` 镜像已链接 WakeNet9/WakeNet9l/WakeNet9s 并完成三槽引导，因此无需重刷固件。管理员选择“小峰小峰”后，任务已完成 `READY -> INSTALLING -> INSTALLED`。
+
+当前内置目录版本已部署到既有 `stackchan-foundation` LAN HTTP 服务：健康和网页根地址均为 200，Flyway `13|true`，容器包含 13 组模型，CoreS3 心跳保持 `0398073` / `motion_disabled`。一次误用基础 Compose 导致端口暂时只监听 `127.0.0.1`，恢复正式 `compose.lan.yaml` 覆盖层后设备自动重连并完成“小峰小峰”安装。部署前保留了 `stackchan-foundation-server:rollback-upload-v12` 本地回退镜像。
 
 ## 架构决策
 
@@ -27,6 +29,16 @@
 
 ## 验证与边界
 
+- 内置目录最终实现通过 Maven 205/205、Flyway 空库至 V13、真实 13 模型打包、前端 Vitest 17 文件 49/49、`vue-tsc -b`、production build、模型包回归、LAN Compose、`git diff --check` 和 `pnpm docs:check`。部署后健康/网页 200、Flyway `13|true`、容器模型 13 组、近期错误 0；恢复 LAN overlay 后 CoreS3 自动重连并确认“小峰小峰”任务为 `INSTALLED`，固件仍为 `0398073` 且 `motion_disabled` 不变。
+- `6df88f9` 之后的调度事务修复已在当前任务树完成针对回归、全量回归和 LAN 部署验证。
+- 当前任务工作树上服务端全量测试 198/198、前端 Vitest 17 个文件 48/48、`vue-tsc -b`、production build、Flyway 全新 PostgreSQL 至 V11、模型包回归、两项固件栈预算、`git diff --check` 和 `pnpm docs:check` 均通过。
+- 本地上传增量在当前任务工作树通过 WakeWord 针对测试 20/20、服务端全量 205/205、前端 Vitest 17 个文件 50/50、`vue-tsc -b`、production build、全新 PostgreSQL 至 V12 和上传打包脚本回归；当前 LAN server 健康/网页均为 200，Flyway `12|true`，线上 `speech-CKv17cKU.js` 包含双模式界面，CoreS3 保持 `0398073` / `motion_disabled`。
+- 2026-07-26 已使用仓库正式 Dockerfile 重建并替换同一 LAN server；网页根地址返回 200，Flyway 为 `11|true`，线上静态资源包含 `speech-DFhfjNNt.js`，调度器持续运行未再出现事务异常，CoreS3 恢复 `e33a0d4` / `motion_disabled` 心跳。生成器可执行文件仍未配置。
+- 2026-07-26 经用户明确确认 CoreS3、`COM3`、LAN HTTP Quad 和 `0398073` 后，从独立目录构建应用镜像 `0x1421e0` 并完整写入 bootloader、分区表、应用、OTA data 和出厂模型；五个区域独立 `verify_flash` 全部匹配。启动确认三个模型槽、8 MB PSRAM / 80 MHz、加密 NVS、CoreS3 外设、出厂 WakeNet 和 `motion_disabled`，数据库收到 `0398073` 心跳。
+- 当前任务工作树的协议测试、默认 HTTPS、LAN HTTP 和测试证书 HTTPS 四个 Quad profile 均构建通过，镜像分别为 `0x37880`、`0x153260`、`0x1421e0` 和 `0x1428d0`；公开测试证书已删除，未创建或保留私钥。
+- ESP-IDF 在 Windows 构建中两次于工具链子进程内无诊断中止；相同目录降低并行度后增量构建完成，没有源码编译诊断。
+- 当前自定义唤醒框架的模型包回归、真实双模型容量校验、`git diff --check`、`pnpm docs:check`、两项固件栈预算，以及协议测试、默认 HTTPS、LAN HTTP 三个 Quad profile 构建均通过；镜像分别为 `0x37880`、`0x1515b0`、`0x140460`。
+- ESP-SR 实际双模型分区包含模拟外部首选模型和 `wn9l_histackchan_tts3`，大小 `585211 / 1048576` 字节，余量 `463365` 字节；未刷写设备、切换部署或提交短语到外部服务。
 - `731a68c` 上 Maven 153/153、前端 Vitest 37/37、`vue-tsc`、production build、`pnpm docs:check`、两项 firmware provisioning stack budget check 和 LAN Compose verification 全部通过。
 - `b6dbaf8` 修正 CoreS3 PSRAM 为 Quad 模式；协议测试、默认 HTTPS、LAN HTTP 和测试证书 HTTPS 四个 profile 均构建并确认嵌入 `b6dbaf8`，应用分区余量分别为 93%、56%、58% 和 58%。
 - `e9f072a` 新增 Fantastic-admin Web Serial 配网页面并将屏保改为关闭背光；前端 Vitest 41/41、`vue-tsc`、production build、`pnpm docs:check`、两项固件栈预算和 LAN Compose verification 通过。
@@ -57,7 +69,7 @@
 - COM3 静置约 301.7 秒后只记录一次背光关闭事件，期间无 panic 或重启，固件侧确认不再周期性整屏重绘；触摸恢复和屏幕视觉效果仍待用户确认。
 - 部署的既有模式证据仍为 `c2e7502`；`731a68c` 只重跑 LAN Compose 静态验证，没有 Compose 模式、凭据或部署变更。
 - 前端验证使用 `C:\Users\Administrator\.cache\codex-runtimes\manual-node\node-v24.15.0-win-x64`，满足仓库 engine；没有修改 engine 约束。
-- 当前 worktree 在实现提交验证后保持干净；Git 跟踪的 `docs/project/status/` 是当前状态的正式事实来源。
+- 当前任务实现与状态文档将在同一个任务提交中交接；Git 跟踪的 `docs/project/status/` 是当前状态的正式事实来源。
 - 仓库协作约束要求中文提交、单提交任务 PR、人工审核和 merge commit；PR 策略工作流检查提交数量、PR 标题和提交标题。
 
 ## 最近恢复演练
@@ -81,9 +93,11 @@
 
 ## 跨工作流阻塞项与依赖
 
-- 配网、录音上传、在线提醒 ACK、语音协议分流、低阈值唤醒和 `e33a0d4` 的短帧超时/任务看门狗修复已验证。剩余实体语音回复依赖用户在唤醒后说话峰值达到当前开始阈值 `350`，屏保视觉和离线提醒补发仍需继续验收。
+- 软件链路和设备三槽引导已验证；内置模型文件已随锁定组件存在，不再依赖用户上传或外部生成器。首次实际模型切换会重启设备，必须由管理员主动选择后触发。
+- CoreS3 已具备 `model_a` / `model_b` 分区；后续更换兼容唤醒模型无需再刷整套固件。
+- 既有语音回复、屏保视觉和离线提醒补发验收仍保留；本任务不改变后台检测参数、服务端协议或现有部署。
 - 部署工作依赖维持 LAN HTTP development mode 与 HTTPS-only 生产边界，且不得组合 `compose.lan.yaml` 和 `compose.production.yaml`。
 
 ## 下一步
 
-让用户再次说“Hi StackChan”，变蓝后靠近设备并稍大声说一句短问题；确认出现 `Speech captured`、播放回复并恢复 WakeNet。若峰值仍低于 `350`，再由用户决定是否在管理后台把开始说话阈值调低。之后继续屏保视觉和离线提醒补发验收。后续变更只通过单提交 PR 进入 `master`，生产继续保持 HTTPS-only。
+完成全量测试、Flyway V13 和 LAN server 部署核对；随后由管理员从网页选择一个非当前内置词，确认 `READY -> INSTALLING -> INSTALLED`。后续变更只通过单提交 PR 进入 `master`，生产继续保持 HTTPS-only。

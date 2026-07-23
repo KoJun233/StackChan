@@ -5,7 +5,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
-import com.kj.stackchan.device.DeviceCommandAcknowledgementService;
 import com.kj.stackchan.device.DeviceCommandGateway;
 import com.kj.stackchan.speech.SpeechProviderUnavailableException;
 import com.kj.stackchan.speech.InvalidSpeechSettingsException;
@@ -16,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @ConditionalOnProperty(name = "companion.device-transport-enabled", havingValue = "true", matchIfMissing = true)
-public class ReminderDeliveryService implements DeviceCommandAcknowledgementService {
+public class ReminderDeliveryService {
 
     private static final Duration STALE_DISPATCH_AGE = Duration.ofMinutes(5);
 
@@ -63,7 +62,6 @@ public class ReminderDeliveryService implements DeviceCommandAcknowledgementServ
         }
     }
 
-    @Override
     @Transactional
     public void record(UUID deviceId, String commandId, boolean accepted) {
         reminderRepository.findByCommandId(commandId)

@@ -32,4 +32,13 @@ config STACKCHAN_SCREENSAVER_IDLE_SECONDS
         the two small pupil regions at a low refresh rate. Touch, voice
         activity, and reminders restore the normal face and brightness.
 
+config STACKCHAN_WAKE_WORD_MODEL
+    string "Preferred WakeNet model name"
+    default "wn9l_histackchan_tts3"
+    help
+        Selects one exact WakeNet model already packaged in the model
+        partition. Custom text alone cannot create a WakeNet model. Add a
+        generated model through ESP_SR_EXTERNAL_MODEL_PATH, set its directory
+        name here, and keep wn9l_histackchan_tts3 compiled as the safe fallback.
+
 endmenu

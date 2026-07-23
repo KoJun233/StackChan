@@ -9,6 +9,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_websocket_client.h"
 #include "esp_wifi.h"
@@ -26,6 +27,7 @@
 #include "device_protocol.h"
 #include "safety_state.h"
 #include "voice_control.h"
+#include "wake_model_ota.h"
 
 #define WIFI_CONNECTED_BIT BIT0
 #define TRANSPORT_TASK_STACK_SIZE 10240
@@ -46,14 +48,21 @@ typedef struct {
 } reminder_command_t;
 
 typedef struct {
+    char command_id[DEVICE_PROTOCOL_COMMAND_ID_MAX_LEN];
+    wake_model_ota_request_t request;
+} wake_model_command_t;
+
+typedef struct {
     esp_websocket_client_handle_t client;
     QueueHandle_t reminder_queue;
+    QueueHandle_t wake_model_queue;
     SemaphoreHandle_t send_mutex;
     portMUX_TYPE sequence_lock;
     uint32_t next_sequence;
     volatile bool connected;
     volatile bool failed;
     bool heartbeat_sent;
+    bool wake_model_report_sent;
 } websocket_connection_t;
 
 static const char *TAG = "device_transport";
@@ -304,6 +313,19 @@ static void websocket_event_handler(void *handler_args,
                             (uint32_t)command.speech_start_threshold,
                             (uint32_t)command.speech_silence_threshold) == ESP_OK;
         send_command_ack(connection, command.command_id, accepted);
+        return;
+    }
+    if (command.type == DEVICE_COMMAND_INSTALL_WAKE_MODEL) {
+        wake_model_command_t install = {0};
+        memcpy(install.command_id, command.command_id, sizeof(install.command_id));
+        memcpy(install.request.job_id, command.wake_model_job_id, sizeof(install.request.job_id));
+        memcpy(install.request.model_name, command.wake_model_name, sizeof(install.request.model_name));
+        memcpy(install.request.sha256, command.wake_model_sha256, sizeof(install.request.sha256));
+        install.request.artifact_size = (size_t)command.wake_model_artifact_size;
+        if (connection->wake_model_queue == NULL ||
+            xQueueSend(connection->wake_model_queue, &install, 0) != pdTRUE) {
+            send_command_ack(connection, command.command_id, false);
+        }
     }
 }
 
@@ -460,10 +482,15 @@ static bool run_websocket_connection(const device_identity_t *identity)
         .next_sequence = 1,
     };
     connection.reminder_queue = xQueueCreate(REMINDER_QUEUE_LENGTH, sizeof(reminder_command_t));
+    connection.wake_model_queue = xQueueCreate(1, sizeof(wake_model_command_t));
     connection.send_mutex = xSemaphoreCreateMutex();
-    if (connection.reminder_queue == NULL || connection.send_mutex == NULL) {
+    if (connection.reminder_queue == NULL || connection.wake_model_queue == NULL ||
+        connection.send_mutex == NULL) {
         if (connection.reminder_queue != NULL) {
             vQueueDelete(connection.reminder_queue);
+        }
+        if (connection.wake_model_queue != NULL) {
+            vQueueDelete(connection.wake_model_queue);
         }
         if (connection.send_mutex != NULL) {
             vSemaphoreDelete(connection.send_mutex);
@@ -476,6 +503,7 @@ static bool run_websocket_connection(const device_identity_t *identity)
     if (connection.client == NULL) {
         ESP_LOGE(TAG, "WebSocket client allocation failed");
         vQueueDelete(connection.reminder_queue);
+        vQueueDelete(connection.wake_model_queue);
         vSemaphoreDelete(connection.send_mutex);
         memset(authorization_header, 0, sizeof(authorization_header));
         memset(uri, 0, sizeof(uri));
@@ -507,6 +535,37 @@ static bool run_websocket_connection(const device_identity_t *identity)
             connection.heartbeat_sent = true;
             next_heartbeat_us = now_us + HEARTBEAT_SEND_INTERVAL_US;
         }
+        if (connection.connected && !connection.wake_model_report_sent) {
+            wake_model_ota_report_t report = {0};
+            if (wake_model_ota_get_report(&report)) {
+                char payload[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
+                uint32_t sequence = connection_next_sequence(&connection);
+                const char *status = report.status == WAKE_MODEL_OTA_REPORT_INSTALLED
+                                         ? "INSTALLED"
+                                         : "ROLLED_BACK";
+                if (sequence == 0 ||
+                    device_protocol_encode_wake_model_status(
+                        payload, sizeof(payload), sequence, report.job_id, status,
+                        report.model_name, report.sha256) != ESP_OK ||
+                    !connection_send_text(&connection, payload)) {
+                    connection.failed = true;
+                    safety_state_stop_motion();
+                    break;
+                }
+                connection.wake_model_report_sent = true;
+            }
+        }
+        wake_model_command_t install = {0};
+        if (connection.connected &&
+            xQueueReceive(connection.wake_model_queue, &install, 0) == pdTRUE) {
+            bool accepted = wake_model_ota_install(identity, &install.request) == ESP_OK;
+            send_command_ack(&connection, install.command_id, accepted);
+            if (accepted) {
+                ESP_LOGI(TAG, "Wake model verified; restarting into pending slot");
+                vTaskDelay(pdMS_TO_TICKS(250));
+                esp_restart();
+            }
+        }
         reminder_command_t reminder = {0};
         if (connection.connected &&
             xQueueReceive(connection.reminder_queue, &reminder, 0) == pdTRUE) {
@@ -520,6 +579,7 @@ static bool run_websocket_connection(const device_identity_t *identity)
     (void)esp_websocket_client_stop(connection.client);
     (void)esp_websocket_client_destroy(connection.client);
     vQueueDelete(connection.reminder_queue);
+    vQueueDelete(connection.wake_model_queue);
     vSemaphoreDelete(connection.send_mutex);
     memset(authorization_header, 0, sizeof(authorization_header));
     memset(uri, 0, sizeof(uri));

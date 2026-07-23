@@ -26,6 +26,25 @@ class OfflineDeviceCommandGateway implements DeviceCommandGateway {
     }
 
     @Override
+    public boolean installWakeModel(
+            UUID deviceId,
+            UUID jobId,
+            String modelName,
+            String sha256,
+            int artifactSize,
+            String commandId
+    ) {
+        return connectionRegistry.sendWakeModelInstall(
+                deviceId,
+                jobId,
+                modelName,
+                sha256,
+                artifactSize,
+                commandId
+        );
+    }
+
+    @Override
     public boolean isConnected(UUID deviceId) {
         return connectionRegistry.isConnected(deviceId);
     }
