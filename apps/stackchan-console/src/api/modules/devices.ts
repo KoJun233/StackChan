@@ -15,12 +15,42 @@ export interface PairingCode {
   value: string
 }
 
+export type VoiceTurnStatus = 'IN_PROGRESS' | 'RESPONSE_READY' | 'COMPLETED' | 'FAILED'
+
+export interface VoiceTurnEvent {
+  elapsedMs: number | null
+  failureCode: string | null
+  occurredAt: string
+  source: 'DEVICE' | 'SERVER'
+  stage: string
+}
+
+export interface VoiceTurn {
+  events: VoiceTurnEvent[]
+  failureCode: string | null
+  startedAt: string
+  status: VoiceTurnStatus
+  turnId: string
+  updatedAt: string
+}
+
 interface DeviceListResponse {
   devices: Device[]
 }
 
+interface VoiceTurnListResponse {
+  turns: VoiceTurn[]
+}
+
 export async function listDevices(): Promise<Device[]> {
   return (await apiJson<DeviceListResponse>('/api/v1/devices')).devices
+}
+
+export async function listDeviceVoiceTurns(deviceId: string, limit = 10): Promise<VoiceTurn[]> {
+  const response = await apiJson<VoiceTurnListResponse>(
+    `/api/v1/devices/${encodeURIComponent(deviceId)}/voice-turns?limit=${limit}`,
+  )
+  return response.turns
 }
 
 export function createPairingCode(createdBy: string): Promise<PairingCode> {

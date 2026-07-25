@@ -87,6 +87,54 @@ static bool is_valid_sha256(const char *value)
     return true;
 }
 
+static const char *voice_stage_name(device_voice_turn_stage_t stage)
+{
+    switch (stage) {
+    case DEVICE_VOICE_STAGE_WAKE_DETECTED:
+        return "WAKE_DETECTED";
+    case DEVICE_VOICE_STAGE_LISTENING:
+        return "LISTENING";
+    case DEVICE_VOICE_STAGE_SPEECH_CAPTURED:
+        return "SPEECH_CAPTURED";
+    case DEVICE_VOICE_STAGE_UPLOAD_STARTED:
+        return "UPLOAD_STARTED";
+    case DEVICE_VOICE_STAGE_PLAYBACK_STARTED:
+        return "PLAYBACK_STARTED";
+    case DEVICE_VOICE_STAGE_PLAYBACK_COMPLETED:
+        return "PLAYBACK_COMPLETED";
+    case DEVICE_VOICE_STAGE_LISTENING_RESUMED:
+        return "LISTENING_RESUMED";
+    case DEVICE_VOICE_STAGE_FAILED:
+        return "FAILED";
+    default:
+        return NULL;
+    }
+}
+
+static const char *voice_failure_name(device_voice_turn_failure_t failure)
+{
+    switch (failure) {
+    case DEVICE_VOICE_FAILURE_NO_SPEECH:
+        return "NO_SPEECH";
+    case DEVICE_VOICE_FAILURE_OFFLINE:
+        return "OFFLINE";
+    case DEVICE_VOICE_FAILURE_OUT_OF_MEMORY:
+        return "OUT_OF_MEMORY";
+    case DEVICE_VOICE_FAILURE_UPLOAD_FAILED:
+        return "UPLOAD_FAILED";
+    case DEVICE_VOICE_FAILURE_INVALID_RESPONSE:
+        return "INVALID_RESPONSE";
+    case DEVICE_VOICE_FAILURE_PLAYBACK_FAILED:
+        return "PLAYBACK_FAILED";
+    case DEVICE_VOICE_FAILURE_MICROPHONE_RECOVERY_FAILED:
+        return "MICROPHONE_RECOVERY_FAILED";
+    case DEVICE_VOICE_FAILURE_INTERNAL_ERROR:
+        return "INTERNAL_ERROR";
+    default:
+        return NULL;
+    }
+}
+
 static bool is_integer_in_range(const cJSON *value, int minimum, int maximum)
 {
     return cJSON_IsNumber(value) && value->valuedouble == (double)value->valueint &&
@@ -290,6 +338,7 @@ esp_err_t device_protocol_encode_wake_model_status(char *output,
         !is_valid_wake_model_name(model_name) || !is_valid_sha256(sha256)) {
         return ESP_ERR_INVALID_ARG;
     }
+
     cJSON *root = cJSON_CreateObject();
     if (root == NULL) {
         return ESP_ERR_NO_MEM;
@@ -300,6 +349,38 @@ esp_err_t device_protocol_encode_wake_model_status(char *output,
                     cJSON_AddStringToObject(root, "status", status) != NULL &&
                     cJSON_AddStringToObject(root, "model_name", model_name) != NULL &&
                     cJSON_AddStringToObject(root, "sha256", sha256) != NULL;
+    esp_err_t err = complete ? print_json(root, output, output_size) : ESP_ERR_NO_MEM;
+    cJSON_Delete(root);
+    return err;
+}
+
+esp_err_t device_protocol_encode_voice_turn_stage(char *output,
+                                                  size_t output_size,
+                                                  uint32_t sequence,
+                                                  const char *turn_id,
+                                                  device_voice_turn_stage_t stage,
+                                                  uint32_t elapsed_ms,
+                                                  device_voice_turn_failure_t failure)
+{
+    const char *stage_name = voice_stage_name(stage);
+    const char *failure_name = voice_failure_name(failure);
+    if (output == NULL || output_size == 0 || sequence == 0 || !is_valid_uuid(turn_id) ||
+        stage_name == NULL || elapsed_ms > 300000 ||
+        ((stage == DEVICE_VOICE_STAGE_FAILED) != (failure_name != NULL))) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    bool complete = cJSON_AddStringToObject(root, "type", "voice_turn_stage") != NULL &&
+                    cJSON_AddNumberToObject(root, "sequence", sequence) != NULL &&
+                    cJSON_AddStringToObject(root, "turn_id", turn_id) != NULL &&
+                    cJSON_AddStringToObject(root, "stage", stage_name) != NULL &&
+                    cJSON_AddNumberToObject(root, "elapsed_ms", elapsed_ms) != NULL;
+    if (complete && failure_name != NULL) {
+        complete = cJSON_AddStringToObject(root, "failure_code", failure_name) != NULL;
+    }
     esp_err_t err = complete ? print_json(root, output, output_size) : ESP_ERR_NO_MEM;
     cJSON_Delete(root);
     return err;

@@ -2,13 +2,13 @@
 
 - 状态：ACTIVE
 - 最后更新：2026-07-26
-- 当前分支：`codex/custom-wake-word`
-- 基准提交：`dae6015`
-- 最后验证提交：`dae6015`
+- 当前分支：`codex/int-001-voice-turn-diagnostics`
+- 基准提交：`af65290`
+- 最后验证提交：`af65290`
 
 ## 当前目标
 
-维护语音适配、设备语音回合和持久提醒，并只从锁定的 ESP-SR 2.4.6 内置目录打包可信 WakeNet 模型，完成鉴权下载和设备安装状态编排。
+完成隐私安全的语音回合阶段诊断，同时保持 OpenAI-compatible、阿里云百炼、持久提醒、既有 SCV1 语音响应和 ESP-SR 内置唤醒模型 OTA 兼容。
 
 ## 已完成
 
@@ -35,18 +35,22 @@
 - 服务端通过固定同源 URL 下发安装命令，接收设备重启后的安装/回退状态，且 WebSocket 重连补报保持幂等；提醒 ACK 路由不受影响。
 - 部署验证发现 READY 任务调度器在事务外执行悲观锁查询；当前任务树已将候选任务读取放入 `TransactionTemplate`，并补充事务次数回归断言，部署后未再出现 `Query requires transaction be in progress`。
 - V12 仅作为已经部署过的迁移历史保留；V13 终止旧版活动任务并删除临时 `source` 字段，最终 API 和实体不再暴露生成或上传来源。
+- INT-001 增加 Flyway V14、语音回合和阶段事件模型、7 天保留清理，以及管理员只读的最近回合接口；诊断表不含音频、识别文本、模型回复、供应商响应或认证载荷。
+- 语音上传接受可选 `X-StackChan-Turn-Id` 并在成功响应中回显；旧固件省略时由服务端生成，SCV1 正文保持不变。
+- 设备 WebSocket 增加严格 `voice_turn_stage` 事件，只接受规范 UUID、白名单阶段、0..300000 毫秒相对耗时和白名单失败码；自由文本和额外字段会被拒绝。
+- ASR、LLM、TTS 和安全失败分类由服务端直接记录；诊断存储临时不可用时不会中断既有语音主流程。
 
 ## 正在进行
 
-内置目录实现已通过全量验证并部署到既有 `stackchan-foundation` LAN server。Flyway 已升至 V13，容器内有 13 组模型；管理员创建的“小峰小峰”任务已完成 `READY -> INSTALLING -> INSTALLED`，CoreS3 继续运行三槽引导镜像 `0398073` 并报告 `motion_disabled`，没有重新刷写固件。
+内置唤醒模型目录已部署到既有 `stackchan-foundation` LAN server，Flyway 当前为 V13；“小峰小峰”任务已进入 `INSTALLED`。INT-001 已重放到最新 `master` 并完成合并回归，尚未推送或部署。
 
 ## 下一步操作
 
-用户实体呼叫“小峰小峰”，完成安装后的声学唤醒验收。
+用户创建并人工审核本任务 PR；合并后先只重建既有 LAN server，确认健康接口 200 和 Flyway V14，再发布管理端和固件；不得在服务端升级前刷入会发送新阶段事件的固件。
 
 ## 阻塞项
 
-没有模型文件、生成器、固件引导或任务编排阻塞。首次真机切换已经由管理员主动触发并安装成功，当前只等待实体声学验收。不得在证据中记录秘密、音频或完整认证载荷。
+没有服务端软件阻塞。“小峰小峰”仍待实体声学验收；INT-001 部署和固件刷写均未获授权。不得在证据中记录配置秘密、供应商响应正文、音频或完整异常载荷。
 
 ## 关键文件
 
@@ -55,7 +59,9 @@
 - `server/src/main/resources/db/migration/V11__wake_word_model_ota.sql`
 - `server/src/main/resources/db/migration/V12__wake_word_model_job_sources.sql`
 - `server/src/main/resources/db/migration/V13__retire_generated_wake_models.sql`
+- `server/src/main/resources/db/migration/V14__voice_turn_diagnostics.sql`
 - `server/src/main/java/com/kj/stackchan/wakeword/EspSrWakeWordModelCatalog.java`
+- `server/src/main/java/com/kj/stackchan/speech/VoiceTurnDiagnosticsService.java`
 - `server/wakenet-models/`
 
 ## 验证命令与最近结果
@@ -80,6 +86,8 @@
 - 2026-07-21 LAN 部署：健康接口 200、Flyway v9、1 台设备恢复心跳；线上语音静态资源包含新模式表单。
 - `& 'E:\maven-3.9.16\bin\mvn.cmd' -f server\pom.xml test`：在 `06a67ab` 通过 183/183；覆盖 v10 迁移、参数校验、保存广播、重连补发和配置 ACK 不影响提醒状态。
 - 2026-07-21 `06a67ab` LAN 部署：首次 Docker 构建被 Maven Central 临时 TLS 握手中断，原服务持续健康；重试后完整镜像构建成功，健康接口 200、Flyway v10、CoreS3 心跳恢复。
+- INT-001 原始基线验证：Maven 189/189 通过；迁移在重放前使用 V11。重放到最新 `master` 后已顺延为 V14，合并回归结果见后续记录；接口测试确认 JSON 不含 `audio`、`transcript` 或 `reply`。
+- INT-001 最新 `master` 合并回归：`mvn clean test` 通过 205/205；Testcontainers PostgreSQL 从空库验证 14 个迁移并成功到 V14，WebSocket 合并测试同时覆盖 `wake_model_status` 与 `voice_turn_stage`。
 
 ## 相关设计、计划和决策
 
@@ -90,6 +98,7 @@
 - [0009：服务端增加阿里云百炼原生语音适配器](../decisions/0009-native-dashscope-speech-adapter.md)
 - [0011：语音协议只由显式接入方式决定](../decisions/0011-explicit-speech-access-modes.md)
 - [0012：机器人本地唤醒与录音判定参数由管理员配置](../decisions/0012-configurable-device-voice-detection.md)
+- [0013：语音回合使用隐私安全的阶段诊断](../decisions/0013-privacy-safe-voice-turn-diagnostics.md)
 - [0015：运行时生成并安全 OTA 自定义唤醒模型](../decisions/0015-runtime-wake-model-generation-and-ota.md)
 - [0016：唤醒词仅从 ESP-SR 内置模型目录选择并安全 OTA](../decisions/0016-built-in-esp-sr-wake-model-catalog.md)
 

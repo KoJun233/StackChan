@@ -23,6 +23,7 @@
 | [0010](0010-low-brightness-local-pupil-screensaver.md) | ACCEPTED | 保留 USB 配网边界，空闲屏保改为低亮度、小区域、低频移动瞳孔。 |
 | [0011](0011-explicit-speech-access-modes.md) | ACCEPTED | ASR/TTS 分别显式选择实时 WebSocket 或非实时 HTTP，模型名不参与路由且不自动回退。 |
 | [0012](0012-configurable-device-voice-detection.md) | ACCEPTED | 管理员配置机器人本地唤醒灵敏度和录音能量阈值，设备重连补发并安全重建 WakeNet。 |
+| [0013](0013-privacy-safe-voice-turn-diagnostics.md) | ACCEPTED | 语音回合以同一 ID 关联设备与服务端阶段，只保存短期隐私安全诊断元数据。 |
 | [0014](0014-packaged-custom-wake-word-model.md) | SUPERSEDED | 自定义唤醒词使用离线生成并随固件打包；由 0015 的运行时模型 OTA 替代。 |
 | [0015](0015-runtime-wake-model-generation-and-ota.md) | SUPERSEDED | 网页在线生成或上传本地 WakeNet 包；由 0016 的固定内置模型目录替代。 |
 | [0016](0016-built-in-esp-sr-wake-model-catalog.md) | ACCEPTED | 用户只选择 ESP-SR 2.4.6 内置唤醒词，服务端可信打包并通过三槽 OTA 自动启用或回退。 |

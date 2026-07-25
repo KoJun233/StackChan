@@ -2,13 +2,13 @@
 
 - 状态：ACTIVE
 - 最后更新：2026-07-26
-- 当前分支：`codex/custom-wake-word`
-- 基准提交：`dae6015`
-- 最后验证提交：`dae6015`
+- 当前分支：`codex/int-001-voice-turn-diagnostics`
+- 基准提交：`af65290`
+- 最后验证提交：`af65290`
 
 ## 当前目标
 
-在保留音频回合、提醒协议、动态瞳孔屏保、既有检测参数和 `motion_disabled` 的前提下，为 ESP-SR 内置 WakeNet 模型提供双槽 OTA、重启健康确认和自动回退。
+在保留音频回合、提醒协议、动态瞳孔屏保、内置 WakeNet 模型三槽 OTA 和 `motion_disabled` 的前提下，为唤醒、录音、上传、播放和麦克风恢复增加隐私安全的回合阶段诊断。
 
 ## 已完成
 
@@ -43,18 +43,22 @@
 - 当前任务将模型分区扩展为永久 `model` 出厂槽和 `model_a` / `model_b` OTA 槽；运行时始终写入非活动槽，校验 SHA-256 和模型包后才切换。
 - 固件保存 pending 安装、活动槽和补报状态到 NVS；新模型重启后须在 20 秒内完成 WakeNet 健康确认，第二次 pending 启动会自动恢复上一健康槽或出厂模型。
 - 安装成功和回退状态保存在 NVS，并在每次 WebSocket 重连时幂等补报；固定同源下载、设备命令 ACK 和 `motion_disabled` 行为保持不变。
+- INT-001 在每次 WakeNet 命中时生成 UUID v4，并通过语音 HTTP 头和 WebSocket 阶段事件复用同一回合 ID。
+- 阶段事件进入 16 项有界、非阻塞队列；队列满、WebSocket 离线或诊断发送失败只丢弃诊断，不阻断语音主流程或改变 `motion_disabled`。
+- 固件只上报白名单阶段、0..300000 毫秒单调相对耗时和白名单失败码；不发送音频、识别文本、回复、URL 或认证信息。
+- 播放成功后分别上报播放完成和麦克风恢复；麦克风重启失败与普通播放失败使用不同安全失败码。
 
 ## 正在进行
 
-固件代码、分区表和协议保持完成状态。CoreS3 运行 `0398073` LAN HTTP Quad 镜像，具备永久 `model` 与 `model_a` / `model_b` 三槽；链接映射确认 WakeNet9、WakeNet9l 和 WakeNet9s 接口均已进入当前镜像。“小峰小峰”模型 OTA 已通过重启健康确认并由设备补报安装成功，无需再次刷写固件。
+CoreS3 仍运行 `0398073` LAN HTTP Quad 三槽镜像，“小峰小峰”模型 OTA 已安装成功。INT-001 已重放到最新 `master` 并完成 ESP-IDF 5.3.3 合并回归；没有连接或刷写设备。
 
 ## 下一步操作
 
-用户实体呼叫“小峰小峰”完成声学验收；若需要验证回退，再在受控测试窗口按 runbook 模拟候选槽健康失败，不改写出厂槽。
+用户创建并人工审核 PR、服务端 V14 先部署后，由用户明确确认 CoreS3、`COM3`、LAN HTTP development profile 和本任务提交，再构建并刷写匹配 Quad 镜像；随后完成一次成功回合和一次无语音失败回合，核对管理端时间线与串口安全状态。
 
 ## 阻塞项
 
-没有固件代码、模型文件、首次刷写或 OTA 状态阻塞。实体环境中的“小峰小峰”命中效果仍需用户确认。不得记录 Wi-Fi 密码、Workspace ID、配对码、语音供应商密钥、设备 Token、模型服务认证载荷或原始音频。
+没有固件软件阻塞。刷写尚未获本任务明确授权，且发布顺序要求服务端 V14 先上线；“小峰小峰”声学命中和 INT-001 时间线均待实体验收。不得记录 Wi-Fi 密码、Workspace ID、配对码、语音供应商密钥或设备 Token。
 
 ## 关键文件
 
@@ -64,6 +68,9 @@
 - `docs/runbooks/custom-wake-word-model.md`
 - `docs/runbooks/physical-device-smoke-test.md`
 - `firmware/main/wake_model_ota.c`
+- `firmware/main/voice_service.c`
+- `firmware/main/device_transport.c`
+- `firmware/main/device_protocol.c`
 - `firmware/partitions.csv`
 
 ## 验证命令与最近结果
@@ -110,6 +117,9 @@
 - `e33a0d4` 的 bootloader、应用、分区表、OTA data 和 WakeNet 模型分区已写入 COM3 并全部通过设备端哈希校验；没有擦除保存 Wi-Fi 和设备身份的 NVS。
 - `e33a0d4` 启动确认 8 MB PSRAM / 80 MHz、PSRAM 内存测试、应用版本、M5StackChan/CoreS3 外设、LAN HTTP profile、`threshold_milli=496` 和 `motion_disabled`；Wi-Fi 与 WebSocket 自动恢复，数据库在 2026-07-21 22:49:25（Asia/Shanghai）收到该版本心跳。
 - 首个 180 秒监听窗口与后续 120 秒窗口均为 `ESP_ERR_TIMEOUT=0`、任务看门狗 `0`、panic `0`。首个窗口命中两次唤醒并两次重建/恢复 WakeNet；一次在 Wi-Fi 未连接时安全返回 `ESP_ERR_INVALID_STATE`，另一次峰值能量 `313` 低于开始阈值 `350` 并安全返回 `ESP_ERR_NOT_FOUND`。后续窗口无新唤醒命中。
+- INT-001 协议测试 profile 完整构建通过，镜像 `0x37880`，应用分区余量 93%；新增严格阶段编码 Unity 用例已编译进镜像，未上板执行。
+- INT-001 两项 provisioning stack budget check 通过：8192 字节回归样例被拒绝，16384 字节任务预算通过，已知本地路径 7648 字节，外部余量 8736 字节。
+- INT-001 最新 `master` 合并回归：ESP-IDF 5.3.3 协议测试 profile 从重配置完整构建通过，镜像 `0x37880`、应用分区余量 93%；两项栈预算和唤醒模型包安全回归通过。只执行编译，未连接或刷写设备。
 
 ## 相关设计、计划和决策
 
@@ -119,6 +129,7 @@
 - [0008：管理后台通过 USB 配网，空闲屏保关闭背光](../decisions/0008-browser-usb-provisioning-and-screen-off-idle.md)
 - [0010：空闲屏保采用低亮度、小区域、低频移动瞳孔](../decisions/0010-low-brightness-local-pupil-screensaver.md)
 - [0012：机器人本地唤醒与录音判定参数由管理员配置](../decisions/0012-configurable-device-voice-detection.md)
+- [0013：语音回合使用隐私安全的阶段诊断](../decisions/0013-privacy-safe-voice-turn-diagnostics.md)
 - [0014：自定义唤醒词采用离线生成并随固件打包的 WakeNet 模型](../decisions/0014-packaged-custom-wake-word-model.md)
 - [0015：运行时生成并安全 OTA 自定义唤醒模型](../decisions/0015-runtime-wake-model-generation-and-ota.md)
 - [0016：唤醒词仅从 ESP-SR 内置模型目录选择并安全 OTA](../decisions/0016-built-in-esp-sr-wake-model-catalog.md)

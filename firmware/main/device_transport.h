@@ -7,6 +7,7 @@
 #include "esp_err.h"
 
 #include "device_identity.h"
+#include "device_protocol.h"
 
 /** Starts the identity-gated Wi-Fi/WebSocket transport task. */
 esp_err_t device_transport_start(void);
@@ -25,3 +26,9 @@ uint32_t device_transport_next_retry_seconds(uint32_t current_seconds);
 
 /** Builds the sole WebSocket Authorization request header. */
 bool device_transport_build_authorization_header(const device_identity_t *identity, char *header, size_t size);
+
+/** Queues privacy-safe voice turn metadata without blocking the voice path. */
+bool device_transport_report_voice_turn(device_voice_turn_stage_t stage,
+                                        const char *turn_id,
+                                        uint32_t elapsed_ms,
+                                        device_voice_turn_failure_t failure);

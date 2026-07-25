@@ -13,6 +13,7 @@ typedef struct {
 } voice_service_buffer_t;
 
 esp_err_t voice_service_send_turn(const device_identity_t *identity,
+                                  const char *turn_id,
                                   const uint8_t *wav,
                                   size_t wav_size,
                                   voice_service_buffer_t *response);

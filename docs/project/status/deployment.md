@@ -2,10 +2,10 @@
 
 - 状态：STABLE
 - 最后更新：2026-07-26
-- 当前分支：`codex/custom-wake-word`
-- 基准提交：`dae6015`
-- 最后验证提交：`dae6015`
-- 当前运行态代码：当前任务工作树的 ESP-SR 内置唤醒词目录版本。
+- 当前分支：`codex/int-001-voice-turn-diagnostics`
+- 基准提交：`af65290`
+- 最后验证提交：`af65290`
+- 当前运行态代码：已部署的 ESP-SR 内置唤醒词目录版本（Flyway V13），不含 INT-001。
 
 ## 当前目标
 
@@ -58,6 +58,7 @@
 ## 验证命令与最近结果
 
 - 当前任务的 LAN Compose 静态验证通过；仅使用当前进程内的非秘密占位值，代码实现未触碰运行中的容器、卷、端口或凭据。
+- INT-001 最新 `master` 合并回归再次完成 LAN Compose 静态展开：基础模式只绑定 `127.0.0.1:8080`，LAN overlay 绑定 `0.0.0.0:8080`，PostgreSQL 与 Redis 均未发布主机端口。未重建或替换运行中服务。
 - 2026-07-26 本任务 LAN 部署：`/api/v1/health` 和网页根地址均返回 200，Flyway 为 `11|true`，容器内包含 `speech-DFhfjNNt.js`；调度事务修复后日志中未再出现 `Query requires transaction be in progress`，CoreS3 心跳恢复为 `e33a0d4` / `motion_disabled`。
 - 2026-07-26 本地上传增量部署：`/api/v1/health` 和网页根地址均返回 200，Flyway 为 `12|true`，容器内 `speech-CKv17cKU.js` 包含“在线生成/上传模型包/上传并安装/本地上传”；服务端近两分钟错误数为 0，CoreS3 心跳保持 `0398073` / `motion_disabled`。未触发模型 OTA、刷写或第三方提交。
 - 2026-07-26 内置目录部署：部署前保留 `stackchan-foundation-server:rollback-upload-v12`；正式 Dockerfile 构建成功并只替换 server。健康和网页根地址均为 200，未登录目录 API 返回 401，Flyway `13|true`，容器模型目录为 13 组，近两分钟错误数为 0；CoreS3 心跳保持 `0398073` / `motion_disabled`。未触发模型 OTA 或刷写。

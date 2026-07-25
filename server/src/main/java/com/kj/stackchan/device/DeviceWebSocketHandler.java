@@ -8,6 +8,9 @@ import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kj.stackchan.speech.VoiceTurnDiagnosticsService;
+import com.kj.stackchan.speech.VoiceTurnFailureCode;
+import com.kj.stackchan.speech.VoiceTurnStage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +46,13 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     private static final Pattern UUID_PATTERN = Pattern.compile(
             "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
     );
+    private static final Set<String> VOICE_TURN_STAGE_FIELDS = Set.of(
+            "type", "sequence", "turn_id", "stage", "elapsed_ms"
+    );
+    private static final Set<String> VOICE_TURN_FAILURE_FIELDS = Set.of(
+            "type", "sequence", "turn_id", "stage", "elapsed_ms", "failure_code"
+    );
+    private static final int MAX_VOICE_TURN_ELAPSED_MS = 300_000;
 
     private final DeviceConnectionRegistry connectionRegistry;
     private final DeviceEventService deviceEventService;
@@ -50,6 +60,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final DeviceVoiceSettingsCoordinator voiceSettingsCoordinator;
     private final DeviceWakeModelStatusService wakeModelStatusService;
+    private final VoiceTurnDiagnosticsService voiceTurnDiagnosticsService;
 
     @Autowired
     public DeviceWebSocketHandler(
@@ -58,7 +69,8 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             DeviceCommandAcknowledgementService acknowledgementService,
             ObjectMapper objectMapper,
             DeviceVoiceSettingsCoordinator voiceSettingsCoordinator,
-            DeviceWakeModelStatusService wakeModelStatusService
+            DeviceWakeModelStatusService wakeModelStatusService,
+            VoiceTurnDiagnosticsService voiceTurnDiagnosticsService
     ) {
         this.connectionRegistry = connectionRegistry;
         this.deviceEventService = deviceEventService;
@@ -66,6 +78,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         this.objectMapper = objectMapper;
         this.voiceSettingsCoordinator = voiceSettingsCoordinator;
         this.wakeModelStatusService = wakeModelStatusService;
+        this.voiceTurnDiagnosticsService = voiceTurnDiagnosticsService;
     }
 
     DeviceWebSocketHandler(
@@ -79,7 +92,8 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
                 (deviceId, commandId, accepted) -> { },
                 objectMapper,
                 null,
-                (deviceId, jobId, status, modelName, sha256) -> { }
+                (deviceId, jobId, status, modelName, sha256) -> { },
+                null
         );
     }
 
@@ -95,7 +109,64 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
                 acknowledgementService,
                 objectMapper,
                 null,
-                (deviceId, jobId, status, modelName, sha256) -> { }
+                (deviceId, jobId, status, modelName, sha256) -> { },
+                null
+        );
+    }
+
+    DeviceWebSocketHandler(
+            DeviceConnectionRegistry connectionRegistry,
+            DeviceEventService deviceEventService,
+            DeviceCommandAcknowledgementService acknowledgementService,
+            ObjectMapper objectMapper,
+            DeviceVoiceSettingsCoordinator voiceSettingsCoordinator
+    ) {
+        this(
+                connectionRegistry,
+                deviceEventService,
+                acknowledgementService,
+                objectMapper,
+                voiceSettingsCoordinator,
+                (deviceId, jobId, status, modelName, sha256) -> { },
+                null
+        );
+    }
+
+    DeviceWebSocketHandler(
+            DeviceConnectionRegistry connectionRegistry,
+            DeviceEventService deviceEventService,
+            DeviceCommandAcknowledgementService acknowledgementService,
+            ObjectMapper objectMapper,
+            DeviceVoiceSettingsCoordinator voiceSettingsCoordinator,
+            DeviceWakeModelStatusService wakeModelStatusService
+    ) {
+        this(
+                connectionRegistry,
+                deviceEventService,
+                acknowledgementService,
+                objectMapper,
+                voiceSettingsCoordinator,
+                wakeModelStatusService,
+                null
+        );
+    }
+
+    DeviceWebSocketHandler(
+            DeviceConnectionRegistry connectionRegistry,
+            DeviceEventService deviceEventService,
+            DeviceCommandAcknowledgementService acknowledgementService,
+            ObjectMapper objectMapper,
+            DeviceVoiceSettingsCoordinator voiceSettingsCoordinator,
+            VoiceTurnDiagnosticsService voiceTurnDiagnosticsService
+    ) {
+        this(
+                connectionRegistry,
+                deviceEventService,
+                acknowledgementService,
+                objectMapper,
+                voiceSettingsCoordinator,
+                (deviceId, jobId, status, modelName, sha256) -> { },
+                voiceTurnDiagnosticsService
         );
     }
 
@@ -163,6 +234,29 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             );
             return;
         }
+        if (event instanceof VoiceTurnStageEvent voiceTurnStage) {
+            if (voiceTurnDiagnosticsService != null) {
+                try {
+                    voiceTurnDiagnosticsService.recordDeviceStage(
+                            deviceId,
+                            voiceTurnStage.turnId(),
+                            voiceTurnStage.stage(),
+                            voiceTurnStage.elapsedMs(),
+                            voiceTurnStage.failureCode()
+                    );
+                } catch (IllegalArgumentException exception) {
+                    throw new InvalidDeviceEventException();
+                } catch (RuntimeException exception) {
+                    logger.warn(
+                            "Voice turn diagnostics unavailable for device={} turn={} stage={}",
+                            deviceId,
+                            voiceTurnStage.turnId(),
+                            voiceTurnStage.stage()
+                    );
+                }
+            }
+            return;
+        }
         CommandAcknowledgementEvent acknowledgement = (CommandAcknowledgementEvent) event;
         logger.debug(
                 "Device {} acknowledged command {} with accepted={}",
@@ -184,6 +278,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
                 case "heartbeat" -> parseHeartbeat(root);
                 case "command_ack" -> parseCommandAcknowledgement(root);
                 case "wake_model_status" -> parseWakeModelStatus(root);
+                case "voice_turn_stage" -> parseVoiceTurnStage(root);
                 default -> throw new InvalidDeviceEventException();
             };
         } catch (IOException exception) {
@@ -239,6 +334,38 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         return new WakeModelStatusEvent(sequence, UUID.fromString(jobId), status, modelName, sha256);
     }
 
+    private VoiceTurnStageEvent parseVoiceTurnStage(JsonNode root) {
+        String stageValue = requiredText(root, "stage");
+        VoiceTurnStage stage;
+        try {
+            stage = VoiceTurnStage.valueOf(stageValue);
+        } catch (IllegalArgumentException exception) {
+            throw new InvalidDeviceEventException();
+        }
+        if (!stage.isDeviceStage()) {
+            throw new InvalidDeviceEventException();
+        }
+        requireOnlyFields(
+                root,
+                stage == VoiceTurnStage.FAILED ? VOICE_TURN_FAILURE_FIELDS : VOICE_TURN_STAGE_FIELDS
+        );
+        long sequence = requiredPositiveSequence(root);
+        UUID turnId = requiredUuid(root, "turn_id");
+        int elapsedMs = requiredInteger(root, "elapsed_ms");
+        if (elapsedMs < 0 || elapsedMs > MAX_VOICE_TURN_ELAPSED_MS) {
+            throw new InvalidDeviceEventException();
+        }
+        VoiceTurnFailureCode failureCode = null;
+        if (stage == VoiceTurnStage.FAILED) {
+            try {
+                failureCode = VoiceTurnFailureCode.valueOf(requiredText(root, "failure_code"));
+            } catch (IllegalArgumentException exception) {
+                throw new InvalidDeviceEventException();
+            }
+        }
+        return new VoiceTurnStageEvent(sequence, turnId, stage, elapsedMs, failureCode);
+    }
+
     private long requiredPositiveSequence(JsonNode root) {
         JsonNode sequence = root.get("sequence");
         if (sequence == null || !sequence.isIntegralNumber() || !sequence.canConvertToLong() || sequence.longValue() <= 0) {
@@ -261,6 +388,19 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             throw new InvalidDeviceEventException();
         }
         return field.textValue();
+    }
+
+    private UUID requiredUuid(JsonNode root, String fieldName) {
+        String value = requiredText(root, fieldName);
+        try {
+            UUID uuid = UUID.fromString(value);
+            if (!uuid.toString().equalsIgnoreCase(value)) {
+                throw new InvalidDeviceEventException();
+            }
+            return uuid;
+        } catch (IllegalArgumentException exception) {
+            throw new InvalidDeviceEventException();
+        }
     }
 
     private void requireOnlyFields(JsonNode root, Set<String> allowedFields) {
@@ -295,7 +435,8 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         return deviceId instanceof UUID authenticatedDeviceId ? authenticatedDeviceId : null;
     }
 
-    private sealed interface DeviceInboundEvent permits HeartbeatEvent, CommandAcknowledgementEvent, WakeModelStatusEvent {
+    private sealed interface DeviceInboundEvent permits HeartbeatEvent, CommandAcknowledgementEvent,
+            WakeModelStatusEvent, VoiceTurnStageEvent {
 
         long sequence();
     }
@@ -320,6 +461,15 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             String status,
             String modelName,
             String sha256
+    ) implements DeviceInboundEvent {
+    }
+
+    private record VoiceTurnStageEvent(
+            long sequence,
+            UUID turnId,
+            VoiceTurnStage stage,
+            int elapsedMs,
+            VoiceTurnFailureCode failureCode
     ) implements DeviceInboundEvent {
     }
 

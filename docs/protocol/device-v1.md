@@ -34,6 +34,14 @@ Devices may acknowledge a received command with:
 
 For `install_wake_model`, `accepted=true` means the device downloaded the fixed same-origin artifact, verified its size, SHA-256 and ESP-SR structure, and persisted a pending model slot before restarting. It does not mean the new WakeNet listener is healthy; final health is reported separately after restart. `accepted=false` means the model was not selected for boot.
 
+New firmware may report a privacy-safe voice turn stage:
+
+```json
+{"type":"voice_turn_stage","sequence":3,"turn_id":"550e8400-e29b-41d4-a716-446655440000","stage":"LISTENING","elapsed_ms":120}
+```
+
+`turn_id` is a canonical UUID generated at local wake detection. `elapsed_ms` is an integer from 0 through 300000 measured from the device monotonic clock. Device stages are limited to `WAKE_DETECTED`, `LISTENING`, `SPEECH_CAPTURED`, `UPLOAD_STARTED`, `PLAYBACK_STARTED`, `PLAYBACK_COMPLETED`, `LISTENING_RESUMED`, and `FAILED`. A failed event has exactly one additional `failure_code` field from the protocol allowlist; successful stages must not include it. Extra fields, free text, transcripts, replies, audio, URLs, credentials, and server-only stages are rejected.
+
 ## Device-authenticated voice HTTP
 
 The device uploads one bounded WAV only after the local `Hi, Stack Chan` WakeNet model detects the wake phrase:
@@ -41,9 +49,12 @@ The device uploads one bounded WAV only after the local `Hi, Stack Chan` WakeNet
 ```http
 POST /api/v1/device/voice/turn
 Authorization: Bearer <device-token>
+X-StackChan-Turn-Id: 550e8400-e29b-41d4-a716-446655440000
 Content-Type: audio/wav
 Accept: application/vnd.stackchan.voice-turn
 ```
+
+The turn header is optional for rolling compatibility. New firmware sends the same canonical UUID used in stage events; when older firmware omits it, the server creates one. The successful response echoes the resolved ID in `X-StackChan-Turn-Id` without changing the SCV1 body.
 
 The body must be between 44 bytes and 512 KiB. The server authenticates the device token independently of any administrator session, transcribes the WAV, appends the turn to that device's conversation, generates the assistant reply, and synthesizes a PCM WAV. A successful response has media type `application/vnd.stackchan.voice-turn` and this binary layout:
 
@@ -55,6 +66,8 @@ The body must be between 44 bytes and 512 KiB. The server authenticates the devi
 | remaining bytes | validated PCM WAV for device playback |
 
 Error responses use safe JSON and do not include provider responses, provider keys, device credentials, or authorization payloads.
+
+Diagnostic persistence is separate from conversation content. It stores only device and turn IDs, strict stages, stage source, server receive time, bounded device elapsed time, status, and allowlisted failure codes for seven days. It never stores the uploaded WAV, transcript, reply, provider response, API key, JWT, or refresh token.
 
 ## Server commands
 
