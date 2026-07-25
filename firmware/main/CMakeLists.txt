@@ -28,7 +28,7 @@ endif()
 idf_component_register(
     SRCS ${stackchan_sources}
     INCLUDE_DIRS "."
-    REQUIRES esp-sr esp_app_format esp_driver_usb_serial_jtag esp_event esp_http_client esp_netif esp_partition esp_timer esp_wifi esp_websocket_client freertos json m5unified mbedtls nvs_flash unity)
+    REQUIRES esp-sr esp_app_format esp_driver_usb_serial_jtag esp_event esp_http_client esp_hw_support esp_netif esp_partition esp_timer esp_wifi esp_websocket_client freertos json m5unified mbedtls nvs_flash unity)
 
 if(CONFIG_STACKCHAN_LAN_TEST_CERT)
     target_add_binary_data(${COMPONENT_LIB} "lan-test-server.pem" TEXT)

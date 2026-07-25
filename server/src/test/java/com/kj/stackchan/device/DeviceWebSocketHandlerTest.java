@@ -6,6 +6,9 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kj.stackchan.speech.VoiceTurnDiagnosticsService;
+import com.kj.stackchan.speech.VoiceTurnFailureCode;
+import com.kj.stackchan.speech.VoiceTurnStage;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.web.socket.TextMessage;
@@ -29,13 +32,16 @@ class DeviceWebSocketHandlerTest {
             mock(DeviceVoiceSettingsCoordinator.class);
     private final DeviceWakeModelStatusService wakeModelStatusService =
             mock(DeviceWakeModelStatusService.class);
+    private final VoiceTurnDiagnosticsService voiceTurnDiagnosticsService =
+            mock(VoiceTurnDiagnosticsService.class);
     private final DeviceWebSocketHandler handler = new DeviceWebSocketHandler(
             connectionRegistry,
             deviceEventService,
             acknowledgementService,
             new ObjectMapper(),
             voiceSettingsCoordinator,
-            wakeModelStatusService
+            wakeModelStatusService,
+            voiceTurnDiagnosticsService
     );
 
     @Test
@@ -123,6 +129,26 @@ class DeviceWebSocketHandlerTest {
     }
 
     @Test
+    void recordsOnlyPrivacySafeVoiceTurnStageFields() throws Exception {
+        WebSocketSession session = authenticatedSession();
+        handler.afterConnectionEstablished(session);
+        UUID turnId = UUID.randomUUID();
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"voice_turn_stage","sequence":9,"turn_id":"%s","stage":"FAILED",\
+                "elapsed_ms":1250,"failure_code":"NO_SPEECH"}
+                """.formatted(turnId)));
+
+        verify(voiceTurnDiagnosticsService).recordDeviceStage(
+                DEVICE_ID,
+                turnId,
+                VoiceTurnStage.FAILED,
+                1250,
+                VoiceTurnFailureCode.NO_SPEECH
+        );
+    }
+
+    @Test
     void rejectsWakeModelStatusWithUntrustedFields() throws Exception {
         WebSocketSession session = authenticatedSession();
         handler.afterConnectionEstablished(session);
@@ -136,6 +162,23 @@ class DeviceWebSocketHandlerTest {
         assertThat(message.getValue().getPayload())
                 .isEqualTo("{\"type\":\"error\",\"code\":\"invalid_event\",\"message\":\"event rejected\"}");
         verifyNoInteractions(wakeModelStatusService);
+    }
+
+    @Test
+    void rejectsVoiceTurnStageWithAFreeTextField() throws Exception {
+        WebSocketSession session = authenticatedSession();
+        handler.afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"voice_turn_stage","sequence":9,\
+                "turn_id":"550e8400-e29b-41d4-a716-446655440000",\
+                "stage":"LISTENING","elapsed_ms":20,"transcript":"secret"}
+                """));
+
+        ArgumentCaptor<TextMessage> message = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session).sendMessage(message.capture());
+        assertThat(message.getValue().getPayload()).contains("invalid_event");
+        verifyNoInteractions(voiceTurnDiagnosticsService);
     }
 
     private WebSocketSession authenticatedSession() {

@@ -1,10 +1,13 @@
 #include "voice_control.h"
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_random.h"
+#include "esp_timer.h"
 #include "esp_wn_iface.h"
 #include "esp_wn_models.h"
 #include "freertos/FreeRTOS.h"
@@ -62,6 +65,47 @@ static voice_detection_settings_t s_detection_settings = {
     .speech_start_threshold = VOICE_DEFAULT_START_ENERGY_THRESHOLD,
     .speech_silence_threshold = VOICE_DEFAULT_SILENCE_ENERGY_THRESHOLD,
 };
+
+static void create_turn_id(char turn_id[DEVICE_PROTOCOL_TURN_ID_LEN])
+{
+    uint8_t random_bytes[16] = {0};
+    esp_fill_random(random_bytes, sizeof(random_bytes));
+    random_bytes[6] = (random_bytes[6] & 0x0fU) | 0x40U;
+    random_bytes[8] = (random_bytes[8] & 0x3fU) | 0x80U;
+    (void)snprintf(
+        turn_id,
+        DEVICE_PROTOCOL_TURN_ID_LEN,
+        "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+        random_bytes[0], random_bytes[1], random_bytes[2], random_bytes[3],
+        random_bytes[4], random_bytes[5], random_bytes[6], random_bytes[7],
+        random_bytes[8], random_bytes[9], random_bytes[10], random_bytes[11],
+        random_bytes[12], random_bytes[13], random_bytes[14], random_bytes[15]);
+}
+
+static uint32_t turn_elapsed_ms(int64_t started_us)
+{
+    int64_t elapsed_ms = (esp_timer_get_time() - started_us) / 1000;
+    if (elapsed_ms < 0) {
+        return 0;
+    }
+    return elapsed_ms > 300000 ? 300000U : (uint32_t)elapsed_ms;
+}
+
+static void report_turn_stage(const char *turn_id,
+                              int64_t started_us,
+                              device_voice_turn_stage_t stage)
+{
+    (void)device_transport_report_voice_turn(
+        stage, turn_id, turn_elapsed_ms(started_us), DEVICE_VOICE_FAILURE_NONE);
+}
+
+static void report_turn_failure(const char *turn_id,
+                                int64_t started_us,
+                                device_voice_turn_failure_t failure)
+{
+    (void)device_transport_report_voice_turn(
+        DEVICE_VOICE_STAGE_FAILED, turn_id, turn_elapsed_ms(started_us), failure);
+}
 
 static void show_error_then_idle(void)
 {
@@ -133,19 +177,24 @@ static esp_err_t capture_user_speech(int16_t *samples,
     return speech_started ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
-static esp_err_t run_voice_turn(const voice_detection_settings_t *settings)
+static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
+                                const char *turn_id,
+                                int64_t started_us)
 {
     device_identity_t identity = {0};
     if (!device_transport_is_wifi_connected() || device_identity_load(&identity) != ESP_OK) {
+        report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_OFFLINE);
         return ESP_ERR_INVALID_STATE;
     }
 
     int16_t *samples = heap_caps_malloc(VOICE_CAPTURE_MAX_SAMPLES * sizeof(int16_t),
                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (samples == NULL) {
+        report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_OUT_OF_MEMORY);
         return ESP_ERR_NO_MEM;
     }
     companion_hardware_set_state(COMPANION_FACE_LISTENING);
+    report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_LISTENING);
     size_t captured_samples = 0;
     uint32_t peak_energy = 0;
     esp_err_t err = capture_user_speech(samples, VOICE_CAPTURE_MAX_SAMPLES, &captured_samples,
@@ -159,15 +208,22 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings)
                      (unsigned long)settings->speech_silence_threshold);
         }
         heap_caps_free(samples);
+        report_turn_failure(
+            turn_id,
+            started_us,
+            err == ESP_ERR_NOT_FOUND ? DEVICE_VOICE_FAILURE_NO_SPEECH
+                                     : DEVICE_VOICE_FAILURE_INTERNAL_ERROR);
         return err;
     }
     ESP_LOGI(TAG, "Speech captured: samples=%lu peak_mean_energy=%lu",
              (unsigned long)captured_samples, (unsigned long)peak_energy);
+    report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_SPEECH_CAPTURED);
 
     size_t wav_capacity = AUDIO_WAV_HEADER_SIZE + captured_samples * sizeof(int16_t);
     uint8_t *wav = heap_caps_malloc(wav_capacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (wav == NULL) {
         heap_caps_free(samples);
+        report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_OUT_OF_MEMORY);
         return ESP_ERR_NO_MEM;
     }
     size_t wav_size = 0;
@@ -176,26 +232,41 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings)
     heap_caps_free(samples);
     if (err != ESP_OK) {
         heap_caps_free(wav);
+        report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_INTERNAL_ERROR);
         return err;
     }
 
     companion_hardware_set_state(COMPANION_FACE_THINKING);
+    report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_UPLOAD_STARTED);
     voice_service_buffer_t response_buffer = {0};
-    err = voice_service_send_turn(&identity, wav, wav_size, &response_buffer);
+    err = voice_service_send_turn(&identity, turn_id, wav, wav_size, &response_buffer);
     heap_caps_free(wav);
     memset(&identity, 0, sizeof(identity));
     if (err != ESP_OK) {
+        report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_UPLOAD_FAILED);
         return err;
     }
 
     voice_turn_response_t response = {0};
     if (!voice_protocol_parse_turn_response(response_buffer.data, response_buffer.size, &response)) {
         voice_service_release(&response_buffer);
+        report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_INVALID_RESPONSE);
         return ESP_ERR_INVALID_RESPONSE;
     }
     companion_hardware_set_state(COMPANION_FACE_SPEAKING);
+    report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_PLAYBACK_STARTED);
     err = companion_hardware_play_wav(response.wav, response.wav_size);
     voice_service_release(&response_buffer);
+    if (err != ESP_OK) {
+        report_turn_failure(
+            turn_id,
+            started_us,
+            err == ESP_ERR_INVALID_STATE ? DEVICE_VOICE_FAILURE_MICROPHONE_RECOVERY_FAILED
+                                         : DEVICE_VOICE_FAILURE_PLAYBACK_FAILED);
+        return err;
+    }
+    report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_PLAYBACK_COMPLETED);
+    report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_LISTENING_RESUMED);
     return err;
 }
 
@@ -400,9 +471,13 @@ static void voice_task(void *argument)
         }
 
         companion_hardware_mark_activity();
+        char turn_id[DEVICE_PROTOCOL_TURN_ID_LEN] = {0};
+        create_turn_id(turn_id);
+        int64_t turn_started_us = esp_timer_get_time();
+        report_turn_stage(turn_id, turn_started_us, DEVICE_VOICE_STAGE_WAKE_DETECTED);
         if (xSemaphoreTake(s_voice_session_mutex, portMAX_DELAY) == pdTRUE) {
             active_settings = current_detection_settings();
-            err = run_voice_turn(&active_settings);
+            err = run_voice_turn(&active_settings, turn_id, turn_started_us);
             if (err == ESP_OK) {
                 companion_hardware_set_state(COMPANION_FACE_IDLE);
             } else {

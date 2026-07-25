@@ -38,6 +38,8 @@ class VoiceTurnServiceTest {
     private LlmRuntimeClientFactory llmRuntimeClientFactory;
     @Mock
     private LlmSettingsService llmSettingsService;
+    @Mock
+    private VoiceTurnDiagnosticsService diagnosticsService;
 
     @Test
     void runsAsrLlmPersistenceAndTtsForOneDeviceConversation() {
@@ -74,6 +76,12 @@ class VoiceTurnServiceTest {
         assertThat(result.reply()).isEqualTo("好的，记得去拿外卖。");
         assertThat(result.wavAudio()).isSameAs(replyAudio);
         verify(conversationService).completeGeneration(assistantMessageId, "好的，记得去拿外卖。");
+        verify(diagnosticsService).recordServerStage(
+                eq(deviceId), any(UUID.class), eq(VoiceTurnStage.REQUEST_RECEIVED), eq(null)
+        );
+        verify(diagnosticsService).recordServerStage(
+                eq(deviceId), any(UUID.class), eq(VoiceTurnStage.TTS_COMPLETED), eq(null)
+        );
     }
 
     private VoiceTurnService service() {
@@ -82,7 +90,8 @@ class VoiceTurnServiceTest {
                 deviceVoiceConversationService,
                 conversationService,
                 llmRuntimeClientFactory,
-                llmSettingsService
+                llmSettingsService,
+                diagnosticsService
         );
     }
 }

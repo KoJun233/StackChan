@@ -330,5 +330,8 @@ extern "C" esp_err_t companion_hardware_play_wav(const uint8_t *wav, size_t wav_
     if (!microphone_restarted) {
         ESP_LOGE(TAG, "Microphone did not restart after speaker playback");
     }
-    return played && microphone_restarted ? ESP_OK : ESP_FAIL;
+    if (!microphone_restarted) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return played ? ESP_OK : ESP_FAIL;
 }

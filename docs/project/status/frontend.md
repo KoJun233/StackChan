@@ -2,13 +2,13 @@
 
 - 状态：ACTIVE
 - 最后更新：2026-07-26
-- 当前分支：`codex/custom-wake-word`
-- 基准提交：`dae6015`
-- 最后验证提交：`dae6015`
+- 当前分支：`codex/int-001-voice-turn-diagnostics`
+- 基准提交：`af65290`
+- 最后验证提交：`af65290`
 
 ## 当前目标
 
-维护设备配网、语音配置和提醒 CRUD，并在语音设置页提供按设备选择、安装和跟踪 ESP-SR 内置唤醒模型的操作界面。
+在设备总览提供可理解、隐私安全的最近语音回合时间线，同时保持设备配网、语音配置、提醒 CRUD 和 ESP-SR 内置唤醒模型界面稳定。
 
 ## 已完成
 
@@ -32,18 +32,20 @@
 - 当前任务将任意短语输入和模型上传入口替换为服务端目录驱动的 `FaSelect`；页面只提交目标设备 ID 与白名单模型名。
 - 下拉默认选择 `Hi, Stack Chan`，并包含“小峰小峰”等 13 个 ESP-SR 2.4.6 内置选项；页面明确提示实际切换会触发安全 OTA 和设备重启。
 - API 层覆盖目录查询、内置模型任务创建和任务轮询；页面继续展示 `READY`、安装、成功、失败和自动回退状态。
+- INT-001 在设备总览增加“交互诊断”入口，按设备展示最近回合状态、设备/服务端阶段、相对耗时和安全失败码。
+- 时间线明确说明不保存音频、识别文本或机器人回复；空数据、加载失败和手动刷新均有独立反馈，不影响安全停止按钮。
 
 ## 正在进行
 
-内置模型下拉已通过全量验证并部署到同一 `stackchan-foundation` LAN server；线上语音资源为 `speech-Bv0-YOqL.js`。容器重建会使既有会话失效，重新登录即可看到新版页面。
+内置模型下拉已部署到既有 `stackchan-foundation` LAN server，“小峰小峰”任务已进入 `INSTALLED`。INT-001 页面和 API 类型已重放到最新 `master` 并完成合并回归，尚未推送或部署。
 
 ## 下一步操作
 
-管理员重新登录，在语音设置页选择“小峰小峰”或其他内置词并确认任务最终进入 `INSTALLED`。
+在服务端 V14 部署后发布本任务前端，刷新管理员页面，选择“机器人设备 → 设备总览 → 交互诊断”，先确认旧固件显示空状态，再用匹配新固件验证完整时间线。
 
 ## 阻塞项
 
-没有前端代码、模型文件或生成器阻塞。首次真机切换必须由管理员主动点击，部署过程不自动创建任务。验证使用本地 Node v24.15.0，不修改仓库 engine；不得输出运行容器秘密。
+没有前端软件阻塞。真实时间线验收依赖服务端先部署 V14 和 CoreS3 后续刷入匹配固件；“小峰小峰”仍待实体声学验收。验证使用本地 Node v24.15.0，不修改仓库 engine；不得输出运行容器秘密。
 
 ## 关键文件
 
@@ -52,6 +54,8 @@
 - `apps/stackchan-console/src/utils/serialProvisioning.ts`
 - `apps/stackchan-console/src/views/settings/speech/index.vue`
 - `apps/stackchan-console/src/api/modules/wakeWords.ts`
+- `apps/stackchan-console/src/views/devices/overview/index.vue`
+- `apps/stackchan-console/src/api/modules/devices.ts`
 
 ## 验证命令与最近结果
 
@@ -69,6 +73,8 @@
 - `git diff --check` 与 `pnpm docs:check` 通过。
 - `06a67ab` 提交后 Vitest 16 个文件、45 个测试全部通过，`vue-tsc -b` 和 production build 通过；回归测试覆盖新字段加载、提交和阈值交叉校验。
 - 2026-07-21 LAN 部署后的静态资源核对确认三个新字段均已进入线上语音页面包。
+- INT-001 最终验证：Vitest 16 个文件、46 个测试通过，`vue-tsc -b` 和 production build 通过；页面测试覆盖回合时间线和隐私说明。
+- INT-001 最新 `master` 合并回归：使用满足 engine 的 Node v24.15.0，Vitest 17 个文件 50/50、`vue-tsc -b` 和 production build 全部通过；保留已记录的 Vitest close-timeout advisory。
 
 ## 相关设计、计划和决策
 
@@ -80,6 +86,7 @@
 - [0009：服务端增加阿里云百炼原生语音适配器](../decisions/0009-native-dashscope-speech-adapter.md)
 - [0011：语音协议只由显式接入方式决定](../decisions/0011-explicit-speech-access-modes.md)
 - [0012：机器人本地唤醒与录音判定参数由管理员配置](../decisions/0012-configurable-device-voice-detection.md)
+- [0013：语音回合使用隐私安全的阶段诊断](../decisions/0013-privacy-safe-voice-turn-diagnostics.md)
 - [0015：运行时生成并安全 OTA 自定义唤醒模型](../decisions/0015-runtime-wake-model-generation-and-ota.md)
 - [0016：唤醒词仅从 ESP-SR 内置模型目录选择并安全 OTA](../decisions/0016-built-in-esp-sr-wake-model-catalog.md)
 

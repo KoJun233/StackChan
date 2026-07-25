@@ -1,0 +1,15 @@
+package com.kj.stackchan.speech;
+
+public enum VoiceTurnFailureCode {
+    NO_SPEECH,
+    OFFLINE,
+    OUT_OF_MEMORY,
+    UPLOAD_FAILED,
+    INVALID_RESPONSE,
+    PLAYBACK_FAILED,
+    MICROPHONE_RECOVERY_FAILED,
+    ASR_UNAVAILABLE,
+    LLM_UNAVAILABLE,
+    TTS_UNAVAILABLE,
+    INTERNAL_ERROR
+}

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const deviceApi = vi.hoisted(() => ({
   listDevices: vi.fn(),
+  listDeviceVoiceTurns: vi.fn(),
   stopDeviceMotion: vi.fn(),
 }))
 
@@ -28,6 +29,7 @@ vi.mock('@fantastic-admin/components', () => {
       },
     }),
     FaCard: passthrough,
+    FaEmpty: passthrough,
     FaPageMain: passthrough,
     FaTable: defineComponent({
       props: { data: { type: Array, default: () => [] } },
@@ -83,5 +85,42 @@ describe('device overview command availability', () => {
     const connectedButton = container.querySelector<HTMLButtonElement>('[data-device-id="connected"] button')
     expect(heartbeatOnlyButton?.disabled).toBe(true)
     expect(connectedButton?.disabled).toBe(false)
+  })
+
+  it('shows a privacy-safe recent voice turn timeline', async () => {
+    deviceApi.listDevices.mockResolvedValue([{
+      id: 'connected',
+      displayName: 'Connected',
+      firmwareVersion: '1.0.0',
+      safetyState: 'motion_disabled',
+      lastSeenAt: '2026-07-18T12:00:00Z',
+      online: true,
+      commandAvailable: true,
+    }])
+    deviceApi.listDeviceVoiceTurns.mockResolvedValue([{
+      turnId: '550e8400-e29b-41d4-a716-446655440000',
+      status: 'COMPLETED',
+      failureCode: null,
+      startedAt: '2026-07-18T12:00:00Z',
+      updatedAt: '2026-07-18T12:00:02Z',
+      events: [{
+        stage: 'LISTENING_RESUMED',
+        source: 'DEVICE',
+        occurredAt: '2026-07-18T12:00:02Z',
+        elapsedMs: 2000,
+        failureCode: null,
+      }],
+    }])
+    const container = document.createElement('div')
+    document.body.append(container)
+
+    createApp(DeviceOverview).mount(container)
+    await vi.waitFor(() => expect(container.querySelectorAll('[data-device-id]')).toHaveLength(1))
+    const buttons = container.querySelectorAll<HTMLButtonElement>('[data-device-id="connected"] button')
+    buttons[1].click()
+
+    await vi.waitFor(() => expect(deviceApi.listDeviceVoiceTurns).toHaveBeenCalledWith('connected'))
+    await vi.waitFor(() => expect(container.querySelector('[data-turn-id]')?.textContent).toContain('恢复待唤醒'))
+    expect(container.textContent).toContain('不保存音频、识别文本或机器人回复')
   })
 })

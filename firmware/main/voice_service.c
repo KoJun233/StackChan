@@ -73,6 +73,7 @@ static esp_err_t perform_request(const device_identity_t *identity,
                                  size_t request_size,
                                  const char *content_type,
                                  const char *accept,
+                                 const char *turn_id,
                                  voice_service_buffer_t *output)
 {
     if (!device_identity_is_valid(identity) || url == NULL || accept == NULL || output == NULL ||
@@ -106,6 +107,9 @@ static esp_err_t perform_request(const device_identity_t *identity,
     if (err == ESP_OK && content_type != NULL) {
         err = esp_http_client_set_header(client, "Content-Type", content_type);
     }
+    if (err == ESP_OK && turn_id != NULL) {
+        err = esp_http_client_set_header(client, "X-StackChan-Turn-Id", turn_id);
+    }
     if (err == ESP_OK) {
         err = esp_http_client_set_method(client, method);
     }
@@ -133,19 +137,21 @@ static esp_err_t perform_request(const device_identity_t *identity,
 }
 
 esp_err_t voice_service_send_turn(const device_identity_t *identity,
+                                  const char *turn_id,
                                   const uint8_t *wav,
                                   size_t wav_size,
                                   voice_service_buffer_t *response)
 {
     char url[DEVICE_IDENTITY_SERVER_BASE_URL_MAX_LEN + 64] = {0};
-    if (identity == NULL || !device_endpoint_build_http_url(identity->server_base_url,
+    if (identity == NULL || turn_id == NULL || strlen(turn_id) != 36 ||
+        !device_endpoint_build_http_url(identity->server_base_url,
                                                              DEVICE_ENDPOINT_VOICE_TURN_PATH,
                                                              url,
                                                              sizeof(url))) {
         return ESP_ERR_INVALID_ARG;
     }
     esp_err_t err = perform_request(identity, url, HTTP_METHOD_POST, wav, wav_size, "audio/wav",
-                                    "application/vnd.stackchan.voice-turn", response);
+                                    "application/vnd.stackchan.voice-turn", turn_id, response);
     memset(url, 0, sizeof(url));
     return err;
 }
@@ -161,7 +167,7 @@ esp_err_t voice_service_fetch_reminder(const device_identity_t *identity,
                                                                        sizeof(url))) {
         return ESP_ERR_INVALID_ARG;
     }
-    esp_err_t err = perform_request(identity, url, HTTP_METHOD_GET, NULL, 0, NULL, "audio/wav", response);
+    esp_err_t err = perform_request(identity, url, HTTP_METHOD_GET, NULL, 0, NULL, "audio/wav", NULL, response);
     memset(url, 0, sizeof(url));
     return err;
 }

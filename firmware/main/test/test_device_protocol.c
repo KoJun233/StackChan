@@ -712,6 +712,85 @@ TEST_CASE("command acknowledgement preserves the playback result boolean", "[dev
     cJSON_Delete(root);
 }
 
+TEST_CASE("voice turn diagnostics expose only bounded stage metadata", "[device_protocol]")
+{
+    char payload[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
+    const char *turn_id = "550e8400-e29b-41d4-a716-446655440000";
+
+    TEST_ASSERT_EQUAL(
+        ESP_OK,
+        device_protocol_encode_voice_turn_stage(
+            payload,
+            sizeof(payload),
+            10,
+            turn_id,
+            DEVICE_VOICE_STAGE_LISTENING,
+            120,
+            DEVICE_VOICE_FAILURE_NONE));
+    cJSON *root = cJSON_Parse(payload);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_EQUAL_UINT(5, cJSON_GetArraySize(root));
+    TEST_ASSERT_EQUAL_STRING("voice_turn_stage", cJSON_GetObjectItemCaseSensitive(root, "type")->valuestring);
+    TEST_ASSERT_EQUAL_STRING(turn_id, cJSON_GetObjectItemCaseSensitive(root, "turn_id")->valuestring);
+    TEST_ASSERT_EQUAL_STRING("LISTENING", cJSON_GetObjectItemCaseSensitive(root, "stage")->valuestring);
+    TEST_ASSERT_EQUAL_INT(120, cJSON_GetObjectItemCaseSensitive(root, "elapsed_ms")->valueint);
+    TEST_ASSERT_NULL(cJSON_GetObjectItemCaseSensitive(root, "failure_code"));
+    cJSON_Delete(root);
+
+    TEST_ASSERT_EQUAL(
+        ESP_OK,
+        device_protocol_encode_voice_turn_stage(
+            payload,
+            sizeof(payload),
+            11,
+            turn_id,
+            DEVICE_VOICE_STAGE_FAILED,
+            250,
+            DEVICE_VOICE_FAILURE_NO_SPEECH));
+    root = cJSON_Parse(payload);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_EQUAL_UINT(6, cJSON_GetArraySize(root));
+    TEST_ASSERT_EQUAL_STRING("NO_SPEECH", cJSON_GetObjectItemCaseSensitive(root, "failure_code")->valuestring);
+    cJSON_Delete(root);
+}
+
+TEST_CASE("voice turn diagnostics reject mismatched failures and invalid identifiers", "[device_protocol]")
+{
+    char payload[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
+    const char *turn_id = "550e8400-e29b-41d4-a716-446655440000";
+
+    TEST_ASSERT_EQUAL(
+        ESP_ERR_INVALID_ARG,
+        device_protocol_encode_voice_turn_stage(
+            payload,
+            sizeof(payload),
+            12,
+            turn_id,
+            DEVICE_VOICE_STAGE_LISTENING,
+            20,
+            DEVICE_VOICE_FAILURE_NO_SPEECH));
+    TEST_ASSERT_EQUAL(
+        ESP_ERR_INVALID_ARG,
+        device_protocol_encode_voice_turn_stage(
+            payload,
+            sizeof(payload),
+            12,
+            "not-a-turn-id",
+            DEVICE_VOICE_STAGE_FAILED,
+            20,
+            DEVICE_VOICE_FAILURE_INTERNAL_ERROR));
+    TEST_ASSERT_EQUAL(
+        ESP_ERR_INVALID_ARG,
+        device_protocol_encode_voice_turn_stage(
+            payload,
+            sizeof(payload),
+            12,
+            turn_id,
+            DEVICE_VOICE_STAGE_FAILED,
+            300001,
+            DEVICE_VOICE_FAILURE_INTERNAL_ERROR));
+}
+
 TEST_CASE("SCV1 frame exposes strict metadata and validated WAV audio", "[voice_protocol]")
 {
     int16_t samples[] = {0, 100, -100, 0};

@@ -41,6 +41,7 @@
 #define WIFI_RECONNECT_MAX_SECONDS 60
 #define WEBSOCKET_TEXT_OPCODE 0x1
 #define REMINDER_QUEUE_LENGTH 20
+#define VOICE_TURN_EVENT_QUEUE_LENGTH 16
 
 typedef struct {
     char command_id[DEVICE_PROTOCOL_COMMAND_ID_MAX_LEN];
@@ -51,6 +52,13 @@ typedef struct {
     char command_id[DEVICE_PROTOCOL_COMMAND_ID_MAX_LEN];
     wake_model_ota_request_t request;
 } wake_model_command_t;
+
+typedef struct {
+    char turn_id[DEVICE_PROTOCOL_TURN_ID_LEN];
+    device_voice_turn_stage_t stage;
+    uint32_t elapsed_ms;
+    device_voice_turn_failure_t failure;
+} voice_turn_event_t;
 
 typedef struct {
     esp_websocket_client_handle_t client;
@@ -67,6 +75,7 @@ typedef struct {
 
 static const char *TAG = "device_transport";
 static EventGroupHandle_t s_transport_events;
+static QueueHandle_t s_voice_turn_event_queue;
 static esp_netif_t *s_wifi_sta_netif;
 static bool s_netif_initialized_by_transport;
 static bool s_event_loop_created_by_transport;
@@ -83,6 +92,23 @@ static portMUX_TYPE s_wifi_retry_lock = portMUX_INITIALIZER_UNLOCKED;
 
 static void reset_wifi_reconnect_state(void);
 static void schedule_wifi_reconnect(bool immediate);
+
+bool device_transport_report_voice_turn(device_voice_turn_stage_t stage,
+                                        const char *turn_id,
+                                        uint32_t elapsed_ms,
+                                        device_voice_turn_failure_t failure)
+{
+    if (s_voice_turn_event_queue == NULL || turn_id == NULL || strlen(turn_id) != 36) {
+        return false;
+    }
+    voice_turn_event_t event = {
+        .stage = stage,
+        .elapsed_ms = elapsed_ms,
+        .failure = failure,
+    };
+    memcpy(event.turn_id, turn_id, sizeof(event.turn_id) - 1);
+    return xQueueSend(s_voice_turn_event_queue, &event, 0) == pdTRUE;
+}
 
 uint32_t device_transport_next_retry_seconds(uint32_t current_seconds)
 {
@@ -572,6 +598,24 @@ static bool run_websocket_connection(const device_identity_t *identity)
             bool accepted = voice_control_play_reminder(identity, reminder.reminder_id) == ESP_OK;
             send_command_ack(&connection, reminder.command_id, accepted);
         }
+        voice_turn_event_t voice_turn_event = {0};
+        if (connection.connected &&
+            xQueueReceive(s_voice_turn_event_queue, &voice_turn_event, 0) == pdTRUE) {
+            char payload[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
+            uint32_t sequence = connection_next_sequence(&connection);
+            if (sequence == 0 ||
+                device_protocol_encode_voice_turn_stage(
+                    payload,
+                    sizeof(payload),
+                    sequence,
+                    voice_turn_event.turn_id,
+                    voice_turn_event.stage,
+                    voice_turn_event.elapsed_ms,
+                    voice_turn_event.failure) != ESP_OK ||
+                !connection_send_text(&connection, payload)) {
+                ESP_LOGW(TAG, "Voice turn diagnostic event was dropped safely");
+            }
+        }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 
@@ -656,7 +700,16 @@ esp_err_t device_transport_start(void)
         return ESP_ERR_INVALID_STATE;
     }
     s_transport_events = xEventGroupCreate();
-    if (s_transport_events == NULL) {
+    s_voice_turn_event_queue = xQueueCreate(VOICE_TURN_EVENT_QUEUE_LENGTH, sizeof(voice_turn_event_t));
+    if (s_transport_events == NULL || s_voice_turn_event_queue == NULL) {
+        if (s_transport_events != NULL) {
+            vEventGroupDelete(s_transport_events);
+            s_transport_events = NULL;
+        }
+        if (s_voice_turn_event_queue != NULL) {
+            vQueueDelete(s_voice_turn_event_queue);
+            s_voice_turn_event_queue = NULL;
+        }
         return ESP_ERR_NO_MEM;
     }
 
@@ -665,6 +718,8 @@ esp_err_t device_transport_start(void)
         cleanup_wifi_monitor();
         vEventGroupDelete(s_transport_events);
         s_transport_events = NULL;
+        vQueueDelete(s_voice_turn_event_queue);
+        s_voice_turn_event_queue = NULL;
         return wifi_err;
     }
     BaseType_t created = xTaskCreate(transport_task, "device_transport", TRANSPORT_TASK_STACK_SIZE, NULL,
@@ -675,5 +730,7 @@ esp_err_t device_transport_start(void)
     cleanup_wifi_monitor();
     vEventGroupDelete(s_transport_events);
     s_transport_events = NULL;
+    vQueueDelete(s_voice_turn_event_queue);
+    s_voice_turn_event_queue = NULL;
     return ESP_ERR_NO_MEM;
 }

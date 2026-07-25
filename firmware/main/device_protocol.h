@@ -13,6 +13,7 @@
 #define DEVICE_PROTOCOL_WAKE_MODEL_NAME_MAX_LEN 32
 #define DEVICE_PROTOCOL_SHA256_MAX_LEN 65
 #define DEVICE_PROTOCOL_WAKE_MODEL_MAX_SIZE (1024 * 1024)
+#define DEVICE_PROTOCOL_TURN_ID_LEN 37
 #define DEVICE_PROTOCOL_SPEECH_START_THRESHOLD_MIN 100
 #define DEVICE_PROTOCOL_SPEECH_START_THRESHOLD_MAX 5000
 #define DEVICE_PROTOCOL_SPEECH_SILENCE_THRESHOLD_MIN 50
@@ -30,6 +31,29 @@ typedef enum {
     DEVICE_COMMAND_CONFIGURE_VOICE_DETECTION,
     DEVICE_COMMAND_INSTALL_WAKE_MODEL,
 } device_command_type_t;
+
+typedef enum {
+    DEVICE_VOICE_STAGE_WAKE_DETECTED = 0,
+    DEVICE_VOICE_STAGE_LISTENING,
+    DEVICE_VOICE_STAGE_SPEECH_CAPTURED,
+    DEVICE_VOICE_STAGE_UPLOAD_STARTED,
+    DEVICE_VOICE_STAGE_PLAYBACK_STARTED,
+    DEVICE_VOICE_STAGE_PLAYBACK_COMPLETED,
+    DEVICE_VOICE_STAGE_LISTENING_RESUMED,
+    DEVICE_VOICE_STAGE_FAILED,
+} device_voice_turn_stage_t;
+
+typedef enum {
+    DEVICE_VOICE_FAILURE_NONE = 0,
+    DEVICE_VOICE_FAILURE_NO_SPEECH,
+    DEVICE_VOICE_FAILURE_OFFLINE,
+    DEVICE_VOICE_FAILURE_OUT_OF_MEMORY,
+    DEVICE_VOICE_FAILURE_UPLOAD_FAILED,
+    DEVICE_VOICE_FAILURE_INVALID_RESPONSE,
+    DEVICE_VOICE_FAILURE_PLAYBACK_FAILED,
+    DEVICE_VOICE_FAILURE_MICROPHONE_RECOVERY_FAILED,
+    DEVICE_VOICE_FAILURE_INTERNAL_ERROR,
+} device_voice_turn_failure_t;
 
 typedef struct {
     device_command_type_t type;
@@ -73,3 +97,11 @@ esp_err_t device_protocol_encode_wake_model_status(char *output,
                                                    const char *status,
                                                    const char *model_name,
                                                    const char *sha256);
+
+esp_err_t device_protocol_encode_voice_turn_stage(char *output,
+                                                  size_t output_size,
+                                                  uint32_t sequence,
+                                                  const char *turn_id,
+                                                  device_voice_turn_stage_t stage,
+                                                  uint32_t elapsed_ms,
+                                                  device_voice_turn_failure_t failure);

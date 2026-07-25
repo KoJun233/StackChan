@@ -2,11 +2,11 @@
 
 - 状态：ACTIVE
 - 最后更新：2026-07-26
-- 当前分支：`codex/custom-wake-word`
-- 实现基准：`dae6015`
-- 最后验证提交：`dae6015`
-- 当前验证范围：ESP-SR 内置唤醒词目录、可信服务端打包、安全模型 OTA、健康确认、自动回退，以及当前 LAN server 部署。
-- 当前优先级：P1 内置唤醒词下拉、LAN server 部署和“小峰小峰”首次真机 OTA 闭环已完成；下一步由用户进行实体唤醒验收。
+- 当前分支：`codex/int-001-voice-turn-diagnostics`
+- 实现基准：`af65290`
+- 最后验证提交：`af65290`
+- 当前验证范围：最新 `master` 上的 ESP-SR 内置唤醒模型能力，以及 INT-001 隐私安全语音回合诊断的服务端、前端、固件和协议变更。
+- 当前优先级：P1 推送已完成合并回归的 INT-001 单提交任务分支；随后由用户创建 PR，按服务端 V14、管理端、固件顺序发布并完成实体时间线验收。
 - 当前部署：LAN HTTP development mode。
 - 生产边界：HTTPS-only。
 
@@ -14,14 +14,16 @@
 
 | 工作流 | 状态 | 状态文件 | 当前分支 | 下一步 |
 | --- | --- | --- | --- | --- |
-| 服务端 | STABLE | [server.md](server.md) | `codex/custom-wake-word` | 已部署 V13；“小峰小峰”任务已进入 `INSTALLED`。 |
-| 前端 | STABLE | [frontend.md](frontend.md) | `codex/custom-wake-word` | 已部署下拉界面；重新登录后可选择“小峰小峰”等词。 |
-| 固件 | STABLE | [firmware.md](firmware.md) | `codex/custom-wake-word` | `0398073` 已安装“小峰小峰”；等待实体唤醒验收。 |
-| 部署 | STABLE | [deployment.md](deployment.md) | `codex/custom-wake-word` | LAN overlay 与设备连接已恢复；保留本地 V12 回退镜像。 |
+| 服务端 | ACTIVE | [server.md](server.md) | `codex/int-001-voice-turn-diagnostics` | 合并回归后推送；获批合并后先部署 V14。 |
+| 前端 | ACTIVE | [frontend.md](frontend.md) | `codex/int-001-voice-turn-diagnostics` | 服务端 V14 部署后发布最近语音回合时间线。 |
+| 固件 | ACTIVE | [firmware.md](firmware.md) | `codex/int-001-voice-turn-diagnostics` | 用户明确确认设备、串口、profile 和提交后再刷写验收。 |
+| 部署 | STABLE | [deployment.md](deployment.md) | `codex/int-001-voice-turn-diagnostics` | 保持当前 Flyway V13 LAN server 在线；本任务未部署。 |
 
 唤醒词入口现改为“选择 ESP-SR 2.4.6 内置短语、服务端从锁定目录可信打包、设备双槽 OTA、重启健康确认、失败自动回退”。任意文本生成、第三方生成器和模型包上传均已从最终代码与页面移除；V12 只保留为已部署迁移历史，V13 清理临时字段。下拉包含“Hi, Stack Chan”“小峰小峰”等 13 项。CoreS3 的 `0398073` 镜像已链接 WakeNet9/WakeNet9l/WakeNet9s 并完成三槽引导，因此无需重刷固件。管理员选择“小峰小峰”后，任务已完成 `READY -> INSTALLING -> INSTALLED`。
 
 当前内置目录版本已部署到既有 `stackchan-foundation` LAN HTTP 服务：健康和网页根地址均为 200，Flyway `13|true`，容器包含 13 组模型，CoreS3 心跳保持 `0398073` / `motion_disabled`。一次误用基础 Compose 导致端口暂时只监听 `127.0.0.1`，恢复正式 `compose.lan.yaml` 覆盖层后设备自动重连并完成“小峰小峰”安装。部署前保留了 `stackchan-foundation-server:rollback-upload-v12` 本地回退镜像。
+
+INT-001 软件实现已完成：同一回合 ID 关联设备唤醒、录音、上传、服务端 ASR/LLM/TTS、播放和麦克风恢复；PostgreSQL 只保存 7 天结构化元数据，设备总览展示最近时间线。旧固件仍可省略回合 ID，SCV1 正文不变。当前没有部署、刷写、凭据或 Compose 模式变更。
 
 ## 架构决策
 
@@ -57,6 +59,9 @@
 - `e33a0d4` 接受在首个轮询 tick 内已经完成的麦克风短帧；协议测试、默认 HTTPS、LAN HTTP、测试证书 HTTPS Quad 镜像分别为 `0x37880`、`0x150f20`、`0x13fde0`、`0x1402f0`，两项固件栈预算通过。测试证书使用 ESP-IDF 公开样例，构建后已删除且未创建或保留私钥。
 - `e33a0d4` 的正确 Quad LAN HTTP 完整镜像已刷入 COM3，bootloader、应用、分区表、OTA data 和 WakeNet 模型分区全部通过哈希校验；数据库在 2026-07-21 22:49:25（Asia/Shanghai）收到 `e33a0d4` / `motion_disabled` 心跳。
 - `e33a0d4` 上板监听共 300 秒未出现 `ESP_ERR_TIMEOUT`、任务看门狗或崩溃；首次 180 秒窗口命中两次唤醒并两次恢复监听。一次因 Wi-Fi 尚未连接返回 `ESP_ERR_INVALID_STATE`，另一次峰值能量 `313` 低于开始阈值 `350` 并安全返回 `ESP_ERR_NOT_FOUND`；后续 120 秒窗口无新唤醒命中。
+- INT-001 原始基线验证通过：Maven 189/189 且当时的 Flyway V11 成功应用；前端 Vitest 46/46、`vue-tsc` 和 production build 通过；ESP-IDF 5.3.3 协议测试 profile 构建为 `0x37880`、余量 93%；两项固件栈预算、`pnpm docs:check`、文档校验测试、`git diff --check` 和 LAN Compose 静态验证通过。重放到最新 `master` 后诊断迁移已顺延为 V14，合并回归结果见本任务后续记录。
+- INT-001 最新 `master` 合并回归通过：服务端 `mvn clean test` 205/205、Testcontainers PostgreSQL 14 个迁移到 V14；前端 Node v24.15.0 下 Vitest 50/50、`vue-tsc -b` 和 production build；ESP-IDF 5.3.3 协议 profile `0x37880`、余量 93%；两项固件栈预算、唤醒模型包回归、文档检查与 7 项文档测试、LAN Compose 静态验证和 `git diff --check` 均通过。未部署、未连接设备、未刷写固件。
+- INT-001 验证只生成临时构建产物并使用进程内占位值；未连接 COM3、未刷写固件、未重建服务、未更改数据库、凭据、部署模式或远程状态。
 - `b4876fb` 的协议测试、默认 HTTPS、LAN HTTP 和测试证书 HTTPS 四个 Quad profile 均从干净工作树构建并嵌入 `b4876fb`，镜像大小分别为 `0x37880`、`0x1506a0`、`0x13f570` 和 `0x13f9f0`，应用分区余量分别为 93%、56%、58% 和 58%。测试证书使用 ESP-IDF 公开样例，构建后已删除且未创建或保留私钥。
 - `b4876fb` 的 LAN HTTP 完整镜像已刷入 COM3，五个分区全部通过写入哈希校验；启动确认版本 `b4876fb`、8 MB Quad PSRAM、加密 NVS、CoreS3 外设、WakeNet 和 `motion_disabled`。2026-07-20 22:38（Asia/Shanghai）USB 配置写入后数据库恢复持续心跳，服务地址错配阻塞已解除。
 - 2026-07-20 22:36（Asia/Shanghai）在线提醒在一次尝试后收到设备成功播放 ACK 并变为 `DELIVERED`；实体扬声器是否清晰出声仍待用户听觉确认。
@@ -95,9 +100,11 @@
 
 - 软件链路和设备三槽引导已验证；内置模型文件已随锁定组件存在，不再依赖用户上传或外部生成器。首次实际模型切换会重启设备，必须由管理员主动选择后触发。
 - CoreS3 已具备 `model_a` / `model_b` 分区；后续更换兼容唤醒模型无需再刷整套固件。
-- 既有语音回复、屏保视觉和离线提醒补发验收仍保留；本任务不改变后台检测参数、服务端协议或现有部署。
+- INT-001 没有软件阻塞。发布必须保持服务端 V14 → 管理端 → 固件顺序；实体诊断验收依赖用户明确确认 CoreS3、`COM3`、LAN HTTP profile 和提交后再刷写，并实际完成成功与失败语音回合。
+- 屏保视觉和离线提醒补发仍是既有待验收项，不在 INT-001 中扩展。
+- “小峰小峰”OTA 已完成，但实体声学命中仍待用户验收。
 - 部署工作依赖维持 LAN HTTP development mode 与 HTTPS-only 生产边界，且不得组合 `compose.lan.yaml` 和 `compose.production.yaml`。
 
 ## 下一步
 
-完成全量测试、Flyway V13 和 LAN server 部署核对；随后由管理员从网页选择一个非当前内置词，确认 `READY -> INSTALLING -> INSTALLED`。后续变更只通过单提交 PR 进入 `master`，生产继续保持 HTTPS-only。
+完成最新 `master` 上的全量回归并推送 INT-001 单提交任务分支；随后由用户创建、审核并合并 PR。合并后只重建既有 LAN server 并确认健康接口 200、Flyway V14，再发布管理端。最后由用户明确确认设备、`COM3`、LAN HTTP development profile 和提交后刷写匹配 Quad 固件，完成一次成功回合与一次无语音失败回合，核对时间线后再继续 INT-002。生产继续保持 HTTPS-only。
