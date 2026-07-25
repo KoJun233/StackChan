@@ -35,12 +35,21 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     private static final Set<String> COMMAND_ACK_FIELDS = Set.of(
             "type", "sequence", "command_id", "accepted"
     );
+    private static final Set<String> WAKE_MODEL_STATUS_FIELDS = Set.of(
+            "type", "sequence", "job_id", "status", "model_name", "sha256"
+    );
+    private static final Pattern WAKE_MODEL_NAME_PATTERN = Pattern.compile("[a-z0-9_]{1,31}");
+    private static final Pattern SHA256_PATTERN = Pattern.compile("[a-f0-9]{64}");
+    private static final Pattern UUID_PATTERN = Pattern.compile(
+            "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    );
 
     private final DeviceConnectionRegistry connectionRegistry;
     private final DeviceEventService deviceEventService;
     private final DeviceCommandAcknowledgementService acknowledgementService;
     private final ObjectMapper objectMapper;
     private final DeviceVoiceSettingsCoordinator voiceSettingsCoordinator;
+    private final DeviceWakeModelStatusService wakeModelStatusService;
 
     @Autowired
     public DeviceWebSocketHandler(
@@ -48,13 +57,15 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             DeviceEventService deviceEventService,
             DeviceCommandAcknowledgementService acknowledgementService,
             ObjectMapper objectMapper,
-            DeviceVoiceSettingsCoordinator voiceSettingsCoordinator
+            DeviceVoiceSettingsCoordinator voiceSettingsCoordinator,
+            DeviceWakeModelStatusService wakeModelStatusService
     ) {
         this.connectionRegistry = connectionRegistry;
         this.deviceEventService = deviceEventService;
         this.acknowledgementService = acknowledgementService;
         this.objectMapper = objectMapper;
         this.voiceSettingsCoordinator = voiceSettingsCoordinator;
+        this.wakeModelStatusService = wakeModelStatusService;
     }
 
     DeviceWebSocketHandler(
@@ -62,7 +73,14 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             DeviceEventService deviceEventService,
             ObjectMapper objectMapper
     ) {
-        this(connectionRegistry, deviceEventService, (deviceId, commandId, accepted) -> { }, objectMapper, null);
+        this(
+                connectionRegistry,
+                deviceEventService,
+                (deviceId, commandId, accepted) -> { },
+                objectMapper,
+                null,
+                (deviceId, jobId, status, modelName, sha256) -> { }
+        );
     }
 
     DeviceWebSocketHandler(
@@ -71,7 +89,14 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             DeviceCommandAcknowledgementService acknowledgementService,
             ObjectMapper objectMapper
     ) {
-        this(connectionRegistry, deviceEventService, acknowledgementService, objectMapper, null);
+        this(
+                connectionRegistry,
+                deviceEventService,
+                acknowledgementService,
+                objectMapper,
+                null,
+                (deviceId, jobId, status, modelName, sha256) -> { }
+        );
     }
 
     @Override
@@ -128,6 +153,16 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             deviceEventService.recordHeartbeat(deviceId, heartbeat.safetyState(), heartbeat.firmwareVersion());
             return;
         }
+        if (event instanceof WakeModelStatusEvent modelStatus) {
+            wakeModelStatusService.record(
+                    deviceId,
+                    modelStatus.jobId(),
+                    modelStatus.status(),
+                    modelStatus.modelName(),
+                    modelStatus.sha256()
+            );
+            return;
+        }
         CommandAcknowledgementEvent acknowledgement = (CommandAcknowledgementEvent) event;
         logger.debug(
                 "Device {} acknowledged command {} with accepted={}",
@@ -148,6 +183,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             return switch (type) {
                 case "heartbeat" -> parseHeartbeat(root);
                 case "command_ack" -> parseCommandAcknowledgement(root);
+                case "wake_model_status" -> parseWakeModelStatus(root);
                 default -> throw new InvalidDeviceEventException();
             };
         } catch (IOException exception) {
@@ -185,6 +221,22 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             throw new InvalidDeviceEventException();
         }
         return new CommandAcknowledgementEvent(sequence, commandId, accepted.booleanValue());
+    }
+
+    private WakeModelStatusEvent parseWakeModelStatus(JsonNode root) {
+        requireOnlyFields(root, WAKE_MODEL_STATUS_FIELDS);
+        long sequence = requiredPositiveSequence(root);
+        String jobId = requiredText(root, "job_id");
+        String status = requiredText(root, "status");
+        String modelName = requiredText(root, "model_name");
+        String sha256 = requiredText(root, "sha256");
+        if (!UUID_PATTERN.matcher(jobId).matches() ||
+                !("INSTALLED".equals(status) || "ROLLED_BACK".equals(status)) ||
+                !WAKE_MODEL_NAME_PATTERN.matcher(modelName).matches() ||
+                !SHA256_PATTERN.matcher(sha256).matches()) {
+            throw new InvalidDeviceEventException();
+        }
+        return new WakeModelStatusEvent(sequence, UUID.fromString(jobId), status, modelName, sha256);
     }
 
     private long requiredPositiveSequence(JsonNode root) {
@@ -243,7 +295,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         return deviceId instanceof UUID authenticatedDeviceId ? authenticatedDeviceId : null;
     }
 
-    private sealed interface DeviceInboundEvent permits HeartbeatEvent, CommandAcknowledgementEvent {
+    private sealed interface DeviceInboundEvent permits HeartbeatEvent, CommandAcknowledgementEvent, WakeModelStatusEvent {
 
         long sequence();
     }
@@ -260,6 +312,15 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
 
     private record CommandAcknowledgementEvent(long sequence, String commandId, boolean accepted)
             implements DeviceInboundEvent {
+    }
+
+    private record WakeModelStatusEvent(
+            long sequence,
+            UUID jobId,
+            String status,
+            String modelName,
+            String sha256
+    ) implements DeviceInboundEvent {
     }
 
     private static final class InvalidDeviceEventException extends RuntimeException {

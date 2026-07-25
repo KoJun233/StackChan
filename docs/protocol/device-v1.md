@@ -32,6 +32,8 @@ Devices may acknowledge a received command with:
 
 `command_id` is nonblank and `accepted` is boolean. An acknowledgement is never treated as an actuator command. For `speak_reminder`, `accepted=true` means the device downloaded and completed playback, while `accepted=false` means download or playback failed. The server uses that result to mark the durable reminder `DELIVERED` or `FAILED`. For `configure_voice_detection`, the acknowledgement only reports whether the bounded local settings were accepted; it does not change reminder state.
 
+For `install_wake_model`, `accepted=true` means the device downloaded the fixed same-origin artifact, verified its size, SHA-256 and ESP-SR structure, and persisted a pending model slot before restarting. It does not mean the new WakeNet listener is healthy; final health is reported separately after restart. `accepted=false` means the model was not selected for boot.
+
 ## Device-authenticated voice HTTP
 
 The device uploads one bounded WAV only after the local `Hi, Stack Chan` WakeNet model detects the wake phrase:
@@ -76,6 +78,30 @@ The local wake and recording configuration command is:
 
 The schema is strict. `wake_sensitivity` is exactly `NORMAL` or `SENSITIVE`. `speech_start_threshold` is an integer from 100 through 5000, `speech_silence_threshold` is an integer from 50 through 4000, and the silence threshold must be lower than the start threshold. The server sends the current values after an administrator saves speech settings and whenever a device establishes a new authenticated connection. Firmware applies the values locally and never receives a provider key or administrator credential.
 
+The safe wake-model installation command is:
+
+```json
+{"type":"install_wake_model","command_id":"cmd-model","job_id":"111e8400-e29b-41d4-a716-446655440000","model_name":"wn9l_stackchan_custom","sha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","artifact_size":585211}
+```
+
+The schema is strict. `job_id` is a canonical UUID, `model_name` is 1 through 31 lowercase ASCII letters, digits or underscores, `sha256` is exactly 64 lowercase hexadecimal characters, and `artifact_size` is 1 through 1048576. A URL or any extra field is rejected. The device derives this fixed same-origin path and authenticates with its existing device Bearer token:
+
+```http
+GET /api/v1/device/wake-models/111e8400-e29b-41d4-a716-446655440000/artifact
+Authorization: Bearer <device-token>
+Accept: application/vnd.stackchan.wake-model
+```
+
+The server returns an artifact only while the authenticated device owns the matching `READY` or `INSTALLING` task. Responses use `Cache-Control: no-store`. The device alternates between `model_a` and `model_b`; the factory `model` partition is never an OTA target.
+
+After boot-time WakeNet health confirmation or automatic rollback, the device sends:
+
+```json
+{"type":"wake_model_status","sequence":3,"job_id":"111e8400-e29b-41d4-a716-446655440000","status":"INSTALLED","model_name":"wn9l_stackchan_custom","sha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+```
+
+`status` is exactly `INSTALLED` or `ROLLED_BACK`. The event is persisted on the device and sent once on every WebSocket reconnect, so the server must handle repeats idempotently. It never enables motion.
+
 The schema is strict: no URL or extra field is accepted, and `reminder_id` must be a canonical UUID. The device derives the fixed same-origin path below from its provisioned server origin and sends the same device Bearer token:
 
 ```http
@@ -86,4 +112,4 @@ Accept: audio/wav
 
 The server returns audio only when the reminder belongs to the authenticated device and is currently `DISPATCHED`. Offline reminders remain `PENDING`; after the device reconnects, the scheduler synthesizes the WAV and sends `speak_reminder` to the live authenticated session. A dispatch left unacknowledged for more than five minutes is recovered to `PENDING`.
 
-The server sends `stop_motion` only to a currently live, authenticated session and creates no offline motion-command queue. Voice-detection configuration is persisted centrally and resent on reconnect rather than queued as an actuator command. No inbound event, acknowledgement, voice turn, reminder, or voice-detection configuration can enable motion or request an actuator action.
+The server sends `stop_motion` only to a currently live, authenticated session and creates no offline motion-command queue. Voice-detection configuration is persisted centrally and resent on reconnect rather than queued as an actuator command. No inbound event, acknowledgement, voice turn, reminder, voice-detection configuration, or wake-model operation can enable motion or request an actuator action.

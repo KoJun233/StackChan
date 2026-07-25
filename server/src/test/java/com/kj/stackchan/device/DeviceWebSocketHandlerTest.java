@@ -27,12 +27,15 @@ class DeviceWebSocketHandlerTest {
             mock(DeviceCommandAcknowledgementService.class);
     private final DeviceVoiceSettingsCoordinator voiceSettingsCoordinator =
             mock(DeviceVoiceSettingsCoordinator.class);
+    private final DeviceWakeModelStatusService wakeModelStatusService =
+            mock(DeviceWakeModelStatusService.class);
     private final DeviceWebSocketHandler handler = new DeviceWebSocketHandler(
             connectionRegistry,
             deviceEventService,
             acknowledgementService,
             new ObjectMapper(),
-            voiceSettingsCoordinator
+            voiceSettingsCoordinator,
+            wakeModelStatusService
     );
 
     @Test
@@ -99,6 +102,40 @@ class DeviceWebSocketHandlerTest {
 
         verify(acknowledgementService).record(DEVICE_ID, "cmd-123", true);
         verifyNoInteractions(deviceEventService);
+    }
+
+    @Test
+    void forwardsValidatedWakeModelStatusForTheAuthenticatedDevice() throws Exception {
+        WebSocketSession session = authenticatedSession();
+        handler.afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"wake_model_status","sequence":9,"job_id":"550e8400-e29b-41d4-a716-446655440000","status":"INSTALLED","model_name":"wn9l_stackchan_custom","sha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+                """));
+
+        verify(wakeModelStatusService).record(
+                DEVICE_ID,
+                UUID.fromString("550e8400-e29b-41d4-a716-446655440000"),
+                "INSTALLED",
+                "wn9l_stackchan_custom",
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
+    }
+
+    @Test
+    void rejectsWakeModelStatusWithUntrustedFields() throws Exception {
+        WebSocketSession session = authenticatedSession();
+        handler.afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"wake_model_status","sequence":9,"job_id":"550e8400-e29b-41d4-a716-446655440000","status":"INSTALLED","model_name":"wn9l_stackchan_custom","sha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","detail":"untrusted"}
+                """));
+
+        ArgumentCaptor<TextMessage> message = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session).sendMessage(message.capture());
+        assertThat(message.getValue().getPayload())
+                .isEqualTo("{\"type\":\"error\",\"code\":\"invalid_event\",\"message\":\"event rejected\"}");
+        verifyNoInteractions(wakeModelStatusService);
     }
 
     private WebSocketSession authenticatedSession() {

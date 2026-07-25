@@ -12,6 +12,7 @@ firmware/sdkconfig.*
 !firmware/sdkconfig.test.defaults
 firmware/main/lan-test-server.pem
 firmware/main/lan-test-server.srl
+firmware/local-wake-models/
 .lan-test/
 node_modules/
 apps/stackchan-console/dist*/

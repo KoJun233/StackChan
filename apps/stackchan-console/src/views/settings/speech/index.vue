@@ -1,13 +1,22 @@
 <script setup lang="ts">
 import { toTypedSchema } from '@vee-validate/zod'
+import type { Device } from '@/api/modules/devices'
+import { listDevices } from '@/api/modules/devices'
 import type { SpeechAccessMode, SpeechProviderType, VoiceWakeSensitivity } from '@/api/modules/settings'
 import {
   getSpeechSettings,
   saveSpeechSettings,
   testSpeechConnection,
 } from '@/api/modules/settings'
+import type { WakeWordModelJob, WakeWordModelJobStatus, WakeWordModelOption } from '@/api/modules/wakeWords'
+import {
+  createWakeWordModelJob,
+  listWakeWordModelJobs,
+  listWakeWordModels,
+} from '@/api/modules/wakeWords'
 import {
   createSpeechSettingsSchema,
+  createWakeWordModelSchema,
 } from './speechSettings'
 
 defineOptions({ name: 'SpeechSettings' })
@@ -49,6 +58,12 @@ const model = ref<SpeechFormModel>({
 const apiKeyConfigured = ref(false)
 const loading = ref(false)
 const testing = ref(false)
+const wakeModelLoading = ref(false)
+const wakeModel = ref({ deviceId: '', modelName: 'wn9l_histackchan_tts3' })
+const wakeModelCatalog = ref<WakeWordModelOption[]>([])
+const devices = ref<Device[]>([])
+const latestWakeModelJob = ref<WakeWordModelJob | null>(null)
+let wakeModelPollTimer: number | undefined
 
 const providerOptions = [
   { label: 'OpenAI-compatible', value: 'OPENAI_COMPATIBLE' },
@@ -66,6 +81,39 @@ const wakeSensitivityOptions = [
 ]
 
 const validationSchema = toTypedSchema(createSpeechSettingsSchema(() => apiKeyConfigured.value))
+const wakeModelValidationSchema = toTypedSchema(createWakeWordModelSchema())
+const deviceOptions = computed(() => devices.value.map(device => ({
+  label: `${device.displayName} · ${device.online ? '在线' : '离线'}`,
+  value: device.id,
+})))
+const wakeModelOptions = computed(() => wakeModelCatalog.value.map(option => ({
+  label: `${option.phrase} · ${option.modelName}`,
+  value: option.modelName,
+})))
+
+const activeWakeModelStatuses = new Set<WakeWordModelJobStatus>([
+  'QUEUED',
+  'GENERATING',
+  'READY',
+  'INSTALLING',
+])
+
+const wakeModelStatusText: Record<WakeWordModelJobStatus, string> = {
+  FAILED: '生成或安装失败',
+  GENERATING: '正在生成模型',
+  INSTALLED: '模型已安装并启用',
+  INSTALLING: '设备正在下载并验证模型',
+  QUEUED: '任务已进入队列',
+  READY: '模型已就绪，等待设备在线',
+  ROLLED_BACK: '新模型启动失败，设备已自动回退',
+}
+
+const wakeModelFailureText: Record<string, string> = {
+  device_install_rejected: '设备拒绝了模型包，请检查模型兼容性和分区容量。',
+  device_install_timeout: '设备安装超时，任务已停止。',
+  device_rollback: '新模型未通过启动健康检查，设备已恢复上一模型。',
+  feature_retired: '旧版任意短语或上传任务已停用，请重新选择乐鑫内置唤醒词。',
+}
 
 async function load() {
   loading.value = true
@@ -135,7 +183,83 @@ async function testConnection() {
   }
 }
 
-onMounted(load)
+async function loadWakeModelJobs() {
+  if (!wakeModel.value.deviceId) {
+    latestWakeModelJob.value = null
+    return
+  }
+  const jobs = await listWakeWordModelJobs(wakeModel.value.deviceId)
+  latestWakeModelJob.value = jobs[0] ?? null
+  updateWakeModelPolling()
+}
+
+async function loadWakeModelDevices() {
+  try {
+    const [deviceList, modelCatalog] = await Promise.all([listDevices(), listWakeWordModels()])
+    devices.value = deviceList
+    wakeModelCatalog.value = modelCatalog
+    if (!devices.value.some(device => device.id === wakeModel.value.deviceId)) {
+      wakeModel.value.deviceId = devices.value[0]?.id ?? ''
+    }
+    if (!wakeModelCatalog.value.some(option => option.modelName === wakeModel.value.modelName)) {
+      wakeModel.value.modelName = wakeModelCatalog.value[0]?.modelName ?? ''
+    }
+    await loadWakeModelJobs()
+  }
+  catch (error) {
+    useFaToast().error('加载失败', { description: error instanceof Error ? error.message : '无法读取机器人列表。' })
+  }
+}
+
+async function submitWakeModel(values: typeof wakeModel.value) {
+  wakeModelLoading.value = true
+  try {
+    latestWakeModelJob.value = await createWakeWordModelJob(values.deviceId, values.modelName)
+    useFaToast().success('切换任务已创建', { description: '机器人会安全下载乐鑫内置模型、重启并自动完成健康确认。' })
+    updateWakeModelPolling()
+  }
+  catch (error) {
+    useFaToast().error('创建失败', { description: error instanceof Error ? error.message : '无法创建唤醒模型任务。' })
+  }
+  finally {
+    wakeModelLoading.value = false
+  }
+}
+
+function invalidWakeModelSubmit(context: { errors: Record<string, string | undefined> }) {
+  const description = Object.values(context.errors).find((message): message is string => Boolean(message))
+    ?? '请检查唤醒词表单。'
+  useFaToast().error('无法创建任务', { description })
+}
+
+function updateWakeModelPolling() {
+  if (wakeModelPollTimer !== undefined) {
+    window.clearInterval(wakeModelPollTimer)
+    wakeModelPollTimer = undefined
+  }
+  if (latestWakeModelJob.value && activeWakeModelStatuses.has(latestWakeModelJob.value.status)) {
+    wakeModelPollTimer = window.setInterval(() => {
+      loadWakeModelJobs().catch(() => undefined)
+    }, 2000)
+  }
+}
+
+watch(() => wakeModel.value.deviceId, async (deviceId, previousDeviceId) => {
+  if (deviceId && deviceId !== previousDeviceId) {
+    await loadWakeModelJobs()
+  }
+})
+
+onUnmounted(() => {
+  if (wakeModelPollTimer !== undefined) {
+    window.clearInterval(wakeModelPollTimer)
+  }
+})
+
+onMounted(() => {
+  load()
+  loadWakeModelDevices()
+})
 </script>
 
 <template>
@@ -143,17 +267,18 @@ onMounted(load)
     <FaPageHeader title="语音配置" />
     <FaPageMain>
       <FaLoading :loading="loading">
-        <FaCard class="mx-auto max-w-4xl">
-          <FaForm
-            id="speech-settings-form"
-            :model="model"
-            :validation-schema="validationSchema"
-            keep-values-on-unmount
-            scroll-to-error
-            class="grid grid-cols-1 gap-x-8 gap-y-6 items-start md:grid-cols-2"
-            @submit="submit"
-            @invalid-submit="invalidSubmit"
-          >
+        <div class="mx-auto grid max-w-4xl gap-6">
+          <FaCard>
+            <FaForm
+              id="speech-settings-form"
+              :model="model"
+              :validation-schema="validationSchema"
+              keep-values-on-unmount
+              scroll-to-error
+              class="grid grid-cols-1 gap-x-8 gap-y-6 items-start md:grid-cols-2"
+              @submit="submit"
+              @invalid-submit="invalidSubmit"
+            >
             <FaFormItem name="providerType" label="语音服务商" required class="md:col-span-2">
               <FaSelect v-model="model.providerType" :options="providerOptions" class="w-full" />
             </FaFormItem>
@@ -238,8 +363,64 @@ onMounted(load)
                 保存配置
               </FaButton>
             </FaFixedBar>
-          </FaForm>
-        </FaCard>
+            </FaForm>
+          </FaCard>
+          <FaCard title="乐鑫内置唤醒词">
+            <FaForm
+              id="wake-model-form"
+              :model="wakeModel"
+              :validation-schema="wakeModelValidationSchema"
+              class="grid grid-cols-1 gap-x-8 gap-y-6 items-start md:grid-cols-2"
+              @submit="submitWakeModel"
+              @invalid-submit="invalidWakeModelSubmit"
+            >
+              <FaFormItem name="deviceId" label="目标机器人" required>
+                <FaSelect
+                  v-model="wakeModel.deviceId"
+                  :options="deviceOptions"
+                  placeholder="请选择机器人"
+                  class="w-full"
+                />
+              </FaFormItem>
+              <FaFormItem
+                name="modelName"
+                label="唤醒短语"
+                required
+                description="仅显示当前固件兼容的 ESP-SR 2.4.6 官方内置模型；无需上传文件或重新刷固件。"
+              >
+                <FaSelect
+                  v-model="wakeModel.modelName"
+                  :options="wakeModelOptions"
+                  placeholder="请选择乐鑫内置唤醒词"
+                  class="w-full"
+                />
+              </FaFormItem>
+              <FaAlert
+                title="切换会使机器人自动重启"
+                description="点击后，服务器会打包所选乐鑫模型与出厂回退模型，通过设备鉴权下载并写入非活动槽；启动失败时机器人会自动恢复上一模型。"
+                class="md:col-span-2"
+              />
+              <FaAlert
+                v-if="latestWakeModelJob"
+                :title="wakeModelStatusText[latestWakeModelJob.status]"
+                :description="latestWakeModelJob.failureCode
+                  ? (wakeModelFailureText[latestWakeModelJob.failureCode] ?? '任务未能完成。')
+                  : `唤醒短语：${latestWakeModelJob.phrase}`"
+                class="md:col-span-2"
+              />
+              <div class="md:col-span-2 flex justify-end">
+                <FaButton
+                  type="submit"
+                  form="wake-model-form"
+                  :loading="wakeModelLoading"
+                  :disabled="devices.length === 0 || Boolean(latestWakeModelJob && activeWakeModelStatuses.has(latestWakeModelJob.status))"
+                >
+                  切换并安装
+                </FaButton>
+              </div>
+            </FaForm>
+          </FaCard>
+        </div>
       </FaLoading>
     </FaPageMain>
   </div>

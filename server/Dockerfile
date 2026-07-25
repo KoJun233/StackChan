@@ -28,6 +28,7 @@ WORKDIR /app
 
 COPY --from=server-build /workspace/server/target/stackchan-companion-0.0.1-SNAPSHOT.jar /app/app.jar
 COPY --from=web-build /workspace/apps/stackchan-console/dist /app/public
+COPY server/wakenet-models /app/wakenet-models
 
 EXPOSE 8080
 

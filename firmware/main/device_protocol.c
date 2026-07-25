@@ -58,6 +58,35 @@ static bool is_valid_uuid(const char *value)
     return true;
 }
 
+static bool is_valid_wake_model_name(const char *value)
+{
+    size_t length = value == NULL ? 0 : strnlen(value, DEVICE_PROTOCOL_WAKE_MODEL_NAME_MAX_LEN);
+    if (length == 0 || length >= DEVICE_PROTOCOL_WAKE_MODEL_NAME_MAX_LEN) {
+        return false;
+    }
+    for (size_t index = 0; index < length; ++index) {
+        unsigned char character = (unsigned char)value[index];
+        if (!(islower(character) || isdigit(character) || character == '_')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool is_valid_sha256(const char *value)
+{
+    if (value == NULL || strlen(value) != 64) {
+        return false;
+    }
+    for (size_t index = 0; index < 64; ++index) {
+        unsigned char character = (unsigned char)value[index];
+        if (!(isdigit(character) || (character >= 'a' && character <= 'f'))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool is_integer_in_range(const cJSON *value, int minimum, int maximum)
 {
     return cJSON_IsNumber(value) && value->valuedouble == (double)value->valueint &&
@@ -187,6 +216,29 @@ bool device_protocol_parse_command(const char *payload,
             command->speech_start_threshold = speech_start_threshold->valueint;
             command->speech_silence_threshold = speech_silence_threshold->valueint;
         }
+    } else if (valid && strcmp(type->valuestring, "install_wake_model") == 0 &&
+               cJSON_GetArraySize(root) == 6) {
+        cJSON *job_id = cJSON_GetObjectItemCaseSensitive(root, "job_id");
+        cJSON *model_name = cJSON_GetObjectItemCaseSensitive(root, "model_name");
+        cJSON *sha256 = cJSON_GetObjectItemCaseSensitive(root, "sha256");
+        cJSON *artifact_size = cJSON_GetObjectItemCaseSensitive(root, "artifact_size");
+        valid = cJSON_IsString(job_id) && job_id->valuestring != NULL &&
+                is_valid_uuid(job_id->valuestring) &&
+                cJSON_IsString(model_name) && model_name->valuestring != NULL &&
+                is_valid_wake_model_name(model_name->valuestring) &&
+                cJSON_IsString(sha256) && sha256->valuestring != NULL &&
+                is_valid_sha256(sha256->valuestring) &&
+                is_integer_in_range(artifact_size, 1, DEVICE_PROTOCOL_WAKE_MODEL_MAX_SIZE);
+        if (valid) {
+            command->type = DEVICE_COMMAND_INSTALL_WAKE_MODEL;
+            memcpy(command->wake_model_job_id, job_id->valuestring,
+                   strlen(job_id->valuestring) + 1);
+            memcpy(command->wake_model_name, model_name->valuestring,
+                   strlen(model_name->valuestring) + 1);
+            memcpy(command->wake_model_sha256, sha256->valuestring,
+                   strlen(sha256->valuestring) + 1);
+            command->wake_model_artifact_size = artifact_size->valueint;
+        }
     } else {
         valid = false;
     }
@@ -219,6 +271,35 @@ esp_err_t device_protocol_encode_command_ack(char *output,
                     cJSON_AddNumberToObject(root, "sequence", sequence) != NULL &&
                     cJSON_AddStringToObject(root, "command_id", command_id) != NULL &&
                     cJSON_AddBoolToObject(root, "accepted", accepted) != NULL;
+    esp_err_t err = complete ? print_json(root, output, output_size) : ESP_ERR_NO_MEM;
+    cJSON_Delete(root);
+    return err;
+}
+
+esp_err_t device_protocol_encode_wake_model_status(char *output,
+                                                   size_t output_size,
+                                                   uint32_t sequence,
+                                                   const char *job_id,
+                                                   const char *status,
+                                                   const char *model_name,
+                                                   const char *sha256)
+{
+    if (output == NULL || output_size == 0 || sequence == 0 || !is_valid_uuid(job_id) ||
+        !(status != NULL && (strcmp(status, "INSTALLED") == 0 ||
+                             strcmp(status, "ROLLED_BACK") == 0)) ||
+        !is_valid_wake_model_name(model_name) || !is_valid_sha256(sha256)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    bool complete = cJSON_AddStringToObject(root, "type", "wake_model_status") != NULL &&
+                    cJSON_AddNumberToObject(root, "sequence", sequence) != NULL &&
+                    cJSON_AddStringToObject(root, "job_id", job_id) != NULL &&
+                    cJSON_AddStringToObject(root, "status", status) != NULL &&
+                    cJSON_AddStringToObject(root, "model_name", model_name) != NULL &&
+                    cJSON_AddStringToObject(root, "sha256", sha256) != NULL;
     esp_err_t err = complete ? print_json(root, output, output_size) : ESP_ERR_NO_MEM;
     cJSON_Delete(root);
     return err;

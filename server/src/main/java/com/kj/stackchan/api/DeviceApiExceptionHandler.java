@@ -12,6 +12,9 @@ import com.kj.stackchan.speech.SpeechProviderUnavailableException;
 import com.kj.stackchan.speech.VoiceInputException;
 import com.kj.stackchan.reminder.ReminderNotFoundException;
 import com.kj.stackchan.reminder.InvalidReminderException;
+import com.kj.stackchan.wakeword.InvalidWakeWordModelJobException;
+import com.kj.stackchan.wakeword.WakeWordModelCatalogUnavailableException;
+import com.kj.stackchan.wakeword.WakeWordModelNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -65,6 +68,15 @@ public class DeviceApiExceptionHandler {
     );
     public static final ApiError INVALID_REMINDER = new ApiError(
             "invalid_reminder", "提醒内容、时间、时区或目标设备无效。"
+    );
+    public static final ApiError INVALID_WAKE_WORD_MODEL_JOB = new ApiError(
+            "invalid_wake_word_model_job", "乐鑫内置唤醒模型、目标设备无效，或该设备已有进行中的模型任务。"
+    );
+    public static final ApiError WAKE_WORD_MODEL_NOT_FOUND = new ApiError(
+            "wake_word_model_not_found", "未找到可供当前设备下载的唤醒模型。"
+    );
+    public static final ApiError WAKE_WORD_MODEL_CATALOG_UNAVAILABLE = new ApiError(
+            "wake_word_model_catalog_unavailable", "乐鑫内置唤醒模型暂时不可用，请稍后重试。"
     );
 
     @ExceptionHandler(PairingCodeUnavailableException.class)
@@ -130,6 +142,21 @@ public class DeviceApiExceptionHandler {
     @ExceptionHandler(InvalidReminderException.class)
     ResponseEntity<ApiError> invalidReminder(InvalidReminderException exception) {
         return response(HttpStatus.BAD_REQUEST, INVALID_REMINDER);
+    }
+
+    @ExceptionHandler(InvalidWakeWordModelJobException.class)
+    ResponseEntity<ApiError> invalidWakeWordModelJob(InvalidWakeWordModelJobException exception) {
+        return response(HttpStatus.CONFLICT, INVALID_WAKE_WORD_MODEL_JOB);
+    }
+
+    @ExceptionHandler(WakeWordModelCatalogUnavailableException.class)
+    ResponseEntity<ApiError> wakeWordModelCatalogUnavailable(WakeWordModelCatalogUnavailableException exception) {
+        return response(HttpStatus.SERVICE_UNAVAILABLE, WAKE_WORD_MODEL_CATALOG_UNAVAILABLE);
+    }
+
+    @ExceptionHandler(WakeWordModelNotFoundException.class)
+    ResponseEntity<ApiError> wakeWordModelNotFound(WakeWordModelNotFoundException exception) {
+        return response(HttpStatus.NOT_FOUND, WAKE_WORD_MODEL_NOT_FOUND);
     }
 
 

@@ -9,6 +9,7 @@
 #include "device_transport.h"
 #include "safety_state.h"
 #include "voice_control.h"
+#include "wake_model_ota.h"
 
 #if CONFIG_STACKCHAN_PROTOCOL_TESTS
 #include "unity.h"
@@ -45,6 +46,10 @@ void app_main(void)
         ESP_LOGE(TAG, "Encrypted NVS initialization failed: %s", esp_err_to_name(nvs_err));
         return;
     }
+    esp_err_t wake_model_err = wake_model_ota_init();
+    if (wake_model_err != ESP_OK) {
+        ESP_LOGE(TAG, "Wake model OTA state initialization failed: %s", esp_err_to_name(wake_model_err));
+    }
 
     if (hardware_err == ESP_OK) {
         esp_err_t voice_err = voice_control_start();
@@ -62,6 +67,15 @@ void app_main(void)
     if (provisioning_err != ESP_OK) {
         ESP_LOGE(TAG, "Provisioning task did not start: %s", esp_err_to_name(provisioning_err));
         safety_state_stop_motion();
+    }
+    if (wake_model_err == ESP_OK) {
+        esp_err_t guard_err = wake_model_ota_start_health_guard();
+        if (guard_err != ESP_OK) {
+            ESP_LOGE(TAG, "Wake model health guard did not start: %s", esp_err_to_name(guard_err));
+            if (wake_model_ota_is_pending()) {
+                wake_model_ota_rollback_and_restart();
+            }
+        }
     }
 #endif
 }

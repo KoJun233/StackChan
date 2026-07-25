@@ -17,6 +17,8 @@
 #include "device_transport.h"
 #include "voice_protocol.h"
 #include "voice_service.h"
+#include "wake_word_model.h"
+#include "wake_model_ota.h"
 
 #define VOICE_TASK_STACK_SIZE 12288
 #define VOICE_TASK_PRIORITY 6
@@ -46,6 +48,14 @@ typedef struct {
     uint32_t speech_start_threshold;
     uint32_t speech_silence_threshold;
 } voice_detection_settings_t;
+
+typedef struct {
+    esp_wn_iface_t *interface;
+    model_iface_data_t *model;
+    const char *name;
+    int chunk_samples;
+    bool used_fallback;
+} active_wakenet_model_t;
 
 static voice_detection_settings_t s_detection_settings = {
     .wake_sensitivity = VOICE_WAKE_SENSITIVITY_SENSITIVE,
@@ -211,83 +221,181 @@ static model_iface_data_t *create_wakenet_model(esp_wn_iface_t *wakenet,
     return model;
 }
 
-static void voice_task(void *argument)
+static void destroy_active_wakenet(active_wakenet_model_t *active)
 {
-    (void)argument;
-    srmodel_list_t *models = esp_srmodel_init("model");
-    char *model_name = models == NULL ? NULL : esp_srmodel_filter(models, ESP_WN_PREFIX, "histackchan");
-    esp_wn_iface_t *wakenet = model_name == NULL ? NULL : (esp_wn_iface_t *)esp_wn_handle_from_name(model_name);
-    voice_detection_settings_t active_settings = current_detection_settings();
-    model_iface_data_t *model = wakenet == NULL
-                                    ? NULL
-                                    : create_wakenet_model(wakenet, model_name,
-                                                           active_settings.wake_sensitivity);
+    if (active != NULL && active->interface != NULL && active->model != NULL) {
+        active->interface->destroy(active->model);
+        active->model = NULL;
+    }
+}
+
+static bool try_activate_wakenet(srmodel_list_t *models,
+                                 const char *model_name,
+                                 bool used_fallback,
+                                 voice_wake_sensitivity_t sensitivity,
+                                 active_wakenet_model_t *active)
+{
+    esp_wn_iface_t *wakenet = (esp_wn_iface_t *)esp_wn_handle_from_name(model_name);
+    if (wakenet == NULL) {
+        ESP_LOGW(TAG, "WakeNet model interface is unavailable: model=%s", model_name);
+        return false;
+    }
+    model_iface_data_t *model = create_wakenet_model(wakenet, model_name, sensitivity);
     if (model == NULL) {
-        ESP_LOGE(TAG, "WakeNet Hi, Stack Chan model did not initialize");
-        if (models != NULL) {
-            esp_srmodel_deinit(models);
-        }
-        vTaskDelete(NULL);
-        return;
+        ESP_LOGW(TAG, "WakeNet model could not be created: model=%s", model_name);
+        return false;
     }
 
     int chunk_samples = wakenet->get_samp_chunksize(model);
     int sample_rate = wakenet->get_samp_rate(model);
     int channels = wakenet->get_channel_num(model);
     if (chunk_samples <= 0 || sample_rate != VOICE_SAMPLE_RATE || channels != 1) {
-        ESP_LOGE(TAG, "WakeNet model audio format is unsupported");
+        ESP_LOGW(TAG,
+                 "WakeNet model audio format is unsupported: model=%s rate=%d channels=%d chunk=%d",
+                 model_name, sample_rate, channels, chunk_samples);
         wakenet->destroy(model);
-        esp_srmodel_deinit(models);
-        vTaskDelete(NULL);
-        return;
+        return false;
     }
-    int16_t *chunk = heap_caps_malloc((size_t)chunk_samples * sizeof(int16_t),
-                                      MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (chunk == NULL) {
-        wakenet->destroy(model);
-        esp_srmodel_deinit(models);
+
+    char *wake_words = esp_srmodel_get_wake_words(models, (char *)model_name);
+    ESP_LOGI(TAG, "WakeNet model selected: model=%s source=%s wake_words=%s",
+             model_name, used_fallback ? "fallback" : "configured",
+             wake_words == NULL ? "unavailable" : wake_words);
+    free(wake_words);
+    active->interface = wakenet;
+    active->model = model;
+    active->name = model_name;
+    active->chunk_samples = chunk_samples;
+    active->used_fallback = used_fallback;
+    return true;
+}
+
+static bool activate_configured_wakenet(srmodel_list_t *models,
+                                        const char *configured_model_name,
+                                        voice_wake_sensitivity_t sensitivity,
+                                        active_wakenet_model_t *active)
+{
+    if (models == NULL || models->num <= 0 || configured_model_name == NULL || active == NULL) {
+        return false;
+    }
+    memset(active, 0, sizeof(*active));
+    const char *const *model_names = (const char *const *)models->model_name;
+    wake_word_model_selection_t selection = wake_word_model_select(
+        model_names,
+        (size_t)models->num,
+        configured_model_name,
+        WAKE_WORD_DEFAULT_MODEL_NAME);
+    if (selection.name == NULL) {
+        ESP_LOGE(TAG, "Neither the configured nor fallback WakeNet model is packaged");
+        return false;
+    }
+    if (selection.used_fallback) {
+        ESP_LOGW(TAG, "Configured WakeNet model is unavailable; using fallback: configured=%s fallback=%s",
+                 configured_model_name, selection.name);
+    }
+    if (try_activate_wakenet(models, selection.name, selection.used_fallback, sensitivity, active)) {
+        return true;
+    }
+
+    const char *fallback = wake_word_model_find(
+        model_names, (size_t)models->num, WAKE_WORD_DEFAULT_MODEL_NAME);
+    if (selection.used_fallback || fallback == NULL || strcmp(selection.name, fallback) == 0) {
+        return false;
+    }
+    ESP_LOGW(TAG, "Configured WakeNet model failed validation; using fallback: configured=%s fallback=%s",
+             selection.name, fallback);
+    return try_activate_wakenet(models, fallback, true, sensitivity, active);
+}
+
+static void voice_task(void *argument)
+{
+    (void)argument;
+    const char *partition_label = wake_model_ota_active_partition_label();
+    const char *configured_model_name = wake_model_ota_active_model_name();
+    srmodel_list_t *models = esp_srmodel_init(partition_label);
+    voice_detection_settings_t active_settings = current_detection_settings();
+    active_wakenet_model_t active = {0};
+    if (!activate_configured_wakenet(
+            models, configured_model_name, active_settings.wake_sensitivity, &active)) {
+        ESP_LOGE(TAG, "WakeNet did not initialize with a valid configured or fallback model");
+        if (models != NULL) {
+            esp_srmodel_deinit(models);
+        }
+        if (wake_model_ota_is_pending()) {
+            wake_model_ota_rollback_and_restart();
+        }
         vTaskDelete(NULL);
         return;
     }
 
-    ESP_LOGI(TAG, "WakeNet listening for Hi, Stack Chan with %s sensitivity",
+    size_t chunk_capacity = (size_t)active.chunk_samples;
+    int16_t *chunk = heap_caps_malloc(chunk_capacity * sizeof(int16_t),
+                                      MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (chunk == NULL) {
+        destroy_active_wakenet(&active);
+        esp_srmodel_deinit(models);
+        if (wake_model_ota_is_pending()) {
+            wake_model_ota_rollback_and_restart();
+        }
+        vTaskDelete(NULL);
+        return;
+    }
+
+    if (wake_model_ota_is_pending()) {
+        if (active.used_fallback || wake_model_ota_confirm_active() != ESP_OK) {
+            destroy_active_wakenet(&active);
+            heap_caps_free(chunk);
+            esp_srmodel_deinit(models);
+            wake_model_ota_rollback_and_restart();
+        }
+    }
+
+    ESP_LOGI(TAG, "WakeNet listening: model=%s sensitivity=%s",
+             active.name,
              active_settings.wake_sensitivity == VOICE_WAKE_SENSITIVITY_SENSITIVE
                  ? "sensitive"
                  : "normal");
     for (;;) {
         voice_detection_settings_t desired_settings = current_detection_settings();
-        if (model == NULL || desired_settings.wake_sensitivity != active_settings.wake_sensitivity) {
-            if (model != NULL) {
-                wakenet->destroy(model);
-            }
-            model = create_wakenet_model(wakenet, model_name, desired_settings.wake_sensitivity);
-            if (model == NULL) {
-                ESP_LOGE(TAG, "WakeNet model recreation failed; retrying");
+        if (active.model == NULL || desired_settings.wake_sensitivity != active_settings.wake_sensitivity) {
+            destroy_active_wakenet(&active);
+            active_wakenet_model_t replacement = {0};
+            if (!activate_configured_wakenet(
+                    models, configured_model_name, desired_settings.wake_sensitivity, &replacement)) {
+                ESP_LOGE(TAG, "WakeNet model activation failed; retrying");
                 vTaskDelay(pdMS_TO_TICKS(1000));
                 continue;
             }
-            if (wakenet->get_samp_chunksize(model) != chunk_samples ||
-                wakenet->get_samp_rate(model) != VOICE_SAMPLE_RATE ||
-                wakenet->get_channel_num(model) != 1) {
-                ESP_LOGE(TAG, "Recreated WakeNet model audio format is unsupported");
-                wakenet->destroy(model);
-                model = NULL;
-                vTaskDelay(pdMS_TO_TICKS(1000));
-                continue;
+            size_t required_capacity = (size_t)replacement.chunk_samples;
+            if (required_capacity != chunk_capacity) {
+                int16_t *replacement_chunk = heap_caps_malloc(
+                    required_capacity * sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+                if (replacement_chunk == NULL) {
+                    destroy_active_wakenet(&replacement);
+                    ESP_LOGE(TAG, "WakeNet capture buffer resize failed; retrying");
+                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    continue;
+                }
+                heap_caps_free(chunk);
+                chunk = replacement_chunk;
+                chunk_capacity = required_capacity;
             }
+            active = replacement;
             active_settings = desired_settings;
-            ESP_LOGI(TAG, "WakeNet listening resumed with %s sensitivity",
+            ESP_LOGI(TAG, "WakeNet listening resumed: model=%s sensitivity=%s",
+                     active.name,
                      active_settings.wake_sensitivity == VOICE_WAKE_SENSITIVITY_SENSITIVE
                          ? "sensitive"
                          : "normal");
         }
-        esp_err_t err = companion_hardware_record_pcm(chunk, (size_t)chunk_samples, VOICE_SAMPLE_RATE);
+        esp_err_t err = companion_hardware_record_pcm(
+            chunk, (size_t)active.chunk_samples, VOICE_SAMPLE_RATE);
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "WakeNet microphone capture failed: %s", esp_err_to_name(err));
             vTaskDelay(pdMS_TO_TICKS(250));
             continue;
         }
-        if (wakenet->detect(model, chunk) != WAKENET_DETECTED) {
+        if (active.interface->detect(active.model, chunk) != WAKENET_DETECTED) {
             continue;
         }
 
@@ -303,8 +411,7 @@ static void voice_task(void *argument)
             }
             xSemaphoreGive(s_voice_session_mutex);
         }
-        wakenet->destroy(model);
-        model = NULL;
+        destroy_active_wakenet(&active);
     }
 }
 

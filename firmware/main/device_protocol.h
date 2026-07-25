@@ -6,9 +6,13 @@
 
 #include "esp_err.h"
 
-#define DEVICE_PROTOCOL_MAX_MESSAGE_LEN 384
+#define DEVICE_PROTOCOL_MAX_MESSAGE_LEN 512
 #define DEVICE_PROTOCOL_COMMAND_ID_MAX_LEN 96
 #define DEVICE_PROTOCOL_REMINDER_ID_MAX_LEN 37
+#define DEVICE_PROTOCOL_WAKE_MODEL_JOB_ID_MAX_LEN 37
+#define DEVICE_PROTOCOL_WAKE_MODEL_NAME_MAX_LEN 32
+#define DEVICE_PROTOCOL_SHA256_MAX_LEN 65
+#define DEVICE_PROTOCOL_WAKE_MODEL_MAX_SIZE (1024 * 1024)
 #define DEVICE_PROTOCOL_SPEECH_START_THRESHOLD_MIN 100
 #define DEVICE_PROTOCOL_SPEECH_START_THRESHOLD_MAX 5000
 #define DEVICE_PROTOCOL_SPEECH_SILENCE_THRESHOLD_MIN 50
@@ -24,6 +28,7 @@ typedef enum {
     DEVICE_COMMAND_STOP_MOTION,
     DEVICE_COMMAND_SPEAK_REMINDER,
     DEVICE_COMMAND_CONFIGURE_VOICE_DETECTION,
+    DEVICE_COMMAND_INSTALL_WAKE_MODEL,
 } device_command_type_t;
 
 typedef struct {
@@ -33,6 +38,10 @@ typedef struct {
     device_wake_sensitivity_t wake_sensitivity;
     int speech_start_threshold;
     int speech_silence_threshold;
+    char wake_model_job_id[DEVICE_PROTOCOL_WAKE_MODEL_JOB_ID_MAX_LEN];
+    char wake_model_name[DEVICE_PROTOCOL_WAKE_MODEL_NAME_MAX_LEN];
+    char wake_model_sha256[DEVICE_PROTOCOL_SHA256_MAX_LEN];
+    int wake_model_artifact_size;
 } device_command_t;
 
 esp_err_t device_protocol_encode_heartbeat(char *output,
@@ -56,3 +65,11 @@ esp_err_t device_protocol_encode_command_ack(char *output,
                                              uint32_t sequence,
                                              const char *command_id,
                                              bool accepted);
+
+esp_err_t device_protocol_encode_wake_model_status(char *output,
+                                                   size_t output_size,
+                                                   uint32_t sequence,
+                                                   const char *job_id,
+                                                   const char *status,
+                                                   const char *model_name,
+                                                   const char *sha256);

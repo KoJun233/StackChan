@@ -1,11 +1,21 @@
-import type { Component } from 'vue'
+import type { App, Component } from 'vue'
 import { createApp, defineComponent, h, nextTick, Teleport } from 'vue'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const settingsApi = vi.hoisted(() => ({
   getSpeechSettings: vi.fn(),
   saveSpeechSettings: vi.fn(),
   testSpeechConnection: vi.fn(),
+}))
+
+const devicesApi = vi.hoisted(() => ({
+  listDevices: vi.fn(),
+}))
+
+const wakeWordsApi = vi.hoisted(() => ({
+  createWakeWordModelJob: vi.fn(),
+  listWakeWordModelJobs: vi.fn(),
+  listWakeWordModels: vi.fn(),
 }))
 
 const toast = vi.hoisted(() => ({
@@ -14,6 +24,8 @@ const toast = vi.hoisted(() => ({
 }))
 
 vi.mock('@/api/modules/settings', () => settingsApi)
+vi.mock('@/api/modules/devices', () => devicesApi)
+vi.mock('@/api/modules/wakeWords', () => wakeWordsApi)
 
 vi.mock('@fantastic-admin/components', () => {
   const passthrough = defineComponent({
@@ -84,6 +96,24 @@ vi.mock('@fantastic-admin/components', () => {
     }),
     FaPageHeader: passthrough,
     FaPageMain: passthrough,
+    FaRadioGroup: defineComponent({
+      props: {
+        modelValue: { type: String, required: true },
+        options: { type: Array, required: true },
+      },
+      emits: ['update:modelValue'],
+      setup(props, { emit }) {
+        return () => h('select', {
+          'data-radio-group': 'true',
+          value: props.modelValue,
+          onChange: (event: Event) => emit('update:modelValue', (event.target as HTMLSelectElement).value),
+        }, (props.options as Array<{ label: string, value: string }>).map(option => h(
+          'option',
+          { value: option.value },
+          option.label,
+        )))
+      },
+    }),
     FaSelect: defineComponent({
       props: {
         modelValue: { type: String, required: true },
@@ -108,12 +138,25 @@ vi.mock('@fantastic-admin/components', () => {
 import SpeechSettings from './index.vue'
 
 describe('speech settings form', () => {
+  let app: App<Element> | undefined
+
+  beforeEach(() => {
+    wakeWordsApi.listWakeWordModels.mockResolvedValue([
+      { locale: 'en', modelName: 'wn9l_histackchan_tts3', phrase: 'Hi, Stack Chan' },
+      { locale: 'zh-CN', modelName: 'wn9_xiao3feng1xiao3feng1_tts3', phrase: '小峰小峰' },
+    ])
+  })
+
   afterEach(() => {
+    app?.unmount()
+    app = undefined
     document.body.innerHTML = ''
     vi.clearAllMocks()
   })
 
   it('submits the selected DashScope provider through the native form button', async () => {
+    devicesApi.listDevices.mockResolvedValue([])
+    wakeWordsApi.listWakeWordModelJobs.mockResolvedValue([])
     settingsApi.getSpeechSettings.mockResolvedValue({
       apiKeyConfigured: true,
       asrMode: 'REALTIME',
@@ -140,20 +183,22 @@ describe('speech settings form', () => {
     fixedContentAfterArea.id = 'fixed-content-after-area'
     document.body.append(fixedContentAfterArea)
     document.body.append(container)
-    createApp(SpeechSettings).mount(container)
+    app = createApp(SpeechSettings)
+    app.mount(container)
 
     await vi.waitFor(() => expect(settingsApi.getSpeechSettings).toHaveBeenCalledOnce())
     await nextTick()
 
     expect(container.querySelector('form')?.dataset.keepValuesOnUnmount).toBe('true')
 
-    const provider = container.querySelector<HTMLSelectElement>('select')
+    const speechForm = container.querySelector<HTMLFormElement>('#speech-settings-form')
+    const provider = speechForm!.querySelector<HTMLSelectElement>('select')
     expect(provider).not.toBeNull()
     provider!.value = 'DASHSCOPE'
     provider!.dispatchEvent(new Event('change', { bubbles: true }))
     await nextTick()
 
-    const modeSelects = container.querySelectorAll<HTMLSelectElement>('select')
+    const modeSelects = speechForm!.querySelectorAll<HTMLSelectElement>('select')
     expect(modeSelects).toHaveLength(4)
     modeSelects[1]!.value = 'NON_REALTIME'
     modeSelects[1]!.dispatchEvent(new Event('change', { bubbles: true }))
@@ -162,15 +207,15 @@ describe('speech settings form', () => {
     modeSelects[3]!.value = 'NORMAL'
     modeSelects[3]!.dispatchEvent(new Event('change', { bubbles: true }))
 
-    const thresholds = container.querySelectorAll<HTMLInputElement>('input[type="number"]')
+    const thresholds = speechForm!.querySelectorAll<HTMLInputElement>('input[type="number"]')
     expect(thresholds).toHaveLength(2)
     thresholds[0]!.value = '420'
     thresholds[0]!.dispatchEvent(new Event('input', { bubbles: true }))
     thresholds[1]!.value = '210'
     thresholds[1]!.dispatchEvent(new Event('input', { bubbles: true }))
 
-    const asrModel = container.querySelector<HTMLInputElement>('input[placeholder="请输入语音识别模型名"]')
-    const ttsModel = container.querySelector<HTMLInputElement>('input[placeholder="请输入语音合成模型名"]')
+    const asrModel = speechForm!.querySelector<HTMLInputElement>('input[placeholder="请输入语音识别模型名"]')
+    const ttsModel = speechForm!.querySelector<HTMLInputElement>('input[placeholder="请输入语音合成模型名"]')
     expect(asrModel).not.toBeNull()
     expect(ttsModel).not.toBeNull()
     asrModel!.value = 'future-provider-asr-model'
@@ -209,4 +254,73 @@ describe('speech settings form', () => {
       description: '语音服务与本地唤醒参数已保存；在线机器人会立即接收。',
     })
   })
+
+  it('creates a wake model job for the selected robot and built-in model', async () => {
+    settingsApi.getSpeechSettings.mockResolvedValue({
+      apiKeyConfigured: true,
+      asrMode: 'NON_REALTIME',
+      asrModel: 'asr',
+      baseUrl: 'https://example.com/v1',
+      providerType: 'OPENAI_COMPATIBLE',
+      speechSilenceThreshold: 200,
+      speechStartThreshold: 350,
+      ttsMode: 'NON_REALTIME',
+      ttsModel: 'tts',
+      ttsVoice: 'voice',
+      updatedAt: null,
+      wakeSensitivity: 'SENSITIVE',
+      workspaceId: '',
+    })
+    devicesApi.listDevices.mockResolvedValue([{
+      commandAvailable: true,
+      displayName: '客厅机器人',
+      firmwareVersion: '1.0.0',
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      lastSeenAt: '2026-07-23T12:00:00Z',
+      online: true,
+      safetyState: 'motion_disabled',
+    }])
+    wakeWordsApi.listWakeWordModelJobs.mockResolvedValue([])
+    wakeWordsApi.createWakeWordModelJob.mockResolvedValue({
+      createdAt: '2026-07-23T12:00:00Z',
+      deviceId: '550e8400-e29b-41d4-a716-446655440000',
+      failureCode: null,
+      id: '111e8400-e29b-41d4-a716-446655440000',
+      installedAt: null,
+      modelName: 'wn9_xiao3feng1xiao3feng1_tts3',
+      artifactSha256: null,
+      artifactSize: null,
+      phrase: '小峰小峰',
+      status: 'READY',
+      updatedAt: '2026-07-23T12:00:00Z',
+    })
+
+    const container = document.createElement('div')
+    const fixedContentAfterArea = document.createElement('div')
+    fixedContentAfterArea.id = 'fixed-content-after-area'
+    document.body.append(fixedContentAfterArea)
+    document.body.append(container)
+    app = createApp(SpeechSettings)
+    app.mount(container)
+
+    await vi.waitFor(() => {
+      const form = container.querySelector<HTMLFormElement>('#wake-model-form')
+      expect(form?.querySelectorAll<HTMLSelectElement>('select')[1]?.options.length).toBe(2)
+    })
+    const wakeModelForm = container.querySelector<HTMLFormElement>('#wake-model-form')
+    const modelSelect = wakeModelForm!.querySelectorAll<HTMLSelectElement>('select')[1]
+    modelSelect!.value = 'wn9_xiao3feng1xiao3feng1_tts3'
+    modelSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+    await nextTick()
+
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(candidate => candidate.textContent?.includes('切换并安装'))
+    button!.click()
+
+    await vi.waitFor(() => expect(wakeWordsApi.createWakeWordModelJob).toHaveBeenCalledWith(
+      '550e8400-e29b-41d4-a716-446655440000',
+      'wn9_xiao3feng1xiao3feng1_tts3',
+    ))
+  })
+
 })

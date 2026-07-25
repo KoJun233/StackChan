@@ -13,7 +13,9 @@ set(stackchan_sources
     "strict_json.c"
     "voice_control.c"
     "voice_protocol.c"
-    "voice_service.c")
+    "voice_service.c"
+    "wake_model_ota.c"
+    "wake_word_model.c")
 
 if(CONFIG_STACKCHAN_PROTOCOL_TESTS)
     list(APPEND stackchan_sources "test/test_device_protocol.c")
@@ -26,7 +28,7 @@ endif()
 idf_component_register(
     SRCS ${stackchan_sources}
     INCLUDE_DIRS "."
-    REQUIRES esp-sr esp_app_format esp_driver_usb_serial_jtag esp_event esp_http_client esp_netif esp_timer esp_wifi esp_websocket_client freertos json m5unified nvs_flash unity)
+    REQUIRES esp-sr esp_app_format esp_driver_usb_serial_jtag esp_event esp_http_client esp_netif esp_partition esp_timer esp_wifi esp_websocket_client freertos json m5unified mbedtls nvs_flash unity)
 
 if(CONFIG_STACKCHAN_LAN_TEST_CERT)
     target_add_binary_data(${COMPONENT_LIB} "lan-test-server.pem" TEXT)

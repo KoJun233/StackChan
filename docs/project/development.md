@@ -47,6 +47,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-firmware-prov
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-firmware-provisioning-stack-budget.ps1
 ```
 
+运行唤醒模型包和 ESP-SR 内置目录回归检查：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-wake-word-model-package.ps1
+& 'E:\maven-3.9.16\bin\mvn.cmd' -f server\pom.xml '-Dtest=EspSrWakeWordModelCatalogTest,WakeWordModelPackageValidatorTest' test
+```
+
+运行内置唤醒词选择与模型 OTA 的服务端针对测试：
+
+```powershell
+& 'E:\maven-3.9.16\bin\mvn.cmd' -f server\pom.xml '-Dtest=*WakeWord*,DeviceWebSocketHandlerTest' test
+```
+
+服务端只读取 `COMPANION_WAKE_MODEL_CATALOG_DIRECTORY` 指向的锁定 ESP-SR 2.4.6 模型目录；正式容器固定使用 `/app/wakenet-models`。下拉目录、三槽安装和回退验证见 [ESP-SR 内置唤醒词切换与安全 OTA](../runbooks/custom-wake-word-model.md)。
+
 仅在受信任的 LAN 上使用 LAN 开发覆盖层：
 
 ```powershell

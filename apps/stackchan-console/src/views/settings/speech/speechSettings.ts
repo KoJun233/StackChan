@@ -53,3 +53,10 @@ export function createSpeechSettingsSchema(apiKeyConfigured: () => boolean) {
     }
   })
 }
+
+export function createWakeWordModelSchema() {
+  return z.object({
+    deviceId: z.string().uuid('请选择目标机器人'),
+    modelName: z.string().trim().min(1, '请选择乐鑫内置唤醒词').max(32, '唤醒模型名称无效'),
+  })
+}

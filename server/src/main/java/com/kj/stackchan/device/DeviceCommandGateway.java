@@ -8,5 +8,14 @@ public interface DeviceCommandGateway {
 
     boolean speakReminder(UUID deviceId, UUID reminderId, String commandId);
 
+    boolean installWakeModel(
+            UUID deviceId,
+            UUID jobId,
+            String modelName,
+            String sha256,
+            int artifactSize,
+            String commandId
+    );
+
     boolean isConnected(UUID deviceId);
 }

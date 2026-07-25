@@ -23,6 +23,9 @@ public class AppProperties {
 
     private boolean lanDevelopment;
 
+    @NotBlank
+    private String wakeModelCatalogDirectory = "/app/wakenet-models";
+
     public String getDeviceTokenSecret() {
         return deviceTokenSecret;
     }
@@ -69,5 +72,13 @@ public class AppProperties {
 
     public void setLanDevelopment(boolean lanDevelopment) {
         this.lanDevelopment = lanDevelopment;
+    }
+
+    public String getWakeModelCatalogDirectory() {
+        return wakeModelCatalogDirectory;
+    }
+
+    public void setWakeModelCatalogDirectory(String wakeModelCatalogDirectory) {
+        this.wakeModelCatalogDirectory = wakeModelCatalogDirectory;
     }
 }
