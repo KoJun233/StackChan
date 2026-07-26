@@ -123,4 +123,50 @@ describe('device overview command availability', () => {
     await vi.waitFor(() => expect(container.querySelector('[data-turn-id]')?.textContent).toContain('恢复待唤醒'))
     expect(container.textContent).toContain('不保存音频、识别文本或机器人回复')
   })
+
+  it('labels a touch-started cancelled turn without treating it as a failure', async () => {
+    deviceApi.listDevices.mockResolvedValue([{
+      id: 'connected',
+      displayName: 'Connected',
+      firmwareVersion: '1.0.0',
+      safetyState: 'motion_disabled',
+      lastSeenAt: '2026-07-18T12:00:00Z',
+      online: true,
+      commandAvailable: true,
+    }])
+    deviceApi.listDeviceVoiceTurns.mockResolvedValue([{
+      turnId: '550e8400-e29b-41d4-a716-446655440001',
+      status: 'CANCELLED',
+      failureCode: null,
+      startedAt: '2026-07-18T12:00:00Z',
+      updatedAt: '2026-07-18T12:00:01Z',
+      events: [
+        {
+          stage: 'TOUCH_STARTED',
+          source: 'DEVICE',
+          occurredAt: '2026-07-18T12:00:00Z',
+          elapsedMs: 0,
+          failureCode: null,
+        },
+        {
+          stage: 'CANCELLED',
+          source: 'DEVICE',
+          occurredAt: '2026-07-18T12:00:01Z',
+          elapsedMs: 1000,
+          failureCode: null,
+        },
+      ],
+    }])
+    const container = document.createElement('div')
+    document.body.append(container)
+
+    createApp(DeviceOverview).mount(container)
+    await vi.waitFor(() => expect(container.querySelectorAll('[data-device-id]')).toHaveLength(1))
+    const buttons = container.querySelectorAll<HTMLButtonElement>('[data-device-id="connected"] button')
+    buttons[1].click()
+
+    await vi.waitFor(() => expect(container.querySelector('[data-turn-id]')?.textContent).toContain('已取消'))
+    expect(container.querySelector('[data-turn-id]')?.textContent).toContain('触摸发起')
+    expect(container.querySelector('[data-turn-id]')?.textContent).toContain('回合已取消')
+  })
 })

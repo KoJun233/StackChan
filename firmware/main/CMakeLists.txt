@@ -12,6 +12,7 @@ set(stackchan_sources
     "safety_state.c"
     "screensaver_motion.c"
     "strict_json.c"
+    "touch_interaction.c"
     "voice_control.c"
     "voice_protocol.c"
     "voice_service.c"

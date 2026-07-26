@@ -92,6 +92,8 @@ static const char *voice_stage_name(device_voice_turn_stage_t stage)
     switch (stage) {
     case DEVICE_VOICE_STAGE_WAKE_DETECTED:
         return "WAKE_DETECTED";
+    case DEVICE_VOICE_STAGE_TOUCH_STARTED:
+        return "TOUCH_STARTED";
     case DEVICE_VOICE_STAGE_LISTENING:
         return "LISTENING";
     case DEVICE_VOICE_STAGE_SPEECH_CAPTURED:
@@ -104,8 +106,23 @@ static const char *voice_stage_name(device_voice_turn_stage_t stage)
         return "PLAYBACK_COMPLETED";
     case DEVICE_VOICE_STAGE_LISTENING_RESUMED:
         return "LISTENING_RESUMED";
+    case DEVICE_VOICE_STAGE_CANCELLED:
+        return "CANCELLED";
     case DEVICE_VOICE_STAGE_FAILED:
         return "FAILED";
+    default:
+        return NULL;
+    }
+}
+
+static const char *command_result_name(device_command_result_t result)
+{
+    switch (result) {
+    case DEVICE_COMMAND_RESULT_CANCELLED:
+        return "cancelled";
+    case DEVICE_COMMAND_RESULT_FAILED:
+        return "failed";
+    case DEVICE_COMMAND_RESULT_NONE:
     default:
         return NULL;
     }
@@ -306,8 +323,22 @@ esp_err_t device_protocol_encode_command_ack(char *output,
                                              const char *command_id,
                                              bool accepted)
 {
+    return device_protocol_encode_command_ack_with_result(
+        output, output_size, sequence, command_id, accepted, DEVICE_COMMAND_RESULT_NONE);
+}
+
+esp_err_t device_protocol_encode_command_ack_with_result(char *output,
+                                                         size_t output_size,
+                                                         uint32_t sequence,
+                                                         const char *command_id,
+                                                         bool accepted,
+                                                         device_command_result_t result)
+{
+    const char *result_name = command_result_name(result);
     if (output == NULL || output_size == 0 || sequence == 0 ||
-        !is_valid_command_id(command_id)) {
+        !is_valid_command_id(command_id) ||
+        (accepted && result != DEVICE_COMMAND_RESULT_NONE) ||
+        (result != DEVICE_COMMAND_RESULT_NONE && result_name == NULL)) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -319,6 +350,9 @@ esp_err_t device_protocol_encode_command_ack(char *output,
                     cJSON_AddNumberToObject(root, "sequence", sequence) != NULL &&
                     cJSON_AddStringToObject(root, "command_id", command_id) != NULL &&
                     cJSON_AddBoolToObject(root, "accepted", accepted) != NULL;
+    if (complete && result_name != NULL) {
+        complete = cJSON_AddStringToObject(root, "result", result_name) != NULL;
+    }
     esp_err_t err = complete ? print_json(root, output, output_size) : ESP_ERR_NO_MEM;
     cJSON_Delete(root);
     return err;

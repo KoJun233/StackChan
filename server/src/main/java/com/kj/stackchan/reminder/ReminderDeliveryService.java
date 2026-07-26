@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import com.kj.stackchan.device.DeviceCommandGateway;
+import com.kj.stackchan.device.DeviceCommandResult;
 import com.kj.stackchan.speech.SpeechProviderUnavailableException;
 import com.kj.stackchan.speech.InvalidSpeechSettingsException;
 import com.kj.stackchan.speech.SpeechRuntimeClient;
@@ -64,12 +65,19 @@ public class ReminderDeliveryService {
 
     @Transactional
     public void record(UUID deviceId, String commandId, boolean accepted) {
+        record(deviceId, commandId, accepted, null);
+    }
+
+    @Transactional
+    public void record(UUID deviceId, String commandId, boolean accepted, DeviceCommandResult result) {
         reminderRepository.findByCommandId(commandId)
                 .filter(reminder -> reminder.getDeviceId().equals(deviceId))
                 .filter(reminder -> reminder.getStatus() == ReminderStatus.DISPATCHED)
                 .ifPresent(reminder -> {
                     if (accepted) {
                         reminder.markDelivered(clock.instant());
+                    } else if (result == DeviceCommandResult.CANCELLED) {
+                        reminder.markCancelled(clock.instant());
                     } else {
                         reminder.markFailed("device_playback_failed", clock.instant());
                     }

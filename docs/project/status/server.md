@@ -2,13 +2,13 @@
 
 - 状态：STABLE
 - 最后更新：2026-07-26
-- 当前分支：`codex/int-002-visible-state`
-- 基准提交：`ecc40f3`
-- 最后验证提交：`ecc40f3`
+- 当前分支：`codex/int-003-touch-controls`
+- 基准提交：`37dcb49`
+- 最后验证提交：`717a8b1`
 
 ## 当前目标
 
-保持已发布的 INT-001 Flyway V14 诊断服务稳定，并兼容 INT-002 仅发生在设备本地的可见状态迭代。
+在保持旧固件兼容和隐私边界的前提下，增加同设备语音回合幂等取消、V15 `CANCELLED` 诊断终态和提醒主动停止结果。
 
 ## 已完成
 
@@ -42,15 +42,15 @@
 
 ## 正在进行
 
-INT-001 已部署到既有 `stackchan-foundation` LAN server，健康接口为 200、Flyway 为 V14、近期 ERROR 为 0。用户已确认实体回复、表情和管理端时间线；INT-002 不修改服务端代码或数据库。
+INT-003 实现、回归、LAN 发布和实体取消验收已完成：`ca2ec8a` 已只替换既有 server，Flyway 升至 V15；取消信号支持早于 HTTP 注册和执行中到达，LLM/TTS 可提前终止，提醒可区分用户取消与播放失败。`717a8b1` 固件已产生真实 `TOUCH_STARTED` 与 `CANCELLED`，用户确认阶段取消和播放立即停止均正常。
 
 ## 下一步操作
 
-保持当前 V14 LAN server 在线；INT-002 固件提交并获刷写授权后，只需确认设备恢复 `motion_disabled` 心跳和既有四条诊断时间线仍可读取。
+保持当前 V15 server 和隐私安全诊断边界；INT-003 无需再次替换 server，下一任务从合并后的最新 `master` 独立开始。
 
 ## 阻塞项
 
-没有服务端软件或部署阻塞。INT-002 不需要服务端发布；不得在证据中记录配置秘密、供应商响应正文、音频或完整异常载荷。
+没有服务端软件或运行态阻塞。不得记录配置秘密、供应商响应正文、音频或完整异常载荷。
 
 ## 关键文件
 
@@ -60,12 +60,17 @@ INT-001 已部署到既有 `stackchan-foundation` LAN server，健康接口为 2
 - `server/src/main/resources/db/migration/V12__wake_word_model_job_sources.sql`
 - `server/src/main/resources/db/migration/V13__retire_generated_wake_models.sql`
 - `server/src/main/resources/db/migration/V14__voice_turn_diagnostics.sql`
+- `server/src/main/resources/db/migration/V15__voice_turn_cancellation.sql`
 - `server/src/main/java/com/kj/stackchan/wakeword/EspSrWakeWordModelCatalog.java`
 - `server/src/main/java/com/kj/stackchan/speech/VoiceTurnDiagnosticsService.java`
+- `server/src/main/java/com/kj/stackchan/speech/VoiceTurnCancellationService.java`
 - `server/wakenet-models/`
 
 ## 验证命令与最近结果
 
+- INT-003 `mvn test` 全量通过 217/217；Testcontainers PostgreSQL 从空库成功应用 15 个迁移至 V15。覆盖取消早于请求、活动 LLM/TTS 中断、设备归属隔离、严格 ACK `result`、提醒取消和旧固件兼容。
+- INT-003 LAN 发布只替换 `stackchan-foundation-server-1`；健康接口和网页根地址均为 200，Flyway `15|true`，近期错误数为 0。旧固件 `216d383 / motion_disabled` 恢复心跳，用户完成的最新回合为 `COMPLETED`，包含 `REQUEST_RECEIVED`、ASR、LLM、TTS、播放开始/完成和恢复监听。
+- INT-003 `717a8b1` 实机验收后，最近 30 分钟隐私安全汇总包含 5 次 `TOUCH_STARTED`、1 个 `CANCELLED` 终态和正常完成回合；用户确认聆听、处理和播放阶段均可短触取消，播放可立即停止。未读取或记录音频、识别文本、机器人回复或认证载荷。
 - 当前任务针对测试 20/20、Maven 全量 198/198 通过；全新 PostgreSQL 成功从空库应用 Flyway 至 V11。调度事务修复后针对测试再次通过 20/20。
 - 本地上传增量针对测试 20/20、Maven 全量 205/205 通过；全新 PostgreSQL 成功从空库应用全部 12 个迁移。部署后 `/api/v1/health` 与网页根地址为 200、Flyway `12|true`、服务端近两分钟错误数为 0，设备心跳保持 `0398073` / `motion_disabled`。
 - 内置目录专项测试通过；其中目录测试对全部 13 个真实 ESP-SR 模型执行打包和 1 MiB 容量校验。“小峰小峰”与出厂回退组合可被服务端和固件包校验器接受。
@@ -101,6 +106,7 @@ INT-001 已部署到既有 `stackchan-foundation` LAN server，健康接口为 2
 - [0013：语音回合使用隐私安全的阶段诊断](../decisions/0013-privacy-safe-voice-turn-diagnostics.md)
 - [0015：运行时生成并安全 OTA 自定义唤醒模型](../decisions/0015-runtime-wake-model-generation-and-ota.md)
 - [0016：唤醒词仅从 ESP-SR 内置模型目录选择并安全 OTA](../decisions/0016-built-in-esp-sr-wake-model-catalog.md)
+- [0018：触摸控制采用本地事件队列与幂等语音回合取消](../decisions/0018-touch-control-and-voice-turn-cancellation.md)
 
 ## 安全与兼容性约束
 

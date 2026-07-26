@@ -5,6 +5,7 @@ import java.util.Set;
 
 public enum VoiceTurnStage {
     WAKE_DETECTED,
+    TOUCH_STARTED,
     LISTENING,
     SPEECH_CAPTURED,
     UPLOAD_STARTED,
@@ -15,16 +16,19 @@ public enum VoiceTurnStage {
     PLAYBACK_STARTED,
     PLAYBACK_COMPLETED,
     LISTENING_RESUMED,
+    CANCELLED,
     FAILED;
 
     private static final Set<VoiceTurnStage> DEVICE_STAGES = EnumSet.of(
             WAKE_DETECTED,
+            TOUCH_STARTED,
             LISTENING,
             SPEECH_CAPTURED,
             UPLOAD_STARTED,
             PLAYBACK_STARTED,
             PLAYBACK_COMPLETED,
             LISTENING_RESUMED,
+            CANCELLED,
             FAILED
     );
 

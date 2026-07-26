@@ -1,5 +1,6 @@
 package com.kj.stackchan.speech;
 
+import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
 
@@ -18,11 +19,15 @@ import org.springframework.ai.chat.client.ChatClient;
 import reactor.core.publisher.Flux;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -40,6 +45,8 @@ class VoiceTurnServiceTest {
     private LlmSettingsService llmSettingsService;
     @Mock
     private VoiceTurnDiagnosticsService diagnosticsService;
+    private final VoiceTurnCancellationService cancellationService =
+            new VoiceTurnCancellationService(Clock.systemUTC());
 
     @Test
     void runsAsrLlmPersistenceAndTtsForOneDeviceConversation() {
@@ -84,6 +91,111 @@ class VoiceTurnServiceTest {
         );
     }
 
+    @Test
+    void rejectsATurnCancelledBeforeItsHttpRequestArrives() {
+        UUID deviceId = UUID.randomUUID();
+        UUID turnId = UUID.randomUUID();
+        cancellationService.cancel(deviceId, turnId);
+
+        assertThatThrownBy(() -> service().handle(deviceId, turnId, new byte[64]))
+                .isInstanceOf(VoiceTurnCancelledException.class);
+
+        verifyNoInteractions(speechRuntimeClient, conversationService, llmRuntimeClientFactory);
+    }
+
+    @Test
+    void interruptsStreamingGenerationAndSkipsTtsWhenTheDeviceCancels() {
+        UUID deviceId = UUID.randomUUID();
+        UUID turnId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID assistantMessageId = UUID.randomUUID();
+        byte[] input = new byte[64];
+        ChatClient chatClient = mock(ChatClient.class, RETURNS_DEEP_STUBS);
+        when(speechRuntimeClient.transcribe(input)).thenReturn("测试取消");
+        when(deviceVoiceConversationService.getOrCreateConversationId(deviceId)).thenReturn(conversationId);
+        when(conversationService.loadHistory(conversationId)).thenReturn(List.of());
+        when(conversationService.startGeneration(eq(conversationId), any(UUID.class), eq("测试取消")))
+                .thenReturn(new GenerationStart(
+                        conversationId,
+                        UUID.randomUUID(),
+                        assistantMessageId,
+                        false,
+                        GenerationStatus.STREAMING,
+                        ""
+                ));
+        when(llmRuntimeClientFactory.createChatClient()).thenReturn(chatClient);
+        when(llmSettingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings(
+                "https://example.com/v1", "model", "prompt", "secret"
+        ));
+        when(chatClient.prompt()
+                .system(anyString())
+                .messages(List.of())
+                .user("测试取消")
+                .stream()
+                .content())
+                .thenReturn(Flux.concat(
+                        Flux.just("部分回答"),
+                        Flux.defer(() -> {
+                            cancellationService.cancel(deviceId, turnId);
+                            return Flux.empty();
+                        })
+                ));
+
+        assertThatThrownBy(() -> service().handle(deviceId, turnId, input))
+                .isInstanceOf(VoiceTurnCancelledException.class);
+
+        verify(conversationService).interruptGeneration(assistantMessageId, "部分回答");
+        verify(conversationService, never()).completeGeneration(eq(assistantMessageId), anyString());
+        verify(conversationService, never()).failGeneration(eq(assistantMessageId), anyString(), anyString());
+        verify(speechRuntimeClient, never()).synthesize(anyString());
+        verify(diagnosticsService).recordServerStage(deviceId, turnId, VoiceTurnStage.CANCELLED, null);
+    }
+
+    @Test
+    void interruptsTheAssistantMessageWhenCancellationArrivesDuringTts() {
+        UUID deviceId = UUID.randomUUID();
+        UUID turnId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID assistantMessageId = UUID.randomUUID();
+        byte[] input = new byte[64];
+        ChatClient chatClient = mock(ChatClient.class, RETURNS_DEEP_STUBS);
+        when(speechRuntimeClient.transcribe(input)).thenReturn("测试合成取消");
+        when(deviceVoiceConversationService.getOrCreateConversationId(deviceId)).thenReturn(conversationId);
+        when(conversationService.loadHistory(conversationId)).thenReturn(List.of());
+        when(conversationService.startGeneration(eq(conversationId), any(UUID.class), eq("测试合成取消")))
+                .thenReturn(new GenerationStart(
+                        conversationId,
+                        UUID.randomUUID(),
+                        assistantMessageId,
+                        false,
+                        GenerationStatus.STREAMING,
+                        ""
+                ));
+        when(llmRuntimeClientFactory.createChatClient()).thenReturn(chatClient);
+        when(llmSettingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings(
+                "https://example.com/v1", "model", "prompt", "secret"
+        ));
+        when(chatClient.prompt()
+                .system(anyString())
+                .messages(List.of())
+                .user("测试合成取消")
+                .stream()
+                .content())
+                .thenReturn(Flux.just("已生成回答"));
+        when(speechRuntimeClient.synthesize("已生成回答")).thenAnswer(ignored -> {
+            cancellationService.cancel(deviceId, turnId);
+            return new byte[44];
+        });
+
+        assertThatThrownBy(() -> service().handle(deviceId, turnId, input))
+                .isInstanceOf(VoiceTurnCancelledException.class);
+
+        verify(conversationService).interruptGeneration(assistantMessageId, "已生成回答");
+        verify(conversationService, never()).completeGeneration(eq(assistantMessageId), anyString());
+        verify(conversationService, never()).failGeneration(eq(assistantMessageId), anyString(), anyString());
+        verify(diagnosticsService).recordServerStage(deviceId, turnId, VoiceTurnStage.CANCELLED, null);
+    }
+
     private VoiceTurnService service() {
         return new VoiceTurnService(
                 speechRuntimeClient,
@@ -91,7 +203,8 @@ class VoiceTurnServiceTest {
                 conversationService,
                 llmRuntimeClientFactory,
                 llmSettingsService,
-                diagnosticsService
+                diagnosticsService,
+                cancellationService
         );
     }
 }

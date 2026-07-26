@@ -10,6 +10,7 @@ import com.kj.stackchan.llm.LlmProviderUnavailableException;
 import com.kj.stackchan.speech.InvalidSpeechSettingsException;
 import com.kj.stackchan.speech.SpeechProviderUnavailableException;
 import com.kj.stackchan.speech.VoiceInputException;
+import com.kj.stackchan.speech.VoiceTurnCancelledException;
 import com.kj.stackchan.reminder.ReminderNotFoundException;
 import com.kj.stackchan.reminder.InvalidReminderException;
 import com.kj.stackchan.wakeword.InvalidWakeWordModelJobException;
@@ -62,6 +63,9 @@ public class DeviceApiExceptionHandler {
     );
     public static final ApiError VOICE_INPUT_INVALID = new ApiError(
             "voice_input_invalid", "没有识别到有效语音，请重试。"
+    );
+    public static final ApiError VOICE_TURN_CANCELLED = new ApiError(
+            "voice_turn_cancelled", "语音对话已取消。"
     );
     public static final ApiError REMINDER_NOT_FOUND = new ApiError(
             "reminder_not_found", "未找到指定提醒。"
@@ -132,6 +136,11 @@ public class DeviceApiExceptionHandler {
     @ExceptionHandler(VoiceInputException.class)
     ResponseEntity<ApiError> invalidVoiceInput(VoiceInputException exception) {
         return response(HttpStatus.BAD_REQUEST, VOICE_INPUT_INVALID);
+    }
+
+    @ExceptionHandler(VoiceTurnCancelledException.class)
+    ResponseEntity<ApiError> voiceTurnCancelled(VoiceTurnCancelledException exception) {
+        return response(HttpStatus.CONFLICT, VOICE_TURN_CANCELLED);
     }
 
     @ExceptionHandler(ReminderNotFoundException.class)

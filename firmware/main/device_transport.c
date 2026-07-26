@@ -89,6 +89,8 @@ static bool s_wifi_reconnect_pending;
 static int64_t s_wifi_reconnect_due_us;
 static uint32_t s_wifi_reconnect_delay_seconds = WIFI_RECONNECT_INITIAL_SECONDS;
 static portMUX_TYPE s_wifi_retry_lock = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE s_server_connection_lock = portMUX_INITIALIZER_UNLOCKED;
+static bool s_server_connected;
 
 static void reset_wifi_reconnect_state(void);
 static void schedule_wifi_reconnect(bool immediate);
@@ -122,6 +124,22 @@ bool device_transport_is_wifi_connected(void)
 {
     return s_transport_events != NULL &&
            (xEventGroupGetBits(s_transport_events) & WIFI_CONNECTED_BIT) != 0;
+}
+
+static void set_server_connected(bool connected)
+{
+    taskENTER_CRITICAL(&s_server_connection_lock);
+    s_server_connected = connected;
+    taskEXIT_CRITICAL(&s_server_connection_lock);
+}
+
+bool device_transport_is_server_connected(void)
+{
+    bool connected;
+    taskENTER_CRITICAL(&s_server_connection_lock);
+    connected = s_server_connected;
+    taskEXIT_CRITICAL(&s_server_connection_lock);
+    return connected;
 }
 
 esp_err_t device_transport_configure_wifi(const char *ssid, const char *password)
@@ -270,13 +288,16 @@ bool device_transport_build_authorization_header(const device_identity_t *identi
     return written > 0 && (size_t)written < size;
 }
 
-static void send_command_ack(websocket_connection_t *connection, const char *command_id, bool accepted)
+static void send_command_ack(websocket_connection_t *connection,
+                             const char *command_id,
+                             bool accepted,
+                             device_command_result_t result)
 {
     char acknowledgement[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
     uint32_t sequence = connection_next_sequence(connection);
     if (sequence == 0 ||
-        device_protocol_encode_command_ack(acknowledgement, sizeof(acknowledgement), sequence,
-                                           command_id, accepted) != ESP_OK ||
+        device_protocol_encode_command_ack_with_result(
+            acknowledgement, sizeof(acknowledgement), sequence, command_id, accepted, result) != ESP_OK ||
         !connection_send_text(connection, acknowledgement)) {
         connection->failed = true;
         safety_state_stop_motion();
@@ -292,6 +313,7 @@ static void websocket_event_handler(void *handler_args,
     websocket_connection_t *connection = handler_args;
     if (event_id == WEBSOCKET_EVENT_CONNECTED) {
         connection->connected = true;
+        set_server_connected(true);
         companion_hardware_set_connected(true);
         ESP_LOGI(TAG, "Device WebSocket connected");
         return;
@@ -299,6 +321,7 @@ static void websocket_event_handler(void *handler_args,
     if (event_id == WEBSOCKET_EVENT_DISCONNECTED || event_id == WEBSOCKET_EVENT_ERROR) {
         connection->connected = false;
         connection->failed = true;
+        set_server_connected(false);
         safety_state_stop_motion();
         companion_hardware_set_connected(false);
         ESP_LOGW(TAG, "Device WebSocket unavailable: event=%ld", (long)event_id);
@@ -320,7 +343,7 @@ static void websocket_event_handler(void *handler_args,
     }
     if (command.type == DEVICE_COMMAND_STOP_MOTION) {
         safety_state_stop_motion();
-        send_command_ack(connection, command.command_id, true);
+        send_command_ack(connection, command.command_id, true, DEVICE_COMMAND_RESULT_NONE);
         return;
     }
     if (command.type == DEVICE_COMMAND_SPEAK_REMINDER) {
@@ -329,7 +352,7 @@ static void websocket_event_handler(void *handler_args,
         memcpy(reminder.command_id, command.command_id, sizeof(reminder.command_id));
         memcpy(reminder.reminder_id, command.reminder_id, sizeof(reminder.reminder_id));
         if (connection->reminder_queue == NULL || xQueueSend(connection->reminder_queue, &reminder, 0) != pdTRUE) {
-            send_command_ack(connection, command.command_id, false);
+            send_command_ack(connection, command.command_id, false, DEVICE_COMMAND_RESULT_FAILED);
         }
         return;
     }
@@ -342,7 +365,10 @@ static void websocket_event_handler(void *handler_args,
                             sensitivity,
                             (uint32_t)command.speech_start_threshold,
                             (uint32_t)command.speech_silence_threshold) == ESP_OK;
-        send_command_ack(connection, command.command_id, accepted);
+        send_command_ack(connection,
+                         command.command_id,
+                         accepted,
+                         accepted ? DEVICE_COMMAND_RESULT_NONE : DEVICE_COMMAND_RESULT_FAILED);
         return;
     }
     if (command.type == DEVICE_COMMAND_INSTALL_WAKE_MODEL) {
@@ -354,7 +380,7 @@ static void websocket_event_handler(void *handler_args,
         install.request.artifact_size = (size_t)command.wake_model_artifact_size;
         if (connection->wake_model_queue == NULL ||
             xQueueSend(connection->wake_model_queue, &install, 0) != pdTRUE) {
-            send_command_ack(connection, command.command_id, false);
+            send_command_ack(connection, command.command_id, false, DEVICE_COMMAND_RESULT_FAILED);
         }
     }
 }
@@ -374,6 +400,7 @@ static void wifi_event_handler(void *handler_args,
     }
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         xEventGroupClearBits(s_transport_events, WIFI_CONNECTED_BIT);
+        set_server_connected(false);
         safety_state_stop_motion();
         companion_hardware_set_connected(false);
         schedule_wifi_reconnect(false);
@@ -590,7 +617,10 @@ static bool run_websocket_connection(const device_identity_t *identity)
         if (connection.connected &&
             xQueueReceive(connection.wake_model_queue, &install, 0) == pdTRUE) {
             bool accepted = wake_model_ota_install(identity, &install.request) == ESP_OK;
-            send_command_ack(&connection, install.command_id, accepted);
+            send_command_ack(&connection,
+                             install.command_id,
+                             accepted,
+                             accepted ? DEVICE_COMMAND_RESULT_NONE : DEVICE_COMMAND_RESULT_FAILED);
             if (accepted) {
                 ESP_LOGI(TAG, "Wake model verified; restarting into pending slot");
                 vTaskDelay(pdMS_TO_TICKS(250));
@@ -600,8 +630,16 @@ static bool run_websocket_connection(const device_identity_t *identity)
         reminder_command_t reminder = {0};
         if (connection.connected &&
             xQueueReceive(connection.reminder_queue, &reminder, 0) == pdTRUE) {
-            bool accepted = voice_control_play_reminder(identity, reminder.reminder_id) == ESP_OK;
-            send_command_ack(&connection, reminder.command_id, accepted);
+            bool cancelled = false;
+            esp_err_t reminder_err = voice_control_play_reminder(
+                identity, reminder.reminder_id, &cancelled);
+            bool accepted = reminder_err == ESP_OK && !cancelled;
+            send_command_ack(
+                &connection,
+                reminder.command_id,
+                accepted,
+                accepted ? DEVICE_COMMAND_RESULT_NONE
+                         : (cancelled ? DEVICE_COMMAND_RESULT_CANCELLED : DEVICE_COMMAND_RESULT_FAILED));
         }
         voice_turn_event_t voice_turn_event = {0};
         if (connection.connected &&
@@ -625,6 +663,7 @@ static bool run_websocket_connection(const device_identity_t *identity)
     }
 
     safety_state_stop_motion();
+    set_server_connected(false);
     companion_hardware_set_connected(false);
     (void)esp_websocket_client_stop(connection.client);
     (void)esp_websocket_client_destroy(connection.client);

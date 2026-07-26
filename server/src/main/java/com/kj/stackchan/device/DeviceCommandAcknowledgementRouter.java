@@ -24,8 +24,13 @@ public class DeviceCommandAcknowledgementRouter implements DeviceCommandAcknowle
 
     @Override
     public void record(UUID deviceId, String commandId, boolean accepted) {
+        record(deviceId, commandId, accepted, null);
+    }
+
+    @Override
+    public void record(UUID deviceId, String commandId, boolean accepted, DeviceCommandResult result) {
         if (!wakeWordModelJobService.recordCommandAcknowledgement(deviceId, commandId, accepted)) {
-            reminderDeliveryService.record(deviceId, commandId, accepted);
+            reminderDeliveryService.record(deviceId, commandId, accepted, result);
         }
     }
 }

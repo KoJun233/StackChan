@@ -3,12 +3,14 @@ package com.kj.stackchan.device;
 import java.io.IOException;
 import java.util.Set;
 import java.util.UUID;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kj.stackchan.speech.VoiceTurnDiagnosticsService;
+import com.kj.stackchan.speech.VoiceTurnCancellationService;
 import com.kj.stackchan.speech.VoiceTurnFailureCode;
 import com.kj.stackchan.speech.VoiceTurnStage;
 import org.slf4j.Logger;
@@ -38,6 +40,9 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     private static final Set<String> COMMAND_ACK_FIELDS = Set.of(
             "type", "sequence", "command_id", "accepted"
     );
+    private static final Set<String> COMMAND_ACK_WITH_RESULT_FIELDS = Set.of(
+            "type", "sequence", "command_id", "accepted", "result"
+    );
     private static final Set<String> WAKE_MODEL_STATUS_FIELDS = Set.of(
             "type", "sequence", "job_id", "status", "model_name", "sha256"
     );
@@ -61,6 +66,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     private final DeviceVoiceSettingsCoordinator voiceSettingsCoordinator;
     private final DeviceWakeModelStatusService wakeModelStatusService;
     private final VoiceTurnDiagnosticsService voiceTurnDiagnosticsService;
+    private final VoiceTurnCancellationService voiceTurnCancellationService;
 
     @Autowired
     public DeviceWebSocketHandler(
@@ -70,7 +76,8 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             ObjectMapper objectMapper,
             DeviceVoiceSettingsCoordinator voiceSettingsCoordinator,
             DeviceWakeModelStatusService wakeModelStatusService,
-            VoiceTurnDiagnosticsService voiceTurnDiagnosticsService
+            VoiceTurnDiagnosticsService voiceTurnDiagnosticsService,
+            VoiceTurnCancellationService voiceTurnCancellationService
     ) {
         this.connectionRegistry = connectionRegistry;
         this.deviceEventService = deviceEventService;
@@ -79,6 +86,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         this.voiceSettingsCoordinator = voiceSettingsCoordinator;
         this.wakeModelStatusService = wakeModelStatusService;
         this.voiceTurnDiagnosticsService = voiceTurnDiagnosticsService;
+        this.voiceTurnCancellationService = voiceTurnCancellationService;
     }
 
     DeviceWebSocketHandler(
@@ -93,6 +101,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
                 objectMapper,
                 null,
                 (deviceId, jobId, status, modelName, sha256) -> { },
+                null,
                 null
         );
     }
@@ -110,6 +119,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
                 objectMapper,
                 null,
                 (deviceId, jobId, status, modelName, sha256) -> { },
+                null,
                 null
         );
     }
@@ -128,6 +138,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
                 objectMapper,
                 voiceSettingsCoordinator,
                 (deviceId, jobId, status, modelName, sha256) -> { },
+                null,
                 null
         );
     }
@@ -147,6 +158,28 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
                 objectMapper,
                 voiceSettingsCoordinator,
                 wakeModelStatusService,
+                null,
+                null
+        );
+    }
+
+    DeviceWebSocketHandler(
+            DeviceConnectionRegistry connectionRegistry,
+            DeviceEventService deviceEventService,
+            DeviceCommandAcknowledgementService acknowledgementService,
+            ObjectMapper objectMapper,
+            DeviceVoiceSettingsCoordinator voiceSettingsCoordinator,
+            DeviceWakeModelStatusService wakeModelStatusService,
+            VoiceTurnDiagnosticsService voiceTurnDiagnosticsService
+    ) {
+        this(
+                connectionRegistry,
+                deviceEventService,
+                acknowledgementService,
+                objectMapper,
+                voiceSettingsCoordinator,
+                wakeModelStatusService,
+                voiceTurnDiagnosticsService,
                 null
         );
     }
@@ -166,7 +199,8 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
                 objectMapper,
                 voiceSettingsCoordinator,
                 (deviceId, jobId, status, modelName, sha256) -> { },
-                voiceTurnDiagnosticsService
+                voiceTurnDiagnosticsService,
+                null
         );
     }
 
@@ -255,16 +289,29 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
                     );
                 }
             }
+            if (voiceTurnStage.stage() == VoiceTurnStage.CANCELLED && voiceTurnCancellationService != null) {
+                voiceTurnCancellationService.cancel(deviceId, voiceTurnStage.turnId());
+            }
             return;
         }
         CommandAcknowledgementEvent acknowledgement = (CommandAcknowledgementEvent) event;
         logger.debug(
-                "Device {} acknowledged command {} with accepted={}",
+                "Device {} acknowledged command {} with accepted={} result={}",
                 deviceId,
                 acknowledgement.commandId(),
-                acknowledgement.accepted()
+                acknowledgement.accepted(),
+                acknowledgement.result()
         );
-        acknowledgementService.record(deviceId, acknowledgement.commandId(), acknowledgement.accepted());
+        if (acknowledgement.result() == null) {
+            acknowledgementService.record(deviceId, acknowledgement.commandId(), acknowledgement.accepted());
+        } else {
+            acknowledgementService.record(
+                    deviceId,
+                    acknowledgement.commandId(),
+                    acknowledgement.accepted(),
+                    acknowledgement.result()
+            );
+        }
     }
 
     private DeviceInboundEvent parseEvent(String payload) {
@@ -308,14 +355,33 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     }
 
     private CommandAcknowledgementEvent parseCommandAcknowledgement(JsonNode root) {
-        requireOnlyFields(root, COMMAND_ACK_FIELDS);
+        if (root.size() == COMMAND_ACK_FIELDS.size()) {
+            requireOnlyFields(root, COMMAND_ACK_FIELDS);
+        } else {
+            requireOnlyFields(root, COMMAND_ACK_WITH_RESULT_FIELDS);
+        }
         long sequence = requiredPositiveSequence(root);
         String commandId = requiredText(root, "command_id");
         JsonNode accepted = root.get("accepted");
         if (accepted == null || !accepted.isBoolean()) {
             throw new InvalidDeviceEventException();
         }
-        return new CommandAcknowledgementEvent(sequence, commandId, accepted.booleanValue());
+        DeviceCommandResult result = null;
+        if (root.has("result")) {
+            if (accepted.booleanValue()) {
+                throw new InvalidDeviceEventException();
+            }
+            String resultValue = requiredText(root, "result");
+            try {
+                result = DeviceCommandResult.valueOf(resultValue.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException exception) {
+                throw new InvalidDeviceEventException();
+            }
+            if (!resultValue.equals(result.name().toLowerCase(Locale.ROOT))) {
+                throw new InvalidDeviceEventException();
+            }
+        }
+        return new CommandAcknowledgementEvent(sequence, commandId, accepted.booleanValue(), result);
     }
 
     private WakeModelStatusEvent parseWakeModelStatus(JsonNode root) {
@@ -451,7 +517,12 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             implements DeviceInboundEvent {
     }
 
-    private record CommandAcknowledgementEvent(long sequence, String commandId, boolean accepted)
+    private record CommandAcknowledgementEvent(
+            long sequence,
+            String commandId,
+            boolean accepted,
+            DeviceCommandResult result
+    )
             implements DeviceInboundEvent {
     }
 

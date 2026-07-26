@@ -58,6 +58,7 @@ async function stopDevice(device: Device) {
 
 const stageLabels: Record<string, string> = {
   WAKE_DETECTED: '检测到唤醒',
+  TOUCH_STARTED: '触摸发起',
   LISTENING: '开始聆听',
   SPEECH_CAPTURED: '采集到语音',
   UPLOAD_STARTED: '开始上传',
@@ -68,6 +69,7 @@ const stageLabels: Record<string, string> = {
   PLAYBACK_STARTED: '开始播放',
   PLAYBACK_COMPLETED: '播放完成',
   LISTENING_RESUMED: '恢复待唤醒',
+  CANCELLED: '回合已取消',
   FAILED: '回合失败',
 }
 
@@ -75,6 +77,7 @@ const statusLabels: Record<VoiceTurnStatus, string> = {
   IN_PROGRESS: '处理中',
   RESPONSE_READY: '回复已就绪',
   COMPLETED: '已完成',
+  CANCELLED: '已取消',
   FAILED: '失败',
 }
 

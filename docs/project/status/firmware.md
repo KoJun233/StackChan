@@ -1,15 +1,15 @@
 # 固件工作流
 
-- 状态：READY
+- 状态：STABLE
 - 最后更新：2026-07-26
-- 当前分支：`codex/int-002-visible-state`
-- 基准提交：`ecc40f3`
-- 最后验证提交：`216d383`
-- 当前实机镜像：`216d383`
+- 当前分支：`codex/int-003-touch-controls`
+- 基准提交：`37dcb49`
+- 最后验证提交：`717a8b1`
+- 当前实机镜像：`717a8b1`
 
 ## 当前目标
 
-在保留 INT-001 诊断、音频与提醒协议、动态瞳孔屏保、WakeNet 三槽 OTA 和 `motion_disabled` 的前提下，让用户无需查看日志即可区分聆听、处理、播放、成功、没听清、离线和可恢复错误。
+在保留 INT-001/002 诊断和显示语义、动态瞳孔屏保、WakeNet 三槽 OTA 与 `motion_disabled` 的前提下，增加按住说话、处理中取消、播放停止和晚到回复抑制。
 
 ## 已完成
 
@@ -68,15 +68,15 @@
 
 ## 正在进行
 
-CoreS3 当前运行 `216d383` LAN HTTP Quad 固件并保持 `motion_disabled`；刷写、逐区回读、启动、心跳、没听清、屏保、离线、正常回合、可恢复异常和异常恢复均已验证，INT-002 实现与实机验收完成。
+INT-003 已完成：UI 任务只入队触摸边沿，首次触摸仅退出屏保，在线待机长持 600 ms 进入按住说话，短触可取消聆听/处理/播放或跳过反馈。`717a8b1` LAN HTTP Quad 完整镜像已刷入 CoreS3 `COM3`，启动、心跳和四项实体交互验收均通过。
 
 ## 下一步操作
 
-获得用户外部推送授权后，将单提交任务分支推送并创建目标为 `master` 的 PR；不得自行合并。
+完成 INT-003 单提交交接；未经新的明确授权不再刷写、OTA 或切换 profile。下一固件任务从合并后的最新 `master` 创建独立分支。
 
 ## 阻塞项
 
-没有实现或验证阻塞。外部推送和 PR 尚未获得本任务授权；不得记录 Wi-Fi 密码、Workspace ID、配对码、语音供应商密钥或设备 Token。
+没有固件软件、服务端前置或实体交互阻塞。不得记录 Wi-Fi 密码、Workspace ID、配对码、语音供应商密钥或设备 Token。
 
 ## 关键文件
 
@@ -90,12 +90,17 @@ CoreS3 当前运行 `216d383` LAN HTTP Quad 固件并保持 `motion_disabled`；
 - `firmware/main/device_transport.c`
 - `firmware/main/device_protocol.c`
 - `firmware/main/interaction_state.c`
+- `firmware/main/touch_interaction.c`
 - `firmware/main/companion_hardware.cpp`
 - `firmware/main/voice_control.c`
 - `firmware/partitions.csv`
 
 ## 验证命令与最近结果
 
+- INT-003 使用 ESP-IDF 5.3.3 和独立 sdkconfig 构建四个 Quad profile：协议测试 `0x37880`/93%，默认 HTTPS `0x1549f0`/56%，LAN HTTP `0x143980`/58%，测试证书 HTTPS `0x143de0`/58%。公开 ESP-IDF 测试证书已删除，未创建或保留私钥；Unity 用例只编译进协议镜像，未上板执行。
+- INT-003 两项栈预算回归通过：provisioning 8192 字节被拒绝/16384 字节接受，voice 12288 字节被拒绝/32768 字节接受；唤醒模型包安全回归通过。
+- INT-003 经用户明确确认 `717a8b1`、CoreS3、`COM3` 和 LAN HTTP Quad development profile 后，从干净提交重建并完整刷写 bootloader、分区表、应用、OTA data 和语音模型；五个区域独立 `verify_flash` 全部匹配，NVS 未擦除。启动确认 PSRAM、CoreS3 显示/触摸/麦克风/扬声器、LAN HTTP、WakeNet、WebSocket 和 `motion_disabled` 正常，未见 panic、栈溢出、看门狗或重启循环；数据库收到 `717a8b1` 新鲜心跳。
+- INT-003 实体人工验收四项全部通过：屏保首触只唤醒；在线待机长持至少 600 ms 可按住说话并在松手后处理；聆听、处理和播放阶段短触可取消；播放中的短触会立即停止声音。运行库同时记录真实 `TOUCH_STARTED` 和 `CANCELLED`。
 - 本地上传增量不改变设备协议、分区表或固件源码；未执行构建、刷写或模型 OTA。部署后数据库继续收到 `0398073` / `motion_disabled` 心跳。
 - 本次内置目录改造不修改固件源码、分区表或设备协议；当前 `0398073` 映射中 `esp_wn_handle_from_name` 同时链接 `wakenet9_quantized`、`wakenet9l_quantized` 和 `wakenet9s_quantized`，可运行“小峰小峰”的 WakeNet9 模型。
 - 2026-07-26 管理员选择“小峰小峰”后，设备接受安装命令、完成模型槽写入和重启健康确认，服务端任务进入 `INSTALLED`；随后数据库恢复 `0398073` / `motion_disabled` 心跳，未执行完整固件刷写。
@@ -164,6 +169,7 @@ CoreS3 当前运行 `216d383` LAN HTTP Quad 固件并保持 `motion_disabled`；
 - [0015：运行时生成并安全 OTA 自定义唤醒模型](../decisions/0015-runtime-wake-model-generation-and-ota.md)
 - [0016：唤醒词仅从 ESP-SR 内置模型目录选择并安全 OTA](../decisions/0016-built-in-esp-sr-wake-model-catalog.md)
 - [0017：交互阶段在设备本地映射为可区分的可见状态](../decisions/0017-local-user-visible-interaction-states.md)
+- [0018：触摸控制采用本地事件队列与幂等语音回合取消](../decisions/0018-touch-control-and-voice-turn-cancellation.md)
 - [0009：服务端增加阿里云百炼原生语音适配器](../decisions/0009-native-dashscope-speech-adapter.md)
 
 ## 安全与兼容性约束

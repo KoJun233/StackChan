@@ -34,14 +34,22 @@ typedef enum {
 
 typedef enum {
     DEVICE_VOICE_STAGE_WAKE_DETECTED = 0,
+    DEVICE_VOICE_STAGE_TOUCH_STARTED,
     DEVICE_VOICE_STAGE_LISTENING,
     DEVICE_VOICE_STAGE_SPEECH_CAPTURED,
     DEVICE_VOICE_STAGE_UPLOAD_STARTED,
     DEVICE_VOICE_STAGE_PLAYBACK_STARTED,
     DEVICE_VOICE_STAGE_PLAYBACK_COMPLETED,
     DEVICE_VOICE_STAGE_LISTENING_RESUMED,
+    DEVICE_VOICE_STAGE_CANCELLED,
     DEVICE_VOICE_STAGE_FAILED,
 } device_voice_turn_stage_t;
+
+typedef enum {
+    DEVICE_COMMAND_RESULT_NONE = 0,
+    DEVICE_COMMAND_RESULT_CANCELLED,
+    DEVICE_COMMAND_RESULT_FAILED,
+} device_command_result_t;
 
 typedef enum {
     DEVICE_VOICE_FAILURE_NONE = 0,
@@ -89,6 +97,13 @@ esp_err_t device_protocol_encode_command_ack(char *output,
                                              uint32_t sequence,
                                              const char *command_id,
                                              bool accepted);
+
+esp_err_t device_protocol_encode_command_ack_with_result(char *output,
+                                                         size_t output_size,
+                                                         uint32_t sequence,
+                                                         const char *command_id,
+                                                         bool accepted,
+                                                         device_command_result_t result);
 
 esp_err_t device_protocol_encode_wake_model_status(char *output,
                                                    size_t output_size,

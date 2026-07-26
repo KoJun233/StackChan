@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "esp_err.h"
@@ -20,4 +21,6 @@ esp_err_t voice_control_configure(voice_wake_sensitivity_t wake_sensitivity,
                                   uint32_t speech_silence_threshold);
 
 /** Fetches the fixed same-origin reminder WAV and plays it synchronously. */
-esp_err_t voice_control_play_reminder(const device_identity_t *identity, const char *reminder_id);
+esp_err_t voice_control_play_reminder(const device_identity_t *identity,
+                                      const char *reminder_id,
+                                      bool *cancelled);
