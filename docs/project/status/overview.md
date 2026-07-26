@@ -1,12 +1,12 @@
 # 全局工作流总览
 
-- 状态：ACTIVE
+- 状态：READY
 - 最后更新：2026-07-26
-- 当前分支：`codex/int-001-voice-turn-diagnostics`
-- 实现基准：`af65290`
-- 最后验证提交：`af65290`
-- 当前验证范围：最新 `master` 上的 ESP-SR 内置唤醒模型能力，以及 INT-001 隐私安全语音回合诊断的服务端、前端、固件和协议变更。
-- 当前优先级：P1 推送已完成合并回归的 INT-001 单提交任务分支；随后由用户创建 PR，按服务端 V14、管理端、固件顺序发布并完成实体时间线验收。
+- 当前分支：`codex/int-002-visible-state`
+- 实现基准：`ecc40f3`
+- 最后验证提交：`216d383`
+- 当前验证范围：已发布并完成人工验收的 INT-001，以及 INT-002 交互状态与 `216d383` 实机验证；没听清、屏保、离线颜色、正常对话、可恢复异常和恢复后的正常回合均完成人工验收。
+- 当前优先级：INT-002 已完成，等待外部推送与 PR 授权。
 - 当前部署：LAN HTTP development mode。
 - 生产边界：HTTPS-only。
 
@@ -14,16 +14,18 @@
 
 | 工作流 | 状态 | 状态文件 | 当前分支 | 下一步 |
 | --- | --- | --- | --- | --- |
-| 服务端 | ACTIVE | [server.md](server.md) | `codex/int-001-voice-turn-diagnostics` | 合并回归后推送；获批合并后先部署 V14。 |
-| 前端 | ACTIVE | [frontend.md](frontend.md) | `codex/int-001-voice-turn-diagnostics` | 服务端 V14 部署后发布最近语音回合时间线。 |
-| 固件 | ACTIVE | [firmware.md](firmware.md) | `codex/int-001-voice-turn-diagnostics` | 用户明确确认设备、串口、profile 和提交后再刷写验收。 |
-| 部署 | STABLE | [deployment.md](deployment.md) | `codex/int-001-voice-turn-diagnostics` | 保持当前 Flyway V13 LAN server 在线；本任务未部署。 |
+| 服务端 | STABLE | [server.md](server.md) | `codex/int-002-visible-state` | 保持已发布的 Flyway V14 LAN server 在线并兼容新旧固件。 |
+| 前端 | STABLE | [frontend.md](frontend.md) | `codex/int-002-visible-state` | INT-001 时间线已由用户确认；INT-002 不修改管理端。 |
+| 固件 | READY | [firmware.md](firmware.md) | `codex/int-002-visible-state` | INT-002 实机验收完成；获得授权后推送任务分支并创建 PR。 |
+| 部署 | STABLE | [deployment.md](deployment.md) | `codex/int-002-visible-state` | 保持服务端 `ecc40f3`、Flyway V14 和 LAN HTTP development mode 不变；设备已运行 `216d383`。 |
 
-唤醒词入口现改为“选择 ESP-SR 2.4.6 内置短语、服务端从锁定目录可信打包、设备双槽 OTA、重启健康确认、失败自动回退”。任意文本生成、第三方生成器和模型包上传均已从最终代码与页面移除；V12 只保留为已部署迁移历史，V13 清理临时字段。下拉包含“Hi, Stack Chan”“小峰小峰”等 13 项。CoreS3 的 `0398073` 镜像已链接 WakeNet9/WakeNet9l/WakeNet9s 并完成三槽引导，因此无需重刷固件。管理员选择“小峰小峰”后，任务已完成 `READY -> INSTALLING -> INSTALLED`。
+唤醒词入口现改为“选择 ESP-SR 2.4.6 内置短语、服务端从锁定目录可信打包、设备双槽 OTA、重启健康确认、失败自动回退”。任意文本生成、第三方生成器和模型包上传均已从最终代码与页面移除；V12 只保留为已部署迁移历史，V13 清理临时字段。下拉包含“Hi, Stack Chan”“小峰小峰”等 13 项。CoreS3 曾使用 `0398073` 镜像完成 WakeNet9/WakeNet9l/WakeNet9s 三槽引导；管理员选择“小峰小峰”后，任务已完成 `READY -> INSTALLING -> INSTALLED`。INT-001 发布时设备升级为 `ecc40f3`，当前已升级为 INT-002 栈修复镜像 `216d383`。
 
-当前内置目录版本已部署到既有 `stackchan-foundation` LAN HTTP 服务：健康和网页根地址均为 200，Flyway `13|true`，容器包含 13 组模型，CoreS3 心跳保持 `0398073` / `motion_disabled`。一次误用基础 Compose 导致端口暂时只监听 `127.0.0.1`，恢复正式 `compose.lan.yaml` 覆盖层后设备自动重连并完成“小峰小峰”安装。部署前保留了 `stackchan-foundation-server:rollback-upload-v12` 本地回退镜像。
+内置目录版本此前部署到既有 `stackchan-foundation` LAN HTTP 服务时，健康和网页根地址均为 200、Flyway 为 V13、容器包含 13 组模型，CoreS3 心跳为 `0398073 / motion_disabled`。一次误用基础 Compose 导致端口暂时只监听 `127.0.0.1`，恢复正式 `compose.lan.yaml` 覆盖层后设备自动重连并完成“小峰小峰”安装。部署前保留了 `stackchan-foundation-server:rollback-upload-v12` 本地回退镜像；当前服务已由 INT-001 升级为 `ecc40f3` / V14。
 
-INT-001 软件实现已完成：同一回合 ID 关联设备唤醒、录音、上传、服务端 ASR/LLM/TTS、播放和麦克风恢复；PostgreSQL 只保存 7 天结构化元数据，设备总览展示最近时间线。旧固件仍可省略回合 ID，SCV1 正文不变。当前没有部署、刷写、凭据或 Compose 模式变更。
+INT-001 软件实现已完成：同一回合 ID 关联设备唤醒、录音、上传、服务端 ASR/LLM/TTS、播放和麦克风恢复；PostgreSQL 只保存 7 天结构化元数据，设备总览展示最近时间线。旧固件仍可省略回合 ID，SCV1 正文不变。
+
+INT-001 已发布到既有 LAN server 和 CoreS3；机器证据包含 1 个 `NO_SPEECH` 与 3 个完整成功回合。用户随后确认实体扬声器、聆听/处理/待机表情和管理端四条时间线均符合预期，INT-001 人工验收完成。INT-002 只改本地固件显示语义，不新增协议或部署变更。
 
 ## 架构决策
 
@@ -62,6 +64,12 @@ INT-001 软件实现已完成：同一回合 ID 关联设备唤醒、录音、�
 - INT-001 原始基线验证通过：Maven 189/189 且当时的 Flyway V11 成功应用；前端 Vitest 46/46、`vue-tsc` 和 production build 通过；ESP-IDF 5.3.3 协议测试 profile 构建为 `0x37880`、余量 93%；两项固件栈预算、`pnpm docs:check`、文档校验测试、`git diff --check` 和 LAN Compose 静态验证通过。重放到最新 `master` 后诊断迁移已顺延为 V14，合并回归结果见本任务后续记录。
 - INT-001 最新 `master` 合并回归通过：服务端 `mvn clean test` 205/205、Testcontainers PostgreSQL 14 个迁移到 V14；前端 Node v24.15.0 下 Vitest 50/50、`vue-tsc -b` 和 production build；ESP-IDF 5.3.3 协议 profile `0x37880`、余量 93%；两项固件栈预算、唤醒模型包回归、文档检查与 7 项文档测试、LAN Compose 静态验证和 `git diff --check` 均通过。未部署、未连接设备、未刷写固件。
 - INT-001 验证只生成临时构建产物并使用进程内占位值；未连接 COM3、未刷写固件、未重建服务、未更改数据库、凭据、部署模式或远程状态。
+- INT-002 四个 Quad profile 完整编译通过：协议测试、默认 HTTPS、LAN HTTP、测试证书 HTTPS 镜像分别为 `0x37880`、`0x153d20`、`0x142cd0`、`0x143110`，余量分别为 93%、56%、58%、58%；两项栈预算、唤醒模型包、文档、LAN Compose 和差异检查通过。经用户明确授权后，从干净 `adbd75e` 重建的 LAN HTTP Quad 完整镜像已刷入 CoreS3 `COM3`；五个区域均通过独立摘要校验，NVS 未擦除。启动确认 8 MB PSRAM、CoreS3 外设、LAN HTTP、WakeNet 和 `motion_disabled`，数据库收到 `adbd75e` 最近心跳；未部署服务或改变凭据与模式。
+- 首轮用户验收确认没听清与屏保通过，但正常回合和离线显示不可区分。修复后的协议测试与 LAN HTTP Quad profile 镜像分别为 `0x37880` 和 `0x142d90`，状态单测、两项栈预算、模型包、文档 7/7、LAN Compose 与差异检查通过。
+- 经用户明确授权后，从干净提交 `abd6a22` 重建的 LAN HTTP Quad 完整镜像已刷入 CoreS3 `COM3`；bootloader、分区表、应用、OTA data 和语音模型五个区域均通过独立 `verify_flash`，NVS 未擦除。启动确认应用版本、ESP-IDF 5.3.3、8 MB PSRAM / 80 MHz 及内存测试、CoreS3 外设、WakeNet、LAN HTTP、WebSocket 和 `motion_disabled` 正常，45 秒窗口未见 panic、看门狗或重启循环；服务健康为 200、Flyway `14|true`，数据库收到 `abd6a22` 最近心跳。未替换 server、执行迁移、改变凭据或切换模式。
+- 用户正常对话复测稳定复现“录音完成后处理点阵再回到灰色离线”。脱敏串口证据显示两次 `Speech captured` 后均报告 `A stack overflow in task voice_control has been detected` 并软件复位；服务端未收到 `REQUEST_RECEIVED`，因此问题位于设备同步 HTTP 上传路径而非 ASR/LLM/TTS 或显示仲裁。
+- 修复将 `VOICE_TASK_STACK_SIZE` 从 12288 提高到 32768 字节，并新增语音栈预算验证与回归。真实 `-fstack-usage` 报告确认已知本地路径 10416 字节、外部 HTTP/TCP 余量 22352 字节；12288 字节夹具被拒绝、32768 字节夹具通过。经用户明确授权，从干净 `216d383` 重建的 LAN HTTP Quad 完整镜像已刷入 CoreS3 `COM3`；五个区域独立 `verify_flash` 全部匹配且 NVS 未擦除。启动确认版本、ESP-IDF 5.3.3、8 MB PSRAM / 80 MHz 及内存测试、CoreS3 外设、WakeNet、LAN HTTP、WebSocket 和 `motion_disabled`，40 秒窗口未见 panic、栈溢出、看门狗或重启循环；服务健康为 200、Flyway `14|true`，数据库收到 `216d383` 新鲜心跳。用户随后完成两轮正常对话，串口均记录录音完成和 WakeNet 恢复监听且未见栈溢出、panic 或复位；数据库两轮均为 `COMPLETED`，完整包含请求接收、ASR、LLM、TTS、播放开始/完成和恢复监听阶段。用户确认两轮实体语音回复、成功反馈和返回待机均正常。另一次独立 `NO_SPEECH` 按预期失败码结束。
+- 用户按 runbook 临时制造语音模型调用失败并恢复原配置，确认橙色可恢复异常反馈和恢复后的正常回合均符合预期；用户明确表示无需继续读取串口或数据库证据，被动监听已停止并释放 `COM3`。
 - `b4876fb` 的协议测试、默认 HTTPS、LAN HTTP 和测试证书 HTTPS 四个 Quad profile 均从干净工作树构建并嵌入 `b4876fb`，镜像大小分别为 `0x37880`、`0x1506a0`、`0x13f570` 和 `0x13f9f0`，应用分区余量分别为 93%、56%、58% 和 58%。测试证书使用 ESP-IDF 公开样例，构建后已删除且未创建或保留私钥。
 - `b4876fb` 的 LAN HTTP 完整镜像已刷入 COM3，五个分区全部通过写入哈希校验；启动确认版本 `b4876fb`、8 MB Quad PSRAM、加密 NVS、CoreS3 外设、WakeNet 和 `motion_disabled`。2026-07-20 22:38（Asia/Shanghai）USB 配置写入后数据库恢复持续心跳，服务地址错配阻塞已解除。
 - 2026-07-20 22:36（Asia/Shanghai）在线提醒在一次尝试后收到设备成功播放 ACK 并变为 `DELIVERED`；实体扬声器是否清晰出声仍待用户听觉确认。
@@ -100,11 +108,12 @@ INT-001 软件实现已完成：同一回合 ID 关联设备唤醒、录音、�
 
 - 软件链路和设备三槽引导已验证；内置模型文件已随锁定组件存在，不再依赖用户上传或外部生成器。首次实际模型切换会重启设备，必须由管理员主动选择后触发。
 - CoreS3 已具备 `model_a` / `model_b` 分区；后续更换兼容唤醒模型无需再刷整套固件。
-- INT-001 没有软件阻塞。发布必须保持服务端 V14 → 管理端 → 固件顺序；实体诊断验收依赖用户明确确认 CoreS3、`COM3`、LAN HTTP profile 和提交后再刷写，并实际完成成功与失败语音回合。
+- INT-001 已完成服务端 V14、管理端、固件发布和用户人工验收；现有 1 个 `NO_SPEECH` 与 3 个成功回合作为 INT-002 前的基线。
 - 屏保视觉和离线提醒补发仍是既有待验收项，不在 INT-001 中扩展。
-- “小峰小峰”OTA 已完成，但实体声学命中仍待用户验收。
+- “小峰小峰”OTA 和实体声学命中已由三个成功语音回合确认。
+- INT-002 不需要服务端或前端发布；首轮用户验收发现正常回合和离线显示不可区分，修复完成后仍须针对新的精确提交重新获得刷写授权。
 - 部署工作依赖维持 LAN HTTP development mode 与 HTTPS-only 生产边界，且不得组合 `compose.lan.yaml` 和 `compose.production.yaml`。
 
 ## 下一步
 
-完成最新 `master` 上的全量回归并推送 INT-001 单提交任务分支；随后由用户创建、审核并合并 PR。合并后只重建既有 LAN server 并确认健康接口 200、Flyway V14，再发布管理端。最后由用户明确确认设备、`COM3`、LAN HTTP development profile 和提交后刷写匹配 Quad 固件，完成一次成功回合与一次无语音失败回合，核对时间线后再继续 INT-002。生产继续保持 HTTPS-only。
+完成离线只覆盖待机、中性灰离线色、1.2 秒成功反馈和 WebSocket 连接日志的回归与单提交；随后针对新的精确提交申请 CoreS3 `COM3` LAN HTTP Quad 刷写授权并复验正常回合与离线状态。生产继续保持 HTTPS-only。

@@ -2,14 +2,14 @@
 
 - 状态：STABLE
 - 最后更新：2026-07-26
-- 当前分支：`codex/int-001-voice-turn-diagnostics`
-- 基准提交：`af65290`
-- 最后验证提交：`af65290`
-- 当前运行态代码：已部署的 ESP-SR 内置唤醒词目录版本（Flyway V13），不含 INT-001。
+- 当前分支：`codex/int-002-visible-state`
+- 基准提交：`ecc40f3`
+- 最后验证提交：`216d383`
+- 当前运行态代码：服务端 `ecc40f3`、CoreS3 `216d383`，Flyway V14。
 
 ## 当前目标
 
-保持现有 Compose 模式和生产 HTTPS-only 边界，把锁定的 ESP-SR 2.4.6 内置模型目录随服务端镜像发布。
+保持现有 Flyway V14 LAN server、Compose 模式和生产 HTTPS-only 边界；INT-002 不需要服务端部署。
 
 ## 已完成
 
@@ -38,11 +38,13 @@
 
 ## 正在进行
 
-当前 `stackchan-foundation` 已用正式 LAN overlay 运行内置目录版本，Flyway 为 V13，容器包含 13 组模型并发布 `0.0.0.0:8080`。CoreS3 运行 `0398073`、持续报告 `motion_disabled`，且“小峰小峰”任务已完成安装；没有凭据轮换或固件刷写，生产 HTTPS-only 边界不变。
+当前 `stackchan-foundation` 已用正式 LAN overlay 运行 `ecc40f3`，健康接口为 200、Flyway 为 V14，并发布 `0.0.0.0:8080`。CoreS3 已刷入 `216d383` LAN HTTP Quad 镜像并持续报告 `motion_disabled`；本次未替换 server、执行迁移或切换 Compose 模式，生产 HTTPS-only 边界不变。
+
+此前正常对话失败已定位为设备侧 `voice_control` 栈溢出；修复镜像 `216d383` 已部署到设备，正常回合、可恢复异常和恢复后的正常回合均完成人工验收。server 运行态、V14 数据库和 LAN overlay 无需修改。
 
 ## 下一步操作
 
-用户实体呼叫“小峰小峰”，确认安装后的 WakeNet9 模型能够稳定唤醒；如未命中，再采集不含秘密的串口 WakeNet 初始化和检测日志。
+保持当前 V14 LAN server 在线；INT-002 剩余实体显示效果由用户观察验收，不替换 server、不执行迁移或切换 Compose 模式。
 
 ## 阻塞项
 
@@ -64,6 +66,13 @@
 - 2026-07-26 内置目录部署：部署前保留 `stackchan-foundation-server:rollback-upload-v12`；正式 Dockerfile 构建成功并只替换 server。健康和网页根地址均为 200，未登录目录 API 返回 401，Flyway `13|true`，容器模型目录为 13 组，近两分钟错误数为 0；CoreS3 心跳保持 `0398073` / `motion_disabled`。未触发模型 OTA 或刷写。
 - 2026-07-26 首次内置词真机切换：基础 Compose 的 loopback 监听使任务暂留 `READY`；恢复 `compose.lan.yaml` 后 CoreS3 自动重连，任务 `d9fcd60f-51cf-4e5d-a12b-7cb7fbcfb5da` 完成 `INSTALLED`，目标为 `wn9_xiao3feng1xiao3feng1_tts3`，设备继续报告 `0398073` / `motion_disabled`。未重新刷写固件。
 - 2026-07-26 CoreS3 完成 `0398073` LAN HTTP Quad 三槽引导，数据库收到 `0398073` / `motion_disabled` 心跳；Compose 模式、卷、端口和生产 HTTPS-only 边界未改变。
+- 2026-07-26 INT-002 实机验证：CoreS3 `COM3` 已刷入 `adbd75e` LAN HTTP Quad 完整镜像，五个区域独立摘要校验通过且 NVS 未擦除；`/api/v1/health` 返回 200，Flyway 保持 `14|true`，数据库收到 `adbd75e` / `motion_disabled` 最近心跳。server、PostgreSQL、Redis、卷、端口、Compose 模式和生产 HTTPS-only 边界均未改变。
+- 2026-07-26 INT-002 修复镜像验证：经用户明确授权，CoreS3 `COM3` 已刷入从干净 `abd6a22` 重建的 LAN HTTP Quad 完整镜像，五个区域独立 `verify_flash` 全部匹配且 NVS 未擦除；`/api/v1/health` 返回 200，Flyway 保持 `14|true`，数据库收到 `abd6a22` / `motion_disabled` 新鲜心跳。server、PostgreSQL、Redis、卷、端口、Compose 模式和生产 HTTPS-only 边界均未改变。
+- 2026-07-26 正常回合失败诊断：设备脱敏串口在两次 `Speech captured` 后均确认 `voice_control` 任务栈溢出并软件复位，数据库没有 `REQUEST_RECEIVED`；server 健康、Flyway V14 和设备重连心跳正常。修复只涉及本地固件语音任务栈预算，不需要替换 server 或执行迁移。
+- 2026-07-26 INT-002 栈修复镜像验证：经用户明确授权，CoreS3 `COM3` 已刷入从干净 `216d383` 重建的 LAN HTTP Quad 完整镜像，五个区域独立 `verify_flash` 全部匹配且 NVS 未擦除；启动确认版本、8 MB PSRAM、CoreS3 外设、LAN HTTP、WakeNet、WebSocket 与 `motion_disabled`，未见 panic、栈溢出、看门狗或重启循环。`/api/v1/health` 返回 200，Flyway 保持 `14|true`，数据库收到 `216d383` / `motion_disabled` 新鲜心跳。server、PostgreSQL、Redis、卷、端口、Compose 模式和生产 HTTPS-only 边界均未改变；正常对话仍待用户实测。
+- 2026-07-26 INT-002 正常回合复验：用户完成两轮对话，数据库两轮均为 `COMPLETED`，完整包含请求接收、ASR、LLM、TTS、播放开始/完成与恢复监听；串口记录两次录音完成和恢复监听，未出现 `voice_control` 栈溢出、panic、看门狗或复位。另一次独立 `NO_SPEECH` 按预期结束。server、Flyway V14、LAN overlay、凭据、端口和生产 HTTPS-only 边界均未改变。
+- 2026-07-26 INT-002 正常回合人工验收：用户确认两轮语音回复、成功反馈和返回待机均正常。无需修改或重建 server，下一项仅按 runbook 临时制造并恢复供应商模型失败以验收橙色可恢复错误。
+- 2026-07-26 INT-002 异常反馈人工验收：用户确认临时模型失败的可恢复异常反馈以及恢复配置后的正常回合均正常，并要求不再读取串口或数据库证据。被动监听已停止；未重建或替换 server，Flyway、Compose、端口、凭据和生产 HTTPS-only 边界均未改变。
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-lan-compose.ps1`：在 `b4876fb` 使用仅限当前进程的验证占位值和 `stackchan-foundation` 项目名通过；没有 Compose 模式或凭据变更。
 - `f962d71`：同一 LAN Compose 项目重建 server 成功；健康检查 200，Flyway v8，设备心跳在 `2026-07-20 00:12:49+08:00` 后恢复。
 - `3e50d56`：同一 LAN Compose 项目再次重建 server 成功；健康检查 200，线上资源包含 `speech-settings-form` 绑定。

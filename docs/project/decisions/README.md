@@ -27,3 +27,4 @@
 | [0014](0014-packaged-custom-wake-word-model.md) | SUPERSEDED | 自定义唤醒词使用离线生成并随固件打包；由 0015 的运行时模型 OTA 替代。 |
 | [0015](0015-runtime-wake-model-generation-and-ota.md) | SUPERSEDED | 网页在线生成或上传本地 WakeNet 包；由 0016 的固定内置模型目录替代。 |
 | [0016](0016-built-in-esp-sr-wake-model-catalog.md) | ACCEPTED | 用户只选择 ESP-SR 2.4.6 内置唤醒词，服务端可信打包并通过三槽 OTA 自动启用或回退。 |
+| [0017](0017-local-user-visible-interaction-states.md) | ACCEPTED | 设备在本地把交互阶段和连接状态映射为可区分、可恢复的可见状态。 |

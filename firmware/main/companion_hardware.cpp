@@ -30,6 +30,7 @@ static SemaphoreHandle_t s_audio_mutex;
 static portMUX_TYPE s_activity_lock = portMUX_INITIALIZER_UNLOCKED;
 static int64_t s_last_activity_us;
 static companion_face_state_t s_face_state = COMPANION_FACE_IDLE;
+static bool s_connected;
 static bool s_screensaver;
 static size_t s_screensaver_frame;
 static int64_t s_next_screensaver_frame_us;
@@ -53,7 +54,7 @@ static void draw_face_locked(companion_face_state_t state)
             status = 0x4BA3FF;
             accent = 0x4BA3FF;
             break;
-        case COMPANION_FACE_THINKING:
+        case COMPANION_FACE_PROCESSING:
             status = 0xFFD166;
             accent = 0xFFD166;
             break;
@@ -61,9 +62,21 @@ static void draw_face_locked(companion_face_state_t state)
             status = 0xFF4FA3;
             accent = 0xFF4FA3;
             break;
-        case COMPANION_FACE_ERROR:
-            status = 0xFF5C5C;
-            accent = 0xFF5C5C;
+        case COMPANION_FACE_SUCCESS:
+            status = 0x42D392;
+            accent = 0x42D392;
+            break;
+        case COMPANION_FACE_NO_SPEECH:
+            status = 0x71D6C5;
+            accent = 0x71D6C5;
+            break;
+        case COMPANION_FACE_OFFLINE:
+            status = 0x8C8C8C;
+            accent = 0x8C8C8C;
+            break;
+        case COMPANION_FACE_RECOVERABLE_ERROR:
+            status = 0xFF8A3D;
+            accent = 0xFF8A3D;
             break;
         case COMPANION_FACE_IDLE:
         default:
@@ -75,12 +88,22 @@ static void draw_face_locked(companion_face_state_t state)
     M5.Display.fillCircle(214, 94, 35, eye);
     M5.Display.fillCircle(LEFT_PUPIL_X, PUPIL_Y, PUPIL_RADIUS, pupil);
     M5.Display.fillCircle(RIGHT_PUPIL_X, PUPIL_Y, PUPIL_RADIUS, pupil);
-    if (state == COMPANION_FACE_ERROR) {
+    if (state == COMPANION_FACE_SUCCESS) {
+        M5.Display.drawLine(140, 158, 154, 170, accent);
+        M5.Display.drawLine(154, 170, 166, 170, accent);
+        M5.Display.drawLine(166, 170, 180, 158, accent);
+    } else if (state == COMPANION_FACE_RECOVERABLE_ERROR) {
         M5.Display.drawLine(136, 174, 184, 154, accent);
+    } else if (state == COMPANION_FACE_NO_SPEECH) {
+        M5.Display.drawCircle(160, 164, 10, accent);
+        M5.Display.drawCircle(160, 164, 11, accent);
+    } else if (state == COMPANION_FACE_OFFLINE) {
+        M5.Display.drawLine(140, 164, 180, 164, accent);
+        M5.Display.drawCircle(160, 184, 5, accent);
     } else if (state == COMPANION_FACE_LISTENING) {
         M5.Display.drawCircle(160, 164, 18, accent);
         M5.Display.drawCircle(160, 164, 19, accent);
-    } else if (state == COMPANION_FACE_THINKING) {
+    } else if (state == COMPANION_FACE_PROCESSING) {
         M5.Display.fillCircle(146, 166, 4, accent);
         M5.Display.fillCircle(160, 166, 4, accent);
         M5.Display.fillCircle(174, 166, 4, accent);
@@ -93,6 +116,11 @@ static void draw_face_locked(companion_face_state_t state)
     M5.Display.fillCircle(302, 18, 8, status);
     s_pupil_offset = screensaver_motion_offset(0);
     s_screensaver_frame = 0;
+}
+
+static companion_face_state_t visible_state_locked(void)
+{
+    return companion_interaction_visible_state(s_face_state, s_connected);
 }
 
 static void draw_screensaver_pupils_locked(screensaver_pupil_offset_t next)
@@ -141,7 +169,7 @@ extern "C" void companion_hardware_mark_activity(void)
     if (s_screensaver) {
         s_screensaver = false;
         M5.Display.setBrightness(NORMAL_BRIGHTNESS);
-        draw_face_locked(s_face_state);
+        draw_face_locked(visible_state_locked());
     }
     xSemaphoreGive(s_board_mutex);
 }
@@ -155,7 +183,26 @@ extern "C" void companion_hardware_set_state(companion_face_state_t state)
     s_face_state = state;
     s_screensaver = false;
     M5.Display.setBrightness(NORMAL_BRIGHTNESS);
-    draw_face_locked(state);
+    draw_face_locked(visible_state_locked());
+    xSemaphoreGive(s_board_mutex);
+}
+
+extern "C" void companion_hardware_set_connected(bool connected)
+{
+    set_last_activity_now();
+    if (!s_initialized) {
+        s_connected = connected;
+        return;
+    }
+    if (!take_mutex(s_board_mutex, portMAX_DELAY)) {
+        return;
+    }
+    if (s_connected != connected || s_screensaver) {
+        s_connected = connected;
+        s_screensaver = false;
+        M5.Display.setBrightness(NORMAL_BRIGHTNESS);
+        draw_face_locked(visible_state_locked());
+    }
     xSemaphoreGive(s_board_mutex);
 }
 
@@ -177,13 +224,18 @@ static void ui_task(void *argument)
         bool idle = now - last_activity_us() >=
                     (int64_t)CONFIG_STACKCHAN_SCREENSAVER_IDLE_SECONDS * 1000LL * 1000LL;
         if (take_mutex(s_board_mutex, pdMS_TO_TICKS(100))) {
-            if (idle && !s_screensaver) {
+            companion_face_state_t visible = visible_state_locked();
+            if (idle && companion_interaction_allows_screensaver(visible) && !s_screensaver) {
                 s_screensaver = true;
                 s_screensaver_frame = 1;
                 s_next_screensaver_frame_us = now + (int64_t)SCREENSAVER_FRAME_MS * 1000LL;
                 M5.Display.setBrightness(SCREENSAVER_BRIGHTNESS);
                 ESP_LOGI(TAG,
                          "Idle low-brightness pupil screensaver active; touch, voice, or reminder will wake it");
+            } else if (s_screensaver && !companion_interaction_allows_screensaver(visible)) {
+                s_screensaver = false;
+                M5.Display.setBrightness(NORMAL_BRIGHTNESS);
+                draw_face_locked(visible);
             } else if (s_screensaver && now >= s_next_screensaver_frame_us) {
                 draw_screensaver_pupils_locked(screensaver_motion_offset(s_screensaver_frame));
                 s_screensaver_frame++;
@@ -224,7 +276,7 @@ extern "C" esp_err_t companion_hardware_init(void)
 
     s_last_activity_us = esp_timer_get_time();
     s_initialized = true;
-    draw_face_locked(COMPANION_FACE_IDLE);
+    draw_face_locked(visible_state_locked());
     if (xTaskCreate(ui_task, "companion_ui", UI_TASK_STACK_SIZE, nullptr, UI_TASK_PRIORITY, nullptr) != pdPASS) {
         s_initialized = false;
         return ESP_ERR_NO_MEM;

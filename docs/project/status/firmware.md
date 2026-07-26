@@ -1,14 +1,15 @@
 # 固件工作流
 
-- 状态：ACTIVE
+- 状态：READY
 - 最后更新：2026-07-26
-- 当前分支：`codex/int-001-voice-turn-diagnostics`
-- 基准提交：`af65290`
-- 最后验证提交：`af65290`
+- 当前分支：`codex/int-002-visible-state`
+- 基准提交：`ecc40f3`
+- 最后验证提交：`216d383`
+- 当前实机镜像：`216d383`
 
 ## 当前目标
 
-在保留音频回合、提醒协议、动态瞳孔屏保、内置 WakeNet 模型三槽 OTA 和 `motion_disabled` 的前提下，为唤醒、录音、上传、播放和麦克风恢复增加隐私安全的回合阶段诊断。
+在保留 INT-001 诊断、音频与提醒协议、动态瞳孔屏保、WakeNet 三槽 OTA 和 `motion_disabled` 的前提下，让用户无需查看日志即可区分聆听、处理、播放、成功、没听清、离线和可恢复错误。
 
 ## 已完成
 
@@ -47,18 +48,35 @@
 - 阶段事件进入 16 项有界、非阻塞队列；队列满、WebSocket 离线或诊断发送失败只丢弃诊断，不阻断语音主流程或改变 `motion_disabled`。
 - 固件只上报白名单阶段、0..300000 毫秒单调相对耗时和白名单失败码；不发送音频、识别文本、回复、URL 或认证信息。
 - 播放成功后分别上报播放完成和麦克风恢复；麦克风重启失败与普通播放失败使用不同安全失败码。
+- 用户已确认 INT-001 的三个成功回复清晰播放，聆听/处理/待机表情正常，管理端 1 个 `NO_SPEECH` 与 3 个成功时间线符合预期。
+- INT-002 将可见状态枚举从具体绘图代码中分离；WebSocket 离线覆盖当前阶段，重连后恢复当前阶段，非法内部状态安全映射为可恢复错误。
+- 成功、没听清和可恢复错误分别显示有界的绿色、青色和橙色反馈；离线使用持续灰色反馈，低亮度瞳孔屏保只从待机或离线进入。
+- 用户明确授权 `adbd75e`、CoreS3、`COM3` 和 LAN HTTP Quad profile 后，已从该干净提交重建并刷入完整镜像；bootloader、分区表、应用、OTA data 和出厂语音模型五个区域均通过独立摘要校验，保存 Wi-Fi 和设备身份的 NVS 未擦除。
+- 实机启动确认应用版本 `adbd75e`、ESP-IDF 5.3.3、16 MB Flash、8 MB PSRAM / 80 MHz 及内存测试、CoreS3 显示/触摸/麦克风/扬声器、LAN HTTP、`wn9_xiao3feng1xiao3feng1_tts3` 和 `motion_disabled` 正常；数据库收到该版本的最近心跳，启动窗口未见 panic、看门狗或重启循环。
+- 首轮用户 smoke test 确认没听清和屏保通过；正常回合在处理后落到离线几何，离线几何使用的蓝灰色也与正常交互难以区分，因此正常回合和离线状态未通过验收。
+- 根因是 WebSocket 离线无条件覆盖活动阶段和短暂反馈、成功态仅持续 0.6 秒，以及离线颜色 `#7A8798` 本身偏蓝。修复后离线只覆盖待机，活动阶段与短暂反馈优先显示，离线改为中性灰 `#8C8C8C`，成功延长至 1.2 秒，并记录非敏感 WebSocket 连接变化日志。
+- 用户明确授权 `abd6a22`、CoreS3、`COM3` 和 LAN HTTP Quad profile 后，已从该干净提交重建并刷入完整镜像；bootloader、分区表、应用、OTA data 和语音模型五个区域均通过独立 `verify_flash`，保存 Wi-Fi 和设备身份的 NVS 未擦除。
+- 实机启动确认应用版本 `abd6a22`、ESP-IDF 5.3.3、8 MB PSRAM / 80 MHz 及内存测试、CoreS3 显示/触摸/麦克风/扬声器、LAN HTTP、WakeNet、WebSocket 和 `motion_disabled` 正常；45 秒窗口未见 panic、看门狗或重启循环，数据库收到该版本的最近心跳。
+- 用户正常对话复测中，两轮均在 `Speech captured` 后报告 `A stack overflow in task voice_control has been detected`，随后以 `RTC_SW_CPU_RST` 重启；数据库只收到唤醒与聆听阶段，服务端没有收到语音 HTTP 请求。灰色离线是重启和网络恢复期间的正确连接态，不是此次失败的根因。
+- `voice_control` 的同步录音与 HTTP/TCP 路径共用同一任务；真实编译器栈报告显示 `run_voice_turn` 本地帧 8176 字节、完整已知本地路径 10416 字节，旧 12288 字节任务仅剩 1872 字节给外部库。
+- 本地修复将语音任务栈提高到 32768 字节，并新增独立验证与回归脚本；预算检查确认外部余量 22352 字节，12288 字节夹具被拒绝、32768 字节夹具通过。协议测试与 LAN HTTP Quad 完整镜像均构建通过，镜像分别为 `0x37880` 和 `0x142d90`、应用分区余量 93% 和 58%，LAN 镜像确认 16 MB Flash、Quad PSRAM 与 LAN HTTP。
+- 用户明确授权 `216d383`、CoreS3、`COM3` 和 LAN HTTP Quad profile 后，已从该干净提交重建并刷入完整镜像；bootloader、分区表、应用、OTA data 和语音模型五个区域均通过独立 `verify_flash`，NVS 未擦除。
+- 启动确认应用版本 `216d383`、ESP-IDF 5.3.3、8 MB PSRAM / 80 MHz 及内存测试、CoreS3 显示/触摸/麦克风/扬声器、LAN HTTP、WakeNet、WebSocket 和 `motion_disabled` 正常；40 秒窗口未见 panic、栈溢出、看门狗或重启循环，数据库收到该版本的新鲜心跳。
+- 用户完成两轮正常对话后，串口分别记录 32000 和 40000 个样本的 `Speech captured`，随后均恢复 WakeNet 监听，未出现栈溢出、panic、看门狗或软件复位。数据库两轮状态均为 `COMPLETED`，完整阶段链包含 `REQUEST_RECEIVED`、`ASR_COMPLETED`、`LLM_COMPLETED`、`TTS_COMPLETED`、`PLAYBACK_STARTED`、`PLAYBACK_COMPLETED` 和 `LISTENING_RESUMED`。之后一次独立未说话唤醒以 `NO_SPEECH` 正常结束。
+- 用户确认上述两轮均正常播放语音回复，成功反馈和返回待机的实体显示符合预期；正常回合人工验收完成。
+- 用户随后按 runbook 临时制造语音模型调用失败并恢复原配置，确认可恢复异常反馈和恢复后的正常回合均正常；用户要求不再读取机器证据，被动串口监听已停止。
 
 ## 正在进行
 
-CoreS3 仍运行 `0398073` LAN HTTP Quad 三槽镜像，“小峰小峰”模型 OTA 已安装成功。INT-001 已重放到最新 `master` 并完成 ESP-IDF 5.3.3 合并回归；没有连接或刷写设备。
+CoreS3 当前运行 `216d383` LAN HTTP Quad 固件并保持 `motion_disabled`；刷写、逐区回读、启动、心跳、没听清、屏保、离线、正常回合、可恢复异常和异常恢复均已验证，INT-002 实现与实机验收完成。
 
 ## 下一步操作
 
-用户创建并人工审核 PR、服务端 V14 先部署后，由用户明确确认 CoreS3、`COM3`、LAN HTTP development profile 和本任务提交，再构建并刷写匹配 Quad 镜像；随后完成一次成功回合和一次无语音失败回合，核对管理端时间线与串口安全状态。
+获得用户外部推送授权后，将单提交任务分支推送并创建目标为 `master` 的 PR；不得自行合并。
 
 ## 阻塞项
 
-没有固件软件阻塞。刷写尚未获本任务明确授权，且发布顺序要求服务端 V14 先上线；“小峰小峰”声学命中和 INT-001 时间线均待实体验收。不得记录 Wi-Fi 密码、Workspace ID、配对码、语音供应商密钥或设备 Token。
+没有实现或验证阻塞。外部推送和 PR 尚未获得本任务授权；不得记录 Wi-Fi 密码、Workspace ID、配对码、语音供应商密钥或设备 Token。
 
 ## 关键文件
 
@@ -71,6 +89,9 @@ CoreS3 仍运行 `0398073` LAN HTTP Quad 三槽镜像，“小峰小峰”模型
 - `firmware/main/voice_service.c`
 - `firmware/main/device_transport.c`
 - `firmware/main/device_protocol.c`
+- `firmware/main/interaction_state.c`
+- `firmware/main/companion_hardware.cpp`
+- `firmware/main/voice_control.c`
 - `firmware/partitions.csv`
 
 ## 验证命令与最近结果
@@ -120,6 +141,15 @@ CoreS3 仍运行 `0398073` LAN HTTP Quad 三槽镜像，“小峰小峰”模型
 - INT-001 协议测试 profile 完整构建通过，镜像 `0x37880`，应用分区余量 93%；新增严格阶段编码 Unity 用例已编译进镜像，未上板执行。
 - INT-001 两项 provisioning stack budget check 通过：8192 字节回归样例被拒绝，16384 字节任务预算通过，已知本地路径 7648 字节，外部余量 8736 字节。
 - INT-001 最新 `master` 合并回归：ESP-IDF 5.3.3 协议测试 profile 从重配置完整构建通过，镜像 `0x37880`、应用分区余量 93%；两项栈预算和唤醒模型包安全回归通过。只执行编译，未连接或刷写设备。
+- INT-002 ESP-IDF 5.3.3 协议测试 profile 完整编译通过，镜像 `0x37880`、应用分区余量 93%；新增状态解析 Unity 用例已编译进镜像，未连接或刷写设备。
+- INT-002 默认 HTTPS、LAN HTTP 和测试证书 HTTPS Quad profile 完整编译通过，镜像分别为 `0x153d20`、`0x142cd0` 和 `0x143110`，应用分区余量分别为 56%、58% 和 58%；测试证书使用 ESP-IDF 公开样例，构建后已删除且未创建或保留私钥。
+- INT-002 两项 provisioning stack budget check 通过：8192 字节回归样例被拒绝，16384 字节任务预算通过，已知本地路径 7648 字节，外部余量 8736 字节；唤醒模型包回归、文档检查与 7 项文档测试、LAN Compose 静态验证和 `git diff --check` 通过。
+- `adbd75e` LAN HTTP Quad 实机重建镜像为 `0x142cd0`，应用分区余量 58%；配置确认 Quad PSRAM、16 MB Flash 和 LAN HTTP，五个烧录区域全部 `verify_flash` 匹配且不包含 NVS。启动日志与数据库心跳共同确认 `adbd75e` / `motion_disabled` 在线。
+- 首轮验收修复后的协议测试与 LAN HTTP Quad profile 完整编译通过，镜像分别为 `0x37880` 和 `0x142d90`、应用分区余量 93% 和 58%；协议镜像包含扩展的离线仲裁用例，LAN 镜像确认 Quad PSRAM、16 MB Flash 和 LAN HTTP。配网任务栈预算保持 16384 字节任务、7648 字节已知本地路径和 8736 字节外部余量；模型包、文档 7/7、LAN Compose 和差异检查通过。
+- `abd6a22` LAN HTTP Quad 完整镜像已刷入 CoreS3 `COM3`，五个区域独立 `verify_flash` 全部匹配且不包含 NVS。启动确认版本、PSRAM、CoreS3 外设、LAN HTTP、WakeNet、WebSocket 和 `motion_disabled`，45 秒内无 panic、看门狗或重启循环；数据库收到 `abd6a22` / `motion_disabled` 新鲜心跳。
+- 用户复测的脱敏串口窗口捕获两次一致的 `voice_control` 栈溢出：录音分别完成 40000 和 64000 个样本后，任务在进入同步 HTTP 上传路径时触发栈保护并以 `RTC_SW_CPU_RST` 重启。服务端阶段链均未出现 `REQUEST_RECEIVED`。
+- 修复后的语音栈预算回归为 12288 字节拒绝、32768 字节接受；真实 `-fstack-usage` 报告为任务 32768 字节、已知本地路径 10416 字节、外部余量 22352 字节。`216d383` LAN HTTP Quad 完整镜像已刷入 CoreS3 `COM3`，五个区域独立 `verify_flash` 匹配且 NVS 未擦除；启动、数据库心跳和两轮正常回合机器验证通过，两轮均完整播放并恢复监听，未再发生栈溢出或复位。
+- 用户人工确认正常回合、橙色可恢复异常和恢复后的下一轮均符合预期；按用户要求未继续读取异常轮机器证据，监听已停止且 `COM3` 已释放。
 
 ## 相关设计、计划和决策
 
@@ -133,6 +163,7 @@ CoreS3 仍运行 `0398073` LAN HTTP Quad 三槽镜像，“小峰小峰”模型
 - [0014：自定义唤醒词采用离线生成并随固件打包的 WakeNet 模型](../decisions/0014-packaged-custom-wake-word-model.md)
 - [0015：运行时生成并安全 OTA 自定义唤醒模型](../decisions/0015-runtime-wake-model-generation-and-ota.md)
 - [0016：唤醒词仅从 ESP-SR 内置模型目录选择并安全 OTA](../decisions/0016-built-in-esp-sr-wake-model-catalog.md)
+- [0017：交互阶段在设备本地映射为可区分的可见状态](../decisions/0017-local-user-visible-interaction-states.md)
 - [0009：服务端增加阿里云百炼原生语音适配器](../decisions/0009-native-dashscope-speech-adapter.md)
 
 ## 安全与兼容性约束

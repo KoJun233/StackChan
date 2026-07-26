@@ -4,18 +4,11 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "interaction_state.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-typedef enum {
-    COMPANION_FACE_IDLE = 0,
-    COMPANION_FACE_LISTENING,
-    COMPANION_FACE_THINKING,
-    COMPANION_FACE_SPEAKING,
-    COMPANION_FACE_ERROR,
-} companion_face_state_t;
 
 /** Initializes only the CoreS3 display, touch, microphone, and speaker. */
 esp_err_t companion_hardware_init(void);
@@ -30,6 +23,9 @@ esp_err_t companion_hardware_play_wav(const uint8_t *wav, size_t wav_size);
 
 /** Updates the face and records user-visible activity, exiting the screensaver. */
 void companion_hardware_set_state(companion_face_state_t state);
+
+/** Updates the persistent online/offline presentation without discarding the interaction phase. */
+void companion_hardware_set_connected(bool connected);
 
 /** Exits the low-brightness pupil screensaver without changing the current face state. */
 void companion_hardware_mark_activity(void);

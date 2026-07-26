@@ -23,7 +23,9 @@
 #include "wake_word_model.h"
 #include "wake_model_ota.h"
 
-#define VOICE_TASK_STACK_SIZE 12288
+// Audio capture and the synchronous esp_http_client/TCP path share this task.
+// Physical CoreS3 testing overflowed the previous 12 KiB stack on first upload.
+#define VOICE_TASK_STACK_SIZE 32768
 #define VOICE_TASK_PRIORITY 6
 #define VOICE_SAMPLE_RATE 16000
 #define VOICE_CAPTURE_MAX_SECONDS 8
@@ -40,6 +42,8 @@
 #define VOICE_SILENCE_ENERGY_THRESHOLD_MAX 4000
 #define VOICE_SENSITIVE_WAKE_THRESHOLD 0.50f
 #define ERROR_FACE_DURATION_MS 1500
+#define NO_SPEECH_FACE_DURATION_MS 1200
+#define SUCCESS_FACE_DURATION_MS 1200
 
 static const char *TAG = "voice_control";
 static SemaphoreHandle_t s_voice_session_mutex;
@@ -107,10 +111,16 @@ static void report_turn_failure(const char *turn_id,
         DEVICE_VOICE_STAGE_FAILED, turn_id, turn_elapsed_ms(started_us), failure);
 }
 
-static void show_error_then_idle(void)
+static void show_feedback_then_idle(companion_face_state_t feedback)
 {
-    companion_hardware_set_state(COMPANION_FACE_ERROR);
-    vTaskDelay(pdMS_TO_TICKS(ERROR_FACE_DURATION_MS));
+    uint32_t duration_ms = ERROR_FACE_DURATION_MS;
+    if (feedback == COMPANION_FACE_SUCCESS) {
+        duration_ms = SUCCESS_FACE_DURATION_MS;
+    } else if (feedback == COMPANION_FACE_NO_SPEECH) {
+        duration_ms = NO_SPEECH_FACE_DURATION_MS;
+    }
+    companion_hardware_set_state(feedback);
+    vTaskDelay(pdMS_TO_TICKS(duration_ms));
     companion_hardware_set_state(COMPANION_FACE_IDLE);
 }
 
@@ -179,10 +189,16 @@ static esp_err_t capture_user_speech(int16_t *samples,
 
 static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
                                 const char *turn_id,
-                                int64_t started_us)
+                                int64_t started_us,
+                                companion_face_state_t *failure_face)
 {
+    if (failure_face == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *failure_face = COMPANION_FACE_RECOVERABLE_ERROR;
     device_identity_t identity = {0};
     if (!device_transport_is_wifi_connected() || device_identity_load(&identity) != ESP_OK) {
+        *failure_face = COMPANION_FACE_OFFLINE;
         report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_OFFLINE);
         return ESP_ERR_INVALID_STATE;
     }
@@ -201,6 +217,7 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
                                         settings, &peak_energy);
     if (err != ESP_OK) {
         if (err == ESP_ERR_NOT_FOUND) {
+            *failure_face = COMPANION_FACE_NO_SPEECH;
             ESP_LOGW(TAG,
                      "Speech not detected; peak_mean_energy=%lu start_threshold=%lu silence_threshold=%lu",
                      (unsigned long)peak_energy,
@@ -236,7 +253,7 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
         return err;
     }
 
-    companion_hardware_set_state(COMPANION_FACE_THINKING);
+    companion_hardware_set_state(COMPANION_FACE_PROCESSING);
     report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_UPLOAD_STARTED);
     voice_service_buffer_t response_buffer = {0};
     err = voice_service_send_turn(&identity, turn_id, wav, wav_size, &response_buffer);
@@ -477,12 +494,13 @@ static void voice_task(void *argument)
         report_turn_stage(turn_id, turn_started_us, DEVICE_VOICE_STAGE_WAKE_DETECTED);
         if (xSemaphoreTake(s_voice_session_mutex, portMAX_DELAY) == pdTRUE) {
             active_settings = current_detection_settings();
-            err = run_voice_turn(&active_settings, turn_id, turn_started_us);
+            companion_face_state_t failure_face = COMPANION_FACE_RECOVERABLE_ERROR;
+            err = run_voice_turn(&active_settings, turn_id, turn_started_us, &failure_face);
             if (err == ESP_OK) {
-                companion_hardware_set_state(COMPANION_FACE_IDLE);
+                show_feedback_then_idle(COMPANION_FACE_SUCCESS);
             } else {
                 ESP_LOGW(TAG, "Voice turn failed safely: %s", esp_err_to_name(err));
-                show_error_then_idle();
+                show_feedback_then_idle(failure_face);
             }
             xSemaphoreGive(s_voice_session_mutex);
         }
@@ -545,7 +563,7 @@ esp_err_t voice_control_play_reminder(const device_identity_t *identity, const c
     }
 
     companion_hardware_mark_activity();
-    companion_hardware_set_state(COMPANION_FACE_THINKING);
+    companion_hardware_set_state(COMPANION_FACE_PROCESSING);
     voice_service_buffer_t audio = {0};
     esp_err_t err = voice_service_fetch_reminder(identity, reminder_id, &audio);
     if (err == ESP_OK) {
@@ -554,10 +572,10 @@ esp_err_t voice_control_play_reminder(const device_identity_t *identity, const c
     }
     voice_service_release(&audio);
     if (err == ESP_OK) {
-        companion_hardware_set_state(COMPANION_FACE_IDLE);
+        show_feedback_then_idle(COMPANION_FACE_SUCCESS);
     } else {
         ESP_LOGW(TAG, "Reminder playback failed safely: %s", esp_err_to_name(err));
-        show_error_then_idle();
+        show_feedback_then_idle(COMPANION_FACE_RECOVERABLE_ERROR);
     }
     xSemaphoreGive(s_voice_session_mutex);
     return err;
