@@ -69,6 +69,12 @@ Error responses use safe JSON and do not include provider responses, provider ke
 
 Diagnostic persistence is separate from conversation content. It stores only device and turn IDs, strict stages, stage source, server receive time, bounded device elapsed time, status, and allowlisted failure codes for seven days. It never stores the uploaded WAV, transcript, reply, provider response, API key, JWT, or refresh token.
 
+## Local interaction presentation
+
+The device maps its local interaction phase and WebSocket connectivity to distinct visible states: idle, listening, processing, speaking, success, no speech, offline, and recoverable error. Offline connectivity overrides the current phase until the authenticated WebSocket reconnects. Success, no-speech, and recoverable-error feedback are bounded and return to idle; the existing low-brightness pupil screensaver is limited to idle or offline presentation.
+
+This presentation is local-only. It adds no device event, server command, free-text diagnostic field, actuator behavior, or compatibility requirement for older firmware. `voice_turn_stage` remains the only remote diagnostic contract.
+
 ## Server commands
 
 The motion-safety command remains:

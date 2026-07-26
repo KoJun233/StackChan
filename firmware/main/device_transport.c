@@ -292,12 +292,16 @@ static void websocket_event_handler(void *handler_args,
     websocket_connection_t *connection = handler_args;
     if (event_id == WEBSOCKET_EVENT_CONNECTED) {
         connection->connected = true;
+        companion_hardware_set_connected(true);
+        ESP_LOGI(TAG, "Device WebSocket connected");
         return;
     }
     if (event_id == WEBSOCKET_EVENT_DISCONNECTED || event_id == WEBSOCKET_EVENT_ERROR) {
         connection->connected = false;
         connection->failed = true;
         safety_state_stop_motion();
+        companion_hardware_set_connected(false);
+        ESP_LOGW(TAG, "Device WebSocket unavailable: event=%ld", (long)event_id);
         return;
     }
     if (event_id != WEBSOCKET_EVENT_DATA || event_data == NULL) {
@@ -371,6 +375,7 @@ static void wifi_event_handler(void *handler_args,
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         xEventGroupClearBits(s_transport_events, WIFI_CONNECTED_BIT);
         safety_state_stop_motion();
+        companion_hardware_set_connected(false);
         schedule_wifi_reconnect(false);
         ESP_LOGW(TAG, "Wi-Fi disconnected; motion remains disabled");
     }
@@ -620,6 +625,7 @@ static bool run_websocket_connection(const device_identity_t *identity)
     }
 
     safety_state_stop_motion();
+    companion_hardware_set_connected(false);
     (void)esp_websocket_client_stop(connection.client);
     (void)esp_websocket_client_destroy(connection.client);
     vQueueDelete(connection.reminder_queue);

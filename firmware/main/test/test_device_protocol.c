@@ -12,6 +12,7 @@
 #include "device_protocol.h"
 #include "device_transport.h"
 #include "screensaver_motion.h"
+#include "interaction_state.h"
 #include "strict_json.h"
 #include "voice_control.h"
 #include "voice_protocol.h"
@@ -39,6 +40,42 @@ TEST_CASE("screensaver pupil motion is cyclic and remains inside the eye", "[scr
     screensaver_pupil_offset_t wrapped = screensaver_motion_offset(frame_count);
     TEST_ASSERT_EQUAL_INT(first.x, wrapped.x);
     TEST_ASSERT_EQUAL_INT(first.y, wrapped.y);
+}
+
+TEST_CASE("interaction presentation keeps offline distinct and recoverable", "[interaction_state]")
+{
+    TEST_ASSERT_EQUAL(
+        COMPANION_FACE_LISTENING,
+        companion_interaction_visible_state(COMPANION_FACE_LISTENING, false));
+    TEST_ASSERT_EQUAL(
+        COMPANION_FACE_PROCESSING,
+        companion_interaction_visible_state(COMPANION_FACE_PROCESSING, false));
+    TEST_ASSERT_EQUAL(
+        COMPANION_FACE_SUCCESS,
+        companion_interaction_visible_state(COMPANION_FACE_SUCCESS, false));
+    TEST_ASSERT_EQUAL(
+        COMPANION_FACE_RECOVERABLE_ERROR,
+        companion_interaction_visible_state(COMPANION_FACE_RECOVERABLE_ERROR, false));
+    TEST_ASSERT_EQUAL(
+        COMPANION_FACE_OFFLINE,
+        companion_interaction_visible_state(COMPANION_FACE_IDLE, false));
+    TEST_ASSERT_EQUAL(
+        COMPANION_FACE_NO_SPEECH,
+        companion_interaction_visible_state(COMPANION_FACE_NO_SPEECH, true));
+    TEST_ASSERT_EQUAL(
+        COMPANION_FACE_SUCCESS,
+        companion_interaction_visible_state(COMPANION_FACE_SUCCESS, true));
+    TEST_ASSERT_EQUAL(
+        COMPANION_FACE_RECOVERABLE_ERROR,
+        companion_interaction_visible_state((companion_face_state_t)99, false));
+    TEST_ASSERT_EQUAL(
+        COMPANION_FACE_RECOVERABLE_ERROR,
+        companion_interaction_visible_state((companion_face_state_t)99, true));
+    TEST_ASSERT_TRUE(companion_interaction_allows_screensaver(COMPANION_FACE_IDLE));
+    TEST_ASSERT_TRUE(companion_interaction_allows_screensaver(COMPANION_FACE_OFFLINE));
+    TEST_ASSERT_FALSE(companion_interaction_allows_screensaver(COMPANION_FACE_LISTENING));
+    TEST_ASSERT_FALSE(companion_interaction_allows_screensaver(COMPANION_FACE_NO_SPEECH));
+    TEST_ASSERT_FALSE(companion_interaction_allows_screensaver(COMPANION_FACE_SUCCESS));
 }
 
 TEST_CASE("transport reconnect backoff is bounded", "[device_transport]")
