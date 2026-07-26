@@ -2,14 +2,14 @@
 
 - 状态：STABLE
 - 最后更新：2026-07-26
-- 当前分支：`codex/int-003-touch-controls`
-- 基准提交：`37dcb49`
-- 最后验证提交：`717a8b1`
-- 当前运行态代码：服务端 `ca2ec8a`、CoreS3 `717a8b1`，Flyway V15。
+- 当前分支：`codex/int-004-response-latency`
+- 基准提交：`b65e2b8`
+- 最后验证提交：`b65e2b8`
+- 当前运行态代码：服务端 `219b90b`、CoreS3 `717a8b1`，Flyway V15。
 
 ## 当前目标
 
-保持已发布的 Flyway V15 LAN server、`717a8b1` CoreS3、Compose 模式和生产 HTTPS-only 边界；INT-003 不再需要运行态变更。
+保持已发布并完成人工验收的 `219b90b` LAN server、Flyway V15、`717a8b1` CoreS3、Compose 模式和生产 HTTPS-only 边界。
 
 ## 已完成
 
@@ -40,7 +40,7 @@
 
 ## 正在进行
 
-当前 `stackchan-foundation` 已用正式 LAN overlay 运行 `ca2ec8a`，Flyway 为 V15，并发布 `0.0.0.0:8080`。CoreS3 为 `717a8b1` LAN HTTP Quad 镜像并持续报告 `motion_disabled`；server、PostgreSQL、Redis 均在运行，近期服务端错误数为 0，卷和生产 HTTPS-only 边界不变。
+当前 `stackchan-foundation` 使用正式 LAN overlay 运行 `219b90b` server，Flyway 为 V15，并发布 `0.0.0.0:8080`。CoreS3 为 `717a8b1` LAN HTTP Quad 镜像并持续报告 `motion_disabled`；PostgreSQL、Redis、卷、端口、凭据和生产 HTTPS-only 边界未改变。
 
 此前正常对话失败已定位为设备侧 `voice_control` 栈溢出；修复镜像 `216d383` 已部署到设备，正常回合、可恢复异常和恢复后的正常回合均完成人工验收。server 运行态、V14 数据库和 LAN overlay 无需修改。
 
@@ -48,11 +48,11 @@ INT-003 server 发布后正常回合为 `COMPLETED`；随后 `717a8b1` 固件完
 
 ## 下一步操作
 
-保持当前 V15 LAN server 与 `717a8b1` 设备在线；完成单提交交接。未经新的明确授权，不替换 server、不刷写固件、不切换 Compose/profile。
+保持当前容器在线并等待任务分支人工合并。无需再次部署、刷写固件、执行迁移或切换 Compose 模式。
 
 ## 阻塞项
 
-没有模型文件、生成器、服务端、固件或部署模式阻塞。工作区仍没有 `.env`；后续 LAN 重建必须显式同时传入 `compose.yaml` 和 `compose.lan.yaml`，不得输出秘密、组合 LAN 与 production profile 或降低生产 HTTPS-only 边界。
+没有部署阻塞。工作区仍没有 `.env`；后续 LAN 重建必须显式同时传入 `compose.yaml` 和 `compose.lan.yaml`，不得输出秘密、组合 LAN 与 production profile 或降低生产 HTTPS-only 边界。
 
 ## 关键文件
 
@@ -65,6 +65,17 @@ INT-003 server 发布后正常回合为 `COMPLETED`；随后 `717a8b1` 固件完
 
 - INT-003 本地验证确认 Flyway 空库可到 V15、旧固件四字段 ACK 仍被接受、新固件 LAN HTTP Quad profile 可构建。随后按授权只替换 server：健康接口与网页根地址为 200、Flyway `15|true`、V15 约束生效、近期错误数为 0；旧固件 `216d383 / motion_disabled` 恢复心跳并完成完整成功回合。
 - INT-003 经用户明确授权，将从干净 `717a8b1` 构建的 LAN HTTP Quad 完整镜像刷入 CoreS3 `COM3`；五个区域独立 `verify_flash` 全部匹配且 NVS 未擦除。启动确认 CoreS3 外设、PSRAM、LAN HTTP、WakeNet、WebSocket 与 `motion_disabled`，数据库收到 `717a8b1` 心跳；server、PostgreSQL、Redis 均保持运行，Flyway `15|true`，近期错误数为 0。用户确认屏保首触、长按说话、阶段取消和播放立即停止四项全部通过，最近诊断出现 5 次 `TOUCH_STARTED` 和 1 个 `CANCELLED`。
+- INT-004 部署前基线来自最近 11 个完成回合：录音结束到播放开始 P50/P95 为 `5788/7210 ms`，ASR/LLM/TTS P50 为 `400/2960/1567 ms`，服务端总 P50 为 `5226 ms`。统计只读取诊断阶段与耗时。首版部署前工作树服务端全量 221/221 通过，当时尚未重建或替换运行中的 server，Flyway、CoreS3、Compose、卷、端口和凭据均未改变。
+- INT-004 经用户明确授权，从干净 `5016324` 构建 `sha256:c6f6113fffb7d070f6a808bdfacb9b76a872aa2aa5557c67b39494747f9c6d9a` 并只替换 server；旧镜像 `sha256:315eaf7a24cb63a28f8d44abdab1a85309496ae862b8e7fa9ef79a88d35e71b2` 保留为 `stackchan-foundation-server:rollback-5016324-pre-int004`。server 容器由 `e1bf2c007d69` 变为 `b17ee0d4b280`，PostgreSQL/Redis 容器未变；网页根地址和健康接口为 200，LAN 为 `0.0.0.0:8080`，Flyway `15|true` 且成功迁移总数 15，设备 `717a8b1 / motion_disabled` 在 30 秒内恢复心跳，近期错误数为 0。
+- INT-004 从 `2026-07-26 10:48:44+00` 起收集到 11 个成功回合且无失败或取消。录音结束到播放开始 P50/P95 为 `5978/7158 ms`，上传到播放 P50/P95 为 `5921/7105 ms`，ASR/LLM/TTS P50/P95 分别为 `381/819`、`3583/4156`、`1403/1771 ms`，服务端总 P50/P95 为 `5443/6021 ms`。相对部署前同样 11 个成功回合，中位首音频延迟回退 190 ms，首版不视为性能验收通过，因此继续实施并发布第二版。
+- INT-004 第二版经用户明确授权，从干净 `3d8c1fb` 构建 `sha256:192ed2297336577bf96b3b1479f7c9c11336ceceba9fccb907a7f0e72a78e9a3` 并只替换 server；旧镜像 `sha256:c6f6113fffb7d070f6a808bdfacb9b76a872aa2aa5557c67b39494747f9c6d9a` 保留为 `stackchan-foundation-server:rollback-3d8c1fb-pre-int004-v2`。server 容器由 `b17ee0d4b280` 变为 `c97e6e139830`，PostgreSQL/Redis 容器保持 `6d8feaa18623` / `58e31a403637`；网页根地址和健康接口为 200，LAN 为 `0.0.0.0:8080`，Flyway `15|true` 且成功迁移数 15，CoreS3 `717a8b1 / motion_disabled` 恢复心跳，近期错误数为 0。新测量起点为 `2026-07-26 12:12:21.103106+00`，当时语音回合总数为 62。
+- INT-004 第二版测量起点后共有 11 个成功回合和 1 个 `NO_SPEECH`。录音结束到播放开始 P50/P95 为 `6139/7430 ms`，上传到播放为 `6081/7381 ms`，ASR/LLM/TTS 为 `328/712`、`3635/4621`、`1564/1755 ms`，服务端总耗时为 `5543/6835 ms`；中位与尾部均未优于原始基线，第二版不视为性能验收通过。当前运行资源保持不变。
+- INT-004 第三版经用户明确授权，从干净 `e3a752f` 构建 `sha256:44095eecafa334d0e5a7e033db920efa014689a6f26871cbc961983c23dd4a29` 并只替换 server；第二版镜像 `sha256:192ed2297336577bf96b3b1479f7c9c11336ceceba9fccb907a7f0e72a78e9a3` 保留为 `stackchan-foundation-server:rollback-e3a752f-pre-int004-v3`。server 容器由 `c97e6e139830` 变为 `963bd58931bb`，PostgreSQL/Redis 容器保持 `6d8feaa18623` / `58e31a403637`；网页根地址和健康接口为 200，LAN 为 `0.0.0.0:8080`，Flyway `15|true` 且迁移数 15，CoreS3 `717a8b1 / motion_disabled` 恢复心跳，近期错误数为 0。新测量起点为 `2026-07-26 12:40:15.810739+00`，当时语音回合总数为 75。
+- INT-004 第三版测量起点后共有 10 个成功回合和 1 个设备 `PLAYBACK_FAILED`。录音结束到播放开始 P50/P95 为 `6131/6327 ms`，上传到播放为 `6075/6268 ms`，ASR/LLM/TTS 为 `348/736`、`3364/3647`、`1742/1977 ms`，服务端总耗时为 `5535/5809 ms`。P95 相对原始基线显著改善，P50 仍未达标；失败回合已完成服务端 TTS 并进入设备播放，健康接口为 200、同期 server 错误数为 0，当前运行资源保持不变。
+- 用户在得知约 20 字效果来自仍启用的 1500 ms/首句/40 code point 限制后，明确要求全部取消；当前运行态仍是 `e3a752f`，完整输出版本尚未部署。孤立 `PLAYBACK_FAILED` 仍保留为仅在重复出现时调查的观察项。
+- 完整输出版本使用仅限当前进程的非秘密占位值通过 LAN Compose 静态验证；基础模式保持 `127.0.0.1:8080`，LAN overlay 保持 `0.0.0.0:8080`，PostgreSQL/Redis 不发布主机端口。未创建 `.env`、未重建或替换运行容器。
+- INT-004 经用户授权，从干净 `219b90b` 使用正式 Dockerfile 构建 `sha256:ffc6534de0484c61c8a8776c3c004c54a731b720dbd8c99bc9a593a7e2c51e6e` 并只替换 server；旧镜像保留为 `stackchan-foundation-server:rollback-e3a752f-pre-219b90b`。server 容器由 `963bd58931bb` 变为 `011ad10df7f9`，PostgreSQL/Redis 保持 `6d8feaa18623` / `58e31a403637`。健康与网页为 200、LAN `0.0.0.0:8080`、Flyway `15|true`、CoreS3 心跳 `717a8b1 / motion_disabled`，近期错误数为 0；未刷写固件或改变生产 HTTPS-only 边界。
+- 用户确认部署后的长回复完整播放且没有问题；部署人工验收完成，当前运行资源保持不变。
 - 当前任务的 LAN Compose 静态验证通过；仅使用当前进程内的非秘密占位值，代码实现未触碰运行中的容器、卷、端口或凭据。
 - INT-001 最新 `master` 合并回归再次完成 LAN Compose 静态展开：基础模式只绑定 `127.0.0.1:8080`，LAN overlay 绑定 `0.0.0.0:8080`，PostgreSQL 与 Redis 均未发布主机端口。未重建或替换运行中服务。
 - 2026-07-26 本任务 LAN 部署：`/api/v1/health` 和网页根地址均返回 200，Flyway 为 `11|true`，容器内包含 `speech-DFhfjNNt.js`；调度事务修复后日志中未再出现 `Query requires transaction be in progress`，CoreS3 心跳恢复为 `e33a0d4` / `motion_disabled`。

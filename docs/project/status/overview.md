@@ -2,11 +2,11 @@
 
 - 状态：STABLE
 - 最后更新：2026-07-26
-- 当前分支：`codex/int-003-touch-controls`
-- 实现基准：`37dcb49`
-- 最后验证提交：`717a8b1`
-- 当前验证范围：INT-003 软件、发布与实机闭环；服务端 217/217、Flyway V15、前端 17 文件 51/51/类型检查/生产构建、四个 Quad 固件 profile、五区域刷写校验、`717a8b1` 心跳、真实 `CANCELLED` 回合及四项实体触摸验收均通过。
-- 当前优先级：完成 INT-003 单提交交接；得到明确授权后只推送任务分支，由用户在网页端创建或合并 PR，下一任务从最新 `master` 创建独立分支。
+- 当前分支：`codex/int-004-response-latency`
+- 实现基准：`b65e2b8`
+- 最后验证提交：`b65e2b8`
+- 当前验证范围：INT-004 完整输出版本的软件验证、server-only LAN 部署和实体长回复验收全部完成；运行库保持 V15。
+- 当前优先级：INT-004 已完成，等待任务分支推送和人工合并。
 - 当前部署：LAN HTTP development mode。
 - 生产边界：HTTPS-only。
 
@@ -14,10 +14,10 @@
 
 | 工作流 | 状态 | 状态文件 | 当前分支 | 下一步 |
 | --- | --- | --- | --- | --- |
-| 服务端 | STABLE | [server.md](server.md) | `codex/int-003-touch-controls` | `ca2ec8a` 与 Flyway V15 保持运行；真实触摸取消已产生 `CANCELLED` 终态，无需再次替换 server。 |
-| 前端 | STABLE | [frontend.md](frontend.md) | `codex/int-003-touch-controls` | 新时间线资源已发布，真实 `TOUCH_STARTED` / `CANCELLED` 数据已产生；后续按需人工查看管理端。 |
-| 固件 | STABLE | [firmware.md](firmware.md) | `codex/int-003-touch-controls` | `717a8b1` LAN HTTP Quad 已完整刷写并通过启动、心跳和四项实体交互验收。 |
-| 部署 | STABLE | [deployment.md](deployment.md) | `codex/int-003-touch-controls` | 服务端 `ca2ec8a`、Flyway V15、设备 `717a8b1` 正常；保持现有 LAN development 运行态。 |
+| 服务端 | STABLE | [server.md](server.md) | `codex/int-004-response-latency` | 完整输出版本已完成人工验收；等待任务分支人工合并。 |
+| 前端 | STABLE | [frontend.md](frontend.md) | `codex/int-004-response-latency` | INT-004 不修改管理端；继续使用现有隐私安全时间线观察阶段耗时。 |
+| 固件 | STABLE | [firmware.md](firmware.md) | `codex/int-004-response-latency` | INT-004 不改 SCV1、固件或 profile；设备继续运行 `717a8b1`。 |
+| 部署 | STABLE | [deployment.md](deployment.md) | `codex/int-004-response-latency` | `219b90b` server 在线，Flyway V15 与设备 `717a8b1` 正常。 |
 
 唤醒词入口现改为“选择 ESP-SR 2.4.6 内置短语、服务端从锁定目录可信打包、设备双槽 OTA、重启健康确认、失败自动回退”。任意文本生成、第三方生成器和模型包上传均已从最终代码与页面移除；V12 只保留为已部署迁移历史，V13 清理临时字段。下拉包含“Hi, Stack Chan”“小峰小峰”等 13 项。CoreS3 曾使用 `0398073` 镜像完成 WakeNet9/WakeNet9l/WakeNet9s 三槽引导；管理员选择“小峰小峰”后，任务已完成 `READY -> INSTALLING -> INSTALLED`。INT-001 发布时设备升级为 `ecc40f3`，INT-002 升级为栈修复镜像 `216d383`，当前实机为 INT-003 `717a8b1`。
 
@@ -29,6 +29,8 @@ INT-001 已发布到既有 LAN server 和 CoreS3；机器证据包含 1 个 `NO_
 
 INT-003 已完成触摸事件队列、600 ms 按住说话、聆听/处理/播放取消、HTTP 与扬声器中断、晚到回复丢弃、幂等服务端取消、V15 `CANCELLED` 诊断以及管理端时间线映射。`ca2ec8a` 已只替换既有 LAN server 并执行 V15；`717a8b1` LAN HTTP Quad 完整镜像已刷入 CoreS3 `COM3`，五个区域独立校验通过且 NVS 未擦除。启动、WebSocket、WakeNet、PSRAM 和 `motion_disabled` 正常，数据库收到 `717a8b1` 心跳；用户确认屏保首触、长按说话、阶段取消和播放立即停止四项均通过，运行库记录真实 `TOUCH_STARTED` 与 `CANCELLED`。
 
+INT-004 第三版 `e3a752f` 的 1500 ms、首句和 40 code point 限制已全部移除。用户授权后，完整输出版本 `219b90b` 已只替换现有 LAN server；健康与网页根地址为 200、Flyway V15、LAN `0.0.0.0:8080`、CoreS3 `717a8b1 / motion_disabled` 心跳正常，近期错误数为 0。用户随后确认长回复已经完整播放且没有问题，INT-004 人工验收完成。文字聊天、SCV1、取消、固件和数据库结构仍不变。
+
 ## 架构决策
 
 - [架构决策记录](../decisions/README.md)
@@ -37,6 +39,17 @@ INT-003 已完成触摸事件队列、600 ms 按住说话、聆听/处理/播放
 
 - INT-003 服务端发布前保留 `stackchan-foundation-server:rollback-ca2ec8a-pre-v15`；只重建 server，PostgreSQL、Redis、卷和 LAN overlay 未改变。健康接口与网页根地址均为 200，Flyway `15|true`，启动后错误数为 0；旧固件 `216d383 / motion_disabled` 恢复心跳并完成完整成功回合。
 - INT-003 经用户明确授权，从干净 `717a8b1` 重建并完整刷写 CoreS3 `COM3` 的 LAN HTTP Quad 镜像；bootloader、分区表、应用、OTA data 和语音模型五个区域均通过独立 `verify_flash`，NVS 未擦除。启动窗口确认 PSRAM、CoreS3 外设、LAN HTTP、WakeNet、WebSocket 与 `motion_disabled` 正常，未见 panic、栈溢出、看门狗或重启循环；数据库收到 `717a8b1` 心跳，Flyway 保持 V15，服务端近期错误数为 0。用户随后确认屏保首触只唤醒、600 ms 长按说话、聆听/处理/播放短触取消以及播放立即停止四项全部通过；最近诊断包含 5 次 `TOUCH_STARTED` 和 1 个 `CANCELLED` 终态。
+- INT-004 基线只读取七天诊断表中的阶段与耗时，不读取音频、转写、回复或认证载荷。首版新增 ADR 0019、有界首句边界和早停测试；针对测试 8/8、服务端全量 221/221 通过，Testcontainers 从空库成功应用 15 个迁移至 V15。该验证阶段尚未部署、未连接 COM3、未刷写、未 OTA、未修改 Compose 或凭据。
+- INT-004 按用户授权从干净 `5016324` 构建镜像并只重建 `stackchan-foundation-server-1`；旧镜像保留为 `stackchan-foundation-server:rollback-5016324-pre-int004`。PostgreSQL、Redis 容器 ID 未变，LAN 继续绑定 `0.0.0.0:8080`，健康与网页根地址为 200，Flyway `15|true` 且迁移总数仍为 15；CoreS3 `717a8b1 / motion_disabled` 在 30 秒内恢复心跳，近期 server 错误数为 0。未连接 COM3、未刷写、未 OTA、未修改卷、凭据或生产 HTTPS-only 边界。
+- INT-004 首版部署后的 11 个成功回合中，录音结束到播放开始 P50/P95 为 `5978/7158 ms`，服务端 P50/P95 为 `5443/6021 ms`；相对基线中位数分别回退 `190/217 ms`，但服务端 P95 改善 `621 ms`。阶段分解确认 ASR/TTS 改善而 LLM 回退；第二版发布前针对测试 8/8、服务端全量 221/221、Flyway 空库至 V15、文档检查和 7/7 文档测试通过。
+- INT-004 第二版经用户授权从干净 `3d8c1fb` 构建 `sha256:192ed2297336577bf96b3b1479f7c9c11336ceceba9fccb907a7f0e72a78e9a3` 并只替换 server；旧镜像保留为 `stackchan-foundation-server:rollback-3d8c1fb-pre-int004-v2`。server 容器由 `b17ee0d4b280` 变为 `c97e6e139830`，PostgreSQL/Redis 容器未变；健康与网页根地址为 200，LAN 为 `0.0.0.0:8080`，Flyway `15|true` 且迁移数 15，CoreS3 `717a8b1 / motion_disabled` 恢复新鲜心跳，近期错误数为 0。
+- INT-004 第二版复测共有 11 个成功回合和 1 个 `NO_SPEECH`；录音结束到播放开始 P50/P95 为 `6139/7430 ms`，服务端总耗时为 `5543/6835 ms`，性能验收未通过。第三版首块后时间预算针对测试 9/9、服务端全量 222/222、Flyway 空库至 V15 通过。
+- INT-004 第三版经用户授权从干净 `e3a752f` 构建 `sha256:44095eecafa334d0e5a7e033db920efa014689a6f26871cbc961983c23dd4a29` 并只替换 server；第二版镜像保留为 `stackchan-foundation-server:rollback-e3a752f-pre-int004-v3`。server 容器由 `c97e6e139830` 变为 `963bd58931bb`，PostgreSQL/Redis 容器未变；健康与网页根地址为 200，LAN 为 `0.0.0.0:8080`，Flyway `15|true` 且迁移数 15，CoreS3 `717a8b1 / motion_disabled` 恢复心跳，近期错误数为 0。
+- INT-004 第三版复测共有 10 个成功回合和 1 个设备 `PLAYBACK_FAILED`。首音频 P50/P95 为 `6131/6327 ms`，服务端 P50/P95 为 `5535/5809 ms`；失败回合已完成服务端 TTS 并进入设备播放，server 健康为 200、同期错误数为 0。当前不把第三版视为中位性能验收通过，但确认尾延迟目标取得实质改善。
+- INT-004 用户在得知 1500 ms 限制仍存在后撤回此前按现状完成的结论，并明确要求取消内容截断。当前实现完整聚合所有非空 LLM 流数据块后再执行 TTS 和成功历史持久化；30 秒供应商超时仍仅作为异常保护，不会把部分文本当作成功回复播放。
+- INT-004 完整输出版本通过 `VoiceTurnServiceTest` 5/5、服务端全量 218/218、Flyway 空库至 V15、文档检查、文档测试 7/7、LAN Compose 静态验证和 `git diff --check`；未部署、未连接 COM3、未刷写固件或修改运行凭据。
+- INT-004 经用户明确授权，从干净 `219b90b` 构建镜像 `sha256:ffc6534de0484c61c8a8776c3c004c54a731b720dbd8c99bc9a593a7e2c51e6e` 并只替换 server；旧镜像保留为 `stackchan-foundation-server:rollback-e3a752f-pre-219b90b`。server 容器由 `963bd58931bb` 变为 `011ad10df7f9`，PostgreSQL/Redis 保持 `6d8feaa18623` / `58e31a403637`；健康与网页为 200、LAN 为 `0.0.0.0:8080`、Flyway `15|true`、设备心跳为 `717a8b1 / motion_disabled`，近期 server 错误数为 0。
+- INT-004 用户实体复测确认取消限制后的回复完整播放且没有问题；不再收集额外回合或读取对话内容，人工验收通过。
 - 内置目录最终实现通过 Maven 205/205、Flyway 空库至 V13、真实 13 模型打包、前端 Vitest 17 文件 49/49、`vue-tsc -b`、production build、模型包回归、LAN Compose、`git diff --check` 和 `pnpm docs:check`。部署后健康/网页 200、Flyway `13|true`、容器模型 13 组、近期错误 0；恢复 LAN overlay 后 CoreS3 自动重连并确认“小峰小峰”任务为 `INSTALLED`，固件仍为 `0398073` 且 `motion_disabled` 不变。
 - `6df88f9` 之后的调度事务修复已在当前任务树完成针对回归、全量回归和 LAN 部署验证。
 - 当前任务工作树上服务端全量测试 198/198、前端 Vitest 17 个文件 48/48、`vue-tsc -b`、production build、Flyway 全新 PostgreSQL 至 V11、模型包回归、两项固件栈预算、`git diff --check` 和 `pnpm docs:check` 均通过。
@@ -116,8 +129,9 @@ INT-003 已完成触摸事件队列、600 ms 按住说话、聆听/处理/播放
 - 屏保视觉和离线提醒补发仍是既有待验收项，不在 INT-001 中扩展。
 - “小峰小峰”OTA 和实体声学命中已由三个成功语音回合确认。
 - INT-002 的显示修复与 INT-003 的触摸控制均已完成实机验收；当前没有设备侧交互阻塞。
+- INT-004 完整输出版本已完成软件、部署和人工验收；当前只等待任务分支推送与人工合并。
 - 部署工作依赖维持 LAN HTTP development mode 与 HTTPS-only 生产边界，且不得组合 `compose.lan.yaml` 和 `compose.production.yaml`。
 
 ## 下一步
 
-完成 INT-003 单提交交接；只有得到用户明确授权后才推送 `codex/int-003-touch-controls`，由用户在网页端创建或合并 PR。后续功能必须从合并后的最新 `master` 创建独立任务分支；生产继续保持 HTTPS-only。
+保持当前 `219b90b` LAN server 和 `717a8b1` 设备在线，推送任务分支后等待人工合并。无需再次部署、刷写固件或修改管理端配置。

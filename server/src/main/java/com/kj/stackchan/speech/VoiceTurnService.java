@@ -28,7 +28,7 @@ public class VoiceTurnService {
     private static final Duration VOICE_LLM_TIMEOUT = Duration.ofSeconds(30);
     private static final String VOICE_SYSTEM_INSTRUCTION = """
 
-            当前是机器人语音对话。请直接使用简体中文简短回答，最多两句话，不要使用 Markdown。
+            当前是机器人语音对话。请直接使用简体中文回答，不要使用 Markdown。
             """;
 
     private final SpeechRuntimeClient speechRuntimeClient;
@@ -91,6 +91,7 @@ public class VoiceTurnService {
                         .stream()
                         .content()
                         .takeUntilOther(cancellation.cancellationSignal())
+                        .filter(chunk -> chunk != null && !chunk.isEmpty())
                         .collect(Collectors.joining())
                         .timeout(VOICE_LLM_TIMEOUT)
                         .onErrorMap(TimeoutException.class, ignored -> new LlmProviderUnavailableException())

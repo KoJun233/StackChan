@@ -69,7 +69,7 @@ class VoiceTurnServiceTest {
                 "https://example.com/v1", "model", "prompt", "secret"
         ));
         when(chatClient.prompt()
-                .system("prompt\n当前是机器人语音对话。请直接使用简体中文简短回答，最多两句话，不要使用 Markdown。\n")
+                .system("prompt\n当前是机器人语音对话。请直接使用简体中文回答，不要使用 Markdown。\n")
                 .messages(List.of())
                 .user("提醒我拿外卖")
                 .stream()
@@ -88,6 +88,54 @@ class VoiceTurnServiceTest {
         );
         verify(diagnosticsService).recordServerStage(
                 eq(deviceId), any(UUID.class), eq(VoiceTurnStage.TTS_COMPLETED), eq(null)
+        );
+    }
+
+    @Test
+    void sendsTheCompleteMultiSentenceLlmReplyToTtsAndHistory() {
+        UUID deviceId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID assistantMessageId = UUID.randomUUID();
+        byte[] input = new byte[64];
+        byte[] replyAudio = new byte[44];
+        ChatClient chatClient = mock(ChatClient.class, RETURNS_DEEP_STUBS);
+        when(speechRuntimeClient.transcribe(input)).thenReturn("告诉我今天该做什么");
+        when(deviceVoiceConversationService.getOrCreateConversationId(deviceId)).thenReturn(conversationId);
+        when(conversationService.loadHistory(conversationId)).thenReturn(List.of());
+        when(conversationService.startGeneration(eq(conversationId), any(UUID.class), eq("告诉我今天该做什么")))
+                .thenReturn(new GenerationStart(
+                        conversationId,
+                        UUID.randomUUID(),
+                        assistantMessageId,
+                        false,
+                        GenerationStatus.STREAMING,
+                        ""
+                ));
+        when(llmRuntimeClientFactory.createChatClient()).thenReturn(chatClient);
+        when(llmSettingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings(
+                "https://example.com/v1", "model", "prompt", "secret"
+        ));
+        when(chatClient.prompt()
+                .system(anyString())
+                .messages(List.of())
+                .user("告诉我今天该做什么")
+                .stream()
+                .content())
+                .thenReturn(Flux.just(
+                        "先完成最重要的一件事。",
+                        "然后检查剩余安排，",
+                        "最后留出休息时间。"
+                ));
+        when(speechRuntimeClient.synthesize("先完成最重要的一件事。然后检查剩余安排，最后留出休息时间。"))
+                .thenReturn(replyAudio);
+
+        VoiceTurnService.VoiceTurnResult result = service().handle(deviceId, input);
+
+        assertThat(result.reply()).isEqualTo("先完成最重要的一件事。然后检查剩余安排，最后留出休息时间。");
+        assertThat(result.wavAudio()).isSameAs(replyAudio);
+        verify(conversationService).completeGeneration(
+                assistantMessageId,
+                "先完成最重要的一件事。然后检查剩余安排，最后留出休息时间。"
         );
     }
 
