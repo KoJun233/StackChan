@@ -2,13 +2,13 @@
 
 - 状态：STABLE
 - 最后更新：2026-07-26
-- 当前分支：`codex/int-002-visible-state`
-- 基准提交：`ecc40f3`
-- 最后验证提交：`ecc40f3`
+- 当前分支：`codex/int-003-touch-controls`
+- 基准提交：`37dcb49`
+- 最后验证提交：`717a8b1`
 
 ## 当前目标
 
-保持已发布的 INT-001 最近语音回合时间线、设备配网、语音配置、提醒 CRUD 和 ESP-SR 内置唤醒模型界面稳定。
+保持已发布的设备管理功能稳定，并让最近语音回合时间线正确显示触摸发起与用户取消，不把取消误标为失败。
 
 ## 已完成
 
@@ -34,18 +34,19 @@
 - API 层覆盖目录查询、内置模型任务创建和任务轮询；页面继续展示 `READY`、安装、成功、失败和自动回退状态。
 - INT-001 在设备总览增加“交互诊断”入口，按设备展示最近回合状态、设备/服务端阶段、相对耗时和安全失败码。
 - 时间线明确说明不保存音频、识别文本或机器人回复；空数据、加载失败和手动刷新均有独立反馈，不影响安全停止按钮。
+- INT-003 扩展 `VoiceTurnStatus` 为 `CANCELLED`，时间线增加 `TOUCH_STARTED` 和 `CANCELLED` 中文标签，取消保持中性展示且无失败码。
 
 ## 正在进行
 
-INT-001 页面已经发布，V14 中 1 个 `NO_SPEECH` 和 3 个成功回合可见；用户已完成登录态视觉确认。INT-002 不修改管理端代码。
+INT-003 管理端映射已随 `ca2ec8a` server 镜像发布，LAN 网页根地址返回 200；`717a8b1` 实机已产生真实 `TOUCH_STARTED` / `CANCELLED` 数据，前端类型、标签和中性取消展示与运行数据契约一致。
 
 ## 下一步操作
 
-保持当前管理端在线；INT-002 真机验收后确认既有“交互诊断”时间线不受本地表情映射影响。
+保持当前已发布资源；后续可按需在管理端人工查看真实取消回合，但不再阻塞 INT-003 完成。
 
 ## 阻塞项
 
-没有前端软件或视觉验收阻塞。INT-002 不需要前端发布；不得输出浏览器会话或运行容器秘密。
+没有前端软件或发布阻塞。不得输出浏览器会话或运行容器秘密。
 
 ## 关键文件
 
@@ -59,6 +60,9 @@ INT-001 页面已经发布，V14 中 1 个 `NO_SPEECH` 和 3 个成功回合可�
 
 ## 验证命令与最近结果
 
+- INT-003 使用 Node v24.15.0：针对页面 3/3，Vitest 全量 17 个文件 51/51，`vue-tsc -b` 和 production build 通过。新测试确认触摸发起的取消回合显示中性状态；Vitest close-timeout advisory 仍为已记录的非阻塞警告。
+- INT-003 正式 Dockerfile 已将新管理端资源打入 `ca2ec8a` server 镜像并发布；网页根地址返回 200，PostgreSQL、Redis、卷和 LAN overlay 未改变。
+- INT-003 `717a8b1` 实机运行后，数据库出现真实 `TOUCH_STARTED` 和 `CANCELLED` 阶段；页面级测试已覆盖相同映射，用户完成的实体取消验收不依赖读取对话正文。
 - 当前任务针对测试 2 个文件 4/4、Vitest 全量 17 个文件 48/48、`vue-tsc -b` 和 production build 均通过。
 - 本地上传增量使 Vitest 全量达到 17 个文件 50/50；`vue-tsc -b` 和 production build 通过。API 测试确认上传表单数据完整且不覆盖 multipart boundary，页面测试确认上传模式不会调用在线生成接口。
 - 内置目录专项前端测试 3 个文件 8/8 通过，覆盖目录获取、模型名提交和页面选择“小峰小峰”；Vitest 仍有已记录的 close-timeout advisory，但进程成功退出。
@@ -89,6 +93,7 @@ INT-001 页面已经发布，V14 中 1 个 `NO_SPEECH` 和 3 个成功回合可�
 - [0013：语音回合使用隐私安全的阶段诊断](../decisions/0013-privacy-safe-voice-turn-diagnostics.md)
 - [0015：运行时生成并安全 OTA 自定义唤醒模型](../decisions/0015-runtime-wake-model-generation-and-ota.md)
 - [0016：唤醒词仅从 ESP-SR 内置模型目录选择并安全 OTA](../decisions/0016-built-in-esp-sr-wake-model-catalog.md)
+- [0018：触摸控制采用本地事件队列与幂等语音回合取消](../decisions/0018-touch-control-and-voice-turn-cancellation.md)
 
 ## 安全与兼容性约束
 

@@ -7,6 +7,8 @@
 
 #include "esp_heap_caps.h"
 #include "esp_http_client.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #include "device_endpoint.h"
 
@@ -20,6 +22,54 @@ typedef struct {
     size_t capacity;
     bool failed;
 } response_accumulator_t;
+
+static SemaphoreHandle_t s_active_client_mutex;
+static esp_http_client_handle_t s_active_turn_client;
+
+esp_err_t voice_service_init(void)
+{
+    if (s_active_client_mutex != NULL) {
+        return ESP_OK;
+    }
+    s_active_client_mutex = xSemaphoreCreateMutex();
+    return s_active_client_mutex == NULL ? ESP_ERR_NO_MEM : ESP_OK;
+}
+
+static esp_err_t set_active_turn_client(esp_http_client_handle_t client)
+{
+    if (s_active_client_mutex == NULL ||
+        xSemaphoreTake(s_active_client_mutex, portMAX_DELAY) != pdTRUE) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_active_turn_client = client;
+    xSemaphoreGive(s_active_client_mutex);
+    return ESP_OK;
+}
+
+static void clear_active_turn_client(esp_http_client_handle_t client)
+{
+    if (s_active_client_mutex == NULL ||
+        xSemaphoreTake(s_active_client_mutex, portMAX_DELAY) != pdTRUE) {
+        return;
+    }
+    if (s_active_turn_client == client) {
+        s_active_turn_client = NULL;
+    }
+    xSemaphoreGive(s_active_client_mutex);
+}
+
+esp_err_t voice_service_cancel_active_turn(void)
+{
+    if (s_active_client_mutex == NULL ||
+        xSemaphoreTake(s_active_client_mutex, pdMS_TO_TICKS(500)) != pdTRUE) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    esp_err_t err = s_active_turn_client == NULL
+                        ? ESP_ERR_NOT_FOUND
+                        : esp_http_client_cancel_request(s_active_turn_client);
+    xSemaphoreGive(s_active_client_mutex);
+    return err;
+}
 
 static bool reserve_response(response_accumulator_t *response, size_t required)
 {
@@ -120,8 +170,15 @@ static esp_err_t perform_request(const device_identity_t *identity,
             err = esp_http_client_set_post_field(client, (const char *)request_body, (int)request_size);
         }
     }
+    bool cancellable = turn_id != NULL;
+    if (err == ESP_OK && cancellable) {
+        err = set_active_turn_client(client);
+    }
     if (err == ESP_OK) {
         err = esp_http_client_perform(client);
+    }
+    if (cancellable) {
+        clear_active_turn_client(client);
     }
     int status = esp_http_client_get_status_code(client);
     (void)esp_http_client_cleanup(client);

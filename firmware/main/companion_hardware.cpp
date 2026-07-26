@@ -7,12 +7,14 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 #include "screensaver_motion.h"
 
 #define UI_TASK_STACK_SIZE 4096
 #define UI_TASK_PRIORITY 3
 #define UI_POLL_MS 50
+#define TOUCH_EVENT_QUEUE_LENGTH 8
 #define NORMAL_BRIGHTNESS 160
 #define SCREENSAVER_BRIGHTNESS 24
 #define SCREENSAVER_FRAME_MS 2500
@@ -27,7 +29,9 @@
 static const char *TAG = "companion_hardware";
 static SemaphoreHandle_t s_board_mutex;
 static SemaphoreHandle_t s_audio_mutex;
+static QueueHandle_t s_touch_event_queue;
 static portMUX_TYPE s_activity_lock = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE s_playback_lock = portMUX_INITIALIZER_UNLOCKED;
 static int64_t s_last_activity_us;
 static companion_face_state_t s_face_state = COMPANION_FACE_IDLE;
 static bool s_connected;
@@ -36,6 +40,37 @@ static size_t s_screensaver_frame;
 static int64_t s_next_screensaver_frame_us;
 static screensaver_pupil_offset_t s_pupil_offset;
 static bool s_initialized;
+static bool s_playback_stop_requested;
+
+static void emit_touch_event(companion_touch_event_type_t type, int64_t occurred_us)
+{
+    if (s_touch_event_queue == nullptr) {
+        return;
+    }
+    companion_touch_event_t event = {
+        .type = type,
+        .occurred_us = occurred_us,
+    };
+    if (xQueueSend(s_touch_event_queue, &event, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "Touch event queue full; edge dropped safely");
+    }
+}
+
+static void clear_playback_stop_request(void)
+{
+    taskENTER_CRITICAL(&s_playback_lock);
+    s_playback_stop_requested = false;
+    taskEXIT_CRITICAL(&s_playback_lock);
+}
+
+static bool playback_stop_requested(void)
+{
+    bool requested;
+    taskENTER_CRITICAL(&s_playback_lock);
+    requested = s_playback_stop_requested;
+    taskEXIT_CRITICAL(&s_playback_lock);
+    return requested;
+}
 
 static bool take_mutex(SemaphoreHandle_t mutex, TickType_t timeout)
 {
@@ -209,18 +244,34 @@ extern "C" void companion_hardware_set_connected(bool connected)
 static void ui_task(void *argument)
 {
     (void)argument;
+    bool previously_touched = false;
+    bool consume_current_touch = false;
     for (;;) {
         bool touched = false;
+        bool screensaver_was_active = false;
         if (take_mutex(s_board_mutex, pdMS_TO_TICKS(100))) {
             M5.update();
             touched = M5.Touch.getCount() > 0;
+            screensaver_was_active = s_screensaver;
             xSemaphoreGive(s_board_mutex);
         }
+        int64_t now = esp_timer_get_time();
+        if (touched && !previously_touched) {
+            consume_current_touch = screensaver_was_active;
+            if (!consume_current_touch) {
+                emit_touch_event(COMPANION_TOUCH_PRESSED, now);
+            }
+        } else if (!touched && previously_touched) {
+            if (!consume_current_touch) {
+                emit_touch_event(COMPANION_TOUCH_RELEASED, now);
+            }
+            consume_current_touch = false;
+        }
+        previously_touched = touched;
         if (touched) {
             companion_hardware_mark_activity();
         }
 
-        int64_t now = esp_timer_get_time();
         bool idle = now - last_activity_us() >=
                     (int64_t)CONFIG_STACKCHAN_SCREENSAVER_IDLE_SECONDS * 1000LL * 1000LL;
         if (take_mutex(s_board_mutex, pdMS_TO_TICKS(100))) {
@@ -254,7 +305,8 @@ extern "C" esp_err_t companion_hardware_init(void)
     }
     s_board_mutex = xSemaphoreCreateMutex();
     s_audio_mutex = xSemaphoreCreateMutex();
-    if (s_board_mutex == nullptr || s_audio_mutex == nullptr) {
+    s_touch_event_queue = xQueueCreate(TOUCH_EVENT_QUEUE_LENGTH, sizeof(companion_touch_event_t));
+    if (s_board_mutex == nullptr || s_audio_mutex == nullptr || s_touch_event_queue == nullptr) {
         return ESP_ERR_NO_MEM;
     }
 
@@ -325,6 +377,13 @@ extern "C" esp_err_t companion_hardware_record_pcm(int16_t *samples,
 
 extern "C" esp_err_t companion_hardware_play_wav(const uint8_t *wav, size_t wav_size)
 {
+    return companion_hardware_play_wav_interruptible(wav, wav_size, nullptr);
+}
+
+extern "C" esp_err_t companion_hardware_play_wav_interruptible(const uint8_t *wav,
+                                                                 size_t wav_size,
+                                                                 bool *cancelled)
+{
     audio_wav_view_t view{};
     if (!s_initialized || !audio_wav_parse(wav, wav_size, &view)) {
         return ESP_ERR_INVALID_ARG;
@@ -332,6 +391,10 @@ extern "C" esp_err_t companion_hardware_play_wav(const uint8_t *wav, size_t wav_
     if (!take_mutex(s_audio_mutex, portMAX_DELAY)) {
         return ESP_ERR_TIMEOUT;
     }
+    if (cancelled != nullptr) {
+        *cancelled = false;
+    }
+    clear_playback_stop_request();
 
     bool queued = false;
     if (take_mutex(s_board_mutex, pdMS_TO_TICKS(500))) {
@@ -356,7 +419,12 @@ extern "C" esp_err_t companion_hardware_play_wav(const uint8_t *wav, size_t wav_
     int64_t deadline = esp_timer_get_time() + (int64_t)(duration_ms + AUDIO_WAIT_MARGIN_MS) * 1000LL;
     bool played = false;
     bool started = false;
+    bool stopped = false;
     while (queued && esp_timer_get_time() < deadline) {
+        if (playback_stop_requested()) {
+            stopped = true;
+            break;
+        }
         bool playing = false;
         if (take_mutex(s_board_mutex, pdMS_TO_TICKS(100))) {
             playing = M5.Speaker.isPlaying();
@@ -385,5 +453,31 @@ extern "C" esp_err_t companion_hardware_play_wav(const uint8_t *wav, size_t wav_
     if (!microphone_restarted) {
         return ESP_ERR_INVALID_STATE;
     }
+    if (cancelled != nullptr) {
+        *cancelled = stopped;
+    }
+    if (stopped) {
+        return ESP_OK;
+    }
     return played ? ESP_OK : ESP_FAIL;
+}
+
+extern "C" void companion_hardware_request_playback_stop(void)
+{
+    taskENTER_CRITICAL(&s_playback_lock);
+    s_playback_stop_requested = true;
+    taskEXIT_CRITICAL(&s_playback_lock);
+}
+
+extern "C" bool companion_hardware_wait_touch_event(companion_touch_event_t *event,
+                                                       uint32_t timeout_ms)
+{
+    if (event == nullptr || s_touch_event_queue == nullptr) {
+        return false;
+    }
+    TickType_t timeout = pdMS_TO_TICKS(timeout_ms);
+    if (timeout_ms > 0 && timeout == 0) {
+        timeout = 1;
+    }
+    return xQueueReceive(s_touch_event_queue, event, timeout) == pdTRUE;
 }

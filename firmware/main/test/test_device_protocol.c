@@ -14,6 +14,7 @@
 #include "screensaver_motion.h"
 #include "interaction_state.h"
 #include "strict_json.h"
+#include "touch_interaction.h"
 #include "voice_control.h"
 #include "voice_protocol.h"
 #include "wake_word_model.h"
@@ -76,6 +77,30 @@ TEST_CASE("interaction presentation keeps offline distinct and recoverable", "[i
     TEST_ASSERT_FALSE(companion_interaction_allows_screensaver(COMPANION_FACE_LISTENING));
     TEST_ASSERT_FALSE(companion_interaction_allows_screensaver(COMPANION_FACE_NO_SPEECH));
     TEST_ASSERT_FALSE(companion_interaction_allows_screensaver(COMPANION_FACE_SUCCESS));
+}
+
+TEST_CASE("touch interaction separates short cancel taps from online press to talk", "[touch_interaction]")
+{
+    TEST_ASSERT_FALSE(touch_interaction_should_start_press_to_talk(
+        TOUCH_INTERACTION_IDLE, 599, true, false));
+    TEST_ASSERT_TRUE(touch_interaction_should_start_press_to_talk(
+        TOUCH_INTERACTION_IDLE, 600, true, false));
+    TEST_ASSERT_FALSE(touch_interaction_should_start_press_to_talk(
+        TOUCH_INTERACTION_IDLE, 600, false, false));
+    TEST_ASSERT_FALSE(touch_interaction_should_start_press_to_talk(
+        TOUCH_INTERACTION_PROCESSING, 600, true, false));
+    TEST_ASSERT_EQUAL(
+        TOUCH_INTERACTION_ACTION_CANCEL,
+        touch_interaction_release_action(TOUCH_INTERACTION_LISTENING, 120));
+    TEST_ASSERT_EQUAL(
+        TOUCH_INTERACTION_ACTION_CANCEL,
+        touch_interaction_release_action(TOUCH_INTERACTION_PLAYING, 120));
+    TEST_ASSERT_EQUAL(
+        TOUCH_INTERACTION_ACTION_DISMISS,
+        touch_interaction_release_action(TOUCH_INTERACTION_FEEDBACK, 120));
+    TEST_ASSERT_EQUAL(
+        TOUCH_INTERACTION_ACTION_NONE,
+        touch_interaction_release_action(TOUCH_INTERACTION_LISTENING, 600));
 }
 
 TEST_CASE("transport reconnect backoff is bounded", "[device_transport]")
@@ -749,6 +774,36 @@ TEST_CASE("command acknowledgement preserves the playback result boolean", "[dev
     cJSON_Delete(root);
 }
 
+TEST_CASE("command acknowledgement adds a strict result only for rejection", "[device_protocol]")
+{
+    char payload[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
+    TEST_ASSERT_EQUAL(
+        ESP_OK,
+        device_protocol_encode_command_ack_with_result(
+            payload,
+            sizeof(payload),
+            10,
+            "cmd-cancelled",
+            false,
+            DEVICE_COMMAND_RESULT_CANCELLED));
+    cJSON *root = cJSON_Parse(payload);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_EQUAL_UINT(5, cJSON_GetArraySize(root));
+    TEST_ASSERT_EQUAL_STRING(
+        "cancelled", cJSON_GetObjectItemCaseSensitive(root, "result")->valuestring);
+    cJSON_Delete(root);
+
+    TEST_ASSERT_EQUAL(
+        ESP_ERR_INVALID_ARG,
+        device_protocol_encode_command_ack_with_result(
+            payload,
+            sizeof(payload),
+            11,
+            "cmd-invalid",
+            true,
+            DEVICE_COMMAND_RESULT_FAILED));
+}
+
 TEST_CASE("voice turn diagnostics expose only bounded stage metadata", "[device_protocol]")
 {
     char payload[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
@@ -771,6 +826,39 @@ TEST_CASE("voice turn diagnostics expose only bounded stage metadata", "[device_
     TEST_ASSERT_EQUAL_STRING(turn_id, cJSON_GetObjectItemCaseSensitive(root, "turn_id")->valuestring);
     TEST_ASSERT_EQUAL_STRING("LISTENING", cJSON_GetObjectItemCaseSensitive(root, "stage")->valuestring);
     TEST_ASSERT_EQUAL_INT(120, cJSON_GetObjectItemCaseSensitive(root, "elapsed_ms")->valueint);
+    TEST_ASSERT_NULL(cJSON_GetObjectItemCaseSensitive(root, "failure_code"));
+    cJSON_Delete(root);
+
+    TEST_ASSERT_EQUAL(
+        ESP_OK,
+        device_protocol_encode_voice_turn_stage(
+            payload,
+            sizeof(payload),
+            12,
+            turn_id,
+            DEVICE_VOICE_STAGE_TOUCH_STARTED,
+            0,
+            DEVICE_VOICE_FAILURE_NONE));
+    root = cJSON_Parse(payload);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_EQUAL_STRING(
+        "TOUCH_STARTED", cJSON_GetObjectItemCaseSensitive(root, "stage")->valuestring);
+    cJSON_Delete(root);
+
+    TEST_ASSERT_EQUAL(
+        ESP_OK,
+        device_protocol_encode_voice_turn_stage(
+            payload,
+            sizeof(payload),
+            13,
+            turn_id,
+            DEVICE_VOICE_STAGE_CANCELLED,
+            300,
+            DEVICE_VOICE_FAILURE_NONE));
+    root = cJSON_Parse(payload);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_EQUAL_STRING(
+        "CANCELLED", cJSON_GetObjectItemCaseSensitive(root, "stage")->valuestring);
     TEST_ASSERT_NULL(cJSON_GetObjectItemCaseSensitive(root, "failure_code"));
     cJSON_Delete(root);
 

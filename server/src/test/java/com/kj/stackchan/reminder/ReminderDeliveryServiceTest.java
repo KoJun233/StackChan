@@ -8,6 +8,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.kj.stackchan.device.DeviceCommandGateway;
+import com.kj.stackchan.device.DeviceCommandResult;
 import com.kj.stackchan.speech.SpeechRuntimeClient;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -69,6 +70,20 @@ class ReminderDeliveryServiceTest {
         service().dispatchDueReminders();
 
         assertThat(reminder.getStatus()).isEqualTo(ReminderStatus.PENDING);
+    }
+
+    @Test
+    void marksADispatchedReminderCancelledWhenPlaybackIsStoppedByTheUser() {
+        UUID deviceId = UUID.randomUUID();
+        ReminderEntity reminder = new ReminderEntity(deviceId, "reminder", NOW, "Asia/Shanghai", NOW);
+        reminder.markDispatched("cmd-cancel", new byte[44], NOW);
+        when(repository.findByCommandId("cmd-cancel")).thenReturn(Optional.of(reminder));
+
+        service().record(deviceId, "cmd-cancel", false, DeviceCommandResult.CANCELLED);
+
+        assertThat(reminder.getStatus()).isEqualTo(ReminderStatus.CANCELLED);
+        assertThat(reminder.getAudioPayload()).isNull();
+        assertThat(reminder.getFailureCode()).isNull();
     }
 
     @Test

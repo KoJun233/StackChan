@@ -37,6 +37,7 @@ public class VoiceTurnService {
     private final LlmRuntimeClientFactory llmRuntimeClientFactory;
     private final LlmSettingsService llmSettingsService;
     private final VoiceTurnDiagnosticsService diagnosticsService;
+    private final VoiceTurnCancellationService cancellationService;
 
     public VoiceTurnService(
             SpeechRuntimeClient speechRuntimeClient,
@@ -44,7 +45,8 @@ public class VoiceTurnService {
             ConversationService conversationService,
             LlmRuntimeClientFactory llmRuntimeClientFactory,
             LlmSettingsService llmSettingsService,
-            VoiceTurnDiagnosticsService diagnosticsService
+            VoiceTurnDiagnosticsService diagnosticsService,
+            VoiceTurnCancellationService cancellationService
     ) {
         this.speechRuntimeClient = speechRuntimeClient;
         this.deviceVoiceConversationService = deviceVoiceConversationService;
@@ -52,6 +54,7 @@ public class VoiceTurnService {
         this.llmRuntimeClientFactory = llmRuntimeClientFactory;
         this.llmSettingsService = llmSettingsService;
         this.diagnosticsService = diagnosticsService;
+        this.cancellationService = cancellationService;
     }
 
     public VoiceTurnResult handle(UUID deviceId, byte[] wavAudio) {
@@ -59,57 +62,73 @@ public class VoiceTurnService {
     }
 
     public VoiceTurnResult handle(UUID deviceId, UUID turnId, byte[] wavAudio) {
-        recordStage(deviceId, turnId, VoiceTurnStage.REQUEST_RECEIVED, null);
-        VoiceTurnStage lastCompletedStage = VoiceTurnStage.REQUEST_RECEIVED;
-        GenerationStart start = null;
-        String reply = "";
-        try {
-            String transcript = speechRuntimeClient.transcribe(wavAudio).trim();
-            if (transcript.isBlank()) {
-                throw new VoiceInputException("没有识别到清晰语音");
-            }
-            recordStage(deviceId, turnId, VoiceTurnStage.ASR_COMPLETED, null);
-            lastCompletedStage = VoiceTurnStage.ASR_COMPLETED;
+        try (VoiceTurnCancellationService.CancellationHandle cancellation =
+                     cancellationService.register(deviceId, turnId)) {
+            cancellation.throwIfCancelled();
+            recordStage(deviceId, turnId, VoiceTurnStage.REQUEST_RECEIVED, null);
+            VoiceTurnStage lastCompletedStage = VoiceTurnStage.REQUEST_RECEIVED;
+            GenerationStart start = null;
+            String reply = "";
+            try {
+                String transcript = speechRuntimeClient.transcribe(wavAudio).trim();
+                cancellation.throwIfCancelled();
+                if (transcript.isBlank()) {
+                    throw new VoiceInputException("没有识别到清晰语音");
+                }
+                recordStage(deviceId, turnId, VoiceTurnStage.ASR_COMPLETED, null);
+                lastCompletedStage = VoiceTurnStage.ASR_COMPLETED;
 
-            UUID conversationId = deviceVoiceConversationService.getOrCreateConversationId(deviceId);
-            List<ConversationMessageSnapshot> history = conversationService.loadHistory(conversationId);
-            start = conversationService.startGeneration(conversationId, UUID.randomUUID(), transcript);
-            List<Message> modelHistory = history.stream().map(this::toModelMessage).toList();
-            reply = llmRuntimeClientFactory.createChatClient()
-                    .prompt()
-                    .system(llmSettingsService.resolveForInvocation().systemPrompt() + VOICE_SYSTEM_INSTRUCTION)
-                    .messages(modelHistory)
-                    .user(transcript)
-                    .stream()
-                    .content()
-                    .collect(Collectors.joining())
-                    .timeout(VOICE_LLM_TIMEOUT)
-                    .onErrorMap(TimeoutException.class, ignored -> new LlmProviderUnavailableException())
-                    .block();
-            if (reply == null || reply.isBlank()) {
-                throw new LlmProviderUnavailableException();
-            }
-            conversationService.completeGeneration(start.assistantMessageId(), reply);
-            recordStage(deviceId, turnId, VoiceTurnStage.LLM_COMPLETED, null);
-            lastCompletedStage = VoiceTurnStage.LLM_COMPLETED;
-            byte[] audio = speechRuntimeClient.synthesize(reply);
-            recordStage(deviceId, turnId, VoiceTurnStage.TTS_COMPLETED, null);
-            return new VoiceTurnResult(transcript, reply, audio);
-        } catch (RuntimeException exception) {
-            if (start != null) {
-                conversationService.failGeneration(
-                        start.assistantMessageId(),
-                        exception instanceof LlmProviderUnavailableException ? "provider_unavailable" : "voice_turn_failed",
-                        reply
+                UUID conversationId = deviceVoiceConversationService.getOrCreateConversationId(deviceId);
+                List<ConversationMessageSnapshot> history = conversationService.loadHistory(conversationId);
+                start = conversationService.startGeneration(conversationId, UUID.randomUUID(), transcript);
+                cancellation.throwIfCancelled();
+                List<Message> modelHistory = history.stream().map(this::toModelMessage).toList();
+                reply = llmRuntimeClientFactory.createChatClient()
+                        .prompt()
+                        .system(llmSettingsService.resolveForInvocation().systemPrompt() + VOICE_SYSTEM_INSTRUCTION)
+                        .messages(modelHistory)
+                        .user(transcript)
+                        .stream()
+                        .content()
+                        .takeUntilOther(cancellation.cancellationSignal())
+                        .collect(Collectors.joining())
+                        .timeout(VOICE_LLM_TIMEOUT)
+                        .onErrorMap(TimeoutException.class, ignored -> new LlmProviderUnavailableException())
+                        .block();
+                cancellation.throwIfCancelled();
+                if (reply == null || reply.isBlank()) {
+                    throw new LlmProviderUnavailableException();
+                }
+                recordStage(deviceId, turnId, VoiceTurnStage.LLM_COMPLETED, null);
+                lastCompletedStage = VoiceTurnStage.LLM_COMPLETED;
+                cancellation.throwIfCancelled();
+                byte[] audio = speechRuntimeClient.synthesize(reply);
+                cancellation.throwIfCancelled();
+                conversationService.completeGeneration(start.assistantMessageId(), reply);
+                recordStage(deviceId, turnId, VoiceTurnStage.TTS_COMPLETED, null);
+                return new VoiceTurnResult(transcript, reply, audio);
+            } catch (VoiceTurnCancelledException exception) {
+                if (start != null) {
+                    conversationService.interruptGeneration(start.assistantMessageId(), reply);
+                }
+                recordStage(deviceId, turnId, VoiceTurnStage.CANCELLED, null);
+                throw exception;
+            } catch (RuntimeException exception) {
+                if (start != null) {
+                    conversationService.failGeneration(
+                            start.assistantMessageId(),
+                            exception instanceof LlmProviderUnavailableException ? "provider_unavailable" : "voice_turn_failed",
+                            reply
+                    );
+                }
+                recordStage(
+                        deviceId,
+                        turnId,
+                        VoiceTurnStage.FAILED,
+                        failureCode(exception, lastCompletedStage)
                 );
+                throw exception;
             }
-            recordStage(
-                    deviceId,
-                    turnId,
-                    VoiceTurnStage.FAILED,
-                    failureCode(exception, lastCompletedStage)
-            );
-            throw exception;
         }
     }
 

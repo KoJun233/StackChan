@@ -54,7 +54,7 @@ public class VoiceTurnDiagnosticsService {
             VoiceTurnStage stage,
             VoiceTurnFailureCode failureCode
     ) {
-        if (stage.isDeviceStage() && stage != VoiceTurnStage.FAILED) {
+        if (stage.isDeviceStage() && stage != VoiceTurnStage.CANCELLED && stage != VoiceTurnStage.FAILED) {
             throw new IllegalArgumentException("Invalid server voice turn stage");
         }
         record(deviceId, turnId, stage, VoiceTurnStageSource.SERVER, null, failureCode);

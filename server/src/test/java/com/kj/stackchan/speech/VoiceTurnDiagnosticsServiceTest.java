@@ -73,6 +73,20 @@ class VoiceTurnDiagnosticsServiceTest {
     }
 
     @Test
+    void cancellationIsTerminalAndLateStagesCannotChangeTheOutcome() {
+        UUID deviceId = UUID.randomUUID();
+        UUID turnId = UUID.randomUUID();
+        VoiceTurnEntity turn = new VoiceTurnEntity(turnId, deviceId, NOW);
+        when(turnRepository.findById(turnId)).thenReturn(Optional.of(turn));
+
+        service().recordDeviceStage(deviceId, turnId, VoiceTurnStage.CANCELLED, 100, null);
+        service().recordServerStage(deviceId, turnId, VoiceTurnStage.TTS_COMPLETED, null);
+
+        assertThat(turn.getStatus()).isEqualTo(VoiceTurnStatus.CANCELLED);
+        assertThat(turn.getFailureCode()).isNull();
+    }
+
+    @Test
     void deletesOnlyTurnsOutsideTheSevenDayRetentionWindow() {
         service().deleteExpired();
 

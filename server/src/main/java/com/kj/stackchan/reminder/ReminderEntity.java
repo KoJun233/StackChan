@@ -111,6 +111,13 @@ public class ReminderEntity {
         this.updatedAt = now;
     }
 
+    public void markCancelled(Instant now) {
+        this.status = ReminderStatus.CANCELLED;
+        this.audioPayload = null;
+        this.failureCode = null;
+        this.updatedAt = now;
+    }
+
     public UUID getId() {
         return id;
     }

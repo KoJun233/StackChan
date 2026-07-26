@@ -46,10 +46,15 @@ public class VoiceTurnEntity {
     }
 
     void apply(VoiceTurnStage stage, VoiceTurnFailureCode newFailureCode, Instant now) {
-        if (status != VoiceTurnStatus.COMPLETED && status != VoiceTurnStatus.FAILED) {
+        if (status != VoiceTurnStatus.COMPLETED &&
+                status != VoiceTurnStatus.CANCELLED &&
+                status != VoiceTurnStatus.FAILED) {
             if (stage == VoiceTurnStage.FAILED) {
                 status = VoiceTurnStatus.FAILED;
                 failureCode = newFailureCode;
+            } else if (stage == VoiceTurnStage.CANCELLED) {
+                status = VoiceTurnStatus.CANCELLED;
+                failureCode = null;
             } else if (stage == VoiceTurnStage.LISTENING_RESUMED) {
                 status = VoiceTurnStatus.COMPLETED;
                 failureCode = null;

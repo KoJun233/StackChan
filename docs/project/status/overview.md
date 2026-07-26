@@ -1,12 +1,12 @@
 # 全局工作流总览
 
-- 状态：READY
+- 状态：STABLE
 - 最后更新：2026-07-26
-- 当前分支：`codex/int-002-visible-state`
-- 实现基准：`ecc40f3`
-- 最后验证提交：`216d383`
-- 当前验证范围：已发布并完成人工验收的 INT-001，以及 INT-002 交互状态与 `216d383` 实机验证；没听清、屏保、离线颜色、正常对话、可恢复异常和恢复后的正常回合均完成人工验收。
-- 当前优先级：INT-002 已完成，等待外部推送与 PR 授权。
+- 当前分支：`codex/int-003-touch-controls`
+- 实现基准：`37dcb49`
+- 最后验证提交：`717a8b1`
+- 当前验证范围：INT-003 软件、发布与实机闭环；服务端 217/217、Flyway V15、前端 17 文件 51/51/类型检查/生产构建、四个 Quad 固件 profile、五区域刷写校验、`717a8b1` 心跳、真实 `CANCELLED` 回合及四项实体触摸验收均通过。
+- 当前优先级：完成 INT-003 单提交交接；得到明确授权后只推送任务分支，由用户在网页端创建或合并 PR，下一任务从最新 `master` 创建独立分支。
 - 当前部署：LAN HTTP development mode。
 - 生产边界：HTTPS-only。
 
@@ -14,12 +14,12 @@
 
 | 工作流 | 状态 | 状态文件 | 当前分支 | 下一步 |
 | --- | --- | --- | --- | --- |
-| 服务端 | STABLE | [server.md](server.md) | `codex/int-002-visible-state` | 保持已发布的 Flyway V14 LAN server 在线并兼容新旧固件。 |
-| 前端 | STABLE | [frontend.md](frontend.md) | `codex/int-002-visible-state` | INT-001 时间线已由用户确认；INT-002 不修改管理端。 |
-| 固件 | READY | [firmware.md](firmware.md) | `codex/int-002-visible-state` | INT-002 实机验收完成；获得授权后推送任务分支并创建 PR。 |
-| 部署 | STABLE | [deployment.md](deployment.md) | `codex/int-002-visible-state` | 保持服务端 `ecc40f3`、Flyway V14 和 LAN HTTP development mode 不变；设备已运行 `216d383`。 |
+| 服务端 | STABLE | [server.md](server.md) | `codex/int-003-touch-controls` | `ca2ec8a` 与 Flyway V15 保持运行；真实触摸取消已产生 `CANCELLED` 终态，无需再次替换 server。 |
+| 前端 | STABLE | [frontend.md](frontend.md) | `codex/int-003-touch-controls` | 新时间线资源已发布，真实 `TOUCH_STARTED` / `CANCELLED` 数据已产生；后续按需人工查看管理端。 |
+| 固件 | STABLE | [firmware.md](firmware.md) | `codex/int-003-touch-controls` | `717a8b1` LAN HTTP Quad 已完整刷写并通过启动、心跳和四项实体交互验收。 |
+| 部署 | STABLE | [deployment.md](deployment.md) | `codex/int-003-touch-controls` | 服务端 `ca2ec8a`、Flyway V15、设备 `717a8b1` 正常；保持现有 LAN development 运行态。 |
 
-唤醒词入口现改为“选择 ESP-SR 2.4.6 内置短语、服务端从锁定目录可信打包、设备双槽 OTA、重启健康确认、失败自动回退”。任意文本生成、第三方生成器和模型包上传均已从最终代码与页面移除；V12 只保留为已部署迁移历史，V13 清理临时字段。下拉包含“Hi, Stack Chan”“小峰小峰”等 13 项。CoreS3 曾使用 `0398073` 镜像完成 WakeNet9/WakeNet9l/WakeNet9s 三槽引导；管理员选择“小峰小峰”后，任务已完成 `READY -> INSTALLING -> INSTALLED`。INT-001 发布时设备升级为 `ecc40f3`，当前已升级为 INT-002 栈修复镜像 `216d383`。
+唤醒词入口现改为“选择 ESP-SR 2.4.6 内置短语、服务端从锁定目录可信打包、设备双槽 OTA、重启健康确认、失败自动回退”。任意文本生成、第三方生成器和模型包上传均已从最终代码与页面移除；V12 只保留为已部署迁移历史，V13 清理临时字段。下拉包含“Hi, Stack Chan”“小峰小峰”等 13 项。CoreS3 曾使用 `0398073` 镜像完成 WakeNet9/WakeNet9l/WakeNet9s 三槽引导；管理员选择“小峰小峰”后，任务已完成 `READY -> INSTALLING -> INSTALLED`。INT-001 发布时设备升级为 `ecc40f3`，INT-002 升级为栈修复镜像 `216d383`，当前实机为 INT-003 `717a8b1`。
 
 内置目录版本此前部署到既有 `stackchan-foundation` LAN HTTP 服务时，健康和网页根地址均为 200、Flyway 为 V13、容器包含 13 组模型，CoreS3 心跳为 `0398073 / motion_disabled`。一次误用基础 Compose 导致端口暂时只监听 `127.0.0.1`，恢复正式 `compose.lan.yaml` 覆盖层后设备自动重连并完成“小峰小峰”安装。部署前保留了 `stackchan-foundation-server:rollback-upload-v12` 本地回退镜像；当前服务已由 INT-001 升级为 `ecc40f3` / V14。
 
@@ -27,12 +27,16 @@ INT-001 软件实现已完成：同一回合 ID 关联设备唤醒、录音、�
 
 INT-001 已发布到既有 LAN server 和 CoreS3；机器证据包含 1 个 `NO_SPEECH` 与 3 个完整成功回合。用户随后确认实体扬声器、聆听/处理/待机表情和管理端四条时间线均符合预期，INT-001 人工验收完成。INT-002 只改本地固件显示语义，不新增协议或部署变更。
 
+INT-003 已完成触摸事件队列、600 ms 按住说话、聆听/处理/播放取消、HTTP 与扬声器中断、晚到回复丢弃、幂等服务端取消、V15 `CANCELLED` 诊断以及管理端时间线映射。`ca2ec8a` 已只替换既有 LAN server 并执行 V15；`717a8b1` LAN HTTP Quad 完整镜像已刷入 CoreS3 `COM3`，五个区域独立校验通过且 NVS 未擦除。启动、WebSocket、WakeNet、PSRAM 和 `motion_disabled` 正常，数据库收到 `717a8b1` 心跳；用户确认屏保首触、长按说话、阶段取消和播放立即停止四项均通过，运行库记录真实 `TOUCH_STARTED` 与 `CANCELLED`。
+
 ## 架构决策
 
 - [架构决策记录](../decisions/README.md)
 
 ## 验证与边界
 
+- INT-003 服务端发布前保留 `stackchan-foundation-server:rollback-ca2ec8a-pre-v15`；只重建 server，PostgreSQL、Redis、卷和 LAN overlay 未改变。健康接口与网页根地址均为 200，Flyway `15|true`，启动后错误数为 0；旧固件 `216d383 / motion_disabled` 恢复心跳并完成完整成功回合。
+- INT-003 经用户明确授权，从干净 `717a8b1` 重建并完整刷写 CoreS3 `COM3` 的 LAN HTTP Quad 镜像；bootloader、分区表、应用、OTA data 和语音模型五个区域均通过独立 `verify_flash`，NVS 未擦除。启动窗口确认 PSRAM、CoreS3 外设、LAN HTTP、WakeNet、WebSocket 与 `motion_disabled` 正常，未见 panic、栈溢出、看门狗或重启循环；数据库收到 `717a8b1` 心跳，Flyway 保持 V15，服务端近期错误数为 0。用户随后确认屏保首触只唤醒、600 ms 长按说话、聆听/处理/播放短触取消以及播放立即停止四项全部通过；最近诊断包含 5 次 `TOUCH_STARTED` 和 1 个 `CANCELLED` 终态。
 - 内置目录最终实现通过 Maven 205/205、Flyway 空库至 V13、真实 13 模型打包、前端 Vitest 17 文件 49/49、`vue-tsc -b`、production build、模型包回归、LAN Compose、`git diff --check` 和 `pnpm docs:check`。部署后健康/网页 200、Flyway `13|true`、容器模型 13 组、近期错误 0；恢复 LAN overlay 后 CoreS3 自动重连并确认“小峰小峰”任务为 `INSTALLED`，固件仍为 `0398073` 且 `motion_disabled` 不变。
 - `6df88f9` 之后的调度事务修复已在当前任务树完成针对回归、全量回归和 LAN 部署验证。
 - 当前任务工作树上服务端全量测试 198/198、前端 Vitest 17 个文件 48/48、`vue-tsc -b`、production build、Flyway 全新 PostgreSQL 至 V11、模型包回归、两项固件栈预算、`git diff --check` 和 `pnpm docs:check` 均通过。
@@ -111,9 +115,9 @@ INT-001 已发布到既有 LAN server 和 CoreS3；机器证据包含 1 个 `NO_
 - INT-001 已完成服务端 V14、管理端、固件发布和用户人工验收；现有 1 个 `NO_SPEECH` 与 3 个成功回合作为 INT-002 前的基线。
 - 屏保视觉和离线提醒补发仍是既有待验收项，不在 INT-001 中扩展。
 - “小峰小峰”OTA 和实体声学命中已由三个成功语音回合确认。
-- INT-002 不需要服务端或前端发布；首轮用户验收发现正常回合和离线显示不可区分，修复完成后仍须针对新的精确提交重新获得刷写授权。
+- INT-002 的显示修复与 INT-003 的触摸控制均已完成实机验收；当前没有设备侧交互阻塞。
 - 部署工作依赖维持 LAN HTTP development mode 与 HTTPS-only 生产边界，且不得组合 `compose.lan.yaml` 和 `compose.production.yaml`。
 
 ## 下一步
 
-完成离线只覆盖待机、中性灰离线色、1.2 秒成功反馈和 WebSocket 连接日志的回归与单提交；随后针对新的精确提交申请 CoreS3 `COM3` LAN HTTP Quad 刷写授权并复验正常回合与离线状态。生产继续保持 HTTPS-only。
+完成 INT-003 单提交交接；只有得到用户明确授权后才推送 `codex/int-003-touch-controls`，由用户在网页端创建或合并 PR。后续功能必须从合并后的最新 `master` 创建独立任务分支；生产继续保持 HTTPS-only。

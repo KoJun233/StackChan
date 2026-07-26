@@ -20,6 +20,7 @@
 #include "device_transport.h"
 #include "voice_protocol.h"
 #include "voice_service.h"
+#include "touch_interaction.h"
 #include "wake_word_model.h"
 #include "wake_model_ota.h"
 
@@ -27,6 +28,9 @@
 // Physical CoreS3 testing overflowed the previous 12 KiB stack on first upload.
 #define VOICE_TASK_STACK_SIZE 32768
 #define VOICE_TASK_PRIORITY 6
+#define VOICE_TOUCH_TASK_STACK_SIZE 4096
+#define VOICE_TOUCH_TASK_PRIORITY 4
+#define VOICE_TOUCH_POLL_MS 50
 #define VOICE_SAMPLE_RATE 16000
 #define VOICE_CAPTURE_MAX_SECONDS 8
 #define VOICE_CAPTURE_MAX_SAMPLES (VOICE_SAMPLE_RATE * VOICE_CAPTURE_MAX_SECONDS)
@@ -48,7 +52,21 @@
 static const char *TAG = "voice_control";
 static SemaphoreHandle_t s_voice_session_mutex;
 static bool s_started;
+static TaskHandle_t s_touch_task_handle;
 static portMUX_TYPE s_settings_lock = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE s_interaction_lock = portMUX_INITIALIZER_UNLOCKED;
+static touch_interaction_phase_t s_interaction_phase = TOUCH_INTERACTION_IDLE;
+static bool s_cancel_requested;
+static bool s_feedback_dismiss_requested;
+static bool s_press_to_talk_requested;
+static bool s_press_to_talk_held;
+static bool s_active_turn;
+static char s_active_turn_id[DEVICE_PROTOCOL_TURN_ID_LEN];
+static int64_t s_active_turn_started_us;
+
+static void report_turn_stage(const char *turn_id,
+                              int64_t started_us,
+                              device_voice_turn_stage_t stage);
 
 typedef struct {
     voice_wake_sensitivity_t wake_sensitivity;
@@ -69,6 +87,183 @@ static voice_detection_settings_t s_detection_settings = {
     .speech_start_threshold = VOICE_DEFAULT_START_ENERGY_THRESHOLD,
     .speech_silence_threshold = VOICE_DEFAULT_SILENCE_ENERGY_THRESHOLD,
 };
+
+static touch_interaction_phase_t current_interaction_phase(void)
+{
+    touch_interaction_phase_t phase;
+    taskENTER_CRITICAL(&s_interaction_lock);
+    phase = s_interaction_phase;
+    taskEXIT_CRITICAL(&s_interaction_lock);
+    return phase;
+}
+
+static void set_interaction_phase(touch_interaction_phase_t phase)
+{
+    taskENTER_CRITICAL(&s_interaction_lock);
+    s_interaction_phase = phase;
+    taskEXIT_CRITICAL(&s_interaction_lock);
+}
+
+static bool cancellation_requested(void)
+{
+    bool requested;
+    taskENTER_CRITICAL(&s_interaction_lock);
+    requested = s_cancel_requested;
+    taskEXIT_CRITICAL(&s_interaction_lock);
+    return requested;
+}
+
+static bool press_to_talk_held(void)
+{
+    bool held;
+    taskENTER_CRITICAL(&s_interaction_lock);
+    held = s_press_to_talk_held;
+    taskEXIT_CRITICAL(&s_interaction_lock);
+    return held;
+}
+
+static void begin_turn(const char *turn_id, int64_t started_us)
+{
+    taskENTER_CRITICAL(&s_interaction_lock);
+    s_cancel_requested = false;
+    s_feedback_dismiss_requested = false;
+    s_active_turn = true;
+    s_active_turn_started_us = started_us;
+    memcpy(s_active_turn_id, turn_id, sizeof(s_active_turn_id));
+    taskEXIT_CRITICAL(&s_interaction_lock);
+}
+
+static void finish_turn(void)
+{
+    taskENTER_CRITICAL(&s_interaction_lock);
+    s_active_turn = false;
+    s_cancel_requested = false;
+    s_active_turn_started_us = 0;
+    s_press_to_talk_held = false;
+    memset(s_active_turn_id, 0, sizeof(s_active_turn_id));
+    taskEXIT_CRITICAL(&s_interaction_lock);
+}
+
+static bool take_press_to_talk_request(void)
+{
+    bool requested;
+    taskENTER_CRITICAL(&s_interaction_lock);
+    requested = s_press_to_talk_requested;
+    s_press_to_talk_requested = false;
+    taskEXIT_CRITICAL(&s_interaction_lock);
+    return requested;
+}
+
+static bool take_feedback_dismiss_request(void)
+{
+    bool requested;
+    taskENTER_CRITICAL(&s_interaction_lock);
+    requested = s_feedback_dismiss_requested;
+    s_feedback_dismiss_requested = false;
+    taskEXIT_CRITICAL(&s_interaction_lock);
+    return requested;
+}
+
+static bool online_identity_available(void)
+{
+    if (!device_transport_is_server_connected()) {
+        return false;
+    }
+    device_identity_t identity = {0};
+    bool available = device_identity_load(&identity) == ESP_OK && device_identity_is_valid(&identity);
+    memset(&identity, 0, sizeof(identity));
+    return available;
+}
+
+static void request_press_to_talk(void)
+{
+    taskENTER_CRITICAL(&s_interaction_lock);
+    if (s_interaction_phase == TOUCH_INTERACTION_IDLE) {
+        s_press_to_talk_requested = true;
+        s_press_to_talk_held = true;
+        s_interaction_phase = TOUCH_INTERACTION_BUSY;
+    }
+    taskEXIT_CRITICAL(&s_interaction_lock);
+}
+
+static void request_turn_cancellation(void)
+{
+    char turn_id[DEVICE_PROTOCOL_TURN_ID_LEN] = {0};
+    int64_t started_us = 0;
+    bool report = false;
+    taskENTER_CRITICAL(&s_interaction_lock);
+    if (!s_cancel_requested) {
+        s_cancel_requested = true;
+        if (s_active_turn) {
+            memcpy(turn_id, s_active_turn_id, sizeof(turn_id));
+            started_us = s_active_turn_started_us;
+            report = true;
+        }
+    }
+    taskEXIT_CRITICAL(&s_interaction_lock);
+
+    if (report) {
+        report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_CANCELLED);
+    }
+    (void)voice_service_cancel_active_turn();
+    companion_hardware_request_playback_stop();
+}
+
+static void request_feedback_dismissal(void)
+{
+    taskENTER_CRITICAL(&s_interaction_lock);
+    s_feedback_dismiss_requested = true;
+    taskEXIT_CRITICAL(&s_interaction_lock);
+}
+
+static void voice_touch_task(void *argument)
+{
+    (void)argument;
+    bool pressed = false;
+    bool press_to_talk_started = false;
+    bool long_press_evaluated = false;
+    int64_t pressed_us = 0;
+    for (;;) {
+        companion_touch_event_t event = {0};
+        bool received = companion_hardware_wait_touch_event(&event, VOICE_TOUCH_POLL_MS);
+        int64_t now = received ? event.occurred_us : esp_timer_get_time();
+        if (received && event.type == COMPANION_TOUCH_PRESSED) {
+            pressed = true;
+            press_to_talk_started = false;
+            long_press_evaluated = false;
+            pressed_us = event.occurred_us;
+        } else if (received && event.type == COMPANION_TOUCH_RELEASED && pressed) {
+            uint32_t held_ms = (uint32_t)((event.occurred_us - pressed_us) / 1000);
+            taskENTER_CRITICAL(&s_interaction_lock);
+            if (press_to_talk_started) {
+                s_press_to_talk_held = false;
+            }
+            taskEXIT_CRITICAL(&s_interaction_lock);
+            touch_interaction_action_t action = touch_interaction_release_action(
+                current_interaction_phase(), held_ms);
+            if (action == TOUCH_INTERACTION_ACTION_CANCEL) {
+                request_turn_cancellation();
+            } else if (action == TOUCH_INTERACTION_ACTION_DISMISS) {
+                request_feedback_dismissal();
+            }
+            pressed = false;
+            press_to_talk_started = false;
+            long_press_evaluated = false;
+        }
+
+        if (pressed && !long_press_evaluated) {
+            uint32_t held_ms = (uint32_t)((now - pressed_us) / 1000);
+            if (held_ms >= TOUCH_INTERACTION_LONG_PRESS_MS) {
+                long_press_evaluated = true;
+                if (touch_interaction_should_start_press_to_talk(
+                        current_interaction_phase(), held_ms, online_identity_available(), false)) {
+                    request_press_to_talk();
+                    press_to_talk_started = true;
+                }
+            }
+        }
+    }
+}
 
 static void create_turn_id(char turn_id[DEVICE_PROTOCOL_TURN_ID_LEN])
 {
@@ -119,9 +314,15 @@ static void show_feedback_then_idle(companion_face_state_t feedback)
     } else if (feedback == COMPANION_FACE_NO_SPEECH) {
         duration_ms = NO_SPEECH_FACE_DURATION_MS;
     }
+    set_interaction_phase(TOUCH_INTERACTION_FEEDBACK);
     companion_hardware_set_state(feedback);
-    vTaskDelay(pdMS_TO_TICKS(duration_ms));
+    uint32_t waited_ms = 0;
+    while (waited_ms < duration_ms && !take_feedback_dismiss_request()) {
+        vTaskDelay(pdMS_TO_TICKS(VOICE_TOUCH_POLL_MS));
+        waited_ms += VOICE_TOUCH_POLL_MS;
+    }
     companion_hardware_set_state(COMPANION_FACE_IDLE);
+    set_interaction_phase(TOUCH_INTERACTION_IDLE);
 }
 
 static uint32_t mean_absolute_energy(const int16_t *samples, size_t sample_count)
@@ -147,7 +348,8 @@ static esp_err_t capture_user_speech(int16_t *samples,
                                      size_t capacity,
                                      size_t *captured_samples,
                                      const voice_detection_settings_t *settings,
-                                     uint32_t *peak_energy)
+                                     uint32_t *peak_energy,
+                                     bool press_to_talk)
 {
     if (samples == NULL || captured_samples == NULL || settings == NULL || peak_energy == NULL ||
         capacity < VOICE_CAPTURE_WINDOW_SAMPLES) {
@@ -158,6 +360,12 @@ static esp_err_t capture_user_speech(int16_t *samples,
     bool speech_started = false;
     size_t silent_windows = 0;
     while (*captured_samples + VOICE_CAPTURE_WINDOW_SAMPLES <= capacity) {
+        if (cancellation_requested()) {
+            return ESP_ERR_NOT_FINISHED;
+        }
+        if (press_to_talk && !press_to_talk_held()) {
+            break;
+        }
         int16_t *window = samples + *captured_samples;
         esp_err_t err = companion_hardware_record_pcm(window, VOICE_CAPTURE_WINDOW_SAMPLES,
                                                        VOICE_SAMPLE_RATE);
@@ -165,12 +373,21 @@ static esp_err_t capture_user_speech(int16_t *samples,
             return err;
         }
         *captured_samples += VOICE_CAPTURE_WINDOW_SAMPLES;
+        if (cancellation_requested()) {
+            return ESP_ERR_NOT_FINISHED;
+        }
         uint32_t energy = mean_absolute_energy(window, VOICE_CAPTURE_WINDOW_SAMPLES);
         if (energy > *peak_energy) {
             *peak_energy = energy;
         }
-        if (!speech_started && energy >= settings->speech_start_threshold) {
+        if (press_to_talk || (!speech_started && energy >= settings->speech_start_threshold)) {
             speech_started = true;
+        }
+        if (press_to_talk) {
+            if (!press_to_talk_held()) {
+                break;
+            }
+            continue;
         }
         if (speech_started && energy <= settings->speech_silence_threshold) {
             ++silent_windows;
@@ -190,7 +407,8 @@ static esp_err_t capture_user_speech(int16_t *samples,
 static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
                                 const char *turn_id,
                                 int64_t started_us,
-                                companion_face_state_t *failure_face)
+                                companion_face_state_t *failure_face,
+                                bool press_to_talk)
 {
     if (failure_face == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -200,21 +418,24 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
     if (!device_transport_is_wifi_connected() || device_identity_load(&identity) != ESP_OK) {
         *failure_face = COMPANION_FACE_OFFLINE;
         report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_OFFLINE);
+        memset(&identity, 0, sizeof(identity));
         return ESP_ERR_INVALID_STATE;
     }
 
     int16_t *samples = heap_caps_malloc(VOICE_CAPTURE_MAX_SAMPLES * sizeof(int16_t),
                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (samples == NULL) {
+        memset(&identity, 0, sizeof(identity));
         report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_OUT_OF_MEMORY);
         return ESP_ERR_NO_MEM;
     }
+    set_interaction_phase(TOUCH_INTERACTION_LISTENING);
     companion_hardware_set_state(COMPANION_FACE_LISTENING);
     report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_LISTENING);
     size_t captured_samples = 0;
     uint32_t peak_energy = 0;
     esp_err_t err = capture_user_speech(samples, VOICE_CAPTURE_MAX_SAMPLES, &captured_samples,
-                                        settings, &peak_energy);
+                                        settings, &peak_energy, press_to_talk);
     if (err != ESP_OK) {
         if (err == ESP_ERR_NOT_FOUND) {
             *failure_face = COMPANION_FACE_NO_SPEECH;
@@ -225,6 +446,10 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
                      (unsigned long)settings->speech_silence_threshold);
         }
         heap_caps_free(samples);
+        memset(&identity, 0, sizeof(identity));
+        if (err == ESP_ERR_NOT_FINISHED || cancellation_requested()) {
+            return ESP_ERR_NOT_FINISHED;
+        }
         report_turn_failure(
             turn_id,
             started_us,
@@ -240,6 +465,7 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
     uint8_t *wav = heap_caps_malloc(wav_capacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (wav == NULL) {
         heap_caps_free(samples);
+        memset(&identity, 0, sizeof(identity));
         report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_OUT_OF_MEMORY);
         return ESP_ERR_NO_MEM;
     }
@@ -249,16 +475,27 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
     heap_caps_free(samples);
     if (err != ESP_OK) {
         heap_caps_free(wav);
+        memset(&identity, 0, sizeof(identity));
         report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_INTERNAL_ERROR);
         return err;
     }
 
+    if (cancellation_requested()) {
+        heap_caps_free(wav);
+        memset(&identity, 0, sizeof(identity));
+        return ESP_ERR_NOT_FINISHED;
+    }
+    set_interaction_phase(TOUCH_INTERACTION_PROCESSING);
     companion_hardware_set_state(COMPANION_FACE_PROCESSING);
     report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_UPLOAD_STARTED);
     voice_service_buffer_t response_buffer = {0};
     err = voice_service_send_turn(&identity, turn_id, wav, wav_size, &response_buffer);
     heap_caps_free(wav);
     memset(&identity, 0, sizeof(identity));
+    if (cancellation_requested()) {
+        voice_service_release(&response_buffer);
+        return ESP_ERR_NOT_FINISHED;
+    }
     if (err != ESP_OK) {
         report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_UPLOAD_FAILED);
         return err;
@@ -270,10 +507,20 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
         report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_INVALID_RESPONSE);
         return ESP_ERR_INVALID_RESPONSE;
     }
+    if (cancellation_requested()) {
+        voice_service_release(&response_buffer);
+        return ESP_ERR_NOT_FINISHED;
+    }
+    set_interaction_phase(TOUCH_INTERACTION_PLAYING);
     companion_hardware_set_state(COMPANION_FACE_SPEAKING);
     report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_PLAYBACK_STARTED);
-    err = companion_hardware_play_wav(response.wav, response.wav_size);
+    bool playback_cancelled = false;
+    err = companion_hardware_play_wav_interruptible(
+        response.wav, response.wav_size, &playback_cancelled);
     voice_service_release(&response_buffer);
+    if (playback_cancelled || cancellation_requested()) {
+        return ESP_ERR_NOT_FINISHED;
+    }
     if (err != ESP_OK) {
         report_turn_failure(
             turn_id,
@@ -395,6 +642,38 @@ static bool activate_configured_wakenet(srmodel_list_t *models,
     return try_activate_wakenet(models, fallback, true, sensitivity, active);
 }
 
+static void execute_voice_turn(const voice_detection_settings_t *settings,
+                               device_voice_turn_stage_t trigger_stage,
+                               bool press_to_talk)
+{
+    char turn_id[DEVICE_PROTOCOL_TURN_ID_LEN] = {0};
+    create_turn_id(turn_id);
+    int64_t turn_started_us = esp_timer_get_time();
+    if (xSemaphoreTake(s_voice_session_mutex, portMAX_DELAY) != pdTRUE) {
+        set_interaction_phase(TOUCH_INTERACTION_IDLE);
+        return;
+    }
+
+    begin_turn(turn_id, turn_started_us);
+    report_turn_stage(turn_id, turn_started_us, trigger_stage);
+    companion_face_state_t failure_face = COMPANION_FACE_RECOVERABLE_ERROR;
+    esp_err_t err = run_voice_turn(
+        settings, turn_id, turn_started_us, &failure_face, press_to_talk);
+    bool cancelled = err == ESP_ERR_NOT_FINISHED || cancellation_requested();
+    finish_turn();
+    if (cancelled) {
+        ESP_LOGI(TAG, "Voice turn cancelled by touch");
+        companion_hardware_set_state(COMPANION_FACE_IDLE);
+        set_interaction_phase(TOUCH_INTERACTION_IDLE);
+    } else if (err == ESP_OK) {
+        show_feedback_then_idle(COMPANION_FACE_SUCCESS);
+    } else {
+        ESP_LOGW(TAG, "Voice turn failed safely: %s", esp_err_to_name(err));
+        show_feedback_then_idle(failure_face);
+    }
+    xSemaphoreGive(s_voice_session_mutex);
+}
+
 static void voice_task(void *argument)
 {
     (void)argument;
@@ -444,6 +723,13 @@ static void voice_task(void *argument)
                  ? "sensitive"
                  : "normal");
     for (;;) {
+        if (take_press_to_talk_request()) {
+            active_settings = current_detection_settings();
+            execute_voice_turn(
+                &active_settings, DEVICE_VOICE_STAGE_TOUCH_STARTED, true);
+            destroy_active_wakenet(&active);
+            continue;
+        }
         voice_detection_settings_t desired_settings = current_detection_settings();
         if (active.model == NULL || desired_settings.wake_sensitivity != active_settings.wake_sensitivity) {
             destroy_active_wakenet(&active);
@@ -488,22 +774,9 @@ static void voice_task(void *argument)
         }
 
         companion_hardware_mark_activity();
-        char turn_id[DEVICE_PROTOCOL_TURN_ID_LEN] = {0};
-        create_turn_id(turn_id);
-        int64_t turn_started_us = esp_timer_get_time();
-        report_turn_stage(turn_id, turn_started_us, DEVICE_VOICE_STAGE_WAKE_DETECTED);
-        if (xSemaphoreTake(s_voice_session_mutex, portMAX_DELAY) == pdTRUE) {
-            active_settings = current_detection_settings();
-            companion_face_state_t failure_face = COMPANION_FACE_RECOVERABLE_ERROR;
-            err = run_voice_turn(&active_settings, turn_id, turn_started_us, &failure_face);
-            if (err == ESP_OK) {
-                show_feedback_then_idle(COMPANION_FACE_SUCCESS);
-            } else {
-                ESP_LOGW(TAG, "Voice turn failed safely: %s", esp_err_to_name(err));
-                show_feedback_then_idle(failure_face);
-            }
-            xSemaphoreGive(s_voice_session_mutex);
-        }
+        active_settings = current_detection_settings();
+        execute_voice_turn(
+            &active_settings, DEVICE_VOICE_STAGE_WAKE_DETECTED, false);
         destroy_active_wakenet(&active);
     }
 }
@@ -517,8 +790,26 @@ esp_err_t voice_control_start(void)
     if (s_voice_session_mutex == NULL) {
         return ESP_ERR_NO_MEM;
     }
+    esp_err_t service_err = voice_service_init();
+    if (service_err != ESP_OK) {
+        vSemaphoreDelete(s_voice_session_mutex);
+        s_voice_session_mutex = NULL;
+        return service_err;
+    }
+    if (xTaskCreate(voice_touch_task,
+                    "voice_touch",
+                    VOICE_TOUCH_TASK_STACK_SIZE,
+                    NULL,
+                    VOICE_TOUCH_TASK_PRIORITY,
+                    &s_touch_task_handle) != pdPASS) {
+        vSemaphoreDelete(s_voice_session_mutex);
+        s_voice_session_mutex = NULL;
+        return ESP_ERR_NO_MEM;
+    }
     if (xTaskCreate(voice_task, "voice_control", VOICE_TASK_STACK_SIZE, NULL,
                     VOICE_TASK_PRIORITY, NULL) != pdPASS) {
+        vTaskDelete(s_touch_task_handle);
+        s_touch_task_handle = NULL;
         vSemaphoreDelete(s_voice_session_mutex);
         s_voice_session_mutex = NULL;
         return ESP_ERR_NO_MEM;
@@ -553,30 +844,47 @@ esp_err_t voice_control_configure(voice_wake_sensitivity_t wake_sensitivity,
     return ESP_OK;
 }
 
-esp_err_t voice_control_play_reminder(const device_identity_t *identity, const char *reminder_id)
+esp_err_t voice_control_play_reminder(const device_identity_t *identity,
+                                      const char *reminder_id,
+                                      bool *cancelled)
 {
-    if (!s_started || !device_identity_is_valid(identity) || reminder_id == NULL) {
+    if (!s_started || !device_identity_is_valid(identity) || reminder_id == NULL ||
+        cancelled == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
+    *cancelled = false;
     if (xSemaphoreTake(s_voice_session_mutex, portMAX_DELAY) != pdTRUE) {
         return ESP_ERR_TIMEOUT;
     }
 
+    taskENTER_CRITICAL(&s_interaction_lock);
+    s_cancel_requested = false;
+    s_feedback_dismiss_requested = false;
+    s_active_turn = false;
+    s_interaction_phase = TOUCH_INTERACTION_BUSY;
+    taskEXIT_CRITICAL(&s_interaction_lock);
     companion_hardware_mark_activity();
     companion_hardware_set_state(COMPANION_FACE_PROCESSING);
     voice_service_buffer_t audio = {0};
     esp_err_t err = voice_service_fetch_reminder(identity, reminder_id, &audio);
     if (err == ESP_OK) {
+        set_interaction_phase(TOUCH_INTERACTION_PLAYING);
         companion_hardware_set_state(COMPANION_FACE_SPEAKING);
-        err = companion_hardware_play_wav(audio.data, audio.size);
+        err = companion_hardware_play_wav_interruptible(audio.data, audio.size, cancelled);
     }
     voice_service_release(&audio);
-    if (err == ESP_OK) {
+    if (*cancelled) {
+        companion_hardware_set_state(COMPANION_FACE_IDLE);
+        set_interaction_phase(TOUCH_INTERACTION_IDLE);
+    } else if (err == ESP_OK) {
         show_feedback_then_idle(COMPANION_FACE_SUCCESS);
     } else {
         ESP_LOGW(TAG, "Reminder playback failed safely: %s", esp_err_to_name(err));
         show_feedback_then_idle(COMPANION_FACE_RECOVERABLE_ERROR);
     }
+    taskENTER_CRITICAL(&s_interaction_lock);
+    s_cancel_requested = false;
+    taskEXIT_CRITICAL(&s_interaction_lock);
     xSemaphoreGive(s_voice_session_mutex);
     return err;
 }

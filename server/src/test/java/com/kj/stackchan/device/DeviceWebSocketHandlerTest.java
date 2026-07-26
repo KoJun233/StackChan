@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kj.stackchan.speech.VoiceTurnDiagnosticsService;
+import com.kj.stackchan.speech.VoiceTurnCancellationService;
 import com.kj.stackchan.speech.VoiceTurnFailureCode;
 import com.kj.stackchan.speech.VoiceTurnStage;
 import org.junit.jupiter.api.Test;
@@ -16,6 +17,8 @@ import org.springframework.web.socket.WebSocketSession;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -34,6 +37,8 @@ class DeviceWebSocketHandlerTest {
             mock(DeviceWakeModelStatusService.class);
     private final VoiceTurnDiagnosticsService voiceTurnDiagnosticsService =
             mock(VoiceTurnDiagnosticsService.class);
+    private final VoiceTurnCancellationService voiceTurnCancellationService =
+            mock(VoiceTurnCancellationService.class);
     private final DeviceWebSocketHandler handler = new DeviceWebSocketHandler(
             connectionRegistry,
             deviceEventService,
@@ -41,7 +46,8 @@ class DeviceWebSocketHandlerTest {
             new ObjectMapper(),
             voiceSettingsCoordinator,
             wakeModelStatusService,
-            voiceTurnDiagnosticsService
+            voiceTurnDiagnosticsService,
+            voiceTurnCancellationService
     );
 
     @Test
@@ -111,6 +117,40 @@ class DeviceWebSocketHandlerTest {
     }
 
     @Test
+    void forwardsAnOptionalCancelledCommandResult() throws Exception {
+        WebSocketSession session = authenticatedSession();
+        handler.afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"command_ack","sequence":8,"command_id":"cmd-123",\
+                "accepted":false,"result":"cancelled"}
+                """));
+
+        verify(acknowledgementService).record(
+                DEVICE_ID,
+                "cmd-123",
+                false,
+                DeviceCommandResult.CANCELLED
+        );
+    }
+
+    @Test
+    void rejectsACommandResultWhenTheCommandWasAccepted() throws Exception {
+        WebSocketSession session = authenticatedSession();
+        handler.afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"command_ack","sequence":8,"command_id":"cmd-123",\
+                "accepted":true,"result":"failed"}
+                """));
+
+        ArgumentCaptor<TextMessage> message = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session).sendMessage(message.capture());
+        assertThat(message.getValue().getPayload()).contains("invalid_event");
+        verifyNoInteractions(acknowledgementService);
+    }
+
+    @Test
     void forwardsValidatedWakeModelStatusForTheAuthenticatedDevice() throws Exception {
         WebSocketSession session = authenticatedSession();
         handler.afterConnectionEstablished(session);
@@ -146,6 +186,53 @@ class DeviceWebSocketHandlerTest {
                 1250,
                 VoiceTurnFailureCode.NO_SPEECH
         );
+    }
+
+    @Test
+    void cancelsTheMatchingVoiceTurnAfterDiagnosticsOwnershipValidation() throws Exception {
+        WebSocketSession session = authenticatedSession();
+        handler.afterConnectionEstablished(session);
+        UUID turnId = UUID.randomUUID();
+
+        TextMessage cancelled = new TextMessage("""
+                {"type":"voice_turn_stage","sequence":9,"turn_id":"%s",\
+                "stage":"CANCELLED","elapsed_ms":1250}
+                """.formatted(turnId));
+        handler.handleTextMessage(session, cancelled);
+        handler.handleTextMessage(session, cancelled);
+
+        verify(voiceTurnDiagnosticsService).recordDeviceStage(
+                DEVICE_ID,
+                turnId,
+                VoiceTurnStage.CANCELLED,
+                1250,
+                null
+        );
+        verify(voiceTurnCancellationService).cancel(DEVICE_ID, turnId);
+    }
+
+    @Test
+    void rejectsCancellationForATurnOwnedByAnotherDevice() throws Exception {
+        WebSocketSession session = authenticatedSession();
+        handler.afterConnectionEstablished(session);
+        UUID turnId = UUID.randomUUID();
+        doThrow(new IllegalArgumentException()).when(voiceTurnDiagnosticsService).recordDeviceStage(
+                DEVICE_ID,
+                turnId,
+                VoiceTurnStage.CANCELLED,
+                50,
+                null
+        );
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"voice_turn_stage","sequence":9,"turn_id":"%s",\
+                "stage":"CANCELLED","elapsed_ms":50}
+                """.formatted(turnId)));
+
+        ArgumentCaptor<TextMessage> message = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session).sendMessage(message.capture());
+        assertThat(message.getValue().getPayload()).contains("invalid_event");
+        verify(voiceTurnCancellationService, never()).cancel(DEVICE_ID, turnId);
     }
 
     @Test

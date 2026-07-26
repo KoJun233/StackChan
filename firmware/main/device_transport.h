@@ -21,6 +21,9 @@ esp_err_t device_transport_configure_wifi(const char *ssid, const char *password
 /** Returns whether the station currently has an IP address. */
 bool device_transport_is_wifi_connected(void);
 
+/** Returns whether the authenticated device WebSocket is currently connected. */
+bool device_transport_is_server_connected(void);
+
 /** Returns the next bounded reconnect delay in seconds. */
 uint32_t device_transport_next_retry_seconds(uint32_t current_seconds);
 

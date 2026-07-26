@@ -15,7 +15,7 @@ export interface PairingCode {
   value: string
 }
 
-export type VoiceTurnStatus = 'IN_PROGRESS' | 'RESPONSE_READY' | 'COMPLETED' | 'FAILED'
+export type VoiceTurnStatus = 'IN_PROGRESS' | 'RESPONSE_READY' | 'COMPLETED' | 'CANCELLED' | 'FAILED'
 
 export interface VoiceTurnEvent {
   elapsedMs: number | null

@@ -30,7 +30,7 @@ Devices may acknowledge a received command with:
 {"type":"command_ack","sequence":2,"command_id":"a command identifier","accepted":true}
 ```
 
-`command_id` is nonblank and `accepted` is boolean. An acknowledgement is never treated as an actuator command. For `speak_reminder`, `accepted=true` means the device downloaded and completed playback, while `accepted=false` means download or playback failed. The server uses that result to mark the durable reminder `DELIVERED` or `FAILED`. For `configure_voice_detection`, the acknowledgement only reports whether the bounded local settings were accepted; it does not change reminder state.
+`command_id` is nonblank and `accepted` is boolean. New firmware may add `"result":"cancelled"` or `"result":"failed"` only when `accepted=false`; older firmware may omit `result`. An acknowledgement is never treated as an actuator command. For `speak_reminder`, `accepted=true` means the device downloaded and completed playback, `accepted=false,result=cancelled` means the user deliberately stopped playback, and missing or `failed` result means download/playback failed. The server marks those outcomes `DELIVERED`, `CANCELLED`, or `FAILED`. For `configure_voice_detection`, the acknowledgement only reports whether the bounded local settings were accepted; it does not change reminder state.
 
 For `install_wake_model`, `accepted=true` means the device downloaded the fixed same-origin artifact, verified its size, SHA-256 and ESP-SR structure, and persisted a pending model slot before restarting. It does not mean the new WakeNet listener is healthy; final health is reported separately after restart. `accepted=false` means the model was not selected for boot.
 
@@ -40,11 +40,11 @@ New firmware may report a privacy-safe voice turn stage:
 {"type":"voice_turn_stage","sequence":3,"turn_id":"550e8400-e29b-41d4-a716-446655440000","stage":"LISTENING","elapsed_ms":120}
 ```
 
-`turn_id` is a canonical UUID generated at local wake detection. `elapsed_ms` is an integer from 0 through 300000 measured from the device monotonic clock. Device stages are limited to `WAKE_DETECTED`, `LISTENING`, `SPEECH_CAPTURED`, `UPLOAD_STARTED`, `PLAYBACK_STARTED`, `PLAYBACK_COMPLETED`, `LISTENING_RESUMED`, and `FAILED`. A failed event has exactly one additional `failure_code` field from the protocol allowlist; successful stages must not include it. Extra fields, free text, transcripts, replies, audio, URLs, credentials, and server-only stages are rejected.
+`turn_id` is a canonical UUID generated at local wake detection or touch-to-talk start. `elapsed_ms` is an integer from 0 through 300000 measured from the device monotonic clock. Device stages are limited to `WAKE_DETECTED`, `TOUCH_STARTED`, `LISTENING`, `SPEECH_CAPTURED`, `UPLOAD_STARTED`, `PLAYBACK_STARTED`, `PLAYBACK_COMPLETED`, `LISTENING_RESUMED`, `CANCELLED`, and `FAILED`. `CANCELLED` is a terminal, idempotent control signal: the authenticated device may only cancel the same device's turn, and the device must also abort or ignore its local HTTP response so a late reply cannot play. A failed event has exactly one additional `failure_code` field from the protocol allowlist; other stages must not include it. Extra fields, free text, touch coordinates, transcripts, replies, audio, URLs, credentials, and server-only stages are rejected.
 
 ## Device-authenticated voice HTTP
 
-The device uploads one bounded WAV only after the local `Hi, Stack Chan` WakeNet model detects the wake phrase:
+The device uploads one bounded WAV after local WakeNet detection or an online idle long press:
 
 ```http
 POST /api/v1/device/voice/turn
@@ -54,7 +54,7 @@ Content-Type: audio/wav
 Accept: application/vnd.stackchan.voice-turn
 ```
 
-The turn header is optional for rolling compatibility. New firmware sends the same canonical UUID used in stage events; when older firmware omits it, the server creates one. The successful response echoes the resolved ID in `X-StackChan-Turn-Id` without changing the SCV1 body.
+The turn header is optional for rolling compatibility. New firmware sends the same canonical UUID used in stage events; when older firmware omits it, the server creates one. The successful response echoes the resolved ID in `X-StackChan-Turn-Id` without changing the SCV1 body. A device cancellation can arrive before, during, or after this request; it is idempotent, terminal in diagnostics, interrupts an in-progress assistant generation, and suppresses a successful voice response.
 
 The body must be between 44 bytes and 512 KiB. The server authenticates the device token independently of any administrator session, transcribes the WAV, appends the turn to that device's conversation, generates the assistant reply, and synthesizes a PCM WAV. A successful response has media type `application/vnd.stackchan.voice-turn` and this binary layout:
 
@@ -71,9 +71,9 @@ Diagnostic persistence is separate from conversation content. It stores only dev
 
 ## Local interaction presentation
 
-The device maps its local interaction phase and WebSocket connectivity to distinct visible states: idle, listening, processing, speaking, success, no speech, offline, and recoverable error. Offline connectivity overrides the current phase until the authenticated WebSocket reconnects. Success, no-speech, and recoverable-error feedback are bounded and return to idle; the existing low-brightness pupil screensaver is limited to idle or offline presentation.
+The device maps its local interaction phase and WebSocket connectivity to distinct visible states: idle, listening, processing, speaking, success, no speech, cancelled, offline, and recoverable error. Offline connectivity overrides only passive idle/offline presentation; an active local phase or bounded feedback remains visible and returns to offline if connectivity is still absent. Success, no-speech, cancelled, and recoverable-error feedback are bounded and return to idle; the existing low-brightness pupil screensaver is limited to idle or offline presentation.
 
-This presentation is local-only. It adds no device event, server command, free-text diagnostic field, actuator behavior, or compatibility requirement for older firmware. `voice_turn_stage` remains the only remote diagnostic contract.
+Touch sampling is local-only and adds no coordinates or free text. The UI task emits bounded local events and never calls network or audio services directly. `voice_turn_stage` remains the remote turn diagnostic and cancellation contract.
 
 ## Server commands
 

@@ -12,6 +12,9 @@ typedef struct {
     size_t size;
 } voice_service_buffer_t;
 
+/** Initializes the cross-task cancellation guard before voice traffic starts. */
+esp_err_t voice_service_init(void);
+
 esp_err_t voice_service_send_turn(const device_identity_t *identity,
                                   const char *turn_id,
                                   const uint8_t *wav,
@@ -21,5 +24,8 @@ esp_err_t voice_service_send_turn(const device_identity_t *identity,
 esp_err_t voice_service_fetch_reminder(const device_identity_t *identity,
                                        const char *reminder_id,
                                        voice_service_buffer_t *response);
+
+/** Cancels only the active conversational turn request; reminder downloads are unaffected. */
+esp_err_t voice_service_cancel_active_turn(void);
 
 void voice_service_release(voice_service_buffer_t *buffer);

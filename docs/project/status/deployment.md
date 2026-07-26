@@ -2,14 +2,14 @@
 
 - 状态：STABLE
 - 最后更新：2026-07-26
-- 当前分支：`codex/int-002-visible-state`
-- 基准提交：`ecc40f3`
-- 最后验证提交：`216d383`
-- 当前运行态代码：服务端 `ecc40f3`、CoreS3 `216d383`，Flyway V14。
+- 当前分支：`codex/int-003-touch-controls`
+- 基准提交：`37dcb49`
+- 最后验证提交：`717a8b1`
+- 当前运行态代码：服务端 `ca2ec8a`、CoreS3 `717a8b1`，Flyway V15。
 
 ## 当前目标
 
-保持现有 Flyway V14 LAN server、Compose 模式和生产 HTTPS-only 边界；INT-002 不需要服务端部署。
+保持已发布的 Flyway V15 LAN server、`717a8b1` CoreS3、Compose 模式和生产 HTTPS-only 边界；INT-003 不再需要运行态变更。
 
 ## 已完成
 
@@ -35,20 +35,24 @@
 - 本地上传增量已使用仓库正式多阶段 Dockerfile 重建并只替换同一 LAN server；部署前给原镜像添加本地回退标签 `stackchan-foundation-server:rollback-9b61339`，没有把容器运行凭据写入镜像或仓库。
 - Flyway 已从 V11 升至 V12；PostgreSQL、Redis、外部卷、端口、LAN HTTP mode 和生产 HTTPS-only 边界均未改变。
 - 最终镜像替换时曾误用基础 Compose，导致 server 暂时只发布 `127.0.0.1:8080`，网页本机可用但 CoreS3 离线；已改回 `compose.yaml + compose.lan.yaml`，恢复 `0.0.0.0:8080` 和既有 LAN development mode。
+- INT-003 部署前给原 server 镜像添加本地回退标签 `stackchan-foundation-server:rollback-ca2ec8a-pre-v15`；使用正式 Dockerfile 构建 `ca2ec8a` 并只重建 `stackchan-foundation-server-1`，未输出或写入运行凭据。
+- 新 server 启动后 Flyway 从 V14 升至 V15；PostgreSQL、Redis、外部卷、`0.0.0.0:8080` LAN overlay 和生产 HTTPS-only 边界均未改变。
 
 ## 正在进行
 
-当前 `stackchan-foundation` 已用正式 LAN overlay 运行 `ecc40f3`，健康接口为 200、Flyway 为 V14，并发布 `0.0.0.0:8080`。CoreS3 已刷入 `216d383` LAN HTTP Quad 镜像并持续报告 `motion_disabled`；本次未替换 server、执行迁移或切换 Compose 模式，生产 HTTPS-only 边界不变。
+当前 `stackchan-foundation` 已用正式 LAN overlay 运行 `ca2ec8a`，Flyway 为 V15，并发布 `0.0.0.0:8080`。CoreS3 为 `717a8b1` LAN HTTP Quad 镜像并持续报告 `motion_disabled`；server、PostgreSQL、Redis 均在运行，近期服务端错误数为 0，卷和生产 HTTPS-only 边界不变。
 
 此前正常对话失败已定位为设备侧 `voice_control` 栈溢出；修复镜像 `216d383` 已部署到设备，正常回合、可恢复异常和恢复后的正常回合均完成人工验收。server 运行态、V14 数据库和 LAN overlay 无需修改。
 
+INT-003 server 发布后正常回合为 `COMPLETED`；随后 `717a8b1` 固件完整刷入 CoreS3，五区域校验、启动、WebSocket、心跳和四项实体触摸验收全部通过。最近运行数据包含真实 `TOUCH_STARTED` 与 `CANCELLED`，Flyway 保持 V15，近期服务端错误数为 0。
+
 ## 下一步操作
 
-保持当前 V14 LAN server 在线；INT-002 剩余实体显示效果由用户观察验收，不替换 server、不执行迁移或切换 Compose 模式。
+保持当前 V15 LAN server 与 `717a8b1` 设备在线；完成单提交交接。未经新的明确授权，不替换 server、不刷写固件、不切换 Compose/profile。
 
 ## 阻塞项
 
-没有模型文件、生成器、设备连接或部署模式阻塞。工作区仍没有 `.env`；后续 LAN 重建必须显式同时传入 `compose.yaml` 和 `compose.lan.yaml`，不得输出秘密、组合 LAN 与 production profile 或降低生产 HTTPS-only 边界。
+没有模型文件、生成器、服务端、固件或部署模式阻塞。工作区仍没有 `.env`；后续 LAN 重建必须显式同时传入 `compose.yaml` 和 `compose.lan.yaml`，不得输出秘密、组合 LAN 与 production profile 或降低生产 HTTPS-only 边界。
 
 ## 关键文件
 
@@ -59,6 +63,8 @@
 
 ## 验证命令与最近结果
 
+- INT-003 本地验证确认 Flyway 空库可到 V15、旧固件四字段 ACK 仍被接受、新固件 LAN HTTP Quad profile 可构建。随后按授权只替换 server：健康接口与网页根地址为 200、Flyway `15|true`、V15 约束生效、近期错误数为 0；旧固件 `216d383 / motion_disabled` 恢复心跳并完成完整成功回合。
+- INT-003 经用户明确授权，将从干净 `717a8b1` 构建的 LAN HTTP Quad 完整镜像刷入 CoreS3 `COM3`；五个区域独立 `verify_flash` 全部匹配且 NVS 未擦除。启动确认 CoreS3 外设、PSRAM、LAN HTTP、WakeNet、WebSocket 与 `motion_disabled`，数据库收到 `717a8b1` 心跳；server、PostgreSQL、Redis 均保持运行，Flyway `15|true`，近期错误数为 0。用户确认屏保首触、长按说话、阶段取消和播放立即停止四项全部通过，最近诊断出现 5 次 `TOUCH_STARTED` 和 1 个 `CANCELLED`。
 - 当前任务的 LAN Compose 静态验证通过；仅使用当前进程内的非秘密占位值，代码实现未触碰运行中的容器、卷、端口或凭据。
 - INT-001 最新 `master` 合并回归再次完成 LAN Compose 静态展开：基础模式只绑定 `127.0.0.1:8080`，LAN overlay 绑定 `0.0.0.0:8080`，PostgreSQL 与 Redis 均未发布主机端口。未重建或替换运行中服务。
 - 2026-07-26 本任务 LAN 部署：`/api/v1/health` 和网页根地址均返回 200，Flyway 为 `11|true`，容器内包含 `speech-DFhfjNNt.js`；调度事务修复后日志中未再出现 `Query requires transaction be in progress`，CoreS3 心跳恢复为 `e33a0d4` / `motion_disabled`。
@@ -92,6 +98,7 @@
 - [0005：生产环境保持可信代理后的 HTTPS-only 边界](../decisions/0005-secure-production-boundary.md)
 - [0015：运行时生成并安全 OTA 自定义唤醒模型](../decisions/0015-runtime-wake-model-generation-and-ota.md)
 - [0016：唤醒词仅从 ESP-SR 内置模型目录选择并安全 OTA](../decisions/0016-built-in-esp-sr-wake-model-catalog.md)
+- [0018：触摸控制采用本地事件队列与幂等语音回合取消](../decisions/0018-touch-control-and-voice-turn-cancellation.md)
 
 ## 安全与兼容性约束
 
