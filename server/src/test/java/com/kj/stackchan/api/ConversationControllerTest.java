@@ -15,9 +15,11 @@ import com.kj.stackchan.llm.LlmRuntimeClientFactory;
 import com.kj.stackchan.llm.LlmProviderUnavailableException;
 import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.llm.ResolvedLlmSettings;
+import com.kj.stackchan.memory.CompanionPromptService;
 import com.kj.stackchan.security.AdminUserRepository;
 import com.kj.stackchan.security.SecurityConfiguration;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -38,6 +40,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.http.MediaType.TEXT_EVENT_STREAM;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -67,7 +70,16 @@ class ConversationControllerTest {
     private LlmSettingsService llmSettingsService;
 
     @MockitoBean
+    private CompanionPromptService companionPromptService;
+
+    @MockitoBean
     private AdminUserRepository adminUserRepository;
+
+    @BeforeEach
+    void preserveTheConfiguredBasePromptByDefault() {
+        lenient().when(companionPromptService.assemble(any(UUID.class), any(String.class)))
+                .thenAnswer(invocation -> invocation.getArgument(1, String.class));
+    }
 
     @Test
     void streamsOrderedEventsAndPersistsTheCompletedAssistantMessage() throws Exception {

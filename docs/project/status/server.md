@@ -1,14 +1,14 @@
 # 服务端工作流
 
-- 状态：STABLE
+- 状态：ACTIVE
 - 最后更新：2026-07-26
-- 当前分支：`codex/int-004-response-latency`
-- 基准提交：`b65e2b8`
-- 最后验证提交：`b65e2b8`
+- 当前分支：`codex/int-005-persona-memory`
+- 基准提交：`798468d`
+- 最后验证提交：`798468d`
 
 ## 当前目标
 
-在保持旧固件、SCV1、取消与隐私边界的前提下，让设备语音完整播报 LLM 返回内容，不再按时间、首句或字符数截断。
+在不改变固件和 SCV1 的前提下，为文本聊天与设备语音提供同一套可控人设、确认后长期记忆和设备作用域边界。
 
 ## 已完成
 
@@ -39,18 +39,22 @@
 - 语音上传接受可选 `X-StackChan-Turn-Id` 并在成功响应中回显；旧固件省略时由服务端生成，SCV1 正文保持不变。
 - 设备 WebSocket 增加严格 `voice_turn_stage` 事件，只接受规范 UUID、白名单阶段、0..300000 毫秒相对耗时和白名单失败码；自由文本和额外字段会被拒绝。
 - ASR、LLM、TTS 和安全失败分类由服务端直接记录；诊断存储临时不可用时不会中断既有语音主流程。
+- INT-005 新增 Flyway V16：单例结构化人设表和长期记忆表，长期记忆记录全局/设备范围、用户档案/事件类别、来源说明、确认状态、启用状态和时间戳。
+- 新增管理员人设 API，以及记忆搜索、读取、手工创建、编辑、待确认建议、确认、拒绝、启停、删除和清空 API；手工创建直接确认，机器人建议默认待确认且停用。
+- 新增统一提示词组装器；浏览器文本聊天只加载全局记忆，设备语音加载全局和当前设备记忆，且两条路径都只查询已确认并启用的记录。
+- 提示词明确把记忆视为数据而非系统指令，并固定基础规则、人设、用户档案、事件记忆、渠道规则和当前会话的优先顺序。每轮重新查询 PostgreSQL，删除和停用无需等待缓存失效。
 
 ## 正在进行
 
-用户明确要求“LLM 返回多少就输出多少”。完整输出版本已删除 1500 ms、首句边界和 40 code point 限制，也移除了“只说一句简短回复”的语音提示；`219b90b` 已发布到现有 LAN server，用户确认长回复完整播放且没有问题，人工验收完成。
+INT-005 软件实现、全量回归、server-only LAN 部署和用户人工验收已完成，运行环境为 `d4ad838` / Flyway V16。自动从对话提取记忆建议尚未启用；当前只提供不会进入上下文的待确认建议路径，后续接入必须单独验证模型工具兼容性和延迟。
 
 ## 下一步操作
 
-保持当前 server 在线并等待任务分支人工合并；只有后续再次出现截断或播放问题时才创建独立任务。
+取得明确授权后推送 `codex/int-005-persona-memory`，等待用户人工合并；当前 server、Flyway V16 和 CoreS3 运行态保持不变，不再部署或刷写固件。
 
 ## 阻塞项
 
-没有服务端软件、部署或人工验收阻塞。后续排查仍不得记录配置秘密、供应商响应正文、音频、转写、回复或完整异常载荷。
+软件、部署和人工验收无阻塞；远程推送等待用户明确授权。后续排查不得记录配置秘密、供应商响应正文、音频、转写、回复或完整异常载荷。
 
 ## 关键文件
 
@@ -61,13 +65,21 @@
 - `server/src/main/resources/db/migration/V13__retire_generated_wake_models.sql`
 - `server/src/main/resources/db/migration/V14__voice_turn_diagnostics.sql`
 - `server/src/main/resources/db/migration/V15__voice_turn_cancellation.sql`
+- `server/src/main/resources/db/migration/V16__persona_and_long_term_memory.sql`
+- `server/src/main/java/com/kj/stackchan/persona/`
+- `server/src/main/java/com/kj/stackchan/memory/`
 - `server/src/main/java/com/kj/stackchan/wakeword/EspSrWakeWordModelCatalog.java`
 - `server/src/main/java/com/kj/stackchan/speech/VoiceTurnDiagnosticsService.java`
 - `server/src/main/java/com/kj/stackchan/speech/VoiceTurnCancellationService.java`
 - `docs/project/decisions/0019-complete-voice-replies.md`
+- `docs/project/decisions/0020-confirmed-scoped-long-term-memory.md`
 - `server/wakenet-models/`
 
 ## 验证命令与最近结果
+
+- INT-005 定向测试覆盖人设保存、手工记忆确认、模型建议待确认、设备范围校验、提示词顺序、管理 API、文本 SSE 和设备语音；全部通过。
+- INT-005 服务端全量 225/225 通过；Testcontainers PostgreSQL 从空库验证并应用 V1..V16。部署后运行库为 `16|true`，人设单例记录 1 条、长期记忆初始记录 0 条；健康与网页根地址为 200，未登录人设/记忆 API 均为 401，启动错误数为 0。CoreS3 `717a8b1 / motion_disabled` 恢复心跳，未改动固件。
+- INT-005 用户完成人设与长期记忆行为验收并确认没有问题；没有为验收读取或记录对话正文。
 
 - INT-003 `mvn test` 全量通过 217/217；Testcontainers PostgreSQL 从空库成功应用 15 个迁移至 V15。覆盖取消早于请求、活动 LLM/TTS 中断、设备归属隔离、严格 ACK `result`、提醒取消和旧固件兼容。
 - INT-003 LAN 发布只替换 `stackchan-foundation-server-1`；健康接口和网页根地址均为 200，Flyway `15|true`，近期错误数为 0。旧固件 `216d383 / motion_disabled` 恢复心跳，用户完成的最新回合为 `COMPLETED`，包含 `REQUEST_RECEIVED`、ASR、LLM、TTS、播放开始/完成和恢复监听。
@@ -119,6 +131,7 @@
 - [0015：运行时生成并安全 OTA 自定义唤醒模型](../decisions/0015-runtime-wake-model-generation-and-ota.md)
 - [0016：唤醒词仅从 ESP-SR 内置模型目录选择并安全 OTA](../decisions/0016-built-in-esp-sr-wake-model-catalog.md)
 - [0018：触摸控制采用本地事件队列与幂等语音回合取消](../decisions/0018-touch-control-and-voice-turn-cancellation.md)
+- [0020：长期记忆必须经过确认并按会话范围组装](../decisions/0020-confirmed-scoped-long-term-memory.md)
 
 ## 安全与兼容性约束
 

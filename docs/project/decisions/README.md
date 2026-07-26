@@ -30,3 +30,4 @@
 | [0017](0017-local-user-visible-interaction-states.md) | ACCEPTED | 设备在本地把交互阶段和连接状态映射为可区分、可恢复的可见状态。 |
 | [0018](0018-touch-control-and-voice-turn-cancellation.md) | ACCEPTED | 触摸只产生本地控制事件，语音回合以同一 ID 幂等取消并抑制晚到回复。 |
 | [0019](0019-complete-voice-replies.md) | ACCEPTED | 设备语音等待 LLM 正常完成并完整合成其返回内容，不按时间、句子或字符数截断。 |
+| [0020](0020-confirmed-scoped-long-term-memory.md) | ACCEPTED | 人设结构化管理，长期记忆按确认状态和会话范围进入文本与设备语音上下文。 |

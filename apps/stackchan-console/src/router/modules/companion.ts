@@ -24,6 +24,37 @@ const companionRoute: RouteRecordRaw = {
         keepAlive: true,
       },
     },
+    {
+      path: 'persona',
+      name: 'companionPersona',
+      component: () => import('@/views/companion/persona/index.vue'),
+      meta: {
+        title: '人设设置',
+        icon: 'i-ri:user-heart-line',
+      },
+    },
+    {
+      path: 'memories',
+      name: 'companionMemoryList',
+      component: () => import('@/views/companion/memories/list.vue'),
+      meta: {
+        title: '长期记忆',
+        icon: 'i-ri:brain-line',
+        keepAlive: 'companionMemoryDetail',
+      },
+    },
+    {
+      path: 'memories/detail/:id?',
+      name: 'companionMemoryDetail',
+      component: () => import('@/views/companion/memories/detail.vue'),
+      meta: {
+        title: '记忆详情',
+        menu: false,
+        activeMenu: '/companion/memories',
+        keepAlive: true,
+        noKeepAlive: 'companionMemoryList',
+      },
+    },
   ],
 }
 
