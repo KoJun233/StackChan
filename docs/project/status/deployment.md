@@ -1,15 +1,15 @@
 # 部署工作流
 
-- 状态：STABLE
+- 状态：ACTIVE
 - 最后更新：2026-07-26
-- 当前分支：`codex/int-004-response-latency`
-- 基准提交：`b65e2b8`
-- 最后验证提交：`b65e2b8`
-- 当前运行态代码：服务端 `219b90b`、CoreS3 `717a8b1`，Flyway V15。
+- 当前分支：`codex/int-005-persona-memory`
+- 基准提交：`d4ad838`
+- 最后验证提交：`d4ad838`
+- 当前运行态代码：服务端 `d4ad838`、CoreS3 `717a8b1`，Flyway V16。
 
 ## 当前目标
 
-保持已发布并完成人工验收的 `219b90b` LAN server、Flyway V15、`717a8b1` CoreS3、Compose 模式和生产 HTTPS-only 边界。
+保持已完成人工验收的 INT-005 LAN server 稳定；固件、CoreS3、Compose 模式、卷、端口和生产 HTTPS-only 边界保持不变。
 
 ## 已完成
 
@@ -37,10 +37,12 @@
 - 最终镜像替换时曾误用基础 Compose，导致 server 暂时只发布 `127.0.0.1:8080`，网页本机可用但 CoreS3 离线；已改回 `compose.yaml + compose.lan.yaml`，恢复 `0.0.0.0:8080` 和既有 LAN development mode。
 - INT-003 部署前给原 server 镜像添加本地回退标签 `stackchan-foundation-server:rollback-ca2ec8a-pre-v15`；使用正式 Dockerfile 构建 `ca2ec8a` 并只重建 `stackchan-foundation-server-1`，未输出或写入运行凭据。
 - 新 server 启动后 Flyway 从 V14 升至 V15；PostgreSQL、Redis、外部卷、`0.0.0.0:8080` LAN overlay 和生产 HTTPS-only 边界均未改变。
+- INT-005 部署前将 `219b90b` 镜像保留为 `stackchan-foundation-server:rollback-d4ad838-pre-v16`；使用正式 Dockerfile 构建 `d4ad838` 并通过 `compose.yaml + compose.lan.yaml` 只替换 `stackchan-foundation-server-1`。
+- 新 server 启动后 Flyway 从 V15 升至 V16；PostgreSQL、Redis、外部卷、`0.0.0.0:8080` LAN overlay、运行凭据和生产 HTTPS-only 边界均未改变，未连接 COM3 或刷写固件。
 
 ## 正在进行
 
-当前 `stackchan-foundation` 使用正式 LAN overlay 运行 `219b90b` server，Flyway 为 V15，并发布 `0.0.0.0:8080`。CoreS3 为 `717a8b1` LAN HTTP Quad 镜像并持续报告 `motion_disabled`；PostgreSQL、Redis、卷、端口、凭据和生产 HTTPS-only 边界未改变。
+当前 `stackchan-foundation` 使用正式 LAN overlay 运行 `d4ad838` server，Flyway 为 V16，并发布 `0.0.0.0:8080`。CoreS3 继续运行 `717a8b1` LAN HTTP Quad 镜像并报告 `motion_disabled`；PostgreSQL、Redis、卷、端口、凭据和生产 HTTPS-only 边界未改变。
 
 此前正常对话失败已定位为设备侧 `voice_control` 栈溢出；修复镜像 `216d383` 已部署到设备，正常回合、可恢复异常和恢复后的正常回合均完成人工验收。server 运行态、V14 数据库和 LAN overlay 无需修改。
 
@@ -48,11 +50,11 @@ INT-003 server 发布后正常回合为 `COMPLETED`；随后 `717a8b1` 固件完
 
 ## 下一步操作
 
-保持当前容器在线并等待任务分支人工合并。无需再次部署、刷写固件、执行迁移或切换 Compose 模式。
+保持当前运行资源不变；取得明确授权后仅推送任务分支并等待用户人工合并。不得再次部署、连接 COM3 或刷写固件，除非获得新的明确授权。
 
 ## 阻塞项
 
-没有部署阻塞。工作区仍没有 `.env`；后续 LAN 重建必须显式同时传入 `compose.yaml` 和 `compose.lan.yaml`，不得输出秘密、组合 LAN 与 production profile 或降低生产 HTTPS-only 边界。
+部署与人工验收无阻塞；远程推送等待用户明确授权。工作区仍没有 `.env`；后续若需重建，必须显式同时传入 `compose.yaml` 和 `compose.lan.yaml`，不得输出秘密、组合 LAN 与 production profile 或降低生产 HTTPS-only 边界。
 
 ## 关键文件
 
@@ -62,6 +64,9 @@ INT-003 server 发布后正常回合为 `COMPLETED`；随后 `717a8b1` 固件完
 - `scripts/verify-lan-compose.ps1`
 
 ## 验证命令与最近结果
+
+- INT-005 Testcontainers 已从空库成功执行 V1..V16，服务端全量 225/225、前端 53/53 和 production build 通过。经用户明确授权，从干净 `d4ad838` 构建镜像 `sha256:c6bc9795d11831f73c2ab7914f0bce611a9057b352bcb5569ae992e781972c9e` 并只替换 server；旧镜像保留为 `stackchan-foundation-server:rollback-d4ad838-pre-v16`。server 容器由 `011ad10df7f9` 变为 `dc2a0ff8e75b`，PostgreSQL/Redis 保持 `6d8feaa18623` / `58e31a403637`；健康接口与网页根地址为 200，LAN 为 `0.0.0.0:8080`，Flyway `16|true` 且成功迁移数 16，未登录人设/记忆 API 均为 401，容器包含人设与记忆静态资源，启动错误数为 0。CoreS3 `717a8b1 / motion_disabled` 恢复心跳；未连接 COM3、刷写固件或改变生产 HTTPS-only 边界。
+- INT-005 用户完成管理端与对话行为人工验收并确认没有问题；当前运行资源继续保持不变。
 
 - INT-003 本地验证确认 Flyway 空库可到 V15、旧固件四字段 ACK 仍被接受、新固件 LAN HTTP Quad profile 可构建。随后按授权只替换 server：健康接口与网页根地址为 200、Flyway `15|true`、V15 约束生效、近期错误数为 0；旧固件 `216d383 / motion_disabled` 恢复心跳并完成完整成功回合。
 - INT-003 经用户明确授权，将从干净 `717a8b1` 构建的 LAN HTTP Quad 完整镜像刷入 CoreS3 `COM3`；五个区域独立 `verify_flash` 全部匹配且 NVS 未擦除。启动确认 CoreS3 外设、PSRAM、LAN HTTP、WakeNet、WebSocket 与 `motion_disabled`，数据库收到 `717a8b1` 心跳；server、PostgreSQL、Redis 均保持运行，Flyway `15|true`，近期错误数为 0。用户确认屏保首触、长按说话、阶段取消和播放立即停止四项全部通过，最近诊断出现 5 次 `TOUCH_STARTED` 和 1 个 `CANCELLED`。

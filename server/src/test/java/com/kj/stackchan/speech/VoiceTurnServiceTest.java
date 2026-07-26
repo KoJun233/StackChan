@@ -11,6 +11,7 @@ import com.kj.stackchan.conversation.GenerationStatus;
 import com.kj.stackchan.llm.LlmRuntimeClientFactory;
 import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.llm.ResolvedLlmSettings;
+import com.kj.stackchan.memory.CompanionPromptService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -25,6 +26,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -43,6 +45,8 @@ class VoiceTurnServiceTest {
     private LlmRuntimeClientFactory llmRuntimeClientFactory;
     @Mock
     private LlmSettingsService llmSettingsService;
+    @Mock
+    private CompanionPromptService companionPromptService;
     @Mock
     private VoiceTurnDiagnosticsService diagnosticsService;
     private final VoiceTurnCancellationService cancellationService =
@@ -245,12 +249,16 @@ class VoiceTurnServiceTest {
     }
 
     private VoiceTurnService service() {
+        lenient().when(companionPromptService.assemble(any(UUID.class), anyString(), anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(1, String.class)
+                        + invocation.getArgument(2, String.class));
         return new VoiceTurnService(
                 speechRuntimeClient,
                 deviceVoiceConversationService,
                 conversationService,
                 llmRuntimeClientFactory,
                 llmSettingsService,
+                companionPromptService,
                 diagnosticsService,
                 cancellationService
         );

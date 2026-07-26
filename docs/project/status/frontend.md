@@ -1,14 +1,14 @@
 # 前端工作流
 
-- 状态：STABLE
+- 状态：ACTIVE
 - 最后更新：2026-07-26
-- 当前分支：`codex/int-004-response-latency`
-- 基准提交：`b65e2b8`
-- 最后验证提交：`717a8b1`
+- 当前分支：`codex/int-005-persona-memory`
+- 基准提交：`798468d`
+- 最后验证提交：`798468d`
 
 ## 当前目标
 
-保持已发布的设备管理功能稳定，并让最近语音回合时间线正确显示触摸发起与用户取消，不把取消误标为失败。
+在 Fantastic-admin 中提供可解释、可操作的人设与长期记忆管理，让用户知道机器人记住了什么、为什么记住并能立即停用或删除。
 
 ## 已完成
 
@@ -35,18 +35,23 @@
 - INT-001 在设备总览增加“交互诊断”入口，按设备展示最近回合状态、设备/服务端阶段、相对耗时和安全失败码。
 - 时间线明确说明不保存音频、识别文本或机器人回复；空数据、加载失败和手动刷新均有独立反馈，不影响安全停止按钮。
 - INT-003 扩展 `VoiceTurnStatus` 为 `CANCELLED`，时间线增加 `TOUCH_STARTED` 和 `CANCELLED` 中文标签，取消保持中性展示且无失败码。
+- INT-005 在“AI 陪伴”下新增“人设设置”和“长期记忆”菜单，以及隐藏的记忆新增/编辑详情路由。
+- 人设页使用 `FaForm`/`FaFormItem` 管理名字、语气、回复长度、主动程度、话题边界和禁忌，并说明其与底层系统规则的优先级。
+- 长期记忆页使用 `FaSearchBar`、`FaTable`、`FaPagination` 和标准列表/详情模式，支持搜索、确认、拒绝、启停、编辑、删除、批量删除和清空。
+- 页面显示全局/设备范围、用户档案/事件类别、来源说明和确认状态；待确认建议不会显示为已启用，手工新增明确提示视为用户确认。
+- 新增真实 `/api/v1/persona` 与 `/api/v1/memories` 客户端和测试，不引入 fake mock 数据。
 
 ## 正在进行
 
-INT-003 管理端映射保持稳定。INT-004 完整输出版本不修改前端代码、API 或时间线契约；`219b90b` server 已发布并完成人工验收，其中管理端构建产物与既有版本等价。
+INT-005 页面、API 和路由的软件验证及用户人工验收均已完成，相关资源已随 `d4ad838` server 镜像发布到现有 LAN 服务。
 
 ## 下一步操作
 
-INT-004 无需前端发布；等待任务分支人工合并。
+取得明确授权后推送 `codex/int-005-persona-memory`，等待用户在网页端人工合并；无需继续修改页面或运行服务。
 
 ## 阻塞项
 
-没有前端软件或发布阻塞。不得输出浏览器会话或运行容器秘密。
+软件、部署和人工验收无阻塞；远程推送等待用户明确授权。不得输出浏览器会话或运行容器秘密。
 
 ## 关键文件
 
@@ -57,8 +62,16 @@ INT-004 无需前端发布；等待任务分支人工合并。
 - `apps/stackchan-console/src/api/modules/wakeWords.ts`
 - `apps/stackchan-console/src/views/devices/overview/index.vue`
 - `apps/stackchan-console/src/api/modules/devices.ts`
+- `apps/stackchan-console/src/api/modules/personaMemory.ts`
+- `apps/stackchan-console/src/views/companion/persona/index.vue`
+- `apps/stackchan-console/src/views/companion/memories/`
+- `apps/stackchan-console/src/router/modules/companion.ts`
 
 ## 验证命令与最近结果
+
+- INT-005 使用 Node v24.15.0：人设/记忆 API 与路由定向测试 4/4、Vitest 全量 18 个文件 53/53、`vue-tsc -b` 和 production build 通过。Vitest close-timeout advisory 仍为既有非阻塞警告。
+- INT-005 正式 Docker 镜像已发布人设页面资源和 `personaMemory` API 资源；网页根地址为 200，未登录 `/api/v1/persona` 与 `/api/v1/memories` 均为 401，确认管理路由受既有认证边界保护。
+- INT-005 用户完成人设与长期记忆页面及对话行为验收并确认没有问题，人工验收通过。
 
 - INT-003 使用 Node v24.15.0：针对页面 3/3，Vitest 全量 17 个文件 51/51，`vue-tsc -b` 和 production build 通过。新测试确认触摸发起的取消回合显示中性状态；Vitest close-timeout advisory 仍为已记录的非阻塞警告。
 - INT-003 正式 Dockerfile 已将新管理端资源打入 `ca2ec8a` server 镜像并发布；网页根地址返回 200，PostgreSQL、Redis、卷和 LAN overlay 未改变。
@@ -94,6 +107,7 @@ INT-004 无需前端发布；等待任务分支人工合并。
 - [0015：运行时生成并安全 OTA 自定义唤醒模型](../decisions/0015-runtime-wake-model-generation-and-ota.md)
 - [0016：唤醒词仅从 ESP-SR 内置模型目录选择并安全 OTA](../decisions/0016-built-in-esp-sr-wake-model-catalog.md)
 - [0018：触摸控制采用本地事件队列与幂等语音回合取消](../decisions/0018-touch-control-and-voice-turn-cancellation.md)
+- [0020：长期记忆必须经过确认并按会话范围组装](../decisions/0020-confirmed-scoped-long-term-memory.md)
 
 ## 安全与兼容性约束
 

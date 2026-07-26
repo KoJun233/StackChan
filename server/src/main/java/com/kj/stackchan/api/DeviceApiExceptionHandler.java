@@ -7,6 +7,9 @@ import com.kj.stackchan.device.InvalidDeviceRefreshCredentialException;
 import com.kj.stackchan.device.InvalidDeviceTokenException;
 import com.kj.stackchan.llm.InvalidLlmSettingsException;
 import com.kj.stackchan.llm.LlmProviderUnavailableException;
+import com.kj.stackchan.memory.InvalidMemoryException;
+import com.kj.stackchan.memory.MemoryNotFoundException;
+import com.kj.stackchan.persona.InvalidPersonaException;
 import com.kj.stackchan.speech.InvalidSpeechSettingsException;
 import com.kj.stackchan.speech.SpeechProviderUnavailableException;
 import com.kj.stackchan.speech.VoiceInputException;
@@ -72,6 +75,15 @@ public class DeviceApiExceptionHandler {
     );
     public static final ApiError INVALID_REMINDER = new ApiError(
             "invalid_reminder", "提醒内容、时间、时区或目标设备无效。"
+    );
+    public static final ApiError MEMORY_NOT_FOUND = new ApiError(
+            "memory_not_found", "未找到指定记忆。"
+    );
+    public static final ApiError INVALID_MEMORY = new ApiError(
+            "invalid_memory", "记忆内容、状态或作用范围无效。"
+    );
+    public static final ApiError INVALID_PERSONA = new ApiError(
+            "invalid_persona", "人设内容或选项无效。"
     );
     public static final ApiError INVALID_WAKE_WORD_MODEL_JOB = new ApiError(
             "invalid_wake_word_model_job", "乐鑫内置唤醒模型、目标设备无效，或该设备已有进行中的模型任务。"
@@ -153,6 +165,21 @@ public class DeviceApiExceptionHandler {
         return response(HttpStatus.BAD_REQUEST, INVALID_REMINDER);
     }
 
+    @ExceptionHandler(MemoryNotFoundException.class)
+    ResponseEntity<ApiError> memoryNotFound(MemoryNotFoundException exception) {
+        return response(HttpStatus.NOT_FOUND, MEMORY_NOT_FOUND);
+    }
+
+    @ExceptionHandler(InvalidMemoryException.class)
+    ResponseEntity<ApiError> invalidMemory(InvalidMemoryException exception) {
+        return response(HttpStatus.BAD_REQUEST, INVALID_MEMORY);
+    }
+
+    @ExceptionHandler(InvalidPersonaException.class)
+    ResponseEntity<ApiError> invalidPersona(InvalidPersonaException exception) {
+        return response(HttpStatus.BAD_REQUEST, INVALID_PERSONA);
+    }
+
     @ExceptionHandler(InvalidWakeWordModelJobException.class)
     ResponseEntity<ApiError> invalidWakeWordModelJob(InvalidWakeWordModelJobException exception) {
         return response(HttpStatus.CONFLICT, INVALID_WAKE_WORD_MODEL_JOB);
@@ -185,6 +212,12 @@ public class DeviceApiExceptionHandler {
         }
         if (requestUri.startsWith("/api/v1/settings/speech")) {
             return response(HttpStatus.BAD_REQUEST, INVALID_SPEECH_SETTINGS);
+        }
+        if (requestUri.startsWith("/api/v1/persona")) {
+            return response(HttpStatus.BAD_REQUEST, INVALID_PERSONA);
+        }
+        if (requestUri.startsWith("/api/v1/memories")) {
+            return response(HttpStatus.BAD_REQUEST, INVALID_MEMORY);
         }
         if (requestUri.startsWith("/api/v1/auth/")) {
             return response(HttpStatus.UNAUTHORIZED, AUTHENTICATION_FAILED);

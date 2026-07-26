@@ -14,6 +14,7 @@ import com.kj.stackchan.conversation.MessageRole;
 import com.kj.stackchan.llm.LlmProviderUnavailableException;
 import com.kj.stackchan.llm.LlmRuntimeClientFactory;
 import com.kj.stackchan.llm.LlmSettingsService;
+import com.kj.stackchan.memory.CompanionPromptService;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -36,6 +37,7 @@ public class VoiceTurnService {
     private final ConversationService conversationService;
     private final LlmRuntimeClientFactory llmRuntimeClientFactory;
     private final LlmSettingsService llmSettingsService;
+    private final CompanionPromptService companionPromptService;
     private final VoiceTurnDiagnosticsService diagnosticsService;
     private final VoiceTurnCancellationService cancellationService;
 
@@ -45,6 +47,7 @@ public class VoiceTurnService {
             ConversationService conversationService,
             LlmRuntimeClientFactory llmRuntimeClientFactory,
             LlmSettingsService llmSettingsService,
+            CompanionPromptService companionPromptService,
             VoiceTurnDiagnosticsService diagnosticsService,
             VoiceTurnCancellationService cancellationService
     ) {
@@ -53,6 +56,7 @@ public class VoiceTurnService {
         this.conversationService = conversationService;
         this.llmRuntimeClientFactory = llmRuntimeClientFactory;
         this.llmSettingsService = llmSettingsService;
+        this.companionPromptService = companionPromptService;
         this.diagnosticsService = diagnosticsService;
         this.cancellationService = cancellationService;
     }
@@ -83,9 +87,14 @@ public class VoiceTurnService {
                 start = conversationService.startGeneration(conversationId, UUID.randomUUID(), transcript);
                 cancellation.throwIfCancelled();
                 List<Message> modelHistory = history.stream().map(this::toModelMessage).toList();
+                String systemPrompt = companionPromptService.assemble(
+                        conversationId,
+                        llmSettingsService.resolveForInvocation().systemPrompt(),
+                        VOICE_SYSTEM_INSTRUCTION
+                );
                 reply = llmRuntimeClientFactory.createChatClient()
                         .prompt()
-                        .system(llmSettingsService.resolveForInvocation().systemPrompt() + VOICE_SYSTEM_INSTRUCTION)
+                        .system(systemPrompt)
                         .messages(modelHistory)
                         .user(transcript)
                         .stream()

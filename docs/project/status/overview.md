@@ -1,12 +1,12 @@
 # 全局工作流总览
 
-- 状态：STABLE
+- 状态：ACTIVE
 - 最后更新：2026-07-26
-- 当前分支：`codex/int-004-response-latency`
-- 实现基准：`b65e2b8`
-- 最后验证提交：`b65e2b8`
-- 当前验证范围：INT-004 完整输出版本的软件验证、server-only LAN 部署和实体长回复验收全部完成；运行库保持 V15。
-- 当前优先级：INT-004 已完成，等待任务分支推送和人工合并。
+- 当前分支：`codex/int-005-persona-memory`
+- 实现基准：`d4ad838`
+- 最后验证提交：`d4ad838`
+- 当前验证范围：INT-005 结构化人设、长期记忆管理、确认边界、设备范围和文本/语音统一提示词组装已完成软件验证、LAN 部署和用户人工验收；运行库为 Flyway V16。
+- 当前优先级：推送 `codex/int-005-persona-memory`，等待用户在网页端人工合并。
 - 当前部署：LAN HTTP development mode。
 - 生产边界：HTTPS-only。
 
@@ -14,10 +14,10 @@
 
 | 工作流 | 状态 | 状态文件 | 当前分支 | 下一步 |
 | --- | --- | --- | --- | --- |
-| 服务端 | STABLE | [server.md](server.md) | `codex/int-004-response-latency` | 完整输出版本已完成人工验收；等待任务分支人工合并。 |
-| 前端 | STABLE | [frontend.md](frontend.md) | `codex/int-004-response-latency` | INT-004 不修改管理端；继续使用现有隐私安全时间线观察阶段耗时。 |
-| 固件 | STABLE | [firmware.md](firmware.md) | `codex/int-004-response-latency` | INT-004 不改 SCV1、固件或 profile；设备继续运行 `717a8b1`。 |
-| 部署 | STABLE | [deployment.md](deployment.md) | `codex/int-004-response-latency` | `219b90b` server 在线，Flyway V15 与设备 `717a8b1` 正常。 |
+| 服务端 | ACTIVE | [server.md](server.md) | `codex/int-005-persona-memory` | 软件、V16 部署和记忆行为人工验收已通过；等待任务分支推送与人工合并。 |
+| 前端 | ACTIVE | [frontend.md](frontend.md) | `codex/int-005-persona-memory` | 人设与长期记忆页面、路由和人工验收已通过；等待任务分支推送与人工合并。 |
+| 固件 | STABLE | [firmware.md](firmware.md) | `codex/int-005-persona-memory` | INT-005 不改 SCV1、固件或 profile；设备继续运行 `717a8b1`。 |
+| 部署 | STABLE | [deployment.md](deployment.md) | `codex/int-005-persona-memory` | `d4ad838` 已只替换 server，Flyway `16|true`，LAN 与数据容器边界保持不变。 |
 
 唤醒词入口现改为“选择 ESP-SR 2.4.6 内置短语、服务端从锁定目录可信打包、设备双槽 OTA、重启健康确认、失败自动回退”。任意文本生成、第三方生成器和模型包上传均已从最终代码与页面移除；V12 只保留为已部署迁移历史，V13 清理临时字段。下拉包含“Hi, Stack Chan”“小峰小峰”等 13 项。CoreS3 曾使用 `0398073` 镜像完成 WakeNet9/WakeNet9l/WakeNet9s 三槽引导；管理员选择“小峰小峰”后，任务已完成 `READY -> INSTALLING -> INSTALLED`。INT-001 发布时设备升级为 `ecc40f3`，INT-002 升级为栈修复镜像 `216d383`，当前实机为 INT-003 `717a8b1`。
 
@@ -31,11 +31,21 @@ INT-003 已完成触摸事件队列、600 ms 按住说话、聆听/处理/播放
 
 INT-004 第三版 `e3a752f` 的 1500 ms、首句和 40 code point 限制已全部移除。用户授权后，完整输出版本 `219b90b` 已只替换现有 LAN server；健康与网页根地址为 200、Flyway V15、LAN `0.0.0.0:8080`、CoreS3 `717a8b1 / motion_disabled` 心跳正常，近期错误数为 0。用户随后确认长回复已经完整播放且没有问题，INT-004 人工验收完成。文字聊天、SCV1、取消、固件和数据库结构仍不变。
 
+INT-005 当前工作树新增结构化人设、全局/设备长期记忆、来源与确认状态、记忆搜索/编辑/确认/拒绝/启停/删除/清空，以及文本聊天和设备语音共用的提示词组装器。只有 `CONFIRMED + enabled` 记忆会进入上下文；待确认模型建议不会作为事实使用，删除后下一轮通过新查询立即失效。当前版本未自动从对话提取建议，保留待确认接口供后续兼容性验证后接入。
+
+用户授权后，`d4ad838` 已使用正式 Dockerfile 和 `compose.yaml + compose.lan.yaml` 只替换现有 server，并将运行库从 V15 升至 V16。新镜像为 `sha256:c6bc9795d11831f73c2ab7914f0bce611a9057b352bcb5569ae992e781972c9e`，旧镜像保留为 `stackchan-foundation-server:rollback-d4ad838-pre-v16`；健康与网页根地址均为 200，未登录人设/记忆 API 均为 401，CoreS3 `717a8b1 / motion_disabled` 已恢复心跳，近期启动错误数为 0。
+
+用户随后完成人设与长期记忆功能验收并确认没有问题；INT-005 的页面操作、保存结果和对话行为人工验收完成，无需继续修改运行服务或固件。
+
 ## 架构决策
 
 - [架构决策记录](../decisions/README.md)
 
 ## 验证与边界
+
+- INT-005 服务端全量 225/225 通过；Testcontainers PostgreSQL 从空库成功应用 16 个迁移至 V16。前端 Node v24.15.0 下 Vitest 18 个文件 53/53、`vue-tsc -b` 和 production build 通过；Vitest close-timeout advisory 仍为既有非阻塞警告。
+- INT-005 部署后 `/api/v1/health` 与网页根地址均为 200，Flyway `16|true` 且成功迁移数为 16；人设单例初始记录为 1、长期记忆初始记录为 0，容器静态资源包含人设与记忆页面。server 容器由 `011ad10df7f9` 变为 `dc2a0ff8e75b`，PostgreSQL/Redis 保持 `6d8feaa18623` / `58e31a403637`，LAN 保持 `0.0.0.0:8080`。未连接 COM3、刷写固件、修改卷、凭据或生产 HTTPS-only 边界。
+- INT-005 用户人工验收确认人设与长期记忆功能没有问题；不再读取或记录对话正文，当前运行资源保持不变。
 
 - INT-003 服务端发布前保留 `stackchan-foundation-server:rollback-ca2ec8a-pre-v15`；只重建 server，PostgreSQL、Redis、卷和 LAN overlay 未改变。健康接口与网页根地址均为 200，Flyway `15|true`，启动后错误数为 0；旧固件 `216d383 / motion_disabled` 恢复心跳并完成完整成功回合。
 - INT-003 经用户明确授权，从干净 `717a8b1` 重建并完整刷写 CoreS3 `COM3` 的 LAN HTTP Quad 镜像；bootloader、分区表、应用、OTA data 和语音模型五个区域均通过独立 `verify_flash`，NVS 未擦除。启动窗口确认 PSRAM、CoreS3 外设、LAN HTTP、WakeNet、WebSocket 与 `motion_disabled` 正常，未见 panic、栈溢出、看门狗或重启循环；数据库收到 `717a8b1` 心跳，Flyway 保持 V15，服务端近期错误数为 0。用户随后确认屏保首触只唤醒、600 ms 长按说话、聆听/处理/播放短触取消以及播放立即停止四项全部通过；最近诊断包含 5 次 `TOUCH_STARTED` 和 1 个 `CANCELLED` 终态。
@@ -134,4 +144,4 @@ INT-004 第三版 `e3a752f` 的 1500 ms、首句和 40 code point 限制已全�
 
 ## 下一步
 
-保持当前 `219b90b` LAN server 和 `717a8b1` 设备在线，推送任务分支后等待人工合并。无需再次部署、刷写固件或修改管理端配置。
+保持当前 `d4ad838` / Flyway V16 LAN server 和 `717a8b1` 设备在线；取得明确推送授权后推送 `codex/int-005-persona-memory`，由用户在网页端人工合并。无需再次部署或刷写固件。

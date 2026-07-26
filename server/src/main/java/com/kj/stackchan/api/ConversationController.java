@@ -12,6 +12,7 @@ import com.kj.stackchan.conversation.MessageRole;
 import com.kj.stackchan.llm.LlmRuntimeClientFactory;
 import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.llm.LlmProviderUnavailableException;
+import com.kj.stackchan.memory.CompanionPromptService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -41,15 +42,18 @@ public class ConversationController {
     private final ConversationService conversationService;
     private final LlmRuntimeClientFactory llmRuntimeClientFactory;
     private final LlmSettingsService llmSettingsService;
+    private final CompanionPromptService companionPromptService;
 
     public ConversationController(
             ConversationService conversationService,
             LlmRuntimeClientFactory llmRuntimeClientFactory,
-            LlmSettingsService llmSettingsService
+            LlmSettingsService llmSettingsService,
+            CompanionPromptService companionPromptService
     ) {
         this.conversationService = conversationService;
         this.llmRuntimeClientFactory = llmRuntimeClientFactory;
         this.llmSettingsService = llmSettingsService;
+        this.companionPromptService = companionPromptService;
     }
 
     @PostMapping
@@ -91,9 +95,14 @@ public class ConversationController {
         GenerationContentBuffer generatedContent = new GenerationContentBuffer();
         return Flux.defer(() -> {
             List<Message> modelHistory = history.stream().map(this::toModelMessage).toList();
-            Flux<ServerSentEvent<Object>> deltas = llmRuntimeClientFactory.createChatClient()
+            var chatClient = llmRuntimeClientFactory.createChatClient();
+            String systemPrompt = companionPromptService.assemble(
+                    conversationId,
+                    llmSettingsService.resolveForInvocation().systemPrompt()
+            );
+            Flux<ServerSentEvent<Object>> deltas = chatClient
                     .prompt()
-                    .system(llmSettingsService.resolveForInvocation().systemPrompt())
+                    .system(systemPrompt)
                     .messages(modelHistory)
                     .user(request.content())
                     .stream()
