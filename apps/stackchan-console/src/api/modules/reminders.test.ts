@@ -3,6 +3,8 @@ import {
   createReminder,
   deleteReminder,
   listReminders,
+  skipNextReminder,
+  snoozeReminder,
   toLocalDateTimeValue,
   toReminderInstant,
   updateReminder,
@@ -63,5 +65,27 @@ describe('reminder API', () => {
   it('converts between Shanghai local time and an ISO instant deterministically', () => {
     expect(toReminderInstant('2026-07-19T18:30', -480)).toBe('2026-07-19T10:30:00.000Z')
     expect(toLocalDateTimeValue('2026-07-19T10:30:00.000Z', -480)).toBe('2026-07-19T18:30')
+  })
+
+  it('uses explicit endpoints for snooze and skip-next', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'reminder-id' }), {
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'reminder-id' }), {
+        headers: { 'Content-Type': 'application/json' },
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await snoozeReminder('reminder-id', 10)
+    await skipNextReminder('reminder-id')
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/v1/reminders/reminder-id:snooze', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ minutes: 10 }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/reminders/reminder-id:skip-next', expect.objectContaining({
+      method: 'POST',
+    }))
   })
 })

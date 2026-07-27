@@ -1,14 +1,14 @@
 # 前端工作流
 
-- 状态：ACTIVE
-- 最后更新：2026-07-26
-- 当前分支：`codex/int-005-persona-memory`
-- 基准提交：`798468d`
-- 最后验证提交：`798468d`
+- 状态：STABLE
+- 最后更新：2026-07-27
+- 当前分支：`codex/int-006-proactive-interaction`
+- 基准提交：`bfb6a20`
+- 最后验证提交：`20eefb2`
 
 ## 当前目标
 
-在 Fantastic-admin 中提供可解释、可操作的人设与长期记忆管理，让用户知道机器人记住了什么、为什么记住并能立即停用或删除。
+在 Fantastic-admin 中提供周期提醒、稍后/跳过操作，以及按设备配置免打扰、离线补偿、音量、夜间模式和有限主动问候的页面。
 
 ## 已完成
 
@@ -40,18 +40,21 @@
 - 长期记忆页使用 `FaSearchBar`、`FaTable`、`FaPagination` 和标准列表/详情模式，支持搜索、确认、拒绝、启停、编辑、删除、批量删除和清空。
 - 页面显示全局/设备范围、用户档案/事件类别、来源说明和确认状态；待确认建议不会显示为已启用，手工新增明确提示视为用户确认。
 - 新增真实 `/api/v1/persona` 与 `/api/v1/memories` 客户端和测试，不引入 fake mock 数据。
+- INT-006 提醒表单增加单次/每日/每周、重复间隔和 DST 说明；列表增加重复来源、10 分钟后提醒和跳过下一次操作。
+- 新增“交互与主动陪伴”设置路由和 `FaForm` 页面，支持设备选择、音量、夜间模式、跨午夜免打扰、离线策略、主动问候开关/时间窗/限频及立即停止播报。
+- 首轮验收发现显式 `v-model` 控件仍被 `FaFormItem` 转发的原生 `input/change` 事件覆盖，数字框和下拉框因此把 Event 对象交给 Zod 并显示 `Invalid input`；公共表单组件现以 `update:modelValue` 为唯一字段值来源，同时保留无显式模型控件的自动绑定行为。
 
 ## 正在进行
 
-INT-005 页面、API 和路由的软件验证及用户人工验收均已完成，相关资源已随 `d4ad838` server 镜像发布到现有 LAN 服务。
+公共表单控件修复已随 `f0d99fa` server 镜像发布；用户确认音量、设备、策略选择等六项页面/实体验收全部正常。
 
 ## 下一步操作
 
-取得明确授权后推送 `codex/int-005-persona-memory`，等待用户在网页端人工合并；无需继续修改页面或运行服务。
+推送任务分支后由用户在网页人工合并。
 
 ## 阻塞项
 
-软件、部署和人工验收无阻塞；远程推送等待用户明确授权。不得输出浏览器会话或运行容器秘密。
+无阻塞；人工复测通过且用户已授权远程推送。不得输出浏览器会话或运行容器秘密。
 
 ## 关键文件
 
@@ -66,9 +69,17 @@ INT-005 页面、API 和路由的软件验证及用户人工验收均已完成�
 - `apps/stackchan-console/src/views/companion/persona/index.vue`
 - `apps/stackchan-console/src/views/companion/memories/`
 - `apps/stackchan-console/src/router/modules/companion.ts`
+- `apps/stackchan-console/src/views/settings/interaction/index.vue`
+- `apps/stackchan-console/src/api/modules/interactions.ts`
+- `apps/stackchan-console/src/views/reminders/`
+- `apps/stackchan-console/src/router/modules/settings.ts`
 
 ## 验证命令与最近结果
 
+- INT-006 验收修复使用受支持的 Node v24.15.0：`vue-tsc -b`、Vitest 19 个文件 55/55 和 production build 通过。Vitest close-timeout advisory 与 pnpm 启动进程的 Node v24.14.0 engine 提示均为既有/工具链非阻塞警告，实际测试与构建子进程使用 v24.15.0。
+- INT-006 正式镜像已发布交互设置和周期提醒资源；网页根地址为 200，未登录交互设置 API 为 401，既有认证边界保持不变。
+- INT-006 `f0d99fa` 正式镜像已发布公共表单事件修复；网页根地址为 200，PostgreSQL/Redis、LAN 端口和认证边界未改变。
+- 用户确认 INT-006 六项页面与实体交互验收全部正常；语音模型/音色兼容性修复后连接测试恢复正常。
 - INT-005 使用 Node v24.15.0：人设/记忆 API 与路由定向测试 4/4、Vitest 全量 18 个文件 53/53、`vue-tsc -b` 和 production build 通过。Vitest close-timeout advisory 仍为既有非阻塞警告。
 - INT-005 正式 Docker 镜像已发布人设页面资源和 `personaMemory` API 资源；网页根地址为 200，未登录 `/api/v1/persona` 与 `/api/v1/memories` 均为 401，确认管理路由受既有认证边界保护。
 - INT-005 用户完成人设与长期记忆页面及对话行为验收并确认没有问题，人工验收通过。

@@ -17,6 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class VoiceTurnDiagnosticsService {
 
     static final Duration RETENTION = Duration.ofDays(7);
+    private static final List<VoiceTurnStatus> ACTIVE_STATUSES = List.of(
+            VoiceTurnStatus.IN_PROGRESS, VoiceTurnStatus.RESPONSE_READY
+    );
     private static final int MAX_ELAPSED_MS = 300_000;
 
     private final VoiceTurnRepository turnRepository;
@@ -58,6 +61,20 @@ public class VoiceTurnDiagnosticsService {
             throw new IllegalArgumentException("Invalid server voice turn stage");
         }
         record(deviceId, turnId, stage, VoiceTurnStageSource.SERVER, null, failureCode);
+    }
+
+    @Transactional
+    public int cancelActiveTurns(UUID deviceId) {
+        List<VoiceTurnEntity> activeTurns = turnRepository.findByDeviceIdAndStatusIn(deviceId, ACTIVE_STATUSES);
+        activeTurns.forEach(turn -> record(
+                deviceId,
+                turn.getId(),
+                VoiceTurnStage.CANCELLED,
+                VoiceTurnStageSource.SERVER,
+                null,
+                null
+        ));
+        return activeTurns.size();
     }
 
     private void record(

@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import com.kj.stackchan.reminder.ReminderService;
 import com.kj.stackchan.reminder.ReminderStatus;
+import com.kj.stackchan.reminder.ReminderRecurrence;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -64,14 +65,36 @@ public class ReminderController {
         reminderService.delete(id);
     }
 
+    @PostMapping(path = "/{id}:snooze", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ReminderService.ReminderSnapshot snooze(@PathVariable UUID id, @Valid @RequestBody SnoozeRequest request) {
+        return reminderService.snooze(id, request.minutes());
+    }
+
+    @PostMapping("/{id}:skip-next")
+    public ReminderService.ReminderSnapshot skipNext(@PathVariable UUID id) {
+        return reminderService.skipNext(id);
+    }
+
     public record ReminderRequest(
             @NotNull UUID deviceId,
             @NotBlank @Size(max = 1000) String content,
             @NotNull Instant scheduledAt,
-            @NotBlank @Size(max = 80) String zoneId
+            @NotBlank @Size(max = 80) String zoneId,
+            ReminderRecurrence recurrenceType,
+            Integer recurrenceInterval
     ) {
         ReminderService.ReminderCommand toCommand() {
-            return new ReminderService.ReminderCommand(deviceId, content, scheduledAt, zoneId);
+            return new ReminderService.ReminderCommand(
+                    deviceId,
+                    content,
+                    scheduledAt,
+                    zoneId,
+                    recurrenceType == null ? ReminderRecurrence.NONE : recurrenceType,
+                    recurrenceInterval == null ? 1 : recurrenceInterval
+            );
         }
+    }
+
+    public record SnoozeRequest(@NotNull Integer minutes) {
     }
 }

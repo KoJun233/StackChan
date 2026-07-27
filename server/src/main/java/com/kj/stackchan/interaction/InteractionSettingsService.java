@@ -1,0 +1,213 @@
+package com.kj.stackchan.interaction;
+
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.zone.ZoneRulesException;
+import java.util.List;
+import java.util.UUID;
+
+import com.kj.stackchan.device.DeviceRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class InteractionSettingsService {
+
+    private final DeviceInteractionSettingsRepository repository;
+    private final DeviceRepository deviceRepository;
+    private final Clock clock;
+
+    public InteractionSettingsService(
+            DeviceInteractionSettingsRepository repository,
+            DeviceRepository deviceRepository,
+            Clock clock
+    ) {
+        this.repository = repository;
+        this.deviceRepository = deviceRepository;
+        this.clock = clock;
+    }
+
+    @Transactional
+    public InteractionSettingsSnapshot get(UUID deviceId) {
+        validateDevice(deviceId);
+        return snapshot(repository.findById(deviceId)
+                .orElseGet(() -> repository.save(new DeviceInteractionSettingsEntity(deviceId, clock.instant()))));
+    }
+
+    @Transactional
+    public InteractionSettingsSnapshot save(UUID deviceId, UpdateInteractionSettingsCommand command) {
+        validateDevice(deviceId);
+        ZoneId zoneId = parseZone(command.zoneId());
+        validateCommand(command);
+        DeviceInteractionSettingsEntity settings = repository.findById(deviceId)
+                .orElseGet(() -> new DeviceInteractionSettingsEntity(deviceId, clock.instant()));
+        settings.update(
+                command.volumePercent(), command.nightMode(), command.dndEnabled(),
+                command.dndStart(), command.dndEnd(), zoneId.getId(), command.missedReminderPolicy(),
+                command.missedSnoozeMinutes(), command.proactiveEnabled(), command.proactiveStart(),
+                command.proactiveEnd(), command.proactiveMinIntervalMinutes(), command.proactiveDailyLimit(),
+                command.proactiveContent().trim(), clock.instant()
+        );
+        return snapshot(repository.save(settings));
+    }
+
+    @Transactional(readOnly = true)
+    public InteractionSettingsSnapshot resolve(UUID deviceId) {
+        return repository.findById(deviceId)
+                .map(this::snapshot)
+                .orElseGet(() -> snapshot(new DeviceInteractionSettingsEntity(deviceId, clock.instant())));
+    }
+
+    @Transactional(readOnly = true)
+    public List<InteractionSettingsSnapshot> proactiveCandidates() {
+        return repository.findAll().stream()
+                .filter(DeviceInteractionSettingsEntity::isProactiveEnabled)
+                .map(this::snapshot)
+                .toList();
+    }
+
+    @Transactional
+    public boolean recordProactiveIfEligible(UUID deviceId, Instant now) {
+        DeviceInteractionSettingsEntity entity = repository.findLockedByDeviceId(deviceId).orElse(null);
+        if (entity == null || !isProactiveEligible(snapshot(entity), now)) {
+            return false;
+        }
+        LocalDate date = now.atZone(ZoneId.of(entity.getZoneId())).toLocalDate();
+        entity.recordProactive(date, now);
+        return true;
+    }
+
+    public boolean isDnd(InteractionSettingsSnapshot settings, Instant instant) {
+        if (!settings.dndEnabled()) {
+            return false;
+        }
+        LocalTime time = instant.atZone(ZoneId.of(settings.zoneId())).toLocalTime();
+        return inWindow(time, settings.dndStart(), settings.dndEnd());
+    }
+
+    public Instant nextDndEnd(InteractionSettingsSnapshot settings, Instant instant) {
+        ZoneId zone = ZoneId.of(settings.zoneId());
+        ZonedDateTime now = instant.atZone(zone);
+        LocalDate endDate = now.toLocalDate();
+        if (settings.dndStart().isAfter(settings.dndEnd()) && !now.toLocalTime().isBefore(settings.dndStart())) {
+            endDate = endDate.plusDays(1);
+        }
+        LocalDateTime end = LocalDateTime.of(endDate, settings.dndEnd());
+        ZonedDateTime zonedEnd = end.atZone(zone);
+        if (!zonedEnd.toInstant().isAfter(instant)) {
+            zonedEnd = end.plusDays(1).atZone(zone);
+        }
+        return zonedEnd.toInstant();
+    }
+
+    public boolean isProactiveEligible(InteractionSettingsSnapshot settings, Instant now) {
+        if (!settings.proactiveEnabled() || isDnd(settings, now)) {
+            return false;
+        }
+        ZonedDateTime localNow = now.atZone(ZoneId.of(settings.zoneId()));
+        if (!inWindow(localNow.toLocalTime(), settings.proactiveStart(), settings.proactiveEnd())) {
+            return false;
+        }
+        int count = localNow.toLocalDate().equals(settings.proactiveCounterDate())
+                ? settings.proactiveCounter() : 0;
+        if (count >= settings.proactiveDailyLimit()) {
+            return false;
+        }
+        return settings.proactiveLastAt() == null
+                || !settings.proactiveLastAt().plus(Duration.ofMinutes(settings.proactiveMinIntervalMinutes())).isAfter(now);
+    }
+
+    private boolean inWindow(LocalTime time, LocalTime start, LocalTime end) {
+        if (start.isBefore(end)) {
+            return !time.isBefore(start) && time.isBefore(end);
+        }
+        return !time.isBefore(start) || time.isBefore(end);
+    }
+
+    private void validateCommand(UpdateInteractionSettingsCommand command) {
+        if (command == null || command.volumePercent() < 0 || command.volumePercent() > 100
+                || command.dndStart() == null || command.dndEnd() == null
+                || command.dndStart().equals(command.dndEnd()) || command.missedReminderPolicy() == null
+                || command.missedSnoozeMinutes() < 1 || command.missedSnoozeMinutes() > 1440
+                || command.proactiveStart() == null || command.proactiveEnd() == null
+                || command.proactiveStart().equals(command.proactiveEnd())
+                || command.proactiveMinIntervalMinutes() < 30 || command.proactiveMinIntervalMinutes() > 1440
+                || command.proactiveDailyLimit() < 1 || command.proactiveDailyLimit() > 10
+                || command.proactiveContent() == null || command.proactiveContent().trim().isBlank()
+                || command.proactiveContent().trim().length() > 500) {
+            throw new InvalidInteractionSettingsException("Interaction settings are invalid");
+        }
+    }
+
+    private void validateDevice(UUID deviceId) {
+        if (deviceId == null || !deviceRepository.existsById(deviceId)) {
+            throw new InvalidInteractionSettingsException("Interaction settings device is invalid");
+        }
+    }
+
+    private ZoneId parseZone(String value) {
+        try {
+            return ZoneId.of(value == null ? "" : value.trim());
+        } catch (ZoneRulesException | IllegalArgumentException exception) {
+            throw new InvalidInteractionSettingsException("Interaction settings zone is invalid", exception);
+        }
+    }
+
+    private InteractionSettingsSnapshot snapshot(DeviceInteractionSettingsEntity entity) {
+        return new InteractionSettingsSnapshot(
+                entity.getDeviceId(), entity.getVolumePercent(), entity.isNightMode(), entity.isDndEnabled(),
+                entity.getDndStart(), entity.getDndEnd(), entity.getZoneId(), entity.getMissedReminderPolicy(),
+                entity.getMissedSnoozeMinutes(), entity.isProactiveEnabled(), entity.getProactiveStart(),
+                entity.getProactiveEnd(), entity.getProactiveMinIntervalMinutes(), entity.getProactiveDailyLimit(),
+                entity.getProactiveContent(), entity.getProactiveLastAt(), entity.getProactiveCounterDate(),
+                entity.getProactiveCounter(), entity.getUpdatedAt()
+        );
+    }
+
+    public record UpdateInteractionSettingsCommand(
+            int volumePercent,
+            boolean nightMode,
+            boolean dndEnabled,
+            LocalTime dndStart,
+            LocalTime dndEnd,
+            String zoneId,
+            MissedReminderPolicy missedReminderPolicy,
+            int missedSnoozeMinutes,
+            boolean proactiveEnabled,
+            LocalTime proactiveStart,
+            LocalTime proactiveEnd,
+            int proactiveMinIntervalMinutes,
+            int proactiveDailyLimit,
+            String proactiveContent
+    ) {
+    }
+
+    public record InteractionSettingsSnapshot(
+            UUID deviceId,
+            int volumePercent,
+            boolean nightMode,
+            boolean dndEnabled,
+            LocalTime dndStart,
+            LocalTime dndEnd,
+            String zoneId,
+            MissedReminderPolicy missedReminderPolicy,
+            int missedSnoozeMinutes,
+            boolean proactiveEnabled,
+            LocalTime proactiveStart,
+            LocalTime proactiveEnd,
+            int proactiveMinIntervalMinutes,
+            int proactiveDailyLimit,
+            String proactiveContent,
+            Instant proactiveLastAt,
+            LocalDate proactiveCounterDate,
+            int proactiveCounter,
+            Instant updatedAt
+    ) {
+    }
+}

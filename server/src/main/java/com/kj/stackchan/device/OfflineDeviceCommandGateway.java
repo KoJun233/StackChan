@@ -21,6 +21,11 @@ class OfflineDeviceCommandGateway implements DeviceCommandGateway {
     }
 
     @Override
+    public boolean stopAudio(UUID deviceId) {
+        return connectionRegistry.sendStopAudio(deviceId);
+    }
+
+    @Override
     public boolean speakReminder(UUID deviceId, UUID reminderId, String commandId) {
         return connectionRegistry.sendReminder(deviceId, reminderId, commandId);
     }

@@ -39,6 +39,9 @@ esp_err_t companion_hardware_play_wav_interruptible(const uint8_t *wav,
 /** Requests that active speaker playback stop; safe to call from the touch-control task. */
 void companion_hardware_request_playback_stop(void);
 
+/** Applies server-controlled speaker volume and display night mode. */
+esp_err_t companion_hardware_configure_interaction(int volume_percent, bool night_mode);
+
 /** Waits for a bounded touch edge emitted by the UI task. */
 bool companion_hardware_wait_touch_event(companion_touch_event_t *event, uint32_t timeout_ms);
 

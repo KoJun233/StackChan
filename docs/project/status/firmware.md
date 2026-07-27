@@ -1,15 +1,15 @@
 # 固件工作流
 
 - 状态：STABLE
-- 最后更新：2026-07-26
-- 当前分支：`codex/int-004-response-latency`
-- 基准提交：`b65e2b8`
-- 最后验证提交：`717a8b1`
-- 当前实机镜像：`717a8b1`
+- 最后更新：2026-07-27
+- 当前分支：`codex/int-006-proactive-interaction`
+- 基准提交：`bfb6a20`
+- 最后验证提交：`20eefb2`
+- 当前实机镜像：`2465427`
 
 ## 当前目标
 
-在保留 INT-001/002 诊断和显示语义、动态瞳孔屏保、WakeNet 三槽 OTA 与 `motion_disabled` 的前提下，增加按住说话、处理中取消、播放停止和晚到回复抑制。
+在保持 CoreS3、WakeNet、触摸取消、SCV1 与 `motion_disabled` 不变的前提下，接收服务端音量/夜间模式配置和幂等停止播报命令。
 
 ## 已完成
 
@@ -52,6 +52,10 @@
 - INT-002 将可见状态枚举从具体绘图代码中分离；WebSocket 离线覆盖当前阶段，重连后恢复当前阶段，非法内部状态安全映射为可恢复错误。
 - 成功、没听清和可恢复错误分别显示有界的绿色、青色和橙色反馈；离线使用持续灰色反馈，低亮度瞳孔屏保只从待机或离线进入。
 - 用户明确授权 `adbd75e`、CoreS3、`COM3` 和 LAN HTTP Quad profile 后，已从该干净提交重建并刷入完整镜像；bootloader、分区表、应用、OTA data 和出厂语音模型五个区域均通过独立摘要校验，保存 Wi-Fi 和设备身份的 NVS 未擦除。
+- INT-006 增加严格 `configure_interaction` 与 `stop_audio` 解析；音量映射到 M5Unified 0..255，夜间模式降低非屏保亮度，停止命令复用既有可中断播放和麦克风恢复路径。
+- 首轮验收确认远程 `stop_audio` 能停止播放，但未复用触摸取消的阶段上报；当前工作树改为调用统一回合取消入口，同时请求 HTTP/播放中断并上报 `CANCELLED`，避免服务端留下 `RESPONSE_READY`。
+- 用户明确确认 CoreS3、`COM3`、LAN HTTP Quad development profile 和 `c1d7383` 后，从干净提交构建并完整刷写 bootloader、分区表、应用、OTA data 和语音模型；五个区域独立 `verify_flash` 全部匹配，NVS 未擦除。
+- `c1d7383` 启动确认 8 MB Quad PSRAM、加密 NVS、CoreS3 显示/触摸/麦克风/扬声器、LAN HTTP、WakeNet“小峰小峰”、WebSocket 和 `motion_disabled`；数据库收到新鲜心跳，观察窗口未见 panic、栈溢出、看门狗或重启循环。
 - 实机启动确认应用版本 `adbd75e`、ESP-IDF 5.3.3、16 MB Flash、8 MB PSRAM / 80 MHz 及内存测试、CoreS3 显示/触摸/麦克风/扬声器、LAN HTTP、`wn9_xiao3feng1xiao3feng1_tts3` 和 `motion_disabled` 正常；数据库收到该版本的最近心跳，启动窗口未见 panic、看门狗或重启循环。
 - 首轮用户 smoke test 确认没听清和屏保通过；正常回合在处理后落到离线几何，离线几何使用的蓝灰色也与正常交互难以区分，因此正常回合和离线状态未通过验收。
 - 根因是 WebSocket 离线无条件覆盖活动阶段和短暂反馈、成功态仅持续 0.6 秒，以及离线颜色 `#7A8798` 本身偏蓝。修复后离线只覆盖待机，活动阶段与短暂反馈优先显示，离线改为中性灰 `#8C8C8C`，成功延长至 1.2 秒，并记录非敏感 WebSocket 连接变化日志。
@@ -68,15 +72,15 @@
 
 ## 正在进行
 
-INT-003 实机能力保持稳定。INT-004 完整输出版本不修改固件、SCV1、触摸、播放、分区或 profile；CoreS3 继续运行 `717a8b1`，用户已确认长回复完整播放且没有问题。
+CoreS3 已运行 `2465427 / motion_disabled`。完整镜像刷写、校验、WebSocket 心跳及远程停止等实体交互均已验收通过。
 
 ## 下一步操作
 
-INT-004 无需构建或刷写固件，实体长回复验收已通过。另有 1 个孤立回合在 `PLAYBACK_STARTED` 后由设备上报 `PLAYBACK_FAILED`，仅在后续重复出现时创建独立调查任务，不连接 COM3 或改变 profile。
+保持当前实机镜像；推送任务分支后由用户在网页人工合并。
 
 ## 阻塞项
 
-没有固件软件、服务端前置或实体交互阻塞。不得记录 Wi-Fi 密码、Workspace ID、配对码、语音供应商密钥或设备 Token。
+无阻塞；实体交互验收通过且用户已授权远程推送。不得记录 Wi-Fi 密码、Workspace ID、配对码、语音供应商密钥或设备 Token。
 
 ## 关键文件
 
@@ -97,6 +101,12 @@ INT-004 无需构建或刷写固件，实体长回复验收已通过。另有 1 
 
 ## 验证命令与最近结果
 
+- INT-006 使用 ESP-IDF 5.3.3 构建协议测试 profile 成功，镜像 `0x37880`、应用分区余量 93%；新增严格音量/夜间模式和停止播报 Unity 用例已编译进镜像，两项栈预算 fixture 回归通过。未上板执行、未连接或刷写设备。
+- INT-006 server/V17 发布后，旧 CoreS3 `717a8b1 / motion_disabled` 恢复新鲜心跳，确认 server-first 兼容路径可用；未连接 COM3、刷写或 OTA。
+- INT-006 LAN HTTP Quad 完整应用镜像为 `0x143c20`、应用分区余量 58%，嵌入版本 `c1d7383`；bootloader、分区表、应用、OTA data 和语音模型五区写入及独立校验通过，NVS 未擦除。启动、WebSocket、WakeNet 和 `c1d7383 / motion_disabled` 心跳通过。
+- INT-006 验收修复使用 ESP-IDF 5.3.3 构建协议测试与 LAN HTTP Quad profile 成功，应用镜像分别为 `0x37880` 和 `0x143c40`、分区余量 93% 和 58%。经用户明确授权，从干净 `2465427` 完整刷写 bootloader、分区表、应用、OTA data 和语音模型，五个区域独立 `verify_flash` 全部匹配且 NVS 未擦除。
+- `2465427` 启动确认 8 MB Quad PSRAM / 80 MHz 及内存测试、加密 NVS、CoreS3 显示/触摸/麦克风/扬声器、WakeNet“小峰小峰”、LAN HTTP、WebSocket 和 `motion_disabled` 正常；数据库收到新鲜心跳，35 秒窗口未见 panic、栈溢出或看门狗。
+- 用户确认远程停止、提醒和主动问候等 INT-006 六项实机验收全部正常；当前固件无需再次刷写。
 - INT-003 使用 ESP-IDF 5.3.3 和独立 sdkconfig 构建四个 Quad profile：协议测试 `0x37880`/93%，默认 HTTPS `0x1549f0`/56%，LAN HTTP `0x143980`/58%，测试证书 HTTPS `0x143de0`/58%。公开 ESP-IDF 测试证书已删除，未创建或保留私钥；Unity 用例只编译进协议镜像，未上板执行。
 - INT-003 两项栈预算回归通过：provisioning 8192 字节被拒绝/16384 字节接受，voice 12288 字节被拒绝/32768 字节接受；唤醒模型包安全回归通过。
 - INT-003 经用户明确确认 `717a8b1`、CoreS3、`COM3` 和 LAN HTTP Quad development profile 后，从干净提交重建并完整刷写 bootloader、分区表、应用、OTA data 和语音模型；五个区域独立 `verify_flash` 全部匹配，NVS 未擦除。启动确认 PSRAM、CoreS3 显示/触摸/麦克风/扬声器、LAN HTTP、WakeNet、WebSocket 和 `motion_disabled` 正常，未见 panic、栈溢出、看门狗或重启循环；数据库收到 `717a8b1` 新鲜心跳。

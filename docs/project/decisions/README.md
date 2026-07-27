@@ -31,3 +31,4 @@
 | [0018](0018-touch-control-and-voice-turn-cancellation.md) | ACCEPTED | 触摸只产生本地控制事件，语音回合以同一 ID 幂等取消并抑制晚到回复。 |
 | [0019](0019-complete-voice-replies.md) | ACCEPTED | 设备语音等待 LLM 正常完成并完整合成其返回内容，不按时间、句子或字符数截断。 |
 | [0020](0020-confirmed-scoped-long-term-memory.md) | ACCEPTED | 人设结构化管理，长期记忆按确认状态和会话范围进入文本与设备语音上下文。 |
+| [0021](0021-limited-proactive-interaction.md) | ACCEPTED | 重复提醒、免打扰和主动问候采用可追溯的设备级确定性规则，默认不主动打扰。 |

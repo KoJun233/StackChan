@@ -1,6 +1,7 @@
 package com.kj.stackchan.reminder;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
@@ -33,6 +34,27 @@ public class ReminderEntity {
     @Column(nullable = false, length = 24)
     private ReminderStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "recurrence_type", nullable = false, length = 16)
+    private ReminderRecurrence recurrenceType;
+
+    @Column(name = "recurrence_interval", nullable = false)
+    private int recurrenceInterval;
+
+    @Column(name = "recurrence_anchor_local")
+    private LocalDateTime recurrenceAnchorLocal;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private ReminderSource source;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "last_outcome", length = 24)
+    private ReminderStatus lastOutcome;
+
+    @Column(name = "last_completed_at")
+    private Instant lastCompletedAt;
+
     @Column(name = "command_id", length = 96)
     private String commandId;
 
@@ -58,22 +80,59 @@ public class ReminderEntity {
     }
 
     public ReminderEntity(UUID deviceId, String content, Instant scheduledAt, String zoneId, Instant now) {
+        this(deviceId, content, scheduledAt, zoneId, ReminderRecurrence.NONE, 1, null, ReminderSource.USER, now);
+    }
+
+    public ReminderEntity(
+            UUID deviceId,
+            String content,
+            Instant scheduledAt,
+            String zoneId,
+            ReminderRecurrence recurrenceType,
+            int recurrenceInterval,
+            LocalDateTime recurrenceAnchorLocal,
+            ReminderSource source,
+            Instant now
+    ) {
         this.id = UUID.randomUUID();
         this.deviceId = deviceId;
         this.content = content;
         this.scheduledAt = scheduledAt;
         this.zoneId = zoneId;
         this.status = ReminderStatus.PENDING;
+        this.recurrenceType = recurrenceType;
+        this.recurrenceInterval = recurrenceInterval;
+        this.recurrenceAnchorLocal = recurrenceAnchorLocal;
+        this.source = source;
         this.createdAt = now;
         this.updatedAt = now;
     }
 
     public void update(UUID deviceId, String content, Instant scheduledAt, String zoneId, Instant now) {
+        update(deviceId, content, scheduledAt, zoneId, ReminderRecurrence.NONE, 1, null, now);
+    }
+
+    public void update(
+            UUID deviceId,
+            String content,
+            Instant scheduledAt,
+            String zoneId,
+            ReminderRecurrence recurrenceType,
+            int recurrenceInterval,
+            LocalDateTime recurrenceAnchorLocal,
+            Instant now
+    ) {
         this.deviceId = deviceId;
         this.content = content;
         this.scheduledAt = scheduledAt;
         this.zoneId = zoneId;
         this.status = ReminderStatus.PENDING;
+        this.recurrenceType = recurrenceType;
+        this.recurrenceInterval = recurrenceInterval;
+        this.recurrenceAnchorLocal = recurrenceAnchorLocal;
+        this.source = ReminderSource.USER;
+        this.lastOutcome = null;
+        this.lastCompletedAt = null;
         this.commandId = null;
         this.failureCode = null;
         this.audioPayload = null;
@@ -101,6 +160,29 @@ public class ReminderEntity {
         this.status = ReminderStatus.DELIVERED;
         this.audioPayload = null;
         this.failureCode = null;
+        this.updatedAt = now;
+    }
+
+    public void completeOccurrence(ReminderStatus outcome, Instant nextScheduledAt, Instant now) {
+        this.lastOutcome = outcome;
+        this.lastCompletedAt = now;
+        this.commandId = null;
+        this.audioPayload = null;
+        this.failureCode = outcome == ReminderStatus.FAILED ? this.failureCode : null;
+        if (nextScheduledAt == null) {
+            this.status = outcome;
+        } else {
+            this.status = ReminderStatus.PENDING;
+            this.scheduledAt = nextScheduledAt;
+        }
+        this.updatedAt = now;
+    }
+
+    public void deferUntil(Instant scheduledAt, Instant now) {
+        this.scheduledAt = scheduledAt;
+        this.status = ReminderStatus.PENDING;
+        this.commandId = null;
+        this.audioPayload = null;
         this.updatedAt = now;
     }
 
@@ -141,6 +223,13 @@ public class ReminderEntity {
     public ReminderStatus getStatus() {
         return status;
     }
+
+    public ReminderRecurrence getRecurrenceType() { return recurrenceType; }
+    public int getRecurrenceInterval() { return recurrenceInterval; }
+    public LocalDateTime getRecurrenceAnchorLocal() { return recurrenceAnchorLocal; }
+    public ReminderSource getSource() { return source; }
+    public ReminderStatus getLastOutcome() { return lastOutcome; }
+    public Instant getLastCompletedAt() { return lastCompletedAt; }
 
     public String getCommandId() {
         return commandId;

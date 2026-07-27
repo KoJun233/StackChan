@@ -209,6 +209,11 @@ static void request_turn_cancellation(void)
     companion_hardware_request_playback_stop();
 }
 
+void voice_control_cancel_active_turn(void)
+{
+    request_turn_cancellation();
+}
+
 static void request_feedback_dismissal(void)
 {
     taskENTER_CRITICAL(&s_interaction_lock);

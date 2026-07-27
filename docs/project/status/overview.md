@@ -1,12 +1,12 @@
 # 全局工作流总览
 
-- 状态：ACTIVE
-- 最后更新：2026-07-26
-- 当前分支：`codex/int-005-persona-memory`
-- 实现基准：`d4ad838`
-- 最后验证提交：`d4ad838`
-- 当前验证范围：INT-005 结构化人设、长期记忆管理、确认边界、设备范围和文本/语音统一提示词组装已完成软件验证、LAN 部署和用户人工验收；运行库为 Flyway V16。
-- 当前优先级：推送 `codex/int-005-persona-memory`，等待用户在网页端人工合并。
+- 状态：STABLE
+- 最后更新：2026-07-27
+- 当前分支：`codex/int-006-proactive-interaction`
+- 实现基准：`bfb6a20`
+- 最后验证提交：`20eefb2`
+- 当前验证范围：INT-006 server `f0d99fa` / Flyway V17 与 CoreS3 `2465427` 保持健康；用户确认交互设置、远程停止、提醒、主动问候等六项验收全部正常，语音模型/音色兼容性修复及凭据轮换后识别与合成恢复正常。
+- 当前优先级：推送任务分支后由用户在网页人工合并；后续进入下一阶段。
 - 当前部署：LAN HTTP development mode。
 - 生产边界：HTTPS-only。
 
@@ -14,12 +14,12 @@
 
 | 工作流 | 状态 | 状态文件 | 当前分支 | 下一步 |
 | --- | --- | --- | --- | --- |
-| 服务端 | ACTIVE | [server.md](server.md) | `codex/int-005-persona-memory` | 软件、V16 部署和记忆行为人工验收已通过；等待任务分支推送与人工合并。 |
-| 前端 | ACTIVE | [frontend.md](frontend.md) | `codex/int-005-persona-memory` | 人设与长期记忆页面、路由和人工验收已通过；等待任务分支推送与人工合并。 |
-| 固件 | STABLE | [firmware.md](firmware.md) | `codex/int-005-persona-memory` | INT-005 不改 SCV1、固件或 profile；设备继续运行 `717a8b1`。 |
-| 部署 | STABLE | [deployment.md](deployment.md) | `codex/int-005-persona-memory` | `d4ad838` 已只替换 server，Flyway `16|true`，LAN 与数据容器边界保持不变。 |
+| 服务端 | STABLE | [server.md](server.md) | `codex/int-006-proactive-interaction` | 调度、停止和语音服务人工验收通过。 |
+| 前端 | STABLE | [frontend.md](frontend.md) | `codex/int-006-proactive-interaction` | 公共表单事件修复及页面控件人工验收通过。 |
+| 固件 | STABLE | [firmware.md](firmware.md) | `codex/int-006-proactive-interaction` | `2465427` 在线，实体交互人工验收通过。 |
+| 部署 | STABLE | [deployment.md](deployment.md) | `codex/int-006-proactive-interaction` | server `f0d99fa` / V17 与 CoreS3 `2465427` 稳定运行。 |
 
-唤醒词入口现改为“选择 ESP-SR 2.4.6 内置短语、服务端从锁定目录可信打包、设备双槽 OTA、重启健康确认、失败自动回退”。任意文本生成、第三方生成器和模型包上传均已从最终代码与页面移除；V12 只保留为已部署迁移历史，V13 清理临时字段。下拉包含“Hi, Stack Chan”“小峰小峰”等 13 项。CoreS3 曾使用 `0398073` 镜像完成 WakeNet9/WakeNet9l/WakeNet9s 三槽引导；管理员选择“小峰小峰”后，任务已完成 `READY -> INSTALLING -> INSTALLED`。INT-001 发布时设备升级为 `ecc40f3`，INT-002 升级为栈修复镜像 `216d383`，当前实机为 INT-003 `717a8b1`。
+唤醒词入口现改为“选择 ESP-SR 2.4.6 内置短语、服务端从锁定目录可信打包、设备双槽 OTA、重启健康确认、失败自动回退”。任意文本生成、第三方生成器和模型包上传均已从最终代码与页面移除；V12 只保留为已部署迁移历史，V13 清理临时字段。下拉包含“Hi, Stack Chan”“小峰小峰”等 13 项。CoreS3 曾使用 `0398073` 镜像完成 WakeNet9/WakeNet9l/WakeNet9s 三槽引导；管理员选择“小峰小峰”后，任务已完成 `READY -> INSTALLING -> INSTALLED`。INT-001 发布时设备升级为 `ecc40f3`，INT-002 升级为栈修复镜像 `216d383`，当前实机为 INT-006 `2465427`。
 
 内置目录版本此前部署到既有 `stackchan-foundation` LAN HTTP 服务时，健康和网页根地址均为 200、Flyway 为 V13、容器包含 13 组模型，CoreS3 心跳为 `0398073 / motion_disabled`。一次误用基础 Compose 导致端口暂时只监听 `127.0.0.1`，恢复正式 `compose.lan.yaml` 覆盖层后设备自动重连并完成“小峰小峰”安装。部署前保留了 `stackchan-foundation-server:rollback-upload-v12` 本地回退镜像；当前服务已由 INT-001 升级为 `ecc40f3` / V14。
 
@@ -37,12 +37,25 @@ INT-005 当前工作树新增结构化人设、全局/设备长期记忆、来�
 
 用户随后完成人设与长期记忆功能验收并确认没有问题；INT-005 的页面操作、保存结果和对话行为人工验收完成，无需继续修改运行服务或固件。
 
+INT-006 当前工作树新增每日/每周周期提醒、DST 本地墙钟锚点、稍后提醒、跳过下一次、免打扰、离线错过策略、音量、夜间模式和确定性主动问候。主动问候默认关闭，不由 LLM 决定内容或时机；语音回合、已派发提醒、离线和免打扰均参与仲裁。管理端新增“交互与主动陪伴”页面，设备协议新增严格 `configure_interaction` 与 `stop_audio`，且保持 `motion_disabled`。
+
+首轮实体验收确认立即停止、免打扰和稍后/跳过正常；交互设置控件出现 `Invalid input`，单次提醒每分钟顺延、每日提醒无法完成到期播报，主动问候三分钟内未触发。运行元数据确认停止后的语音回合残留在 `RESPONSE_READY`，使提醒和主动问候持续判定设备忙碌。当前工作树让显式 `v-model` 成为表单控件唯一值来源、停止成功后终止活动回合、只把最近 15 分钟更新的活动回合视为忙碌，并让固件远程停止复用既有取消上报路径。
+
+用户授权后，`f0d99fa` 已使用正式 Dockerfile 和 LAN overlay 只替换 server，运行镜像为 `sha256:0f780fd7264c0137238e89783bc6e172cf61fe4b2ad23e5a3a329ea10b95d1cc`，回退标签为 `stackchan-foundation-server:rollback-f0d99fa-pre-fix`。首次提醒在 server/设备会话恢复窗口丢失 ACK，五分钟保护任务自动恢复后第二次派发成功；随后主动问候在下一分钟调度周期创建并一次送达。两条记录最终均为 `DELIVERED`，CoreS3 心跳持续新鲜。
+
+用户随后确认 INT-006 六项页面与实体交互验收全部正常。语音连接测试暴露的供应商模型/音色兼容性由用户修复，已暴露凭据已撤销并替换，识别与合成恢复正常；仓库和状态文档未记录凭据或完整供应商响应。
+
 ## 架构决策
 
 - [架构决策记录](../decisions/README.md)
 
 ## 验证与边界
 
+- INT-006 验收修复服务端全量 236/236、Testcontainers 空库 V1..V17、前端 19 个文件 55/55、`vue-tsc -b`、production build 均通过；ESP-IDF 5.3.3 协议与 LAN HTTP Quad profile 分别生成 `0x37880` / `0x143c40` 镜像，应用分区余量 93% / 58%。server 已发布，CoreS3 已刷入 `2465427`。
+- INT-006 经用户明确确认 CoreS3、`COM3`、LAN HTTP Quad development profile 和 `2465427` 后，从干净提交完整刷写 bootloader、分区表、应用、OTA data 和语音模型；五个区域独立 `verify_flash` 全部匹配，NVS 未擦除。启动确认应用版本、8 MB Quad PSRAM / 80 MHz 及内存测试、加密 NVS、CoreS3 外设、WakeNet“小峰小峰”、LAN HTTP、WebSocket 和 `motion_disabled`；数据库收到 `2465427` 新鲜心跳，35 秒窗口未见 panic、栈溢出或看门狗，server 健康保持 200、Flyway 保持 `17|true`。
+- INT-006 用户确认六项验收全部正常；供应商模型/音色兼容性修复与凭据轮换后，语音识别与合成测试恢复正常。诊断只保留安全状态码，未记录密钥、Workspace ID、音频或完整供应商响应。
+- INT-006 经用户明确授权，从干净 `9495111` 构建 `sha256:ece87baaf655536a7578d4e2af87c67276b99ebc1ef37374728471aea21b879a` 并只替换现有 LAN server；健康与网页为 200，Flyway `17|true`，未登录交互设置 API 为 401，启动错误数为 0。PostgreSQL/Redis 容器未变，LAN 保持 `0.0.0.0:8080`，旧 CoreS3 `717a8b1 / motion_disabled` 恢复新鲜心跳。未连接 COM3、刷写、OTA、修改凭据或改变生产 HTTPS-only 边界。
+- INT-006 经用户明确确认 CoreS3、`COM3`、LAN HTTP Quad development profile 和 `c1d7383` 后，从干净提交构建并完整刷写 bootloader、分区表、应用、OTA data 和语音模型；五个区域独立 `verify_flash` 全部匹配，NVS 未擦除。启动确认版本、8 MB Quad PSRAM、加密 NVS、CoreS3 外设、WakeNet、LAN HTTP、WebSocket 和 `motion_disabled`，数据库收到 `c1d7383` 新鲜心跳；未见 panic、栈溢出、看门狗或重启循环。
 - INT-005 服务端全量 225/225 通过；Testcontainers PostgreSQL 从空库成功应用 16 个迁移至 V16。前端 Node v24.15.0 下 Vitest 18 个文件 53/53、`vue-tsc -b` 和 production build 通过；Vitest close-timeout advisory 仍为既有非阻塞警告。
 - INT-005 部署后 `/api/v1/health` 与网页根地址均为 200，Flyway `16|true` 且成功迁移数为 16；人设单例初始记录为 1、长期记忆初始记录为 0，容器静态资源包含人设与记忆页面。server 容器由 `011ad10df7f9` 变为 `dc2a0ff8e75b`，PostgreSQL/Redis 保持 `6d8feaa18623` / `58e31a403637`，LAN 保持 `0.0.0.0:8080`。未连接 COM3、刷写固件、修改卷、凭据或生产 HTTPS-only 边界。
 - INT-005 用户人工验收确认人设与长期记忆功能没有问题；不再读取或记录对话正文，当前运行资源保持不变。
@@ -144,4 +157,4 @@ INT-005 当前工作树新增结构化人设、全局/设备长期记忆、来�
 
 ## 下一步
 
-保持当前 `d4ad838` / Flyway V16 LAN server 和 `717a8b1` 设备在线；取得明确推送授权后推送 `codex/int-005-persona-memory`，由用户在网页端人工合并。无需再次部署或刷写固件。
+保持当前 `f0d99fa` / Flyway V17 LAN server 和 `2465427` 设备在线；推送 `codex/int-006-proactive-interaction` 后由用户在网页人工合并。

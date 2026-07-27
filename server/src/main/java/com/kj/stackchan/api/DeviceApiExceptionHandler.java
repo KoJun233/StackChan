@@ -7,6 +7,7 @@ import com.kj.stackchan.device.InvalidDeviceRefreshCredentialException;
 import com.kj.stackchan.device.InvalidDeviceTokenException;
 import com.kj.stackchan.llm.InvalidLlmSettingsException;
 import com.kj.stackchan.llm.LlmProviderUnavailableException;
+import com.kj.stackchan.interaction.InvalidInteractionSettingsException;
 import com.kj.stackchan.memory.InvalidMemoryException;
 import com.kj.stackchan.memory.MemoryNotFoundException;
 import com.kj.stackchan.persona.InvalidPersonaException;
@@ -75,6 +76,9 @@ public class DeviceApiExceptionHandler {
     );
     public static final ApiError INVALID_REMINDER = new ApiError(
             "invalid_reminder", "提醒内容、时间、时区或目标设备无效。"
+    );
+    public static final ApiError INVALID_INTERACTION_SETTINGS = new ApiError(
+            "invalid_interaction_settings", "交互设置无效。"
     );
     public static final ApiError MEMORY_NOT_FOUND = new ApiError(
             "memory_not_found", "未找到指定记忆。"
@@ -165,6 +169,11 @@ public class DeviceApiExceptionHandler {
         return response(HttpStatus.BAD_REQUEST, INVALID_REMINDER);
     }
 
+    @ExceptionHandler(InvalidInteractionSettingsException.class)
+    ResponseEntity<ApiError> invalidInteractionSettings(InvalidInteractionSettingsException exception) {
+        return response(HttpStatus.BAD_REQUEST, INVALID_INTERACTION_SETTINGS);
+    }
+
     @ExceptionHandler(MemoryNotFoundException.class)
     ResponseEntity<ApiError> memoryNotFound(MemoryNotFoundException exception) {
         return response(HttpStatus.NOT_FOUND, MEMORY_NOT_FOUND);
@@ -212,6 +221,9 @@ public class DeviceApiExceptionHandler {
         }
         if (requestUri.startsWith("/api/v1/settings/speech")) {
             return response(HttpStatus.BAD_REQUEST, INVALID_SPEECH_SETTINGS);
+        }
+        if (requestUri.startsWith("/api/v1/settings/interactions")) {
+            return response(HttpStatus.BAD_REQUEST, INVALID_INTERACTION_SETTINGS);
         }
         if (requestUri.startsWith("/api/v1/persona")) {
             return response(HttpStatus.BAD_REQUEST, INVALID_PERSONA);

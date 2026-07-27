@@ -346,6 +346,11 @@ static void websocket_event_handler(void *handler_args,
         send_command_ack(connection, command.command_id, true, DEVICE_COMMAND_RESULT_NONE);
         return;
     }
+    if (command.type == DEVICE_COMMAND_STOP_AUDIO) {
+        voice_control_cancel_active_turn();
+        send_command_ack(connection, command.command_id, true, DEVICE_COMMAND_RESULT_NONE);
+        return;
+    }
     if (command.type == DEVICE_COMMAND_SPEAK_REMINDER) {
         companion_hardware_mark_activity();
         reminder_command_t reminder = {0};
@@ -365,6 +370,15 @@ static void websocket_event_handler(void *handler_args,
                             sensitivity,
                             (uint32_t)command.speech_start_threshold,
                             (uint32_t)command.speech_silence_threshold) == ESP_OK;
+        send_command_ack(connection,
+                         command.command_id,
+                         accepted,
+                         accepted ? DEVICE_COMMAND_RESULT_NONE : DEVICE_COMMAND_RESULT_FAILED);
+        return;
+    }
+    if (command.type == DEVICE_COMMAND_CONFIGURE_INTERACTION) {
+        bool accepted = companion_hardware_configure_interaction(
+                            command.volume_percent, command.night_mode) == ESP_OK;
         send_command_ack(connection,
                          command.command_id,
                          accepted,

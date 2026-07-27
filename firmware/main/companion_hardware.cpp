@@ -16,6 +16,7 @@
 #define UI_POLL_MS 50
 #define TOUCH_EVENT_QUEUE_LENGTH 8
 #define NORMAL_BRIGHTNESS 160
+#define NIGHT_BRIGHTNESS 64
 #define SCREENSAVER_BRIGHTNESS 24
 #define SCREENSAVER_FRAME_MS 2500
 #define AUDIO_WAIT_MARGIN_MS 3000
@@ -41,6 +42,13 @@ static int64_t s_next_screensaver_frame_us;
 static screensaver_pupil_offset_t s_pupil_offset;
 static bool s_initialized;
 static bool s_playback_stop_requested;
+static int s_volume_percent = 50;
+static bool s_night_mode;
+
+static uint8_t active_brightness(void)
+{
+    return s_night_mode ? NIGHT_BRIGHTNESS : NORMAL_BRIGHTNESS;
+}
 
 static void emit_touch_event(companion_touch_event_type_t type, int64_t occurred_us)
 {
@@ -203,7 +211,7 @@ extern "C" void companion_hardware_mark_activity(void)
     }
     if (s_screensaver) {
         s_screensaver = false;
-        M5.Display.setBrightness(NORMAL_BRIGHTNESS);
+        M5.Display.setBrightness(active_brightness());
         draw_face_locked(visible_state_locked());
     }
     xSemaphoreGive(s_board_mutex);
@@ -217,7 +225,7 @@ extern "C" void companion_hardware_set_state(companion_face_state_t state)
     }
     s_face_state = state;
     s_screensaver = false;
-    M5.Display.setBrightness(NORMAL_BRIGHTNESS);
+    M5.Display.setBrightness(active_brightness());
     draw_face_locked(visible_state_locked());
     xSemaphoreGive(s_board_mutex);
 }
@@ -235,7 +243,7 @@ extern "C" void companion_hardware_set_connected(bool connected)
     if (s_connected != connected || s_screensaver) {
         s_connected = connected;
         s_screensaver = false;
-        M5.Display.setBrightness(NORMAL_BRIGHTNESS);
+        M5.Display.setBrightness(active_brightness());
         draw_face_locked(visible_state_locked());
     }
     xSemaphoreGive(s_board_mutex);
@@ -285,7 +293,7 @@ static void ui_task(void *argument)
                          "Idle low-brightness pupil screensaver active; touch, voice, or reminder will wake it");
             } else if (s_screensaver && !companion_interaction_allows_screensaver(visible)) {
                 s_screensaver = false;
-                M5.Display.setBrightness(NORMAL_BRIGHTNESS);
+                M5.Display.setBrightness(active_brightness());
                 draw_face_locked(visible);
             } else if (s_screensaver && now >= s_next_screensaver_frame_us) {
                 draw_screensaver_pupils_locked(screensaver_motion_offset(s_screensaver_frame));
@@ -319,8 +327,8 @@ extern "C" esp_err_t companion_hardware_init(void)
     config.led_brightness = 0;
     M5.begin(config);
     M5.Display.setRotation(1);
-    M5.Display.setBrightness(NORMAL_BRIGHTNESS);
-    M5.Speaker.setVolume(128);
+    M5.Display.setBrightness(active_brightness());
+    M5.Speaker.setVolume((uint8_t)((s_volume_percent * 255 + 50) / 100));
     M5.Speaker.end();
     if (!M5.Mic.begin()) {
         return ESP_FAIL;
@@ -407,6 +415,7 @@ extern "C" esp_err_t companion_hardware_play_wav_interruptible(const uint8_t *wa
             }
         }
         M5.Mic.end();
+        M5.Speaker.setVolume((uint8_t)((s_volume_percent * 255 + 50) / 100));
         queued = M5.Speaker.begin() && M5.Speaker.playWav(wav, wav_size, 1, 0, true);
         xSemaphoreGive(s_board_mutex);
     }
@@ -467,6 +476,24 @@ extern "C" void companion_hardware_request_playback_stop(void)
     taskENTER_CRITICAL(&s_playback_lock);
     s_playback_stop_requested = true;
     taskEXIT_CRITICAL(&s_playback_lock);
+}
+
+extern "C" esp_err_t companion_hardware_configure_interaction(int volume_percent, bool night_mode)
+{
+    if (!s_initialized || volume_percent < 0 || volume_percent > 100) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!take_mutex(s_board_mutex, pdMS_TO_TICKS(500))) {
+        return ESP_ERR_TIMEOUT;
+    }
+    s_volume_percent = volume_percent;
+    s_night_mode = night_mode;
+    M5.Speaker.setVolume((uint8_t)((s_volume_percent * 255 + 50) / 100));
+    if (!s_screensaver) {
+        M5.Display.setBrightness(active_brightness());
+    }
+    xSemaphoreGive(s_board_mutex);
+    return ESP_OK;
 }
 
 extern "C" bool companion_hardware_wait_touch_event(companion_touch_event_t *event,

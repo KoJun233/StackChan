@@ -103,6 +103,41 @@ public class DeviceConnectionRegistry {
         return sendPayload(deviceId, payload);
     }
 
+    public boolean sendStopAudio(UUID deviceId) {
+        String payload;
+        try {
+            payload = objectMapper.writeValueAsString(new StopAudioCommand("stop_audio", UUID.randomUUID().toString()));
+        } catch (JsonProcessingException exception) {
+            return false;
+        }
+        return sendPayload(deviceId, payload);
+    }
+
+    public boolean sendInteractionConfiguration(UUID deviceId, int volumePercent, boolean nightMode) {
+        String payload = interactionConfigurationPayload(volumePercent, nightMode);
+        return payload != null && sendPayload(deviceId, payload);
+    }
+
+    public boolean sendInteractionConfigurationIfActive(
+            UUID deviceId,
+            WebSocketSession session,
+            int volumePercent,
+            boolean nightMode
+    ) throws IOException {
+        String payload = interactionConfigurationPayload(volumePercent, nightMode);
+        return payload != null && sendIfActive(deviceId, session, new TextMessage(payload));
+    }
+
+    private String interactionConfigurationPayload(int volumePercent, boolean nightMode) {
+        try {
+            return objectMapper.writeValueAsString(new ConfigureInteractionCommand(
+                    "configure_interaction", UUID.randomUUID().toString(), volumePercent, nightMode
+            ));
+        } catch (JsonProcessingException exception) {
+            return null;
+        }
+    }
+
     public boolean sendReminder(UUID deviceId, UUID reminderId, String commandId) {
         String payload;
         try {
@@ -470,6 +505,17 @@ public class DeviceConnectionRegistry {
     }
 
     private record StopMotionCommand(String type, String command_id) {
+    }
+
+    private record StopAudioCommand(String type, String command_id) {
+    }
+
+    private record ConfigureInteractionCommand(
+            String type,
+            String command_id,
+            int volume_percent,
+            boolean night_mode
+    ) {
     }
 
     private record SpeakReminderCommand(String type, String command_id, String reminder_id) {
