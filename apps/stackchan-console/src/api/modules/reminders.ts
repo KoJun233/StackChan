@@ -1,6 +1,8 @@
 import { apiJson } from '../client'
 
-export type ReminderStatus = 'PENDING' | 'DISPATCHED' | 'DELIVERED' | 'FAILED' | 'CANCELLED'
+export type ReminderStatus = 'PENDING' | 'DISPATCHED' | 'DELIVERED' | 'FAILED' | 'CANCELLED' | 'SKIPPED'
+export type ReminderRecurrence = 'DAILY' | 'NONE' | 'WEEKLY'
+export type ReminderSource = 'PROACTIVE' | 'USER'
 
 export interface Reminder {
   attemptCount: number
@@ -9,8 +11,13 @@ export interface Reminder {
   deviceId: string
   failureCode: string | null
   id: string
+  lastCompletedAt: string | null
+  lastOutcome: ReminderStatus | null
+  recurrenceInterval: number
+  recurrenceType: ReminderRecurrence
   scheduledAt: string
   status: ReminderStatus
+  source: ReminderSource
   updatedAt: string
   zoneId: string
 }
@@ -23,6 +30,8 @@ export interface ReminderPage {
 export interface ReminderInput {
   content: string
   deviceId: string
+  recurrenceInterval?: number
+  recurrenceType?: ReminderRecurrence
   scheduledAt: string
   zoneId: string
 }
@@ -70,6 +79,18 @@ export function updateReminder(id: string, input: ReminderInput): Promise<Remind
 
 export function deleteReminder(id: string): Promise<void> {
   return apiJson(`/api/v1/reminders/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export function snoozeReminder(id: string, minutes: number): Promise<Reminder> {
+  return apiJson(`/api/v1/reminders/${encodeURIComponent(id)}:snooze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ minutes }),
+  })
+}
+
+export function skipNextReminder(id: string): Promise<Reminder> {
+  return apiJson(`/api/v1/reminders/${encodeURIComponent(id)}:skip-next`, { method: 'POST' })
 }
 
 function parseLocalDateTime(value: string): [number, number, number, number, number] {

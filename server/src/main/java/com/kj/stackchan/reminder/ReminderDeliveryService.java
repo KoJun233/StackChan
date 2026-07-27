@@ -7,9 +7,14 @@ import java.util.UUID;
 
 import com.kj.stackchan.device.DeviceCommandGateway;
 import com.kj.stackchan.device.DeviceCommandResult;
+import com.kj.stackchan.interaction.InteractionSettingsService;
+import com.kj.stackchan.interaction.MissedReminderPolicy;
 import com.kj.stackchan.speech.SpeechProviderUnavailableException;
 import com.kj.stackchan.speech.InvalidSpeechSettingsException;
 import com.kj.stackchan.speech.SpeechRuntimeClient;
+import com.kj.stackchan.speech.VoiceTurnRepository;
+import com.kj.stackchan.speech.VoiceTurnStatus;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,29 +24,62 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReminderDeliveryService {
 
     private static final Duration STALE_DISPATCH_AGE = Duration.ofMinutes(5);
+    private static final Duration ACTIVE_VOICE_MAX_AGE = Duration.ofMinutes(15);
 
     private final ReminderRepository reminderRepository;
     private final DeviceCommandGateway deviceCommandGateway;
     private final SpeechRuntimeClient speechRuntimeClient;
     private final Clock clock;
+    private final InteractionSettingsService interactionSettingsService;
+    private final VoiceTurnRepository voiceTurnRepository;
+    private final ReminderScheduleCalculator scheduleCalculator;
 
+    @Autowired
     public ReminderDeliveryService(
             ReminderRepository reminderRepository,
             DeviceCommandGateway deviceCommandGateway,
             SpeechRuntimeClient speechRuntimeClient,
-            Clock clock
+            Clock clock,
+            InteractionSettingsService interactionSettingsService,
+            VoiceTurnRepository voiceTurnRepository,
+            ReminderScheduleCalculator scheduleCalculator
     ) {
         this.reminderRepository = reminderRepository;
         this.deviceCommandGateway = deviceCommandGateway;
         this.speechRuntimeClient = speechRuntimeClient;
         this.clock = clock;
+        this.interactionSettingsService = interactionSettingsService;
+        this.voiceTurnRepository = voiceTurnRepository;
+        this.scheduleCalculator = scheduleCalculator;
+    }
+
+    ReminderDeliveryService(
+            ReminderRepository reminderRepository,
+            DeviceCommandGateway deviceCommandGateway,
+            SpeechRuntimeClient speechRuntimeClient,
+            Clock clock
+    ) {
+        this(reminderRepository, deviceCommandGateway, speechRuntimeClient, clock, null, null, null);
     }
 
     public void dispatchDueReminders() {
         Instant now = clock.instant();
         for (ReminderEntity reminder : reminderRepository
                 .findTop20ByStatusAndScheduledAtLessThanEqualOrderByScheduledAtAscIdAsc(ReminderStatus.PENDING, now)) {
+            var settings = interactionSettingsService == null
+                    ? null : interactionSettingsService.resolve(reminder.getDeviceId());
+            if (settings != null && interactionSettingsService.isDnd(settings, now)) {
+                reminder.deferUntil(interactionSettingsService.nextDndEnd(settings, now), now);
+                reminderRepository.save(reminder);
+                continue;
+            }
             if (!deviceCommandGateway.isConnected(reminder.getDeviceId())) {
+                handleOffline(reminder, settings, now);
+                continue;
+            }
+            if (isBusy(reminder.getDeviceId())) {
+                reminder.deferUntil(now.plus(Duration.ofMinutes(1)), now);
+                reminderRepository.save(reminder);
                 continue;
             }
             try {
@@ -54,11 +92,9 @@ public class ReminderDeliveryService {
                     reminderRepository.save(reminder);
                 }
             } catch (SpeechProviderUnavailableException exception) {
-                reminder.markFailed("speech_provider_unavailable", clock.instant());
-                reminderRepository.save(reminder);
+                completeFailure(reminder, "speech_provider_unavailable", clock.instant());
             } catch (InvalidSpeechSettingsException exception) {
-                reminder.markFailed("invalid_speech_settings", clock.instant());
-                reminderRepository.save(reminder);
+                completeFailure(reminder, "invalid_speech_settings", clock.instant());
             }
         }
     }
@@ -75,11 +111,11 @@ public class ReminderDeliveryService {
                 .filter(reminder -> reminder.getStatus() == ReminderStatus.DISPATCHED)
                 .ifPresent(reminder -> {
                     if (accepted) {
-                        reminder.markDelivered(clock.instant());
+                        complete(reminder, ReminderStatus.DELIVERED, clock.instant());
                     } else if (result == DeviceCommandResult.CANCELLED) {
-                        reminder.markCancelled(clock.instant());
+                        complete(reminder, ReminderStatus.CANCELLED, clock.instant());
                     } else {
-                        reminder.markFailed("device_playback_failed", clock.instant());
+                        completeFailure(reminder, "device_playback_failed", clock.instant());
                     }
                 });
     }
@@ -104,5 +140,41 @@ public class ReminderDeliveryService {
             throw new ReminderNotFoundException();
         }
         return audio;
+    }
+
+    private void handleOffline(
+            ReminderEntity reminder,
+            InteractionSettingsService.InteractionSettingsSnapshot settings,
+            Instant now
+    ) {
+        if (settings == null || settings.missedReminderPolicy() == MissedReminderPolicy.PLAY_NOW) {
+            return;
+        }
+        if (settings.missedReminderPolicy() == MissedReminderPolicy.SNOOZE) {
+            reminder.deferUntil(now.plus(Duration.ofMinutes(settings.missedSnoozeMinutes())), now);
+            reminderRepository.save(reminder);
+            return;
+        }
+        complete(reminder, ReminderStatus.SKIPPED, now);
+        reminderRepository.save(reminder);
+    }
+
+    private boolean isBusy(UUID deviceId) {
+        return voiceTurnRepository != null && voiceTurnRepository.existsByDeviceIdAndStatusInAndUpdatedAtAfter(
+                deviceId,
+                java.util.List.of(VoiceTurnStatus.IN_PROGRESS, VoiceTurnStatus.RESPONSE_READY),
+                clock.instant().minus(ACTIVE_VOICE_MAX_AGE)
+        );
+    }
+
+    private void completeFailure(ReminderEntity reminder, String failureCode, Instant now) {
+        reminder.markFailed(failureCode, now);
+        complete(reminder, ReminderStatus.FAILED, now);
+        reminderRepository.save(reminder);
+    }
+
+    private void complete(ReminderEntity reminder, ReminderStatus outcome, Instant now) {
+        Instant next = scheduleCalculator == null ? null : scheduleCalculator.nextAfter(reminder, now);
+        reminder.completeOccurrence(outcome, next, now);
     }
 }

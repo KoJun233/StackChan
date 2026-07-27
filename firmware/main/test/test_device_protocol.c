@@ -644,6 +644,27 @@ TEST_CASE("voice detection configuration accepts only bounded ordered thresholds
     TEST_ASSERT_FALSE(device_protocol_parse_command(extra, strlen(extra), &command));
 }
 
+TEST_CASE("interaction commands accept only the strict bounded schema", "[device_protocol]")
+{
+    const char *configuration = "{\"type\":\"configure_interaction\",\"command_id\":\"cmd-ui\","
+                                "\"volume_percent\":65,\"night_mode\":true}";
+    const char *bad_volume = "{\"type\":\"configure_interaction\",\"command_id\":\"cmd-ui\","
+                             "\"volume_percent\":101,\"night_mode\":true}";
+    const char *bad_night_mode = "{\"type\":\"configure_interaction\",\"command_id\":\"cmd-ui\","
+                                 "\"volume_percent\":50,\"night_mode\":1}";
+    const char *stop = "{\"type\":\"stop_audio\",\"command_id\":\"cmd-stop\"}";
+    device_command_t command = {0};
+
+    TEST_ASSERT_TRUE(device_protocol_parse_command(configuration, strlen(configuration), &command));
+    TEST_ASSERT_EQUAL(DEVICE_COMMAND_CONFIGURE_INTERACTION, command.type);
+    TEST_ASSERT_EQUAL_INT(65, command.volume_percent);
+    TEST_ASSERT_TRUE(command.night_mode);
+    TEST_ASSERT_FALSE(device_protocol_parse_command(bad_volume, strlen(bad_volume), &command));
+    TEST_ASSERT_FALSE(device_protocol_parse_command(bad_night_mode, strlen(bad_night_mode), &command));
+    TEST_ASSERT_TRUE(device_protocol_parse_command(stop, strlen(stop), &command));
+    TEST_ASSERT_EQUAL(DEVICE_COMMAND_STOP_AUDIO, command.type);
+}
+
 TEST_CASE("voice control rejects unsafe detection settings before applying them", "[voice_control]")
 {
     TEST_ASSERT_EQUAL(ESP_OK,

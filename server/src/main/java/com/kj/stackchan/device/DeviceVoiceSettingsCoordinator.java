@@ -13,13 +13,16 @@ public class DeviceVoiceSettingsCoordinator {
 
     private final SpeechSettingsService settingsService;
     private final ObjectProvider<DeviceConnectionRegistry> connectionRegistryProvider;
+    private final ObjectProvider<DeviceInteractionSettingsCoordinator> interactionCoordinatorProvider;
 
     public DeviceVoiceSettingsCoordinator(
             SpeechSettingsService settingsService,
-            ObjectProvider<DeviceConnectionRegistry> connectionRegistryProvider
+            ObjectProvider<DeviceConnectionRegistry> connectionRegistryProvider,
+            ObjectProvider<DeviceInteractionSettingsCoordinator> interactionCoordinatorProvider
     ) {
         this.settingsService = settingsService;
         this.connectionRegistryProvider = connectionRegistryProvider;
+        this.interactionCoordinatorProvider = interactionCoordinatorProvider;
     }
 
     public void broadcast(SpeechSettingsService.SpeechSettingsSnapshot settings) {
@@ -46,5 +49,9 @@ public class DeviceVoiceSettingsCoordinator {
                 settings.speechStartThreshold(),
                 settings.speechSilenceThreshold()
         );
+        DeviceInteractionSettingsCoordinator interactionCoordinator = interactionCoordinatorProvider.getIfAvailable();
+        if (interactionCoordinator != null) {
+            interactionCoordinator.sendCurrent(deviceId, session);
+        }
     }
 }

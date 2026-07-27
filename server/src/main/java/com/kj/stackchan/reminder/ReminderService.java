@@ -2,6 +2,7 @@ package com.kj.stackchan.reminder;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.zone.ZoneRulesException;
 import java.util.List;
@@ -21,11 +22,18 @@ public class ReminderService {
     private final ReminderRepository reminderRepository;
     private final DeviceRepository deviceRepository;
     private final Clock clock;
+    private final ReminderScheduleCalculator scheduleCalculator;
 
-    public ReminderService(ReminderRepository reminderRepository, DeviceRepository deviceRepository, Clock clock) {
+    public ReminderService(
+            ReminderRepository reminderRepository,
+            DeviceRepository deviceRepository,
+            Clock clock,
+            ReminderScheduleCalculator scheduleCalculator
+    ) {
         this.reminderRepository = reminderRepository;
         this.deviceRepository = deviceRepository;
         this.clock = clock;
+        this.scheduleCalculator = scheduleCalculator;
     }
 
     @Transactional(readOnly = true)
@@ -61,6 +69,10 @@ public class ReminderService {
                 validated.content(),
                 validated.scheduledAt(),
                 validated.zoneId(),
+                validated.recurrenceType(),
+                validated.recurrenceInterval(),
+                validated.recurrenceAnchorLocal(),
+                ReminderSource.USER,
                 clock.instant()
         );
         return toSnapshot(reminderRepository.save(reminder));
@@ -75,6 +87,9 @@ public class ReminderService {
                 validated.content(),
                 validated.scheduledAt(),
                 validated.zoneId(),
+                validated.recurrenceType(),
+                validated.recurrenceInterval(),
+                validated.recurrenceAnchorLocal(),
                 clock.instant()
         );
         return toSnapshot(reminder);
@@ -84,6 +99,33 @@ public class ReminderService {
     public void delete(UUID id) {
         ReminderEntity reminder = reminderRepository.findById(id).orElseThrow(ReminderNotFoundException::new);
         reminderRepository.delete(reminder);
+    }
+
+    @Transactional
+    public ReminderSnapshot snooze(UUID id, int minutes) {
+        if (minutes < 1 || minutes > 1440) {
+            throw new InvalidReminderException("Reminder snooze duration is invalid");
+        }
+        ReminderEntity reminder = reminderRepository.findById(id).orElseThrow(ReminderNotFoundException::new);
+        if (reminder.getStatus() != ReminderStatus.PENDING) {
+            throw new InvalidReminderException("Only pending reminders can be snoozed");
+        }
+        Instant now = clock.instant();
+        reminder.deferUntil(now.plusSeconds(minutes * 60L), now);
+        return toSnapshot(reminder);
+    }
+
+    @Transactional
+    public ReminderSnapshot skipNext(UUID id) {
+        ReminderEntity reminder = reminderRepository.findById(id).orElseThrow(ReminderNotFoundException::new);
+        if (reminder.getStatus() != ReminderStatus.PENDING) {
+            throw new InvalidReminderException("Only pending reminders can be skipped");
+        }
+        Instant now = clock.instant();
+        Instant after = reminder.getScheduledAt().isAfter(now) ? reminder.getScheduledAt() : now;
+        Instant next = scheduleCalculator.nextAfter(reminder, after);
+        reminder.completeOccurrence(ReminderStatus.SKIPPED, next, now);
+        return toSnapshot(reminder);
     }
 
     private ValidatedCommand validate(ReminderCommand command) {
@@ -100,7 +142,15 @@ public class ReminderService {
         } catch (ZoneRulesException | IllegalArgumentException exception) {
             throw new InvalidReminderException("Reminder zone is invalid", exception);
         }
-        return new ValidatedCommand(command.deviceId(), content, command.scheduledAt(), zoneId);
+        ReminderRecurrence recurrence = command.recurrenceType() == null
+                ? ReminderRecurrence.NONE : command.recurrenceType();
+        int interval = command.recurrenceInterval() == null ? 1 : command.recurrenceInterval();
+        if (interval < 1 || interval > 365) {
+            throw new InvalidReminderException("Reminder recurrence interval is invalid");
+        }
+        LocalDateTime anchor = recurrence == ReminderRecurrence.NONE
+                ? null : command.scheduledAt().atZone(ZoneId.of(zoneId)).toLocalDateTime();
+        return new ValidatedCommand(command.deviceId(), content, command.scheduledAt(), zoneId, recurrence, interval, anchor);
     }
 
     private ReminderSnapshot toSnapshot(ReminderEntity reminder) {
@@ -111,6 +161,11 @@ public class ReminderService {
                 reminder.getScheduledAt(),
                 reminder.getZoneId(),
                 reminder.getStatus(),
+                reminder.getRecurrenceType(),
+                reminder.getRecurrenceInterval(),
+                reminder.getSource(),
+                reminder.getLastOutcome(),
+                reminder.getLastCompletedAt(),
                 reminder.getAttemptCount(),
                 reminder.getFailureCode(),
                 reminder.getCreatedAt(),
@@ -118,10 +173,28 @@ public class ReminderService {
         );
     }
 
-    private record ValidatedCommand(UUID deviceId, String content, Instant scheduledAt, String zoneId) {
+    private record ValidatedCommand(
+            UUID deviceId,
+            String content,
+            Instant scheduledAt,
+            String zoneId,
+            ReminderRecurrence recurrenceType,
+            int recurrenceInterval,
+            LocalDateTime recurrenceAnchorLocal
+    ) {
     }
 
-    public record ReminderCommand(UUID deviceId, String content, Instant scheduledAt, String zoneId) {
+    public record ReminderCommand(
+            UUID deviceId,
+            String content,
+            Instant scheduledAt,
+            String zoneId,
+            ReminderRecurrence recurrenceType,
+            Integer recurrenceInterval
+    ) {
+        public ReminderCommand(UUID deviceId, String content, Instant scheduledAt, String zoneId) {
+            this(deviceId, content, scheduledAt, zoneId, ReminderRecurrence.NONE, 1);
+        }
     }
 
     public record ReminderSnapshot(
@@ -131,11 +204,34 @@ public class ReminderService {
             Instant scheduledAt,
             String zoneId,
             ReminderStatus status,
+            ReminderRecurrence recurrenceType,
+            int recurrenceInterval,
+            ReminderSource source,
+            ReminderStatus lastOutcome,
+            Instant lastCompletedAt,
             int attemptCount,
             String failureCode,
             Instant createdAt,
             Instant updatedAt
     ) {
+        public ReminderSnapshot(
+                UUID id,
+                UUID deviceId,
+                String content,
+                Instant scheduledAt,
+                String zoneId,
+                ReminderStatus status,
+                int attemptCount,
+                String failureCode,
+                Instant createdAt,
+                Instant updatedAt
+        ) {
+            this(
+                    id, deviceId, content, scheduledAt, zoneId, status,
+                    ReminderRecurrence.NONE, 1, ReminderSource.USER, null, null,
+                    attemptCount, failureCode, createdAt, updatedAt
+            );
+        }
     }
 
     public record ReminderPage(List<ReminderSnapshot> list, long total) {

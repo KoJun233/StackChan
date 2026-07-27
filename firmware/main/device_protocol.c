@@ -248,6 +248,8 @@ bool device_protocol_parse_command(const char *payload,
                  id->valuestring != NULL && is_valid_command_id(id->valuestring);
     if (valid && strcmp(type->valuestring, "stop_motion") == 0 && cJSON_GetArraySize(root) == 2) {
         command->type = DEVICE_COMMAND_STOP_MOTION;
+    } else if (valid && strcmp(type->valuestring, "stop_audio") == 0 && cJSON_GetArraySize(root) == 2) {
+        command->type = DEVICE_COMMAND_STOP_AUDIO;
     } else if (valid && strcmp(type->valuestring, "speak_reminder") == 0 && cJSON_GetArraySize(root) == 3) {
         cJSON *reminder_id = cJSON_GetObjectItemCaseSensitive(root, "reminder_id");
         valid = cJSON_IsString(reminder_id) && reminder_id->valuestring != NULL &&
@@ -280,6 +282,16 @@ bool device_protocol_parse_command(const char *payload,
             command->type = DEVICE_COMMAND_CONFIGURE_VOICE_DETECTION;
             command->speech_start_threshold = speech_start_threshold->valueint;
             command->speech_silence_threshold = speech_silence_threshold->valueint;
+        }
+    } else if (valid && strcmp(type->valuestring, "configure_interaction") == 0 &&
+               cJSON_GetArraySize(root) == 4) {
+        cJSON *volume_percent = cJSON_GetObjectItemCaseSensitive(root, "volume_percent");
+        cJSON *night_mode = cJSON_GetObjectItemCaseSensitive(root, "night_mode");
+        valid = is_integer_in_range(volume_percent, 0, 100) && cJSON_IsBool(night_mode);
+        if (valid) {
+            command->type = DEVICE_COMMAND_CONFIGURE_INTERACTION;
+            command->volume_percent = volume_percent->valueint;
+            command->night_mode = cJSON_IsTrue(night_mode);
         }
     } else if (valid && strcmp(type->valuestring, "install_wake_model") == 0 &&
                cJSON_GetArraySize(root) == 6) {

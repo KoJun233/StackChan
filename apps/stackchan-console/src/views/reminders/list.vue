@@ -3,7 +3,7 @@ import type { TableColumn } from '@fantastic-admin/components'
 import type { Device } from '@/api/modules/devices'
 import type { Reminder, ReminderStatus } from '@/api/modules/reminders'
 import { listDevices } from '@/api/modules/devices'
-import { deleteReminder, listReminders } from '@/api/modules/reminders'
+import { deleteReminder, listReminders, skipNextReminder, snoozeReminder } from '@/api/modules/reminders'
 import eventBus from '@/utils/eventBus'
 
 defineOptions({ name: 'ReminderList' })
@@ -32,6 +32,7 @@ const statusOptions = [
   { label: '已送达', value: 'DELIVERED' },
   { label: '失败', value: 'FAILED' },
   { label: '已取消', value: 'CANCELLED' },
+  { label: '已跳过', value: 'SKIPPED' },
 ]
 
 const deviceNames = computed(() => new Map(devices.value.map(device => [device.id, device.displayName])))
@@ -43,6 +44,7 @@ const tableColumns = computed<TableColumn<Reminder>[]>(() => [
   { accessorKey: 'content', header: '提醒内容', minWidth: 240 },
   { id: 'device', header: '目标设备', minWidth: 150 },
   { id: 'scheduledAt', header: '提醒时间', minWidth: 180 },
+  { id: 'recurrence', header: '重复', width: 110, align: 'center' },
   { id: 'status', header: '状态', width: 120, align: 'center' },
   { accessorKey: 'attemptCount', header: '尝试次数', width: 100, align: 'center' },
   { id: 'operation', header: '操作', width: 120, align: 'center', fixed: 'right' },
@@ -59,6 +61,7 @@ function statusLabel(status: ReminderStatus) {
     DELIVERED: '已送达',
     FAILED: '失败',
     CANCELLED: '已取消',
+    SKIPPED: '已跳过',
   }[status]
 }
 
@@ -77,6 +80,36 @@ function statusVariant(status: ReminderStatus): 'default' | 'destructive' | 'out
 
 function formatTime(value: string) {
   return new Date(value).toLocaleString('zh-CN', { hour12: false })
+}
+
+function recurrenceLabel(row: Reminder) {
+  if (row.recurrenceType === 'NONE') {
+    return '单次'
+  }
+  const unit = row.recurrenceType === 'DAILY' ? '天' : '周'
+  return row.recurrenceInterval === 1 ? `每${unit}` : `每 ${row.recurrenceInterval} ${unit}`
+}
+
+async function snooze(row: Reminder) {
+  try {
+    await snoozeReminder(row.id, 10)
+    await getDataList()
+    useFaToast().success('已稍后 10 分钟')
+  }
+  catch (error) {
+    useFaToast().error('操作失败', { description: error instanceof Error ? error.message : '无法稍后提醒。' })
+  }
+}
+
+async function skipNext(row: Reminder) {
+  try {
+    await skipNextReminder(row.id)
+    await getDataList()
+    useFaToast().success(row.recurrenceType === 'NONE' ? '已跳过提醒' : '已跳过下一次提醒')
+  }
+  catch (error) {
+    useFaToast().error('操作失败', { description: error instanceof Error ? error.message : '无法跳过提醒。' })
+  }
 }
 
 async function getDataList() {
@@ -250,12 +283,26 @@ onBeforeUnmount(() => {
             </span>
           </div>
         </template>
+        <template #cell-recurrence="{ row }">
+          <div>{{ recurrenceLabel(row.original) }}</div>
+          <div v-if="row.original.source === 'PROACTIVE'" class="text-xs text-muted-foreground">
+            主动问候
+          </div>
+        </template>
         <template #cell-operation="{ row }">
           <div class="flex-center gap-2">
             <FaButton variant="outline" size="icon-sm" @click="onEdit(row.original)">
               <FaIcon name="i-ri:edit-line" />
             </FaButton>
-            <FaDropdown :items="[[{ label: '删除', variant: 'destructive', handle: () => confirmDelete([row.original]) }]]">
+            <FaDropdown :items="[
+              row.original.status === 'PENDING'
+                ? [
+                    { label: '10 分钟后提醒', handle: () => snooze(row.original) },
+                    { label: row.original.recurrenceType === 'NONE' ? '跳过提醒' : '跳过下一次', handle: () => skipNext(row.original) },
+                  ]
+                : [],
+              [{ label: '删除', variant: 'destructive', handle: () => confirmDelete([row.original]) }],
+            ]">
               <FaButton variant="outline" size="icon-sm">
                 <FaIcon name="i-ri:more-line" />
               </FaButton>

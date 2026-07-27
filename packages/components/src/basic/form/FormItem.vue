@@ -203,17 +203,23 @@ function resolveControlProps(vnode: VNode) {
   }
 
   const vnodeProps = vnode.props ?? {}
+  const hasExplicitModel = Object.hasOwn(vnodeProps, 'modelValue')
   const nextProps: Record<string, unknown> = {
     'name': props.name,
     'disabled': resolvedDisabled.value || Boolean(vnodeProps.disabled),
     'aria-required': props.required ? 'true' : undefined,
     'onBlur': chainHandlers(vnodeProps.onBlur as EventHandler | undefined, componentField.value.onBlur),
-    'onInput': chainHandlers(vnodeProps.onInput as EventHandler | undefined, componentField.value.onInput),
-    'onChange': chainHandlers(vnodeProps.onChange as EventHandler | undefined, componentField.value.onChange),
     'onUpdate:modelValue': chainHandlers(vnodeProps['onUpdate:modelValue'] as EventHandler | undefined, componentField.value['onUpdate:modelValue']!),
   }
 
-  if (!Object.hasOwn(vnodeProps, 'modelValue')) {
+  if (hasExplicitModel) {
+    // Component v-model is authoritative; forwarded DOM events may contain Event objects.
+    nextProps.onInput = vnodeProps.onInput
+    nextProps.onChange = vnodeProps.onChange
+  }
+  else {
+    nextProps.onInput = chainHandlers(vnodeProps.onInput as EventHandler | undefined, componentField.value.onInput)
+    nextProps.onChange = chainHandlers(vnodeProps.onChange as EventHandler | undefined, componentField.value.onChange)
     nextProps.modelValue = componentField.value.modelValue
   }
 

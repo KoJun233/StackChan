@@ -32,6 +32,15 @@ const settingsRoute: RouteRecordRaw = {
         icon: 'i-ri:mic-line',
       },
     },
+    {
+      path: 'interaction',
+      name: 'interactionSettings',
+      component: () => import('@/views/settings/interaction/index.vue'),
+      meta: {
+        title: '交互与主动陪伴',
+        icon: 'i-ri:chat-smile-3-line',
+      },
+    },
   ],
 }
 

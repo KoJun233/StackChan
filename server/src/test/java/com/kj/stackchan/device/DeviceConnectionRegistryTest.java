@@ -85,6 +85,25 @@ class DeviceConnectionRegistryTest {
     }
 
     @Test
+    void sendsStrictInteractionConfigurationAndStopAudioCommands() throws Exception {
+        WebSocketSession session = authenticatedSession(1L, FUTURE_EXPIRY);
+        connectionRegistry.register(DEVICE_ID, session);
+
+        assertThat(connectionRegistry.sendInteractionConfiguration(DEVICE_ID, 65, true)).isTrue();
+        assertThat(commandGateway.stopAudio(DEVICE_ID)).isTrue();
+
+        ArgumentCaptor<TextMessage> message = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session, times(2)).sendMessage(message.capture());
+        assertThat(message.getAllValues().get(0).getPayload()).matches(
+                "\\{\"type\":\"configure_interaction\",\"command_id\":\"[0-9a-f-]{36}\","
+                        + "\"volume_percent\":65,\"night_mode\":true}"
+        );
+        assertThat(message.getAllValues().get(1).getPayload()).matches(
+                "\\{\"type\":\"stop_audio\",\"command_id\":\"[0-9a-f-]{36}\"}"
+        );
+    }
+
+    @Test
     void makesTheDeviceOfflineAfterItsSessionDisconnects() {
         WebSocketSession session = authenticatedSession(1L, FUTURE_EXPIRY);
         connectionRegistry.register(DEVICE_ID, session);

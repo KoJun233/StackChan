@@ -131,4 +131,20 @@ Accept: audio/wav
 
 The server returns audio only when the reminder belongs to the authenticated device and is currently `DISPATCHED`. Offline reminders remain `PENDING`; after the device reconnects, the scheduler synthesizes the WAV and sends `speak_reminder` to the live authenticated session. A dispatch left unacknowledged for more than five minutes is recovered to `PENDING`.
 
+The bounded interaction configuration command is:
+
+```json
+{"type":"configure_interaction","command_id":"cmd-interaction","volume_percent":50,"night_mode":false}
+```
+
+`volume_percent` is an integer from 0 through 100 and `night_mode` is boolean. The server sends current values after an administrator saves device interaction settings and whenever that device establishes an authenticated connection. Firmware maps volume to its bounded speaker range and uses night mode only to lower normal display brightness; neither field may enable motion or another actuator.
+
+The immediate playback stop command is:
+
+```json
+{"type":"stop_audio","command_id":"cmd-stop-audio"}
+```
+
+The device accepts this command only for its current authenticated WebSocket session, requests interruption of active speaker playback, and returns a normal command acknowledgement. Reminder playback subsequently acknowledges its original `speak_reminder` command as cancelled; a voice turn reports its existing `CANCELLED` stage. If nothing is playing, `stop_audio` is an idempotent no-op. The command never stops safety processing or enables motion.
+
 The server sends `stop_motion` only to a currently live, authenticated session and creates no offline motion-command queue. Voice-detection configuration is persisted centrally and resent on reconnect rather than queued as an actuator command. No inbound event, acknowledgement, voice turn, reminder, voice-detection configuration, or wake-model operation can enable motion or request an actuator action.

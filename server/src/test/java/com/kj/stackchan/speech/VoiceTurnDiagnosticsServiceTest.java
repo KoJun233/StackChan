@@ -87,6 +87,23 @@ class VoiceTurnDiagnosticsServiceTest {
     }
 
     @Test
+    void cancelsEveryActiveTurnForADevice() {
+        UUID deviceId = UUID.randomUUID();
+        VoiceTurnEntity first = new VoiceTurnEntity(UUID.randomUUID(), deviceId, NOW);
+        VoiceTurnEntity second = new VoiceTurnEntity(UUID.randomUUID(), deviceId, NOW);
+        second.apply(VoiceTurnStage.TTS_COMPLETED, null, NOW);
+        when(turnRepository.findByDeviceIdAndStatusIn(any(), any())).thenReturn(List.of(first, second));
+        when(turnRepository.findById(first.getId())).thenReturn(Optional.of(first));
+        when(turnRepository.findById(second.getId())).thenReturn(Optional.of(second));
+
+        int cancelled = service().cancelActiveTurns(deviceId);
+
+        assertThat(cancelled).isEqualTo(2);
+        assertThat(first.getStatus()).isEqualTo(VoiceTurnStatus.CANCELLED);
+        assertThat(second.getStatus()).isEqualTo(VoiceTurnStatus.CANCELLED);
+    }
+
+    @Test
     void deletesOnlyTurnsOutsideTheSevenDayRetentionWindow() {
         service().deleteExpired();
 

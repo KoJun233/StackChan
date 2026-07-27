@@ -1,14 +1,14 @@
 # 服务端工作流
 
-- 状态：ACTIVE
-- 最后更新：2026-07-26
-- 当前分支：`codex/int-005-persona-memory`
-- 基准提交：`798468d`
-- 最后验证提交：`798468d`
+- 状态：STABLE
+- 最后更新：2026-07-27
+- 当前分支：`codex/int-006-proactive-interaction`
+- 基准提交：`bfb6a20`
+- 最后验证提交：`20eefb2`
 
 ## 当前目标
 
-在不改变固件和 SCV1 的前提下，为文本聊天与设备语音提供同一套可控人设、确认后长期记忆和设备作用域边界。
+为每台机器人提供可追踪的周期提醒、免打扰、离线补偿和有限主动问候规则，并保持提醒 ACK、固定同源音频和 SCV1 边界不变。
 
 ## 已完成
 
@@ -43,18 +43,23 @@
 - 新增管理员人设 API，以及记忆搜索、读取、手工创建、编辑、待确认建议、确认、拒绝、启停、删除和清空 API；手工创建直接确认，机器人建议默认待确认且停用。
 - 新增统一提示词组装器；浏览器文本聊天只加载全局记忆，设备语音加载全局和当前设备记忆，且两条路径都只查询已确认并启用的记录。
 - 提示词明确把记忆视为数据而非系统指令，并固定基础规则、人设、用户档案、事件记忆、渠道规则和当前会话的优先顺序。每轮重新查询 PostgreSQL，删除和停用无需等待缓存失效。
+- INT-006 新增 Flyway V17、每日/每周周期提醒、本地墙钟锚点、稍后提醒、跳过下一次和最近完成结果；重复实例收到 ACK 后在同一事务中推进并清除旧命令 ID。
+- 新增设备级交互设置、跨午夜免打扰、三种离线错过策略、音量、夜间模式、固定文本主动问候时间窗/间隔/每日上限和事务锁计数。
+- 主动问候只由确定性配置、在线状态和忙碌仲裁创建 `PROACTIVE` 提醒，不调用 LLM 决定时机或内容；语音回合和已派发提醒期间会延期。
+- 新增严格 `configure_interaction`、`stop_audio` 下发及重连补发路径；旧固件忽略未知命令时，原有提醒和语音路径仍可继续使用。
+- 首轮验收定位到停止命令只中断设备播放、未终止服务端 `RESPONSE_READY` 回合，导致提醒每分钟顺延且主动问候持续被忙碌仲裁抑制；当前工作树在停止成功后批量终止该设备活动回合，并只将最近 15 分钟更新的活动回合视为忙碌，避免异常断线永久阻塞调度。
 
 ## 正在进行
 
-INT-005 软件实现、全量回归、server-only LAN 部署和用户人工验收已完成，运行环境为 `d4ad838` / Flyway V16。自动从对话提取记忆建议尚未启用；当前只提供不会进入上下文的待确认建议路径，后续接入必须单独验证模型工具兼容性和延迟。
+INT-006 验收修复 `f0d99fa` 已只替换现有 LAN server，Flyway 保持 V17。单次提醒与主动问候均为 `DELIVERED`；用户确认六项页面/实体验收及修复后的语音识别与合成全部正常。
 
 ## 下一步操作
 
-取得明确授权后推送 `codex/int-005-persona-memory`，等待用户人工合并；当前 server、Flyway V16 和 CoreS3 运行态保持不变，不再部署或刷写固件。
+保持当前 server/V17 运行态；推送任务分支后由用户在网页人工合并。
 
 ## 阻塞项
 
-软件、部署和人工验收无阻塞；远程推送等待用户明确授权。后续排查不得记录配置秘密、供应商响应正文、音频、转写、回复或完整异常载荷。
+无阻塞；用户已授权远程推送。后续排查不得记录配置秘密、供应商响应正文、音频、转写、回复或完整异常载荷。
 
 ## 关键文件
 
@@ -66,6 +71,9 @@ INT-005 软件实现、全量回归、server-only LAN 部署和用户人工验�
 - `server/src/main/resources/db/migration/V14__voice_turn_diagnostics.sql`
 - `server/src/main/resources/db/migration/V15__voice_turn_cancellation.sql`
 - `server/src/main/resources/db/migration/V16__persona_and_long_term_memory.sql`
+- `server/src/main/resources/db/migration/V17__proactive_interaction_and_recurring_reminders.sql`
+- `server/src/main/java/com/kj/stackchan/interaction/`
+- `server/src/main/java/com/kj/stackchan/reminder/`
 - `server/src/main/java/com/kj/stackchan/persona/`
 - `server/src/main/java/com/kj/stackchan/memory/`
 - `server/src/main/java/com/kj/stackchan/wakeword/EspSrWakeWordModelCatalog.java`
@@ -73,10 +81,17 @@ INT-005 软件实现、全量回归、server-only LAN 部署和用户人工验�
 - `server/src/main/java/com/kj/stackchan/speech/VoiceTurnCancellationService.java`
 - `docs/project/decisions/0019-complete-voice-replies.md`
 - `docs/project/decisions/0020-confirmed-scoped-long-term-memory.md`
+- `docs/project/decisions/0021-limited-proactive-interaction.md`
 - `server/wakenet-models/`
 
 ## 验证命令与最近结果
 
+- INT-006 验收修复后服务端全量 236/236 通过；Testcontainers PostgreSQL 从空库应用 V1..V17。新增测试覆盖停止成功/失败的回合终止边界、活动回合批量取消，以及提醒和主动问候只检查最近 15 分钟的忙碌状态。
+- INT-006 `9495111` 已只替换现有 LAN server，Flyway 为 `17|true`；健康与网页为 200，未登录交互设置 API 为 401，启动错误数为 0，旧 CoreS3 `717a8b1 / motion_disabled` 恢复新鲜心跳。
+- INT-006 验收修复 `f0d99fa` 已只替换 server，镜像为 `sha256:0f780fd7264c0137238e89783bc6e172cf61fe4b2ad23e5a3a329ea10b95d1cc`、容器为 `4d9db38c136c`；健康与网页为 200、Flyway `17|true`、迁移数 17、启动错误数 0。首次派发在重连窗口丢失 ACK，五分钟恢复任务重试后单次提醒 `DELIVERED`；主动问候下一周期一次 `DELIVERED`。
+- CoreS3 完整刷入 `2465427` 后恢复 WebSocket，数据库收到 `2465427 / motion_disabled` 新鲜心跳；server 健康保持 200、Flyway 保持 `17|true`，近 15 分钟未见 server 错误。
+- 用户确认 INT-006 六项验收和语音识别/合成均正常；供应商兼容性与凭据轮换由用户完成，未将秘密或完整认证载荷写入仓库。
+- CoreS3 完整刷入 `c1d7383` 后恢复 WebSocket，数据库收到 `c1d7383 / motion_disabled` 新鲜心跳；server 健康保持 200、Flyway 保持 `17|true`，近期启动错误数为 0。
 - INT-005 定向测试覆盖人设保存、手工记忆确认、模型建议待确认、设备范围校验、提示词顺序、管理 API、文本 SSE 和设备语音；全部通过。
 - INT-005 服务端全量 225/225 通过；Testcontainers PostgreSQL 从空库验证并应用 V1..V16。部署后运行库为 `16|true`，人设单例记录 1 条、长期记忆初始记录 0 条；健康与网页根地址为 200，未登录人设/记忆 API 均为 401，启动错误数为 0。CoreS3 `717a8b1 / motion_disabled` 恢复心跳，未改动固件。
 - INT-005 用户完成人设与长期记忆行为验收并确认没有问题；没有为验收读取或记录对话正文。
