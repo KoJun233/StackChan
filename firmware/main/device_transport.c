@@ -25,6 +25,7 @@
 #include "device_credentials.h"
 #include "device_endpoint.h"
 #include "device_protocol.h"
+#include "expression_pack.h"
 #include "safety_state.h"
 #include "voice_control.h"
 #include "wake_model_ota.h"
@@ -54,6 +55,12 @@ typedef struct {
 } wake_model_command_t;
 
 typedef struct {
+    char command_id[DEVICE_PROTOCOL_COMMAND_ID_MAX_LEN];
+    bool clear;
+    expression_pack_request_t request;
+} expression_pack_command_t;
+
+typedef struct {
     char turn_id[DEVICE_PROTOCOL_TURN_ID_LEN];
     device_voice_turn_stage_t stage;
     uint32_t elapsed_ms;
@@ -64,6 +71,7 @@ typedef struct {
     esp_websocket_client_handle_t client;
     QueueHandle_t reminder_queue;
     QueueHandle_t wake_model_queue;
+    QueueHandle_t expression_pack_queue;
     SemaphoreHandle_t send_mutex;
     portMUX_TYPE sequence_lock;
     uint32_t next_sequence;
@@ -396,6 +404,29 @@ static void websocket_event_handler(void *handler_args,
             xQueueSend(connection->wake_model_queue, &install, 0) != pdTRUE) {
             send_command_ack(connection, command.command_id, false, DEVICE_COMMAND_RESULT_FAILED);
         }
+        return;
+    }
+    if (command.type == DEVICE_COMMAND_INSTALL_EXPRESSION_PACK) {
+        expression_pack_command_t install = {0};
+        memcpy(install.command_id, command.command_id, sizeof(install.command_id));
+        memcpy(install.request.pack_id, command.expression_pack_id, sizeof(install.request.pack_id));
+        memcpy(install.request.sha256, command.expression_pack_sha256, sizeof(install.request.sha256));
+        install.request.artifact_size = (size_t)command.expression_pack_artifact_size;
+        if (connection->expression_pack_queue == NULL ||
+            xQueueSend(connection->expression_pack_queue, &install, 0) != pdTRUE) {
+            send_command_ack(connection, command.command_id, false, DEVICE_COMMAND_RESULT_FAILED);
+        }
+        return;
+    }
+    if (command.type == DEVICE_COMMAND_CLEAR_EXPRESSION_PACK) {
+        expression_pack_command_t clear = {
+            .clear = true,
+        };
+        memcpy(clear.command_id, command.command_id, sizeof(clear.command_id));
+        if (connection->expression_pack_queue == NULL ||
+            xQueueSend(connection->expression_pack_queue, &clear, 0) != pdTRUE) {
+            send_command_ack(connection, command.command_id, false, DEVICE_COMMAND_RESULT_FAILED);
+        }
     }
 }
 
@@ -555,14 +586,19 @@ static bool run_websocket_connection(const device_identity_t *identity)
     };
     connection.reminder_queue = xQueueCreate(REMINDER_QUEUE_LENGTH, sizeof(reminder_command_t));
     connection.wake_model_queue = xQueueCreate(1, sizeof(wake_model_command_t));
+    connection.expression_pack_queue = xQueueCreate(1, sizeof(expression_pack_command_t));
     connection.send_mutex = xSemaphoreCreateMutex();
     if (connection.reminder_queue == NULL || connection.wake_model_queue == NULL ||
+        connection.expression_pack_queue == NULL ||
         connection.send_mutex == NULL) {
         if (connection.reminder_queue != NULL) {
             vQueueDelete(connection.reminder_queue);
         }
         if (connection.wake_model_queue != NULL) {
             vQueueDelete(connection.wake_model_queue);
+        }
+        if (connection.expression_pack_queue != NULL) {
+            vQueueDelete(connection.expression_pack_queue);
         }
         if (connection.send_mutex != NULL) {
             vSemaphoreDelete(connection.send_mutex);
@@ -576,6 +612,7 @@ static bool run_websocket_connection(const device_identity_t *identity)
         ESP_LOGE(TAG, "WebSocket client allocation failed");
         vQueueDelete(connection.reminder_queue);
         vQueueDelete(connection.wake_model_queue);
+        vQueueDelete(connection.expression_pack_queue);
         vSemaphoreDelete(connection.send_mutex);
         memset(authorization_header, 0, sizeof(authorization_header));
         memset(uri, 0, sizeof(uri));
@@ -641,6 +678,20 @@ static bool run_websocket_connection(const device_identity_t *identity)
                 esp_restart();
             }
         }
+        expression_pack_command_t expression_install = {0};
+        if (connection.connected &&
+            xQueueReceive(connection.expression_pack_queue, &expression_install, 0) == pdTRUE) {
+            bool accepted = expression_install.clear
+                                ? expression_pack_clear() == ESP_OK
+                                : expression_pack_install(identity, &expression_install.request) == ESP_OK;
+            if (accepted) {
+                companion_hardware_refresh_face();
+            }
+            send_command_ack(&connection,
+                             expression_install.command_id,
+                             accepted,
+                             accepted ? DEVICE_COMMAND_RESULT_NONE : DEVICE_COMMAND_RESULT_FAILED);
+        }
         reminder_command_t reminder = {0};
         if (connection.connected &&
             xQueueReceive(connection.reminder_queue, &reminder, 0) == pdTRUE) {
@@ -683,6 +734,7 @@ static bool run_websocket_connection(const device_identity_t *identity)
     (void)esp_websocket_client_destroy(connection.client);
     vQueueDelete(connection.reminder_queue);
     vQueueDelete(connection.wake_model_queue);
+    vQueueDelete(connection.expression_pack_queue);
     vSemaphoreDelete(connection.send_mutex);
     memset(authorization_header, 0, sizeof(authorization_header));
     memset(uri, 0, sizeof(uri));

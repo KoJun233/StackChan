@@ -67,6 +67,12 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     private final DeviceWakeModelStatusService wakeModelStatusService;
     private final VoiceTurnDiagnosticsService voiceTurnDiagnosticsService;
     private final VoiceTurnCancellationService voiceTurnCancellationService;
+    private DeviceExpressionPackCoordinator expressionPackCoordinator;
+
+    @Autowired(required = false)
+    void setExpressionPackCoordinator(DeviceExpressionPackCoordinator expressionPackCoordinator) {
+        this.expressionPackCoordinator = expressionPackCoordinator;
+    }
 
     @Autowired
     public DeviceWebSocketHandler(
@@ -215,6 +221,9 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         connectionRegistry.register(deviceId, session);
         if (voiceSettingsCoordinator != null) {
             voiceSettingsCoordinator.sendCurrent(deviceId, session);
+        }
+        if (expressionPackCoordinator != null) {
+            expressionPackCoordinator.sendCurrent(deviceId);
         }
     }
 

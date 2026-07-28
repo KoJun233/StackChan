@@ -1,12 +1,12 @@
 # 全局工作流总览
 
 - 状态：STABLE
-- 最后更新：2026-07-27
-- 当前分支：`codex/int-006-proactive-interaction`
-- 实现基准：`bfb6a20`
-- 最后验证提交：`20eefb2`
-- 当前验证范围：INT-006 server `f0d99fa` / Flyway V17 与 CoreS3 `2465427` 保持健康；用户确认交互设置、远程停止、提醒、主动问候等六项验收全部正常，语音模型/音色兼容性修复及凭据轮换后识别与合成恢复正常。
-- 当前优先级：推送任务分支后由用户在网页人工合并；后续进入下一阶段。
+- 最后更新：2026-07-28
+- 当前分支：`codex/int-007-pet-expression-packs`
+- 实现基准：`9f8e611`
+- 最后验证提交：`b05d60f`
+- 当前验证范围：server `f91dbdb` 与 V18 已发布；CoreS3 已完整刷入修复镜像 `b05d60f`，五区校验、启动检查、连续 WebSocket 与跨两个心跳周期的数据库刷新均通过。
+- 当前优先级：保持当前 LAN 运行资源稳定；取得明确授权后推送 INT-007 任务分支，由用户网页人工合并。
 - 当前部署：LAN HTTP development mode。
 - 生产边界：HTTPS-only。
 
@@ -14,10 +14,10 @@
 
 | 工作流 | 状态 | 状态文件 | 当前分支 | 下一步 |
 | --- | --- | --- | --- | --- |
-| 服务端 | STABLE | [server.md](server.md) | `codex/int-006-proactive-interaction` | 调度、停止和语音服务人工验收通过。 |
-| 前端 | STABLE | [frontend.md](frontend.md) | `codex/int-006-proactive-interaction` | 公共表单事件修复及页面控件人工验收通过。 |
-| 固件 | STABLE | [firmware.md](firmware.md) | `codex/int-006-proactive-interaction` | `2465427` 在线，实体交互人工验收通过。 |
-| 部署 | STABLE | [deployment.md](deployment.md) | `codex/int-006-proactive-interaction` | server `f0d99fa` / V17 与 CoreS3 `2465427` 稳定运行。 |
+| 服务端 | STABLE | [server.md](server.md) | `codex/int-007-pet-expression-packs` | `f91dbdb` 与 V18 已发布并通过运行验证。 |
+| 前端 | STABLE | [frontend.md](frontend.md) | `codex/int-007-pet-expression-packs` | 页面已发布；用户选择暂缓无素材的自定义资源包实体测试。 |
+| 固件 | STABLE | [firmware.md](firmware.md) | `codex/int-007-pet-expression-packs` | `b05d60f` 已完整刷写，默认机械眼人工验收通过。 |
+| 部署 | STABLE | [deployment.md](deployment.md) | `codex/int-007-pet-expression-packs` | server `f91dbdb` / V18 与 CoreS3 `b05d60f` 稳定运行。 |
 
 唤醒词入口现改为“选择 ESP-SR 2.4.6 内置短语、服务端从锁定目录可信打包、设备双槽 OTA、重启健康确认、失败自动回退”。任意文本生成、第三方生成器和模型包上传均已从最终代码与页面移除；V12 只保留为已部署迁移历史，V13 清理临时字段。下拉包含“Hi, Stack Chan”“小峰小峰”等 13 项。CoreS3 曾使用 `0398073` 镜像完成 WakeNet9/WakeNet9l/WakeNet9s 三槽引导；管理员选择“小峰小峰”后，任务已完成 `READY -> INSTALLING -> INSTALLED`。INT-001 发布时设备升级为 `ecc40f3`，INT-002 升级为栈修复镜像 `216d383`，当前实机为 INT-006 `2465427`。
 
@@ -45,12 +45,17 @@ INT-006 当前工作树新增每日/每周周期提醒、DST 本地墙钟锚点�
 
 用户随后确认 INT-006 六项页面与实体交互验收全部正常。语音连接测试暴露的供应商模型/音色兼容性由用户修复，已暴露凭据已撤销并替换，识别与合成恢复正常；仓库和状态文档未记录凭据或完整供应商响应。
 
+INT-007 本地发布候选完成：默认表情升级为 M5Unified/M5GFX 独立实现的动态机械眼；V18、八状态 PNG 可信打包、管理端预览/切换、设备同源认证下载、A/B 原子启用、损坏回退和停用擦除已实现。实现只借鉴 RoboEyes 的公开视觉概念，未复制其 GPL-3.0 源码。`f91dbdb` 已只替换 LAN server 并将运行库升级至 V18。`8394cb3` 首次刷写暴露默认清理阻塞 ACK 的 60 秒重连；`b05d60f` 将默认清理改为幂等立即成功并把真实擦除移到传输任务队列，重新完整刷写后连接与连续心跳恢复稳定。
+
+用户确认 `b05d60f` 默认机械眼没有问题，INT-007 的默认表情人工验收通过。当前没有多余自定义表情素材，用户明确选择暂缓宠物表情包页面、八图生成、启用和恢复默认的实体测试；该未执行项记录为后续按需验证边界，不阻塞本阶段完成。
+
 ## 架构决策
 
 - [架构决策记录](../decisions/README.md)
 
 ## 验证与边界
 
+- INT-007 服务端全量 238/238、前端 Vitest 20 个文件 57/57、`vue-tsc -b` 和 production build 通过；`f91dbdb` 正式镜像只替换 server 后，健康与网页均为 200、Flyway `18|true`、成功迁移数 18、三张表达资源表存在、未登录表达资源 API 为 401、近期错误数为 0。经用户授权，修复后的 `b05d60f` LAN HTTP Quad 镜像五区写入和独立回读均通过且 NVS 未擦除；启动确认 ESP-IDF 5.3.3、8 MB Quad PSRAM/80 MHz、内存测试、CoreS3 外设、WakeNet 和 `motion_disabled`。42 秒启动窗口只建立一次 WebSocket，后续 32 秒窗口无断线、退避或崩溃，数据库心跳从 `22:42:52` 刷新到 `22:43:42`；server 健康 200、错误数 0。
 - INT-006 验收修复服务端全量 236/236、Testcontainers 空库 V1..V17、前端 19 个文件 55/55、`vue-tsc -b`、production build 均通过；ESP-IDF 5.3.3 协议与 LAN HTTP Quad profile 分别生成 `0x37880` / `0x143c40` 镜像，应用分区余量 93% / 58%。server 已发布，CoreS3 已刷入 `2465427`。
 - INT-006 经用户明确确认 CoreS3、`COM3`、LAN HTTP Quad development profile 和 `2465427` 后，从干净提交完整刷写 bootloader、分区表、应用、OTA data 和语音模型；五个区域独立 `verify_flash` 全部匹配，NVS 未擦除。启动确认应用版本、8 MB Quad PSRAM / 80 MHz 及内存测试、加密 NVS、CoreS3 外设、WakeNet“小峰小峰”、LAN HTTP、WebSocket 和 `motion_disabled`；数据库收到 `2465427` 新鲜心跳，35 秒窗口未见 panic、栈溢出或看门狗，server 健康保持 200、Flyway 保持 `17|true`。
 - INT-006 用户确认六项验收全部正常；供应商模型/音色兼容性修复与凭据轮换后，语音识别与合成测试恢复正常。诊断只保留安全状态码，未记录密钥、Workspace ID、音频或完整供应商响应。
@@ -157,4 +162,4 @@ INT-006 当前工作树新增每日/每周周期提醒、DST 本地墙钟锚点�
 
 ## 下一步
 
-保持当前 `f0d99fa` / Flyway V17 LAN server 和 `2465427` 设备在线；推送 `codex/int-006-proactive-interaction` 后由用户在网页人工合并。
+保持当前 `f91dbdb` / Flyway V18 LAN server 和 `b05d60f` CoreS3 在线；取得用户对最终提交的明确授权后推送 `codex/int-007-pet-expression-packs`，不创建 PR，由用户网页人工合并。

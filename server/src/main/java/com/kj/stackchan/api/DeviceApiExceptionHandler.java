@@ -5,6 +5,8 @@ import java.nio.charset.StandardCharsets;
 import com.kj.stackchan.conversation.ConversationNotFoundException;
 import com.kj.stackchan.device.InvalidDeviceRefreshCredentialException;
 import com.kj.stackchan.device.InvalidDeviceTokenException;
+import com.kj.stackchan.expression.ExpressionPackNotFoundException;
+import com.kj.stackchan.expression.InvalidExpressionPackException;
 import com.kj.stackchan.llm.InvalidLlmSettingsException;
 import com.kj.stackchan.llm.LlmProviderUnavailableException;
 import com.kj.stackchan.interaction.InvalidInteractionSettingsException;
@@ -97,6 +99,12 @@ public class DeviceApiExceptionHandler {
     );
     public static final ApiError WAKE_WORD_MODEL_CATALOG_UNAVAILABLE = new ApiError(
             "wake_word_model_catalog_unavailable", "乐鑫内置唤醒模型暂时不可用，请稍后重试。"
+    );
+    public static final ApiError INVALID_EXPRESSION_PACK = new ApiError(
+            "invalid_expression_pack", "资源包必须包含八张 320×240 PNG，且目标设备和启用状态必须有效。"
+    );
+    public static final ApiError EXPRESSION_PACK_NOT_FOUND = new ApiError(
+            "expression_pack_not_found", "未找到可用的宠物表情资源包。"
     );
 
     @ExceptionHandler(PairingCodeUnavailableException.class)
@@ -202,6 +210,16 @@ public class DeviceApiExceptionHandler {
     @ExceptionHandler(WakeWordModelNotFoundException.class)
     ResponseEntity<ApiError> wakeWordModelNotFound(WakeWordModelNotFoundException exception) {
         return response(HttpStatus.NOT_FOUND, WAKE_WORD_MODEL_NOT_FOUND);
+    }
+
+    @ExceptionHandler(InvalidExpressionPackException.class)
+    ResponseEntity<ApiError> invalidExpressionPack(InvalidExpressionPackException exception) {
+        return response(HttpStatus.BAD_REQUEST, INVALID_EXPRESSION_PACK);
+    }
+
+    @ExceptionHandler(ExpressionPackNotFoundException.class)
+    ResponseEntity<ApiError> expressionPackNotFound(ExpressionPackNotFoundException exception) {
+        return response(HttpStatus.NOT_FOUND, EXPRESSION_PACK_NOT_FOUND);
     }
 
 

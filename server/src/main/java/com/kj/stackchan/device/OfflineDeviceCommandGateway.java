@@ -50,6 +50,24 @@ class OfflineDeviceCommandGateway implements DeviceCommandGateway {
     }
 
     @Override
+    public boolean installExpressionPack(
+            UUID deviceId,
+            UUID packId,
+            String sha256,
+            int artifactSize,
+            String commandId
+    ) {
+        return connectionRegistry.sendExpressionPackInstall(
+                deviceId, packId, sha256, artifactSize, commandId
+        );
+    }
+
+    @Override
+    public boolean clearExpressionPack(UUID deviceId, String commandId) {
+        return connectionRegistry.sendExpressionPackClear(deviceId, commandId);
+    }
+
+    @Override
     public boolean isConnected(UUID deviceId) {
         return connectionRegistry.isConnected(deviceId);
     }

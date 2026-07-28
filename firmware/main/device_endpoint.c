@@ -121,6 +121,21 @@ bool device_endpoint_build_wake_model_url(const char *server_base_url,
     return written > 0 && (size_t)written < size;
 }
 
+bool device_endpoint_build_expression_pack_url(const char *server_base_url,
+                                               const char *pack_id,
+                                               char *url,
+                                               size_t size)
+{
+    if (pack_id == NULL || strlen(pack_id) != 36) {
+        return false;
+    }
+    char path[96] = {0};
+    int written = snprintf(path, sizeof(path),
+                           "/api/v1/device/expression-packs/%s/artifact", pack_id);
+    return written > 0 && (size_t)written < sizeof(path) &&
+           device_endpoint_build_http_url(server_base_url, path, url, size);
+}
+
 void device_endpoint_configure_http_client(esp_http_client_config_t *config)
 {
     if (config == NULL) {
