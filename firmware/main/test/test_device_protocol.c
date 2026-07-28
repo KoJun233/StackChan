@@ -13,6 +13,7 @@
 #include "device_transport.h"
 #include "screensaver_motion.h"
 #include "interaction_state.h"
+#include "face_animation.h"
 #include "strict_json.h"
 #include "touch_interaction.h"
 #include "voice_control.h"
@@ -77,6 +78,33 @@ TEST_CASE("interaction presentation keeps offline distinct and recoverable", "[i
     TEST_ASSERT_FALSE(companion_interaction_allows_screensaver(COMPANION_FACE_LISTENING));
     TEST_ASSERT_FALSE(companion_interaction_allows_screensaver(COMPANION_FACE_NO_SPEECH));
     TEST_ASSERT_FALSE(companion_interaction_allows_screensaver(COMPANION_FACE_SUCCESS));
+}
+
+TEST_CASE("built in face animation stays bounded and state specific", "[face_animation]")
+{
+    for (int state = COMPANION_FACE_IDLE; state <= COMPANION_FACE_RECOVERABLE_ERROR; state++) {
+        for (uint32_t elapsed_ms = 0; elapsed_ms <= 10000; elapsed_ms += 137) {
+            companion_face_frame_t frame = companion_face_animation_frame(
+                (companion_face_state_t)state, elapsed_ms);
+            TEST_ASSERT_INT_WITHIN(8, 0, frame.gaze_x);
+            TEST_ASSERT_INT_WITHIN(8, 0, frame.gaze_y);
+            TEST_ASSERT_GREATER_OR_EQUAL_UINT8(12, frame.eye_open_percent);
+            TEST_ASSERT_LESS_OR_EQUAL_UINT8(100, frame.eye_open_percent);
+            TEST_ASSERT_LESS_OR_EQUAL_UINT8(100, frame.mouth_open_percent);
+            TEST_ASSERT_LESS_OR_EQUAL_UINT8(100, frame.activity_percent);
+        }
+    }
+
+    companion_face_frame_t listening = companion_face_animation_frame(COMPANION_FACE_LISTENING, 450);
+    companion_face_frame_t speaking = companion_face_animation_frame(COMPANION_FACE_SPEAKING, 210);
+    companion_face_frame_t offline = companion_face_animation_frame(COMPANION_FACE_OFFLINE, 210);
+    TEST_ASSERT_GREATER_THAN_UINT8(0, listening.activity_percent);
+    TEST_ASSERT_GREATER_THAN_UINT8(0, speaking.mouth_open_percent);
+    TEST_ASSERT_EQUAL_UINT8(0, offline.mouth_open_percent);
+    TEST_ASSERT_TRUE(companion_face_animation_is_dynamic(COMPANION_FACE_IDLE));
+    TEST_ASSERT_TRUE(companion_face_animation_is_dynamic(COMPANION_FACE_PROCESSING));
+    TEST_ASSERT_FALSE(companion_face_animation_is_dynamic(COMPANION_FACE_OFFLINE));
+    TEST_ASSERT_FALSE(companion_face_animation_is_dynamic(COMPANION_FACE_NO_SPEECH));
 }
 
 TEST_CASE("touch interaction separates short cancel taps from online press to talk", "[touch_interaction]")
@@ -708,6 +736,39 @@ TEST_CASE("wake model installation accepts only the strict bounded schema", "[de
         TEST_ASSERT_FALSE(device_protocol_parse_command(invalid[index], strlen(invalid[index]), &command));
         TEST_ASSERT_EQUAL(DEVICE_COMMAND_NONE, command.type);
     }
+}
+
+TEST_CASE("expression package commands accept only fixed origin metadata", "[device_protocol]")
+{
+    const char *sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    char valid[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
+    snprintf(valid, sizeof(valid),
+             "{\"type\":\"install_expression_pack\",\"command_id\":\"cmd-face\","
+             "\"pack_id\":\"550e8400-e29b-41d4-a716-446655440000\","
+             "\"sha256\":\"%s\",\"artifact_size\":1572864}", sha256);
+    device_command_t command = {0};
+    TEST_ASSERT_TRUE(device_protocol_parse_command(valid, strlen(valid), &command));
+    TEST_ASSERT_EQUAL(DEVICE_COMMAND_INSTALL_EXPRESSION_PACK, command.type);
+    TEST_ASSERT_EQUAL_STRING("550e8400-e29b-41d4-a716-446655440000", command.expression_pack_id);
+    TEST_ASSERT_EQUAL_STRING(sha256, command.expression_pack_sha256);
+    TEST_ASSERT_EQUAL_INT(1572864, command.expression_pack_artifact_size);
+
+    const char *too_large =
+        "{\"type\":\"install_expression_pack\",\"command_id\":\"cmd-face\","
+        "\"pack_id\":\"550e8400-e29b-41d4-a716-446655440000\","
+        "\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\","
+        "\"artifact_size\":1572865}";
+    const char *external_url =
+        "{\"type\":\"install_expression_pack\",\"command_id\":\"cmd-face\","
+        "\"pack_id\":\"550e8400-e29b-41d4-a716-446655440000\","
+        "\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\","
+        "\"artifact_size\":100,\"url\":\"https://evil.example/pack\"}";
+    TEST_ASSERT_FALSE(device_protocol_parse_command(too_large, strlen(too_large), &command));
+    TEST_ASSERT_FALSE(device_protocol_parse_command(external_url, strlen(external_url), &command));
+
+    const char *clear = "{\"type\":\"clear_expression_pack\",\"command_id\":\"cmd-clear\"}";
+    TEST_ASSERT_TRUE(device_protocol_parse_command(clear, strlen(clear), &command));
+    TEST_ASSERT_EQUAL(DEVICE_COMMAND_CLEAR_EXPRESSION_PACK, command.type);
 }
 
 TEST_CASE("wake model status preserves verified model identity", "[device_protocol]")

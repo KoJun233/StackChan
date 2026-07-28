@@ -1,17 +1,20 @@
 # 前端工作流
 
 - 状态：STABLE
-- 最后更新：2026-07-27
-- 当前分支：`codex/int-006-proactive-interaction`
-- 基准提交：`bfb6a20`
-- 最后验证提交：`20eefb2`
+- 最后更新：2026-07-28
+- 当前分支：`codex/int-007-pet-expression-packs`
+- 基准提交：`9f8e611`
+- 最后验证提交：`f91dbdb`
 
 ## 当前目标
 
-在 Fantastic-admin 中提供周期提醒、稍后/跳过操作，以及按设备配置免打扰、离线补偿、音量、夜间模式和有限主动问候的页面。
+在 Fantastic-admin 中提供宠物表情包页面，让管理员完成八状态 PNG 本地预检、上传生成、预览、设备启用、恢复默认和安全删除。
 
 ## 已完成
 
+- INT-007 新增“陪伴交互 → 宠物表情包”路由和页面，使用单一 `ref model`、`FaForm/FaFormItem` 与八个 `FaFileUpload`，在浏览器预检 PNG MIME、384 KiB 上限和 `320×240` 尺寸。
+- 页面可生成资源包、显示八状态服务端预览、查看设备 `READY/INSTALLING/ACTIVE/FAILED/DISABLED`、启用、恢复默认和删除，并在卸载/重置时释放 blob URL。
+- 页面明确展示图片权利和隐私边界；生成动作不直接调用第三方 AI，允许按 runbook 使用任意受控工具生成输入图。
 - `7fb9575` 完成语音设置表单、提醒列表/详情 CRUD、时间转换、路由和 API 测试。
 - `731a68c` 上 Vitest 通过 37/37，`vue-tsc` 和 production build 通过。
 - `e9f072a` 将“设备配对”升级为“设备配网”：使用 `FaForm`/`FaFormItem` 收集 Wi-Fi 与服务地址，通过 Web Serial 直接写入物理 USB 串口，并保留手动一次性配对码入口。
@@ -46,18 +49,21 @@
 
 ## 正在进行
 
-公共表单控件修复已随 `f0d99fa` server 镜像发布；用户确认音量、设备、策略选择等六项页面/实体验收全部正常。
+INT-007 页面、路由、API 和生产构建已完成本地验证，并已随 `f91dbdb` server 镜像发布到 LAN 控制台。
 
 ## 下一步操作
 
-推送任务分支后由用户在网页人工合并。
+保持已发布页面和认证边界不变；自定义资源素材可用或后续发现问题时，再按 runbook 补做八图上传、预览、启用、恢复默认和删除实体测试。
 
 ## 阻塞项
 
-无阻塞；人工复测通过且用户已授权远程推送。不得输出浏览器会话或运行容器秘密。
+代码无阻塞；用户因当前没有多余表情素材而明确暂缓页面端到端实体测试，该边界不阻塞任务完成。不得输出浏览器会话、上传图片或运行容器秘密。
 
 ## 关键文件
 
+- `apps/stackchan-console/src/views/companion/expressions/index.vue`
+- `apps/stackchan-console/src/api/modules/expressionPacks.ts`
+- `apps/stackchan-console/src/router/modules/companion.ts`
 - `apps/stackchan-console/`
 - `apps/stackchan-console/src/views/devices/pairing/index.vue`
 - `apps/stackchan-console/src/utils/serialProvisioning.ts`
@@ -76,6 +82,11 @@
 
 ## 验证命令与最近结果
 
+- INT-007 Vitest 20 个文件 57/57、`vue-tsc -b` 和 production build 通过；新增测试覆盖八状态 multipart 生成、设备选择/启停/删除 API 和路由。Vitest close-timeout advisory 与 Node v24.14.0 engine 提示为既有非阻塞警告。
+- INT-007 `f91dbdb` 正式镜像已发布表达资源页面静态包；网页根地址为 200，容器内存在 `assets/expressions-CKQoQtb2.js`，未登录表达资源 API 为 401。尚未上传或记录用户图片。
+- `8394cb3` 固件首次刷写暴露默认清理导致的 WebSocket 重连，尚未开始上传图片或页面端到端验收；页面代码和已部署静态资源无需修改。
+- `b05d60f` 修复固件已稳定在线；管理页面、静态资源和认证边界保持不变，下一步可开始八图上传、预览、启用、恢复默认和删除人工验收。
+- 用户确认默认机械眼正常，并明确选择暂缓宠物表情包页面、八图生成、启用和恢复默认测试；尚未上传或记录任何自定义图片。
 - INT-006 验收修复使用受支持的 Node v24.15.0：`vue-tsc -b`、Vitest 19 个文件 55/55 和 production build 通过。Vitest close-timeout advisory 与 pnpm 启动进程的 Node v24.14.0 engine 提示均为既有/工具链非阻塞警告，实际测试与构建子进程使用 v24.15.0。
 - INT-006 正式镜像已发布交互设置和周期提醒资源；网页根地址为 200，未登录交互设置 API 为 401，既有认证边界保持不变。
 - INT-006 `f0d99fa` 正式镜像已发布公共表单事件修复；网页根地址为 200，PostgreSQL/Redis、LAN 端口和认证边界未改变。

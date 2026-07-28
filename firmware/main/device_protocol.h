@@ -13,6 +13,8 @@
 #define DEVICE_PROTOCOL_WAKE_MODEL_NAME_MAX_LEN 32
 #define DEVICE_PROTOCOL_SHA256_MAX_LEN 65
 #define DEVICE_PROTOCOL_WAKE_MODEL_MAX_SIZE (1024 * 1024)
+#define DEVICE_PROTOCOL_EXPRESSION_PACK_ID_MAX_LEN 37
+#define DEVICE_PROTOCOL_EXPRESSION_PACK_MAX_SIZE (1536 * 1024)
 #define DEVICE_PROTOCOL_TURN_ID_LEN 37
 #define DEVICE_PROTOCOL_SPEECH_START_THRESHOLD_MIN 100
 #define DEVICE_PROTOCOL_SPEECH_START_THRESHOLD_MAX 5000
@@ -32,6 +34,8 @@ typedef enum {
     DEVICE_COMMAND_CONFIGURE_VOICE_DETECTION,
     DEVICE_COMMAND_CONFIGURE_INTERACTION,
     DEVICE_COMMAND_INSTALL_WAKE_MODEL,
+    DEVICE_COMMAND_INSTALL_EXPRESSION_PACK,
+    DEVICE_COMMAND_CLEAR_EXPRESSION_PACK,
 } device_command_type_t;
 
 typedef enum {
@@ -78,6 +82,9 @@ typedef struct {
     char wake_model_name[DEVICE_PROTOCOL_WAKE_MODEL_NAME_MAX_LEN];
     char wake_model_sha256[DEVICE_PROTOCOL_SHA256_MAX_LEN];
     int wake_model_artifact_size;
+    char expression_pack_id[DEVICE_PROTOCOL_EXPRESSION_PACK_ID_MAX_LEN];
+    char expression_pack_sha256[DEVICE_PROTOCOL_SHA256_MAX_LEN];
+    int expression_pack_artifact_size;
 } device_command_t;
 
 esp_err_t device_protocol_encode_heartbeat(char *output,

@@ -8,6 +8,8 @@ set(stackchan_sources
     "device_provisioning.c"
     "device_protocol.c"
     "device_transport.c"
+    "expression_pack.c"
+    "face_animation.c"
     "interaction_state.c"
     "safety_state.c"
     "screensaver_motion.c"

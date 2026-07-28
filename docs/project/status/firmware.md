@@ -1,18 +1,21 @@
 # 固件工作流
 
 - 状态：STABLE
-- 最后更新：2026-07-27
-- 当前分支：`codex/int-006-proactive-interaction`
-- 基准提交：`bfb6a20`
-- 最后验证提交：`20eefb2`
-- 当前实机镜像：`2465427`
+- 最后更新：2026-07-28
+- 当前分支：`codex/int-007-pet-expression-packs`
+- 基准提交：`9f8e611`
+- 最后验证提交：`b05d60f`
+- 当前实机镜像：`b05d60f`
 
 ## 当前目标
 
-在保持 CoreS3、WakeNet、触摸取消、SCV1 与 `motion_disabled` 不变的前提下，接收服务端音量/夜间模式配置和幂等停止播报命令。
+在保持 CoreS3、WakeNet、触摸取消、SCV1 与 `motion_disabled` 不变的前提下，提供可交付的动态机械眼默认表情，并安全安装、切换、回退和擦除八状态宠物 PNG 资源包。
 
 ## 已完成
 
+- INT-007 默认表情改为独立实现的 M5Unified/M5GFX 双缓冲机械眼，覆盖八个稳定状态以及眨眼、视线、聆听脉冲、思考扫描、播报嘴型和有界反馈动画；未复制 RoboEyes GPL 源码。
+- 新增 `expression_a` / `expression_b` 两个 1.5 MiB 分区。同源认证下载写入非活动槽，整体摘要、清单、状态集合、逐图摘要和 PNG 头全部通过后才原子更新 NVS；损坏自动回退内置表情。
+- 切换新包后擦除旧槽，停用后擦除双槽；静态宠物包不改变既有低亮度、低频内置机械眼屏保，`motion_disabled` 保持不变。
 - `731a68c` 完成 M5Unified CoreS3 显示、触摸、麦克风和扬声器封装，且不初始化运动执行器。
 - 完成本地 `Hi, Stack Chan` WakeNet、最长 8 秒且静音提前结束的 16 kHz 单声道录音、`SCV1` 上传/解析和 WAV 播放。
 - `731a68c` 最初完成 300 秒低亮度动态屏保、触摸/唤醒/播报退出屏保和状态表情。
@@ -72,15 +75,15 @@
 
 ## 正在进行
 
-CoreS3 已运行 `2465427 / motion_disabled`。完整镜像刷写、校验、WebSocket 心跳及远程停止等实体交互均已验收通过。
+INT-007 `b05d60f` 已完整刷入 CoreS3，五区回读、启动硬件、安全状态、单次 WebSocket 建连和连续心跳均通过；用户确认默认机械眼没有问题，人工验收完成。
 
 ## 下一步操作
 
-保持当前实机镜像；推送任务分支后由用户在网页人工合并。
+保持 `b05d60f / motion_disabled` 稳定运行；自定义资源素材可用或后续发现问题时，再补做八状态安装、状态切换、重连保持、恢复默认和停用擦除测试。
 
 ## 阻塞项
 
-无阻塞；实体交互验收通过且用户已授权远程推送。不得记录 Wi-Fi 密码、Workspace ID、配对码、语音供应商密钥或设备 Token。
+固件无阻塞；默认机械眼已人工通过，自定义资源包实体测试由用户明确暂缓，不阻塞任务完成。不得记录 Wi-Fi 密码、Workspace ID、配对码、图片载荷、语音供应商密钥或设备 Token。
 
 ## 关键文件
 
@@ -96,11 +99,20 @@ CoreS3 已运行 `2465427 / motion_disabled`。完整镜像刷写、校验、Web
 - `firmware/main/interaction_state.c`
 - `firmware/main/touch_interaction.c`
 - `firmware/main/companion_hardware.cpp`
+- `firmware/main/face_animation.c`
+- `firmware/main/expression_pack.c`
 - `firmware/main/voice_control.c`
 - `firmware/partitions.csv`
 
 ## 验证命令与最近结果
 
+- INT-007 ESP-IDF 5.3.3 协议测试和带 `-fstack-usage` 的分析 profile 构建通过，镜像 `0x37880`、应用分区余量 93%；LAN HTTP Quad 完整镜像构建通过，镜像 `0x14ade0`、余量 57%，分区表包含两个 1.5 MiB 表达资源槽。Unity 用例已编入协议镜像但未上板执行。
+- INT-007 配网栈预算为 `16384 / 7648 / 8736` 字节，语音栈预算为 `32768 / 10384 / 22384` 字节；两项危险夹具拒绝回归和唤醒模型包安全回归均通过。未连接 COM3 或刷写。
+- INT-007 server/V18 发布后，旧 CoreS3 `2465427 / motion_disabled` 在约 5 秒心跳窗口内自动恢复连接，确认 server-first 兼容路径可用；固件、分区表和 NVS 均未改动。
+- 经用户明确授权，从干净 `8394cb3` 构建并完整写入 CoreS3 `COM3` 的 bootloader、分区表、应用、OTA data 和语音模型；五区独立 `verify_flash` 均为 digest matched，NVS 未擦除。启动确认版本、ESP-IDF 5.3.3、8 MB Quad PSRAM/80 MHz 及内存测试、CoreS3 外设、WakeNet 和 `motion_disabled`，未见 panic、栈溢出或看门狗。
+- `8394cb3` 启动后 WebSocket 每次连接约两秒即停止并退避至 60 秒，数据库只收到间歇心跳。根因是默认资源状态仍同步擦除两个 1.5 MiB 分区并在 WebSocket 事件回调内发送 ACK；本地修复将无活动包的清理改为幂等立即成功，并把真实清理排入传输任务。修复后协议/LAN HTTP Quad 镜像构建为 `0x37880` / `0x14ae40`、余量 93% / 57%，配网栈 `16384 / 7648 / 8736`、语音栈 `32768 / 10384 / 22384` 及唤醒模型包回归通过，尚未刷写。
+- 经用户明确授权，从干净 `b05d60f` 重新完整写入 CoreS3 `COM3` 的 bootloader、分区表、应用、OTA data 和语音模型；五区即时哈希与独立 `verify_flash` 均匹配，NVS 未擦除。启动确认版本、ESP-IDF 5.3.3、8 MB Quad PSRAM/80 MHz 及内存测试、CoreS3 外设、WakeNet 和 `motion_disabled`；42 秒窗口只建立一次 WebSocket，后续 32 秒没有断线、退避、panic、栈溢出或看门狗，数据库连续收到 `b05d60f / motion_disabled` 心跳。
+- 用户人工确认默认机械眼正常且没有问题；因当前没有多余自定义表情素材，用户选择暂缓八状态资源包生成、启用和恢复默认实体测试，后续仅在素材可用或发现缺陷时继续。
 - INT-006 使用 ESP-IDF 5.3.3 构建协议测试 profile 成功，镜像 `0x37880`、应用分区余量 93%；新增严格音量/夜间模式和停止播报 Unity 用例已编译进镜像，两项栈预算 fixture 回归通过。未上板执行、未连接或刷写设备。
 - INT-006 server/V17 发布后，旧 CoreS3 `717a8b1 / motion_disabled` 恢复新鲜心跳，确认 server-first 兼容路径可用；未连接 COM3、刷写或 OTA。
 - INT-006 LAN HTTP Quad 完整应用镜像为 `0x143c20`、应用分区余量 58%，嵌入版本 `c1d7383`；bootloader、分区表、应用、OTA data 和语音模型五区写入及独立校验通过，NVS 未擦除。启动、WebSocket、WakeNet 和 `c1d7383 / motion_disabled` 心跳通过。
@@ -168,6 +180,8 @@ CoreS3 已运行 `2465427 / motion_disabled`。完整镜像刷写、校验、Web
 
 ## 相关设计、计划和决策
 
+- [宠物表情资源包生成与验收](../../runbooks/expression-resource-packs.md)
+- [0022：表情采用内置机械眼与可校验的版本化资源包](../decisions/0022-versioned-expression-resource-packs.md)
 - [物理设备 smoke test](../../runbooks/physical-device-smoke-test.md)
 - [0004：LAN HTTP/WS 仅限显式编译的开发固件/profile](../decisions/0004-lan-http-development-only.md)
 - [0007：设备本地唤醒、服务端语音适配与持久提醒](../decisions/0007-device-voice-and-durable-reminders.md)

@@ -19,5 +19,15 @@ public interface DeviceCommandGateway {
             String commandId
     );
 
+    boolean installExpressionPack(
+            UUID deviceId,
+            UUID packId,
+            String sha256,
+            int artifactSize,
+            String commandId
+    );
+
+    boolean clearExpressionPack(UUID deviceId, String commandId);
+
     boolean isConnected(UUID deviceId);
 }

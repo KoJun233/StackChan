@@ -1,17 +1,20 @@
 # 服务端工作流
 
 - 状态：STABLE
-- 最后更新：2026-07-27
-- 当前分支：`codex/int-006-proactive-interaction`
-- 基准提交：`bfb6a20`
-- 最后验证提交：`20eefb2`
+- 最后更新：2026-07-28
+- 当前分支：`codex/int-007-pet-expression-packs`
+- 基准提交：`9f8e611`
+- 最后验证提交：`f91dbdb`
 
 ## 当前目标
 
-为每台机器人提供可追踪的周期提醒、免打扰、离线补偿和有限主动问候规则，并保持提醒 ACK、固定同源音频和 SCV1 边界不变。
+提供可校验的八状态宠物表情资源包 V1、设备级选择/状态、认证下载和可靠安装调度，同时保持既有语音、提醒、记忆与旧固件兼容。
 
 ## 已完成
 
+- INT-007 新增 V18 `expression_packs`、`expression_pack_states` 和 `device_expression_packs`，保存版本化制品、八状态预览和设备安装状态。
+- 服务端要求恰好八张可真实解码的 `320×240` PNG，限制单图 384 KiB/制品 1.5 MiB，生成逐图及整体 SHA-256，并只向已选择该包的认证设备提供同源下载。
+- 安装调度使用 `READY -> INSTALLING -> ACTIVE/FAILED`，负载或连接失败可重试；设备重连会幂等补发当前包或清理命令，启用中的资源包禁止删除。
 - `2384587` 完成加密语音提供方设置和 OpenAI-compatible ASR/TTS 客户端。
 - `ac7c171` 完成设备鉴权语音回合和 `SCV1` 响应封装。
 - `cbd5095` 完成持久提醒、每秒调度、离线保留、播放 ACK 和超时恢复。
@@ -51,18 +54,21 @@
 
 ## 正在进行
 
-INT-006 验收修复 `f0d99fa` 已只替换现有 LAN server，Flyway 保持 V17。单次提醒与主动问候均为 `DELIVERED`；用户确认六项页面/实体验收及修复后的语音识别与合成全部正常。
+INT-007 `f91dbdb` 已通过正式 LAN overlay 只替换现有 server，运行库已升至 V18；旧 CoreS3 `2465427 / motion_disabled` 自动恢复新鲜心跳。
 
 ## 下一步操作
 
-保持当前 server/V17 运行态；推送任务分支后由用户在网页人工合并。
+保持 `f91dbdb` / V18 运行稳定；自定义资源包端到端实体测试按用户选择暂缓，取得授权后推送任务分支。
 
 ## 阻塞项
 
-无阻塞；用户已授权远程推送。后续排查不得记录配置秘密、供应商响应正文、音频、转写、回复或完整异常载荷。
+服务端无阻塞；自定义资源包实体测试因当前没有额外素材而由用户明确暂缓，不阻塞任务完成。不得记录图片内容、认证载荷、配置秘密、音频、转写或回复。
 
 ## 关键文件
 
+- `server/src/main/java/com/kj/stackchan/expression/`
+- `server/src/main/java/com/kj/stackchan/api/ExpressionPackController.java`
+- `server/src/main/resources/db/migration/V18__expression_resource_packs.sql`
 - `server/`
 - `server/src/main/java/com/kj/stackchan/wakeword/`
 - `server/src/main/resources/db/migration/V11__wake_word_model_ota.sql`
@@ -86,6 +92,11 @@ INT-006 验收修复 `f0d99fa` 已只替换现有 LAN server，Flyway 保持 V17
 
 ## 验证命令与最近结果
 
+- INT-007 `mvn test` 全量 238/238 通过，包含真实 PNG 解码、八状态完整性、尺寸和截断拒绝测试；Spring/Testcontainers 空库上下文成功应用 V1..V18。测试 profile 已关闭表达资源调度器，避免容器结束后计划任务访问已关闭数据库。
+- INT-007 `f91dbdb` 已从正式 Dockerfile 构建为 `sha256:b7a8ea8c36b212d1e25e1f98a8a933c78fcbc530d247520e1ec0a34e270da321` 并只替换 LAN server，容器为 `b2d7e1f6e44e`；健康与网页为 200、Flyway `18|true`、成功迁移数 18、三张表达资源表存在、未登录表达资源 API 为 401、近期错误数为 0。CoreS3 `2465427 / motion_disabled` 恢复新鲜心跳。
+- `8394cb3` 固件首次连接时，服务端按默认资源状态下发 `clear_expression_pack`；服务端健康保持 200 且无错误，但固件同步擦除双槽后无法及时发送 ACK，设备进入重连。修复位于固件幂等清理和任务队列，server/V18 无需再次部署。
+- `b05d60f` 修复固件完整刷写后，服务端继续保持健康 200、错误数 0；设备一次建立 WebSocket 后跨两个 25 秒心跳周期持续刷新 `b05d60f / motion_disabled`，无需更换 server 或迁移数据库。
+- 用户确认默认机械眼人工验收通过，并选择暂缓无素材的八图生成、安装和恢复默认实体测试；服务端自动化覆盖与运行认证边界保持既有通过结果。
 - INT-006 验收修复后服务端全量 236/236 通过；Testcontainers PostgreSQL 从空库应用 V1..V17。新增测试覆盖停止成功/失败的回合终止边界、活动回合批量取消，以及提醒和主动问候只检查最近 15 分钟的忙碌状态。
 - INT-006 `9495111` 已只替换现有 LAN server，Flyway 为 `17|true`；健康与网页为 200，未登录交互设置 API 为 401，启动错误数为 0，旧 CoreS3 `717a8b1 / motion_disabled` 恢复新鲜心跳。
 - INT-006 验收修复 `f0d99fa` 已只替换 server，镜像为 `sha256:0f780fd7264c0137238e89783bc6e172cf61fe4b2ad23e5a3a329ea10b95d1cc`、容器为 `4d9db38c136c`；健康与网页为 200、Flyway `17|true`、迁移数 17、启动错误数 0。首次派发在重连窗口丢失 ACK，五分钟恢复任务重试后单次提醒 `DELIVERED`；主动问候下一周期一次 `DELIVERED`。

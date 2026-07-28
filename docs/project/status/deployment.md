@@ -1,18 +1,23 @@
 # 部署工作流
 
 - 状态：STABLE
-- 最后更新：2026-07-27
-- 当前分支：`codex/int-006-proactive-interaction`
-- 基准提交：`bfb6a20`
-- 最后验证提交：`20eefb2`
-- 当前运行态代码：服务端 `f0d99fa`、CoreS3 `2465427`，Flyway V17。
+- 最后更新：2026-07-28
+- 当前分支：`codex/int-007-pet-expression-packs`
+- 基准提交：`9f8e611`
+- 最后验证提交：`b05d60f`
+- 当前运行态代码：服务端 `f91dbdb`、CoreS3 `b05d60f`，Flyway V18。
 
 ## 当前目标
 
-保持 INT-006 `f0d99fa` / Flyway V17 LAN server 与 CoreS3 `2465427` 稳定运行；人工页面、实体交互和语音服务复测均已完成。
+保持 INT-007 `f91dbdb` / Flyway V18 LAN server 与 CoreS3 `b05d60f` 稳定运行；默认机械眼已验收，自定义资源包实体测试按用户选择暂缓。
 
 ## 已完成
 
+- INT-007 用户授权后，从干净 `f91dbdb` 使用正式 Dockerfile 构建镜像并通过 `compose.yaml + compose.lan.yaml` 只替换现有 server；旧镜像保留为 `stackchan-foundation-server:rollback-f91dbdb-pre-v18`。
+- 新镜像为 `sha256:b7a8ea8c36b212d1e25e1f98a8a933c78fcbc530d247520e1ec0a34e270da321`，server 容器由 `4d9db38c136c` 变为 `b2d7e1f6e44e`；Flyway 从 V17 升至 V18，健康与网页均为 200，未登录表达资源 API 为 401，三张表达资源表存在，近期错误数为 0。
+- PostgreSQL/Redis 容器保持 `6d8feaa18623` / `58e31a403637`，LAN 继续绑定 `0.0.0.0:8080`；CoreS3 `2465427 / motion_disabled` 自动恢复新鲜心跳。未连接 COM3、刷写、OTA、修改卷、端口、凭据或生产 HTTPS-only 边界。
+- 用户确认 `8394cb3`、CoreS3、`COM3` 和 LAN HTTP Quad profile 后，bootloader、分区表、应用、OTA data 和语音模型已完整写入并逐区回读匹配，NVS 未擦除；启动硬件与安全状态正常。随后确认固件在默认资源清理时进入 60 秒 WebSocket 重连，当前不视为稳定发布。
+- 用户确认 `b05d60f`、CoreS3、`COM3` 和 LAN HTTP Quad profile 后，修复镜像已重新完整写入并逐区回读匹配，NVS 未擦除；启动、单次 WebSocket 建连、跨两个心跳周期的持续刷新和 server 健康均通过，重连缺陷关闭。
 - 当前本地模式为 LAN HTTP development mode。
 - `verify-lan-compose.ps1` 已在 `731a68c` 通过。
 - Docker Desktop 数据目录已迁移到 `E:\DockerDesktop`；原 C 盘 WSL 路径是指向 `E:\DockerDesktop\wsl` 的 Junction，当前 VHDX 位于 E 盘且现有 PostgreSQL 卷、镜像和容器均保留。
@@ -47,7 +52,9 @@
 
 ## 正在进行
 
-当前 `stackchan-foundation` 使用正式 LAN overlay 运行 `f0d99fa` server，Flyway 为 V17，并发布 `0.0.0.0:8080`。CoreS3 运行 `2465427` LAN HTTP Quad 镜像并报告 `motion_disabled`；PostgreSQL、Redis、卷、端口、凭据和生产 HTTPS-only 边界未改变。
+INT-007 server、管理页面和 V18 已进入 LAN 运行环境；默认机械眼、表达资源 A/B 分区和设备安装协议已随 `b05d60f` 刷入 CoreS3，WebSocket 清理缺陷已通过持续心跳验证关闭。
+
+当前 `stackchan-foundation` 使用正式 LAN overlay 运行 `f91dbdb` server，Flyway 为 V18，并发布 `0.0.0.0:8080`。CoreS3 运行 `b05d60f` LAN HTTP Quad 镜像并持续报告 `motion_disabled`；PostgreSQL、Redis、卷、端口、凭据和生产 HTTPS-only 边界未改变。
 
 首轮验收修复的 server/前端已发布。首次提醒在重连窗口丢失 ACK，既有五分钟恢复任务重试后送达；主动问候下一调度周期一次送达。固件取消上报修复已随 `2465427` 完整刷写，等待实体复测。
 
@@ -57,11 +64,11 @@ INT-003 server 发布后正常回合为 `COMPLETED`；随后 `717a8b1` 固件完
 
 ## 下一步操作
 
-推送 `codex/int-006-proactive-interaction` 后由用户在网页人工合并。
+保持当前运行资源不变；取得用户对最终提交的明确授权后推送任务分支，不创建 PR，由用户网页人工合并。
 
 ## 阻塞项
 
-无阻塞；页面/实体复测通过且用户已授权远程推送。工作区仍没有 `.env`；重建必须显式同时传入 `compose.yaml` 和 `compose.lan.yaml`，不得输出秘密、组合 LAN 与 production profile 或降低生产 HTTPS-only 边界。
+部署与刷写无阻塞；默认机械眼已人工通过，自定义资源包实体测试因无额外素材由用户明确暂缓。工作区仍没有 `.env`；后续重建必须显式同时传入 `compose.yaml` 和 `compose.lan.yaml`，不得输出秘密、组合 LAN 与 production profile 或降低生产 HTTPS-only 边界。
 
 ## 关键文件
 
@@ -72,6 +79,10 @@ INT-003 server 发布后正常回合为 `COMPLETED`；随后 `717a8b1` 固件完
 
 ## 验证命令与最近结果
 
+- INT-007 `f91dbdb` 只替换现有 LAN server 后，健康与网页均为 200、Flyway `18|true`、迁移数 18、三张表达资源表存在、未登录表达资源 API 为 401、容器包含表达资源页面静态包、近期错误数为 0；PostgreSQL/Redis 未重建，LAN 保持 `0.0.0.0:8080`，CoreS3 `2465427 / motion_disabled` 自动重连。新增固件分区表仍未刷写，不能把 server 发布误记为实体验收。
+- `8394cb3` 完整镜像五区写入与独立回读均通过，NVS 未擦除；启动确认版本、PSRAM、外设、WakeNet 和 `motion_disabled`。WebSocket 约两秒后停止并最终退避 60 秒，数据库固件版本更新为 `8394cb3` 但心跳不连续；server 健康 200、同期错误数 0。当前本地修复已通过协议/LAN 构建和固件安全回归，尚未重刷。
+- `b05d60f` 修复镜像五区重新写入和独立回读均通过，NVS 未擦除；42 秒启动窗口只建立一次 WebSocket，后续 32 秒无连接或故障事件，数据库心跳从 `22:42:52` 刷新到 `22:43:42`。server 健康 200、错误数 0，PostgreSQL/Redis、Flyway V18、LAN 端口和生产 HTTPS-only 边界未改变。
+- 用户确认默认机械眼没有问题；宠物表情包页面、八图生成、启用和恢复默认因当前没有多余素材由用户选择暂缓，当前运行资源保持不变。
 - INT-006 验收修复服务端 236/236、前端 55/55、`vue-tsc -b`、production build、Flyway 空库 V1..V17，以及 ESP-IDF 协议/LAN HTTP Quad profile 构建通过。`f0d99fa` 部署后健康与网页为 200、Flyway `17|true`、迁移数 17、LAN `0.0.0.0:8080`、启动错误数 0；单次提醒恢复重试和主动问候均为 `DELIVERED`。
 - INT-006 经用户明确授权，将 `2465427` LAN HTTP Quad 完整镜像刷入 CoreS3 `COM3`；bootloader、分区表、应用、OTA data 和语音模型五区独立 `verify_flash` 全部匹配且 NVS 未擦除。启动确认版本、8 MB Quad PSRAM / 80 MHz、加密 NVS、CoreS3 外设、WakeNet、LAN HTTP、WebSocket 与 `motion_disabled`，数据库收到新鲜心跳；35 秒窗口未见 panic、栈溢出或看门狗。server 健康保持 200、Flyway `17|true`，近 15 分钟 server 错误数为 0。
 - 用户确认 INT-006 六项页面/实体验收和修复后的语音识别与合成全部正常；已暴露凭据由用户撤销并替换，运行边界和仓库均未保存秘密。

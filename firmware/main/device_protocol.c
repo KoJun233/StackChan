@@ -316,6 +316,27 @@ bool device_protocol_parse_command(const char *payload,
                    strlen(sha256->valuestring) + 1);
             command->wake_model_artifact_size = artifact_size->valueint;
         }
+    } else if (valid && strcmp(type->valuestring, "install_expression_pack") == 0 &&
+               cJSON_GetArraySize(root) == 5) {
+        cJSON *pack_id = cJSON_GetObjectItemCaseSensitive(root, "pack_id");
+        cJSON *sha256 = cJSON_GetObjectItemCaseSensitive(root, "sha256");
+        cJSON *artifact_size = cJSON_GetObjectItemCaseSensitive(root, "artifact_size");
+        valid = cJSON_IsString(pack_id) && pack_id->valuestring != NULL &&
+                is_valid_uuid(pack_id->valuestring) &&
+                cJSON_IsString(sha256) && sha256->valuestring != NULL &&
+                is_valid_sha256(sha256->valuestring) &&
+                is_integer_in_range(artifact_size, 1, DEVICE_PROTOCOL_EXPRESSION_PACK_MAX_SIZE);
+        if (valid) {
+            command->type = DEVICE_COMMAND_INSTALL_EXPRESSION_PACK;
+            memcpy(command->expression_pack_id, pack_id->valuestring,
+                   strlen(pack_id->valuestring) + 1);
+            memcpy(command->expression_pack_sha256, sha256->valuestring,
+                   strlen(sha256->valuestring) + 1);
+            command->expression_pack_artifact_size = artifact_size->valueint;
+        }
+    } else if (valid && strcmp(type->valuestring, "clear_expression_pack") == 0 &&
+               cJSON_GetArraySize(root) == 2) {
+        command->type = DEVICE_COMMAND_CLEAR_EXPRESSION_PACK;
     } else {
         valid = false;
     }

@@ -176,6 +176,36 @@ public class DeviceConnectionRegistry {
         return sendPayload(deviceId, payload);
     }
 
+    public boolean sendExpressionPackInstall(
+            UUID deviceId,
+            UUID packId,
+            String sha256,
+            int artifactSize,
+            String commandId
+    ) {
+        try {
+            return sendPayload(deviceId, objectMapper.writeValueAsString(new InstallExpressionPackCommand(
+                    "install_expression_pack",
+                    commandId,
+                    packId.toString(),
+                    sha256,
+                    artifactSize
+            )));
+        } catch (JsonProcessingException exception) {
+            return false;
+        }
+    }
+
+    public boolean sendExpressionPackClear(UUID deviceId, String commandId) {
+        try {
+            return sendPayload(deviceId, objectMapper.writeValueAsString(new ClearExpressionPackCommand(
+                    "clear_expression_pack", commandId
+            )));
+        } catch (JsonProcessingException exception) {
+            return false;
+        }
+    }
+
     public int broadcastVoiceConfiguration(
             VoiceWakeSensitivity wakeSensitivity,
             int speechStartThreshold,
@@ -529,6 +559,18 @@ public class DeviceConnectionRegistry {
             String sha256,
             int artifact_size
     ) {
+    }
+
+    private record InstallExpressionPackCommand(
+            String type,
+            String command_id,
+            String pack_id,
+            String sha256,
+            int artifact_size
+    ) {
+    }
+
+    private record ClearExpressionPackCommand(String type, String command_id) {
     }
 
     private record ConfigureVoiceDetectionCommand(

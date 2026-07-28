@@ -7,6 +7,7 @@
 #include "device_identity.h"
 #include "device_provisioning.h"
 #include "device_transport.h"
+#include "expression_pack.h"
 #include "safety_state.h"
 #include "voice_control.h"
 #include "wake_model_ota.h"
@@ -45,6 +46,13 @@ void app_main(void)
     if (nvs_err != ESP_OK) {
         ESP_LOGE(TAG, "Encrypted NVS initialization failed: %s", esp_err_to_name(nvs_err));
         return;
+    }
+    esp_err_t expression_err = expression_pack_init();
+    if (expression_err != ESP_OK) {
+        ESP_LOGW(TAG, "Expression package unavailable; built-in face remains active: %s",
+                 esp_err_to_name(expression_err));
+    } else if (hardware_err == ESP_OK) {
+        companion_hardware_refresh_face();
     }
     esp_err_t wake_model_err = wake_model_ota_init();
     if (wake_model_err != ESP_OK) {

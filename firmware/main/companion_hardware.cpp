@@ -2,9 +2,13 @@
 
 #include <M5Unified.h>
 
+#include <cstdlib>
+
 #include "audio_wav.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "expression_pack.h"
+#include "face_animation.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
@@ -19,11 +23,12 @@
 #define NIGHT_BRIGHTNESS 64
 #define SCREENSAVER_BRIGHTNESS 24
 #define SCREENSAVER_FRAME_MS 2500
+#define FACE_ANIMATION_FRAME_MS 100
 #define AUDIO_WAIT_MARGIN_MS 3000
-#define LEFT_PUPIL_X 106
-#define RIGHT_PUPIL_X 214
-#define PUPIL_Y 100
-#define PUPIL_RADIUS 13
+#define LEFT_PUPIL_X 100
+#define RIGHT_PUPIL_X 220
+#define PUPIL_Y 92
+#define PUPIL_RADIUS 12
 #define EYE_COLOR 0xFFFFFF
 #define PUPIL_COLOR 0x101018
 
@@ -39,11 +44,15 @@ static bool s_connected;
 static bool s_screensaver;
 static size_t s_screensaver_frame;
 static int64_t s_next_screensaver_frame_us;
+static int64_t s_face_started_us;
+static int64_t s_next_face_frame_us;
 static screensaver_pupil_offset_t s_pupil_offset;
 static bool s_initialized;
 static bool s_playback_stop_requested;
 static int s_volume_percent = 50;
 static bool s_night_mode;
+static M5Canvas s_face_canvas(&M5.Display);
+static bool s_face_canvas_ready;
 
 static uint8_t active_brightness(void)
 {
@@ -85,11 +94,59 @@ static bool take_mutex(SemaphoreHandle_t mutex, TickType_t timeout)
     return mutex != nullptr && xSemaphoreTake(mutex, timeout) == pdTRUE;
 }
 
-static void draw_face_locked(companion_face_state_t state)
+template <typename Display>
+static void draw_eye(Display &display,
+                     int center_x,
+                     const companion_face_frame_t &frame,
+                     companion_face_state_t state,
+                     uint32_t accent)
+{
+    constexpr int eye_width = 90;
+    constexpr int eye_height = 64;
+    int visible_height = (eye_height * frame.eye_open_percent) / 100;
+    if (visible_height < 8) {
+        visible_height = 8;
+    }
+    int top = PUPIL_Y - visible_height / 2;
+    int left = center_x - eye_width / 2;
+    int radius = visible_height / 2;
+    if (radius > 22) {
+        radius = 22;
+    }
+    display.fillRoundRect(left, top, eye_width, visible_height, radius, EYE_COLOR);
+
+    if (state == COMPANION_FACE_SUCCESS) {
+        display.fillTriangle(left, top + visible_height,
+                             left + eye_width / 2, top + visible_height / 2,
+                             left + eye_width, top + visible_height,
+                             0x000000);
+    } else if (state == COMPANION_FACE_RECOVERABLE_ERROR) {
+        if (center_x < 160) {
+            display.fillTriangle(left, top, left + eye_width, top, left + eye_width, top + 20, 0x000000);
+        } else {
+            display.fillTriangle(left, top, left + eye_width, top, left, top + 20, 0x000000);
+        }
+    } else if (state == COMPANION_FACE_NO_SPEECH || state == COMPANION_FACE_OFFLINE) {
+        display.fillRect(left, top, eye_width, visible_height / 3, 0x000000);
+    }
+
+    if (visible_height >= 24) {
+        int pupil_x = center_x + frame.gaze_x;
+        int pupil_y = PUPIL_Y + frame.gaze_y;
+        display.fillCircle(pupil_x, pupil_y, PUPIL_RADIUS, PUPIL_COLOR);
+        display.fillCircle(pupil_x - 4, pupil_y - 5, 3, 0xFFFFFF);
+        if (state == COMPANION_FACE_LISTENING) {
+            display.drawCircle(pupil_x, pupil_y, PUPIL_RADIUS + 5, accent);
+        }
+    }
+}
+
+template <typename Display>
+static void draw_builtin_face(Display &display,
+                              companion_face_state_t state,
+                              const companion_face_frame_t &frame)
 {
     uint32_t background = 0x000000;
-    uint32_t eye = EYE_COLOR;
-    uint32_t pupil = PUPIL_COLOR;
     uint32_t accent = 0xFF4FA3;
     uint32_t status = 0x42D392;
     switch (state) {
@@ -126,39 +183,98 @@ static void draw_face_locked(companion_face_state_t state)
             break;
     }
 
-    M5.Display.fillScreen(background);
-    M5.Display.fillCircle(106, 94, 35, eye);
-    M5.Display.fillCircle(214, 94, 35, eye);
-    M5.Display.fillCircle(LEFT_PUPIL_X, PUPIL_Y, PUPIL_RADIUS, pupil);
-    M5.Display.fillCircle(RIGHT_PUPIL_X, PUPIL_Y, PUPIL_RADIUS, pupil);
-    if (state == COMPANION_FACE_SUCCESS) {
-        M5.Display.drawLine(140, 158, 154, 170, accent);
-        M5.Display.drawLine(154, 170, 166, 170, accent);
-        M5.Display.drawLine(166, 170, 180, 158, accent);
-    } else if (state == COMPANION_FACE_RECOVERABLE_ERROR) {
-        M5.Display.drawLine(136, 174, 184, 154, accent);
-    } else if (state == COMPANION_FACE_NO_SPEECH) {
-        M5.Display.drawCircle(160, 164, 10, accent);
-        M5.Display.drawCircle(160, 164, 11, accent);
-    } else if (state == COMPANION_FACE_OFFLINE) {
-        M5.Display.drawLine(140, 164, 180, 164, accent);
-        M5.Display.drawCircle(160, 184, 5, accent);
-    } else if (state == COMPANION_FACE_LISTENING) {
-        M5.Display.drawCircle(160, 164, 18, accent);
-        M5.Display.drawCircle(160, 164, 19, accent);
+    display.fillScreen(background);
+    draw_eye(display, LEFT_PUPIL_X, frame, state, accent);
+    draw_eye(display, RIGHT_PUPIL_X, frame, state, accent);
+
+    if (state == COMPANION_FACE_LISTENING) {
+        int ring = 4 + (frame.activity_percent * 7) / 100;
+        display.drawCircle(28, 92, ring, accent);
+        display.drawCircle(292, 92, ring, accent);
     } else if (state == COMPANION_FACE_PROCESSING) {
-        M5.Display.fillCircle(146, 166, 4, accent);
-        M5.Display.fillCircle(160, 166, 4, accent);
-        M5.Display.fillCircle(174, 166, 4, accent);
-    } else {
-        M5.Display.fillRect(130, 156, 60, 10, accent);
-        if (state == COMPANION_FACE_SPEAKING) {
-            M5.Display.fillRect(140, 166, 40, 12, accent);
+        int active_dot = (frame.activity_percent * 3) / 101;
+        for (int index = 0; index < 3; index++) {
+            display.fillCircle(146 + index * 14, 176, index == active_dot ? 6 : 3, accent);
         }
     }
-    M5.Display.fillCircle(302, 18, 8, status);
+
+    if (state == COMPANION_FACE_SUCCESS) {
+        display.drawArc(160, 153, 33, 28, 22, 158, accent);
+        display.fillCircle(128, 151, 3, accent);
+        display.fillCircle(192, 151, 3, accent);
+    } else if (state == COMPANION_FACE_RECOVERABLE_ERROR) {
+        int pulse = 4 + (frame.activity_percent * 4) / 100;
+        display.fillTriangle(160, 145, 136, 187, 184, 187, accent);
+        display.fillRect(157, 158, 6, 16, background);
+        display.fillCircle(160, 180, pulse / 2, background);
+    } else if (state == COMPANION_FACE_NO_SPEECH) {
+        display.drawArc(160, 178, 18, 14, 200, 340, accent);
+        display.fillCircle(201, 138, 3, accent);
+        display.fillCircle(211, 146, 2, accent);
+    } else if (state == COMPANION_FACE_OFFLINE) {
+        display.fillRoundRect(137, 167, 46, 6, 3, accent);
+        display.drawCircle(160, 190, 5, accent);
+    } else if (state == COMPANION_FACE_LISTENING) {
+        int mouth_radius = 12 + (frame.activity_percent * 5) / 100;
+        display.drawCircle(160, 169, mouth_radius, accent);
+    } else {
+        if (state == COMPANION_FACE_SPEAKING) {
+            int mouth_height = 6 + (frame.mouth_open_percent * 28) / 100;
+            display.fillRoundRect(130, 160 - mouth_height / 2, 60, mouth_height, mouth_height / 2, accent);
+            if (mouth_height > 18) {
+                display.fillRoundRect(139, 164, 42, 7, 3, 0xFFB4D7);
+            }
+        } else if (state == COMPANION_FACE_IDLE) {
+            display.drawArc(160, 151, 27, 21, 25, 155, accent);
+        }
+    }
+    display.fillCircle(302, 18, 8, status);
+    display.drawCircle(302, 18, 11, status);
+}
+
+static void draw_builtin_face_locked(companion_face_state_t state)
+{
+    int64_t now = esp_timer_get_time();
+    uint32_t elapsed_ms = s_face_started_us > 0 && now > s_face_started_us
+                              ? (uint32_t)((now - s_face_started_us) / 1000LL)
+                              : 0;
+    companion_face_frame_t frame = companion_face_animation_frame(state, elapsed_ms);
+    if (s_face_canvas_ready) {
+        draw_builtin_face(s_face_canvas, state, frame);
+        s_face_canvas.pushSprite(0, 0);
+    } else {
+        draw_builtin_face(M5.Display, state, frame);
+    }
     s_pupil_offset = screensaver_motion_offset(0);
     s_screensaver_frame = 0;
+    s_next_face_frame_us = now + (int64_t)FACE_ANIMATION_FRAME_MS * 1000LL;
+}
+
+static void draw_face_locked(companion_face_state_t state)
+{
+    uint8_t *image = nullptr;
+    size_t image_size = 0;
+    bool rendered = false;
+    if (expression_pack_read_state(state, &image, &image_size) == ESP_OK) {
+        if (s_face_canvas_ready) {
+            s_face_canvas.fillScreen(0x000000);
+            rendered = s_face_canvas.drawPng(image, image_size, 0, 0);
+            if (rendered) {
+                s_face_canvas.pushSprite(0, 0);
+            }
+        } else {
+            rendered = M5.Display.drawPng(image, image_size, 0, 0);
+        }
+        free(image);
+    }
+    if (!rendered) {
+        draw_builtin_face_locked(state);
+        return;
+    }
+    int64_t now = esp_timer_get_time();
+    s_pupil_offset = screensaver_motion_offset(0);
+    s_screensaver_frame = 0;
+    s_next_face_frame_us = now + (int64_t)FACE_ANIMATION_FRAME_MS * 1000LL;
 }
 
 static companion_face_state_t visible_state_locked(void)
@@ -224,6 +340,19 @@ extern "C" void companion_hardware_set_state(companion_face_state_t state)
         return;
     }
     s_face_state = state;
+    s_face_started_us = esp_timer_get_time();
+    s_screensaver = false;
+    M5.Display.setBrightness(active_brightness());
+    draw_face_locked(visible_state_locked());
+    xSemaphoreGive(s_board_mutex);
+}
+
+extern "C" void companion_hardware_refresh_face(void)
+{
+    if (!s_initialized || !take_mutex(s_board_mutex, pdMS_TO_TICKS(500))) {
+        return;
+    }
+    s_face_started_us = esp_timer_get_time();
     s_screensaver = false;
     M5.Display.setBrightness(active_brightness());
     draw_face_locked(visible_state_locked());
@@ -242,6 +371,7 @@ extern "C" void companion_hardware_set_connected(bool connected)
     }
     if (s_connected != connected || s_screensaver) {
         s_connected = connected;
+        s_face_started_us = esp_timer_get_time();
         s_screensaver = false;
         M5.Display.setBrightness(active_brightness());
         draw_face_locked(visible_state_locked());
@@ -285,6 +415,8 @@ static void ui_task(void *argument)
         if (take_mutex(s_board_mutex, pdMS_TO_TICKS(100))) {
             companion_face_state_t visible = visible_state_locked();
             if (idle && companion_interaction_allows_screensaver(visible) && !s_screensaver) {
+                s_face_started_us = now;
+                draw_builtin_face_locked(visible);
                 s_screensaver = true;
                 s_screensaver_frame = 1;
                 s_next_screensaver_frame_us = now + (int64_t)SCREENSAVER_FRAME_MS * 1000LL;
@@ -299,6 +431,10 @@ static void ui_task(void *argument)
                 draw_screensaver_pupils_locked(screensaver_motion_offset(s_screensaver_frame));
                 s_screensaver_frame++;
                 s_next_screensaver_frame_us = now + (int64_t)SCREENSAVER_FRAME_MS * 1000LL;
+            } else if (!s_screensaver && !expression_pack_is_active() &&
+                       companion_face_animation_is_dynamic(visible) &&
+                       now >= s_next_face_frame_us) {
+                draw_face_locked(visible);
             }
             xSemaphoreGive(s_board_mutex);
         }
@@ -328,6 +464,11 @@ extern "C" esp_err_t companion_hardware_init(void)
     M5.begin(config);
     M5.Display.setRotation(1);
     M5.Display.setBrightness(active_brightness());
+    s_face_canvas.setColorDepth(16);
+    s_face_canvas_ready = s_face_canvas.createSprite(M5.Display.width(), M5.Display.height()) != nullptr;
+    if (!s_face_canvas_ready) {
+        ESP_LOGW(TAG, "Face canvas unavailable; using direct display fallback");
+    }
     M5.Speaker.setVolume((uint8_t)((s_volume_percent * 255 + 50) / 100));
     M5.Speaker.end();
     if (!M5.Mic.begin()) {
@@ -335,6 +476,7 @@ extern "C" esp_err_t companion_hardware_init(void)
     }
 
     s_last_activity_us = esp_timer_get_time();
+    s_face_started_us = s_last_activity_us;
     s_initialized = true;
     draw_face_locked(visible_state_locked());
     if (xTaskCreate(ui_task, "companion_ui", UI_TASK_STACK_SIZE, nullptr, UI_TASK_PRIORITY, nullptr) != pdPASS) {

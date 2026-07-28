@@ -55,6 +55,15 @@ const companionRoute: RouteRecordRaw = {
         noKeepAlive: 'companionMemoryList',
       },
     },
+    {
+      path: 'expressions',
+      name: 'companionExpressionPacks',
+      component: () => import('@/views/companion/expressions/index.vue'),
+      meta: {
+        title: '宠物表情包',
+        icon: 'i-ri:emotion-happy-line',
+      },
+    },
   ],
 }
 

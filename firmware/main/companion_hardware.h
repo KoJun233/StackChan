@@ -48,6 +48,9 @@ bool companion_hardware_wait_touch_event(companion_touch_event_t *event, uint32_
 /** Updates the face and records user-visible activity, exiting the screensaver. */
 void companion_hardware_set_state(companion_face_state_t state);
 
+/** Redraws the current state after a resource-pack activation or fallback. */
+void companion_hardware_refresh_face(void);
+
 /** Updates the persistent online/offline presentation without discarding the interaction phase. */
 void companion_hardware_set_connected(bool connected);
 
