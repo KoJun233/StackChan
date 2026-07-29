@@ -1,17 +1,26 @@
 # 部署工作流
 
-- 状态：ACTIVE
+- 状态：COMPLETE
 - 最后更新：2026-07-29
-- 当前分支：`codex/int-008-agent-tools-mcp`
-- 基准提交：`8122959`
-- 最后验证提交：`8122959`
+- 当前分支：`codex/data-001-personal-data-lifecycle`
+- 基准提交：`2a3b712`
+- 最后验证提交：`2a3b712`
 - 当前运行态代码：INT-008 任务版本，包含 DeepSeek V4 Agent Tool 修复、自定义 Skill ZIP 生命周期与可移植 MCP 管理；CoreS3 `b05d60f`，Flyway V21。
 
 ## 当前目标
 
-保持已发布且完成人工验收的 INT-008 / Flyway V21 LAN server 与 CoreS3 `b05d60f` 稳定运行。生产 MCP 必须使用 HTTPS，LAN HTTP 仅允许显式开发模式下的本机或私网地址；正式连接配置保存在 PostgreSQL，不依赖部署主机代理。
+在不改变当前 V21 LAN 运行态的前提下准备 DATA-001：新增独立备份卷和 PostgreSQL 工具容器、V22 server 及管理页面；只有用户明确授权后才实际发布。
 
 ## 已完成
+
+- 新增独立 `stackchan-postgres-backups` 卷、`postgres-backup` 服务和 server 只读挂载；备份镜像构建阶段执行 7 日/4 周轮转测试，覆盖跨月、跨年、同周重复与部分文件边界。
+- 当前运行 PostgreSQL 已通过明确命名的临时卷完成一次只读 `pg_dump`、SHA-256、一次性空 PostgreSQL 恢复和四类关键记录计数比对；结果成功，临时卷已删除，运行数据库、server、Redis、端口和固件均未改变。
+- 新增 `scripts/verify-latest-postgres-backup.ps1` 和备份 runbook；脚本不接收目标数据库地址，只允许恢复到备份容器创建的一次性实例。
+- 最终备份镜像 `stackchan-postgres-backup:data-001-candidate` 构建成功，摘要为 `sha256:26607653cb1a13d380fcba5969d6b044a5f227384ed96cd7942f2c3a18519fc2`。
+- 独立官方 Node 24.15.0 验证镜像完成前端 65/65 和 production build，摘要为 `sha256:a5c838d459f4be05ea2716149e1ad471d1e98d6fb35d43ab1b26fee15aef987c`；任务提交随后使用仓库正式多阶段 Dockerfile 完整构建 server 候选镜像 `sha256:2e1cb300420b97552d83931bf65b01326f2294d18adfe4ad350fced398ccc546`。构建没有替换或停止运行中的 server、PostgreSQL 或 Redis。
+- 用户明确授权后，旧 V21 镜像保留为 `stackchan-foundation-server:rollback-data001-pre-v22`；正式 server 镜像 `sha256:2e1cb300420b97552d83931bf65b01326f2294d18adfe4ad350fced398ccc546` 只替换 server，独立备份容器使用镜像 `sha256:0c22e9c5404b7ebba7859c9f1d04786c788a3457794c966aa7f2233c240ebd12`。PostgreSQL、Redis、LAN overlay、固件和现有凭据未改变。
+- 发布后健康与网页根地址为 200、Flyway `22|true` 且迁移数 22，新 API/页面未登录访问为 401，server 启动错误数为 0；CoreS3 恢复 `b05d60f / motion_disabled` 新鲜心跳，原有 1 条 MCP 连接和 1 个 Skill 包保留。
+- 首次恢复演练发现命令替换子 shell 未执行父级退出清理，导致临时 PostgreSQL 在备份周期内残留；备份 runner 改为在成功和每个失败分支显式停止并清理临时实例。修复镜像重新发布后，启动备份和独立 `verify-latest` 均成功，日/周备份为 2/1，临时恢复进程和一次性容器残留均为 0，server 对备份卷保持只读挂载。
 
 - Compose 已将 `/app/data/agent-skills` 独立持久卷和 4 MiB 文件/5 MiB multipart 请求边界应用到既有 LAN 环境，运行数据库为 V21。
 - V21 正式镜像 `sha256:b4380b4c4dac9e9ed6702c83b6cc27ee7e55c2939dcb8d3737f8161c8541d4a9` 已只替换现有 server；回退标签为 `stackchan-foundation-server:rollback-int008-pre-v21-managed-mcp`，PostgreSQL、Redis、LAN overlay 和固件保持不变。
@@ -64,7 +73,7 @@
 
 ## 正在进行
 
-INT-008 任务版本已运行 V21；原有 Tool 可调用，Skill ZIP 和 MCP 连接管理页面已发布并完成人工验收，真实 HTTPS MCP 已发现 8 个 Tool。CoreS3 `b05d60f` 保持不变，不连接设备调试端口。
+当前 LAN 已运行 DATA-001 / Flyway V22 和独立 `postgres-backup` 服务，用户页面人工验收通过。真实 HTTPS MCP 和授权状态保持不变，CoreS3 `b05d60f` 保持不变，未连接设备调试端口。
 
 当前 `stackchan-foundation` 使用正式 LAN overlay 运行 `f91dbdb` server，Flyway 为 V18，并发布 `0.0.0.0:8080`。CoreS3 运行 `b05d60f` LAN HTTP Quad 镜像并持续报告 `motion_disabled`；PostgreSQL、Redis、卷、端口、凭据和生产 HTTPS-only 边界未改变。
 
@@ -76,11 +85,11 @@ INT-003 server 发布后正常回合为 `COMPLETED`；随后 `717a8b1` 固件完
 
 ## 下一步操作
 
-保持当前 LAN 运行态，由用户创建 PR、人工审核并合并单提交任务分支；合并前不刷写固件或切换部署模式。
+推送任务分支，由用户创建 PR 并人工合入 `master`。如需回退，只回退 server 到 `stackchan-foundation-server:rollback-data001-pre-v22`，并在操作前单独评估 V22 数据库兼容性和备份服务状态。
 
 ## 阻塞项
 
-部署与刷写无阻塞；自定义资源包实体测试因无额外素材暂缓。工作区仍没有 `.env`；MCP Bearer Token 由管理 API 接收后使用现有密钥加密入库，页面/API/日志均不得回显。后续重建必须保留相同加密密钥并显式同时传入 `compose.yaml` 和 `compose.lan.yaml`，不得输出秘密、组合 LAN 与 production profile 或降低生产 HTTPS-only 边界。
+实现、镜像、运行发布和人工验收均无阻塞。工作区仍没有 `.env`；后续重建必须继续从现有容器或受控环境文件保留相同数据库密码、设备密钥、加密密钥和 MCP 密文解密能力，不得输出秘密、组合 LAN 与 production profile 或降低生产 HTTPS-only 边界。
 
 ## 关键文件
 
@@ -155,6 +164,8 @@ INT-003 server 发布后正常回合为 `COMPLETED`；随后 `717a8b1` 固件完
 - [0016：唤醒词仅从 ESP-SR 内置模型目录选择并安全 OTA](../decisions/0016-built-in-esp-sr-wake-model-catalog.md)
 - [0018：触摸控制采用本地事件队列与幂等语音回合取消](../decisions/0018-touch-control-and-voice-turn-cancellation.md)
 - [0023：文字与语音共享受控 ReactAgent、Skill、Tool 与 MCP](../decisions/0023-controlled-react-agent-skills-tools-mcp.md)
+- [0026：个人数据物理删除、范围导出与隔离备份恢复](../decisions/0026-personal-data-lifecycle-and-isolated-backups.md)
+- [个人数据备份与隔离恢复验证 runbook](../../runbooks/personal-data-backup.md)
 - [Agent、Skill、Tool 与 MCP 运维 runbook](../../runbooks/agent-tools-mcp.md)
 
 ## 安全与兼容性约束

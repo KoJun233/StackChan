@@ -18,6 +18,26 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
 
+  postgres-backup:
+    build:
+      context: .
+      dockerfile: ops/postgres-backup/Dockerfile
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: stackchan
+      PGUSER: stackchan
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      BACKUP_DIRECTORY: /backups
+      BACKUP_INTERVAL_SECONDS: ${POSTGRES_BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RUN_ON_START: ${POSTGRES_BACKUP_RUN_ON_START:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - stackchan-postgres-backups:/backups
+
   server:
     build:
       context: .
@@ -39,6 +59,7 @@ services:
       COMPANION_ADMIN_INITIAL_PASSWORD: ${COMPANION_ADMIN_INITIAL_PASSWORD:-}
       COMPANION_WAKE_MODEL_CATALOG_DIRECTORY: /app/wakenet-models
       COMPANION_AGENT_SKILLS_DIRECTORY: /app/data/agent-skills
+      COMPANION_PERSONAL_DATA_BACKUP_DIRECTORY: /app/data/postgres-backups
       SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE: 4MB
       SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE: 5MB
       SERVER_SERVLET_SESSION_COOKIE_HTTP_ONLY: "true"
@@ -50,8 +71,10 @@ services:
         condition: service_healthy
     volumes:
       - stackchan-agent-skills:/app/data/agent-skills
+      - stackchan-postgres-backups:/app/data/postgres-backups:ro
 
 volumes:
   stackchan-postgres-data:
     external: true
   stackchan-agent-skills:
+  stackchan-postgres-backups:

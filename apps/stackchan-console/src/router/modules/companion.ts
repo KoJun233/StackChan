@@ -64,6 +64,15 @@ const companionRoute: RouteRecordRaw = {
         icon: 'i-ri:emotion-happy-line',
       },
     },
+    {
+      path: 'personal-data',
+      name: 'companionPersonalData',
+      component: () => import('@/views/companion/personal-data/index.vue'),
+      meta: {
+        title: '对话与个人数据',
+        icon: 'i-ri:shield-user-line',
+      },
+    },
   ],
 }
 

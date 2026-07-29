@@ -2,14 +2,14 @@
 
 - 状态：STABLE
 - 最后更新：2026-07-29
-- 当前分支：`codex/int-008-agent-tools-mcp`
-- 基准提交：`8122959`
-- 最后验证提交：`8122959`
+- 当前分支：`codex/data-001-personal-data-lifecycle`
+- 基准提交：`2a3b712`
+- 最后验证提交：`2a3b712`
 - 当前实机镜像：`b05d60f`
 
 ## 当前目标
 
-保持 CoreS3 `b05d60f`、WakeNet、触摸取消、SCV1、动态机械眼与 `motion_disabled` 稳定；`INT-008` Agent 基础和后续 `DATA-001` 均不改固件，下一项设备能力属于 `INT-009` 连续对话。
+保持 CoreS3 `b05d60f`、WakeNet、触摸取消、SCV1、动态机械眼与 `motion_disabled` 稳定；`DATA-001` 不改固件，下一项设备能力属于 `INT-009` 连续对话。
 
 ## 已完成
 
@@ -75,11 +75,13 @@
 
 ## 正在进行
 
-PR #8 已将 INT-007 合入 `master`；`b05d60f` 已完整刷入 CoreS3 并通过五区回读、启动、安全状态、WebSocket 和默认机械眼人工验收。INT-008 只替换服务端 LLM 编排层，不修改 SCV1、设备阶段、音频正文或触摸取消语义，本分支不修改或刷写固件。
+INT-008 已合入 `master`；`b05d60f` 已完整刷入 CoreS3 并通过五区回读、启动、安全状态、WebSocket 和默认机械眼人工验收。DATA-001 只修改管理端、服务端和部署备份能力，不修改 SCV1、设备阶段、音频正文或触摸取消语义，本分支不修改或刷写固件。
+
+DATA-001 LAN server 发布到 Flyway V22 后，CoreS3 自动恢复 `b05d60f / motion_disabled` 新鲜心跳；未连接 COM3、未刷写、未 OTA，固件与设备凭据保持不变。
 
 ## 下一步操作
 
-保持 `b05d60f / motion_disabled` 稳定运行。等待 `DATA-001` 与 `INT-008` Agent 基础分别合入后，再从最新 `master` 为 `INT-009` 设计跟进聆听阶段、退出事件和旧固件兼容；未获得设备、端口、profile 与提交的逐次确认前不得刷写。
+保持 `b05d60f / motion_disabled` 稳定运行。DATA-001 合入后，再从最新 `master` 为 `INT-009` 设计跟进聆听阶段、退出事件和旧固件兼容；未获得设备、端口、profile 与提交的逐次确认前不得刷写。
 
 ## 阻塞项
 

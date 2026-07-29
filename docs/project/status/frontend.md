@@ -1,16 +1,20 @@
 # 前端工作流
 
-- 状态：ACTIVE
+- 状态：COMPLETE
 - 最后更新：2026-07-29
-- 当前分支：`codex/int-008-agent-tools-mcp`
-- 基准提交：`8122959`
-- 最后验证提交：`8122959`
+- 当前分支：`codex/data-001-personal-data-lifecycle`
+- 基准提交：`2a3b712`
+- 最后验证提交：`2a3b712`
 
 ## 当前目标
 
-完成“Agent 能力”管理入口：查看运行开关、两个内置 Tool、自定义 Skill ZIP、MCP 连接/发现健康与安全审计，并允许管理员显式启停能力；可展示管理员配置的非秘密端点，但不得回显认证信息、调用参数或结果。
+完成“对话与个人数据”管理入口：按设备、时间和关键词查看对话，精确删除单条消息或整段对话、导出当前范围，并只读展示备份与恢复验证状态。
 
 ## 已完成
+
+- 新增“AI 陪伴 → 对话与个人数据”路由和页面；列表、消息详情、筛选、范围导出、单条/整段删除均使用真实管理员 API，删除前明确提示立即失效和不可撤销。
+- 页面只读展示最近成功备份、最近恢复验证、7 日/4 周保留数量和存储占用；明确说明历史备份保留期及网页不提供恢复操作。
+- 新增 personal-data API、页面和路由测试；官方 Node 24.15.0 容器内前端全量 24 个文件 65/65、`vue-tsc -b` 和 production build 通过，验证镜像摘要为 `sha256:a5c838d459f4be05ea2716149e1ad471d1e98d6fb35d43ab1b26fee15aef987c`。
 
 - “可信 Skill”区域改为“自定义 Skill 包”：使用 `FaFileUpload` 选择完整 ZIP，导入后展示名称、说明、版本、文件数、大小和包内相对文件清单。
 - 页面明确导入后默认停用，且 Skill 不获得 Shell、Python、文件系统、新 Tool 或 MCP 权限；支持逐包启停和停用后删除确认。
@@ -54,15 +58,15 @@
 
 ## 正在进行
 
-用户已明确确认 `apps/stackchan-console`。`/settings/agent` 已发布并验收完整 Skill ZIP 生命周期和可移植 MCP 连接管理；真实 MCP 已发现 8 个 Tool，授权状态由管理员页面控制。
+DATA-001 页面已随 V22 server 发布到当前 LAN，自动验证和未登录 401 边界通过；用户已完成人工验收并确认功能正常。
 
 ## 下一步操作
 
-由用户创建 PR、人工审核并合并当前单提交任务分支；合并后从最新 `master` 开始下一任务。
+推送任务分支，由用户创建 PR 并人工合入 `master`；随后从最新 `master` 开始下一任务。
 
 ## 阻塞项
 
-前端无阻塞。管理员可查看自己配置的 MCP 端点，但不得输出浏览器会话、Tool 参数/结果、Schema 正文、认证信息或运行容器秘密。
+前端实现、发布和人工验收均无阻塞。导出文件包含用户主动选择范围内的对话正文，浏览器仅生成临时 Blob 下载，不写入 Pinia、localStorage 或诊断日志。
 
 ## 关键文件
 
@@ -142,6 +146,7 @@
 - [0018：触摸控制采用本地事件队列与幂等语音回合取消](../decisions/0018-touch-control-and-voice-turn-cancellation.md)
 - [0020：长期记忆必须经过确认并按会话范围组装](../decisions/0020-confirmed-scoped-long-term-memory.md)
 - [0023：文字与语音共享受控 ReactAgent、Skill、Tool 与 MCP](../decisions/0023-controlled-react-agent-skills-tools-mcp.md)
+- [0026：个人数据物理删除、范围导出与隔离备份恢复](../decisions/0026-personal-data-lifecycle-and-isolated-backups.md)
 
 ## 安全与兼容性约束
 

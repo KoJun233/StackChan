@@ -36,3 +36,4 @@
 | [0023](0023-controlled-react-agent-skills-tools-mcp.md) | ACCEPTED | 文字与语音共享受控 ReactAgent，只加载受信任 Skill 和明确授权且 schema 未变化的 MCP Tool。 |
 | [0024](0024-managed-skill-package-import.md) | ACCEPTED | 管理员安全导入完整 Skill ZIP，持久化后逐包启停且不继承执行权限。 |
 | [0025](0025-managed-mcp-connections.md) | ACCEPTED | 管理员跨部署管理 Streamable HTTP MCP 连接，认证秘密加密保存并逐连接、逐 Tool 授权。 |
+| [0026](0026-personal-data-lifecycle-and-isolated-backups.md) | ACCEPTED | 对话正文物理删除并按范围导出；逻辑备份独立轮转且只恢复到一次性临时 PostgreSQL。 |

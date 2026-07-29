@@ -1,16 +1,21 @@
 # 服务端工作流
 
-- 状态：ACTIVE
+- 状态：COMPLETE
 - 最后更新：2026-07-29
-- 当前分支：`codex/int-008-agent-tools-mcp`
-- 基准提交：`8122959`
-- 最后验证提交：`8122959`
+- 当前分支：`codex/data-001-personal-data-lifecycle`
+- 基准提交：`2a3b712`
+- 最后验证提交：`2a3b712`
 
 ## 当前目标
 
-完成 `INT-008` 受控 Agent、自定义 Skill 包生命周期和 DeepSeek V4 实机兼容：文本与语音统一经过 Spring AI Alibaba `ReactAgent`，在默认只读、可撤销和元数据审计边界内接入两个已验证 Tool、管理员导入的 Skill 与 Streamable HTTP MCP，并保留原 `ChatClient` 安全降级路径。
+完成 `DATA-001` 个人数据生命周期：管理员可分页搜索、查看、导出并物理删除对话正文；服务端只读展示独立 PostgreSQL 备份卷的安全状态，恢复演练只能使用一次性临时数据库。
 
 ## 已完成
+
+- 新增 ADR 0026 和 Flyway V22：单条消息物理删除时把回复引用置空而不连带删除，整段对话级联删除消息/设备映射；正在流式生成的消息或对话返回冲突，不与生成写入竞争。
+- 新增 `/api/v1/personal-data` 管理 API，支持设备、更新时间和关键词过滤、分页消息查看、单条/整段删除及相同范围 JSON 导出；导出不包含认证、模型配置、诊断日志或 Tool 参数/结果。
+- 新增 `BackupStatusService` 只读投影，只返回尝试/成功/失败时间、恢复验证结果、日/周数量、保留上限和存储占用，不返回路径、dump、manifest、摘要、凭据或密钥。
+- 后端全量 274/274 通过；Testcontainers 从空 PostgreSQL 成功应用 V1..V22。当前 V21 运行库的临时备份卷完成真实逻辑备份、SHA-256、空库恢复和人设/确认记忆/提醒/表达资源包计数比对，临时卷已删除。
 
 - 新增 ADR 0024 和 Flyway V20 `agent_skills`；Skill 以完整 ZIP 导入，元数据存 PostgreSQL，完整目录存 `COMPANION_AGENT_SKILLS_DIRECTORY`，Compose 使用独立持久卷。
 - 新增 ADR 0025 和 Flyway V21 `agent_mcp_connections`；管理员可管理 Streamable HTTP 连接，Bearer Token 由既有 AES-256-GCM 密钥加密保存，API、页面和日志不返回明文。
@@ -65,17 +70,15 @@
 
 ## 正在进行
 
-当前 INT-008 任务版本已发布到 LAN：包含 DeepSeek V4 Tool 修复、V20 自定义 Skill ZIP 生命周期和 V21 页面管理 MCP 连接。真实 HTTPS MCP 已完成初始化和 8 个 Tool 发现，授权状态由管理员页面控制；用户已完成人工验收并授权推送。固件未修改。
-
-首次人工验收发现“现在几点”和“有哪些 Tool”均由模型直接编造且审计无 Tool 调用。根因是 `SafeChatModel` 未透传底层 `OpenAiChatOptions`，使 ReactAgent 只获得通用 `DefaultChatOptions`。当前工作树已透传模型默认选项，为日期时间和能力清单问题在首轮指定对应 Tool、工具成功后恢复自动选择，并校验必需 Tool 确实成功；未授权、失败或模型跳过时返回安全说明而不再降级猜测。系统指令同时列出本回合实际授权 Tool/Skill，禁止虚构天气、提醒写入或设备控制。
+DATA-001 已替换当前 LAN server 并迁移到 Flyway V22。健康与网页根地址为 200，新管理 API 未登录访问为 401，Agent、Skill 和 MCP 数据保留；用户已完成人工验收并确认功能正常。本任务没有固件或语音协议修改。
 
 ## 下一步操作
 
-任务分支保持相对 `master` 恰好一个中文提交，由用户创建 PR、人工审核并合并；合并后从最新 `master` 开始 `DATA-001`。
+推送任务分支，由用户创建 PR 并人工合入 `master`；随后从最新 `master` 开始 INT-009。
 
 ## 阻塞项
 
-服务端无阻塞。MCP 页面连接可保存端点和 AES-256-GCM 密文认证，但不得返回或记录明文 Token；旧静态配置仅作无秘密兼容入口。不得记录 Tool 参数/结果、图片、认证载荷、配置秘密、音频、转写、回复正文或完整模型响应。
+服务端实现、运行发布和人工验收均无阻塞。备份卷含完整逻辑备份，必须按数据库同等级保护；不得记录或返回 Tool 参数/结果、认证载荷、配置秘密、音频、转写、回复正文或完整模型响应。
 
 ## 关键文件
 
@@ -175,6 +178,8 @@
 - [0018：触摸控制采用本地事件队列与幂等语音回合取消](../decisions/0018-touch-control-and-voice-turn-cancellation.md)
 - [0020：长期记忆必须经过确认并按会话范围组装](../decisions/0020-confirmed-scoped-long-term-memory.md)
 - [0023：文字与语音共享受控 ReactAgent、Skill、Tool 与 MCP](../decisions/0023-controlled-react-agent-skills-tools-mcp.md)
+- [0026：个人数据物理删除、范围导出与隔离备份恢复](../decisions/0026-personal-data-lifecycle-and-isolated-backups.md)
+- [个人数据备份与隔离恢复验证 runbook](../../runbooks/personal-data-backup.md)
 - [Agent、Skill、Tool 与 MCP 运维 runbook](../../runbooks/agent-tools-mcp.md)
 
 ## 安全与兼容性约束
