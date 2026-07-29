@@ -2,11 +2,11 @@
 
 - 状态：ACTIVE
 - 最后更新：2026-07-29
-- 当前分支：`codex/int-008-agent-tools-mcp`
-- 实现基准：`8122959`
-- 最后验证提交：`8122959`
-- 当前验证范围：工作树新增 V20 自定义 Skill ZIP 生命周期和 V21 页面管理的可移植 MCP 连接；后端 266/266、Testcontainers 空库 V1..V21、前端 62/62、`vue-tsc -b`、production build、文档与 LAN Compose 检查均通过。V21 已发布到既有 LAN server，真实 HTTPS MCP 完成初始化并发现 8 个 Tool。
-- 当前优先级：INT-008 已完成人工验收并获准交付任务分支；下一步由用户创建 PR 并人工合并，随后执行 `DATA-001`。
+- 当前分支：`codex/data-001-personal-data-lifecycle`
+- 实现基准：`2a3b712`
+- 最后验证提交：`2a3b712`
+- 当前验证范围：DATA-001 后端 274/274、Testcontainers 空库 V1..V22；官方 Node 24.15.0 容器内前端 24 个文件 65/65、`vue-tsc -b` 和 production build 通过；正式 server/备份镜像与轮转测试通过；LAN 发布后 Flyway V22、健康/网页 200、隔离恢复、临时资源清理、备份只读挂载和 CoreS3 心跳通过。
+- 当前优先级：DATA-001 已发布到现有 LAN并通过用户人工验收；推送任务分支后由用户创建 PR，合入最新 `master` 后开始 INT-009 连续对话。
 - 当前部署：LAN HTTP development mode。
 - 生产边界：HTTPS-only。
 
@@ -14,10 +14,10 @@
 
 | 工作流 | 状态 | 状态文件 | 当前分支 | 下一步 |
 | --- | --- | --- | --- | --- |
-| 服务端 | ACTIVE | [server.md](server.md) | `codex/int-008-agent-tools-mcp` | V21 可移植 MCP 连接已发布并验收；等待人工合并。 |
-| 前端 | ACTIVE | [frontend.md](frontend.md) | `codex/int-008-agent-tools-mcp` | Skill 与 MCP 连接管理已发布并验收；等待人工合并。 |
-| 固件 | STABLE | [firmware.md](firmware.md) | `codex/int-008-agent-tools-mcp` | `b05d60f` 保持不变；INT-008 不改协议、不刷写。 |
-| 部署 | ACTIVE | [deployment.md](deployment.md) | `codex/int-008-agent-tools-mcp` | LAN server 已升级至 V21；真实 HTTPS MCP 已接入并由管理员控制授权。 |
+| 服务端 | COMPLETE | [server.md](server.md) | `codex/data-001-personal-data-lifecycle` | V22 API、备份服务和人工验收完成，等待 PR。 |
+| 前端 | COMPLETE | [frontend.md](frontend.md) | `codex/data-001-personal-data-lifecycle` | “对话与个人数据”页面人工验收完成，等待 PR。 |
+| 固件 | STABLE | [firmware.md](firmware.md) | `codex/data-001-personal-data-lifecycle` | `b05d60f` 保持不变；DATA-001 不改协议、不刷写。 |
+| 部署 | COMPLETE | [deployment.md](deployment.md) | `codex/data-001-personal-data-lifecycle` | DATA-001 已发布并验收；当前运行 V22 和独立备份服务。 |
 
 唤醒词入口现改为“选择 ESP-SR 2.4.6 内置短语、服务端从锁定目录可信打包、设备双槽 OTA、重启健康确认、失败自动回退”。任意文本生成、第三方生成器和模型包上传均已从最终代码与页面移除；V12 只保留为已部署迁移历史，V13 清理临时字段。下拉包含“Hi, Stack Chan”“小峰小峰”等 13 项。CoreS3 曾使用 `0398073` 镜像完成 WakeNet9/WakeNet9l/WakeNet9s 三槽引导；管理员选择“小峰小峰”后，任务已完成 `READY -> INSTALLING -> INSTALLED`。INT-001 发布时设备升级为 `ecc40f3`，INT-002 升级为栈修复镜像 `216d383`，当前实机为 INT-007 `b05d60f`。
 

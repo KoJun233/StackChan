@@ -43,4 +43,8 @@ public interface ConversationMessageRepository extends JpaRepository<Conversatio
     );
 
     List<ConversationMessageEntity> findAllByConversationIdOrderByCreatedAtAscIdAsc(UUID conversationId);
+
+    Optional<ConversationMessageEntity> findByIdAndConversationId(UUID id, UUID conversationId);
+
+    long countByConversationIdAndGenerationStatus(UUID conversationId, GenerationStatus generationStatus);
 }

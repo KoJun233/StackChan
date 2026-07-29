@@ -36,6 +36,9 @@ public class AppProperties {
     @Valid
     private Agent agent = new Agent();
 
+    @Valid
+    private PersonalData personalData = new PersonalData();
+
     public String getDeviceTokenSecret() {
         return deviceTokenSecret;
     }
@@ -98,6 +101,28 @@ public class AppProperties {
 
     public void setAgent(Agent agent) {
         this.agent = agent;
+    }
+
+    public PersonalData getPersonalData() {
+        return personalData;
+    }
+
+    public void setPersonalData(PersonalData personalData) {
+        this.personalData = personalData;
+    }
+
+    public static class PersonalData {
+
+        @NotBlank
+        private String backupDirectory = "./data/postgres-backups";
+
+        public String getBackupDirectory() {
+            return backupDirectory;
+        }
+
+        public void setBackupDirectory(String backupDirectory) {
+            this.backupDirectory = backupDirectory;
+        }
     }
 
     public static class Agent {

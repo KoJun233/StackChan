@@ -3,6 +3,9 @@ package com.kj.stackchan.api;
 import java.nio.charset.StandardCharsets;
 
 import com.kj.stackchan.conversation.ConversationNotFoundException;
+import com.kj.stackchan.conversation.InvalidPersonalDataRequestException;
+import com.kj.stackchan.conversation.PersonalDataConflictException;
+import com.kj.stackchan.conversation.PersonalDataNotFoundException;
 import com.kj.stackchan.device.InvalidDeviceRefreshCredentialException;
 import com.kj.stackchan.device.InvalidDeviceTokenException;
 import com.kj.stackchan.expression.ExpressionPackNotFoundException;
@@ -45,6 +48,15 @@ public class DeviceApiExceptionHandler {
     );
     public static final ApiError CONVERSATION_NOT_FOUND = new ApiError(
             "conversation_not_found", "未找到指定对话。"
+    );
+    public static final ApiError PERSONAL_DATA_NOT_FOUND = new ApiError(
+            "personal_data_not_found", "未找到指定对话或消息。"
+    );
+    public static final ApiError INVALID_PERSONAL_DATA_REQUEST = new ApiError(
+            "invalid_personal_data_request", "个人数据筛选或导出范围无效。"
+    );
+    public static final ApiError PERSONAL_DATA_CONFLICT = new ApiError(
+            "personal_data_conflict", "对话仍在生成中，请先停止生成后再删除。"
     );
     public static final ApiError INVALID_LLM_SETTINGS = new ApiError(
             "invalid_llm_settings", "AI 配置不完整或无效。"
@@ -120,6 +132,21 @@ public class DeviceApiExceptionHandler {
     @ExceptionHandler(ConversationNotFoundException.class)
     ResponseEntity<ApiError> conversationNotFound(ConversationNotFoundException exception) {
         return response(HttpStatus.NOT_FOUND, CONVERSATION_NOT_FOUND);
+    }
+
+    @ExceptionHandler(PersonalDataNotFoundException.class)
+    ResponseEntity<ApiError> personalDataNotFound(PersonalDataNotFoundException exception) {
+        return response(HttpStatus.NOT_FOUND, PERSONAL_DATA_NOT_FOUND);
+    }
+
+    @ExceptionHandler(InvalidPersonalDataRequestException.class)
+    ResponseEntity<ApiError> invalidPersonalDataRequest(InvalidPersonalDataRequestException exception) {
+        return response(HttpStatus.BAD_REQUEST, INVALID_PERSONAL_DATA_REQUEST);
+    }
+
+    @ExceptionHandler(PersonalDataConflictException.class)
+    ResponseEntity<ApiError> personalDataConflict(PersonalDataConflictException exception) {
+        return response(HttpStatus.CONFLICT, PERSONAL_DATA_CONFLICT);
     }
 
     @ExceptionHandler(InvalidLlmSettingsException.class)
@@ -248,6 +275,9 @@ public class DeviceApiExceptionHandler {
         }
         if (requestUri.startsWith("/api/v1/memories")) {
             return response(HttpStatus.BAD_REQUEST, INVALID_MEMORY);
+        }
+        if (requestUri.startsWith("/api/v1/personal-data")) {
+            return response(HttpStatus.BAD_REQUEST, INVALID_PERSONAL_DATA_REQUEST);
         }
         if (requestUri.startsWith("/api/v1/auth/")) {
             return response(HttpStatus.UNAUTHORIZED, AUTHENTICATION_FAILED);

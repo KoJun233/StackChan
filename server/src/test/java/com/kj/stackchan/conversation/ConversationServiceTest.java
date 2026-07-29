@@ -29,6 +29,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @Testcontainers
@@ -52,6 +53,9 @@ class ConversationServiceTest {
 
     @Autowired
     private ConversationService conversationService;
+
+    @Autowired
+    private PersonalDataService personalDataService;
 
     @Autowired
     private ConversationMessageRepository conversationMessageRepository;
@@ -197,6 +201,82 @@ class ConversationServiceTest {
         assertThat(conversationService.getMessages(firstConversation.id()))
                 .extracting(ConversationMessageSnapshot::content)
                 .containsExactly("第一条消息", "第一条回复");
+    }
+
+    @Test
+    void searchesByDeviceTimeAndMessageContentThenPhysicallyDeletesOnlyTheSelectedMessage() {
+        UUID deviceId = UUID.fromString("96f6cd3c-5090-4718-a2ef-9ea7eb85ed17");
+        jdbcTemplate.update("""
+                insert into devices(id, hardware_id, firmware_version, display_name, safety_state, credential_version)
+                values (?, ?, ?, ?, ?, ?)
+                """, deviceId, "personal-data-device", "test", "书桌 StackChan", "motion_disabled", 0);
+        ConversationSnapshot conversation = conversationService.createConversation();
+        jdbcTemplate.update(
+                "insert into device_voice_conversations(device_id, conversation_id) values (?, ?)",
+                deviceId, conversation.id()
+        );
+        GenerationStart generation = conversationService.startGeneration(
+                conversation.id(), UUID.randomUUID(), "跨年旅行安排"
+        );
+        conversationService.completeGeneration(generation.assistantMessageId(), "已经记下了");
+
+        PersonalDataService.ConversationPage result = personalDataService.list(
+                new PersonalDataService.ConversationFilter(
+                        "旅行", deviceId, FIXED_NOW.minusSeconds(1), FIXED_NOW.plusSeconds(1), null
+                ),
+                0,
+                20
+        );
+
+        assertThat(result.total()).isEqualTo(1);
+        assertThat(result.list().getFirst())
+                .extracting(
+                        PersonalDataService.ConversationSummary::id,
+                        PersonalDataService.ConversationSummary::deviceId,
+                        PersonalDataService.ConversationSummary::deviceName,
+                        PersonalDataService.ConversationSummary::messageCount
+                )
+                .containsExactly(conversation.id(), deviceId, "书桌 StackChan", 2L);
+
+        personalDataService.deleteMessage(conversation.id(), generation.userMessageId());
+
+        assertThat(personalDataService.messages(conversation.id()))
+                .extracting(ConversationMessageSnapshot::content)
+                .containsExactly("已经记下了");
+        assertThat(conversationMessageRepository.findById(generation.assistantMessageId()).orElseThrow()
+                .getInReplyToMessageId()).isNull();
+        assertThat(personalDataService.list(
+                new PersonalDataService.ConversationFilter("旅行", null, null, null, null), 0, 20
+        ).total()).isZero();
+    }
+
+    @Test
+    void exportsOnlyTheRequestedScopeAndRejectsDeletionWhileStreaming() {
+        ConversationSnapshot first = conversationService.createConversation();
+        GenerationStart completed = conversationService.startGeneration(first.id(), UUID.randomUUID(), "仅导出这段");
+        conversationService.completeGeneration(completed.assistantMessageId(), "导出回复");
+
+        ConversationSnapshot second = conversationService.createConversation();
+        GenerationStart streaming = conversationService.startGeneration(second.id(), UUID.randomUUID(), "仍在生成");
+
+        PersonalDataService.ConversationExport export = personalDataService.export(
+                new PersonalDataService.ConversationFilter("", null, null, null, null), first.id()
+        );
+
+        assertThat(export.schemaVersion()).isEqualTo(1);
+        assertThat(export.conversations()).hasSize(1);
+        assertThat(export.conversations().getFirst().conversation().id()).isEqualTo(first.id());
+        assertThat(export.conversations().getFirst().messages())
+                .extracting(ConversationMessageSnapshot::content)
+                .containsExactly("仅导出这段", "导出回复");
+        assertThatThrownBy(() -> personalDataService.deleteMessage(second.id(), streaming.assistantMessageId()))
+                .isInstanceOf(PersonalDataConflictException.class);
+        assertThatThrownBy(() -> personalDataService.deleteConversation(second.id()))
+                .isInstanceOf(PersonalDataConflictException.class);
+
+        conversationService.interruptGeneration(streaming.assistantMessageId(), "");
+        personalDataService.deleteConversation(second.id());
+        assertThat(conversationRepository.existsById(second.id())).isFalse();
     }
 
     @Test

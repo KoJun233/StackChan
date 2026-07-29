@@ -9,6 +9,7 @@ StackChan 是一个可自托管的 AI 陪伴机器人项目，包含 M5Stack 设
 - 管理员导入且默认停用的完整 Skill ZIP、两个已验证只读 Tool、页面管理且加密认证的 Streamable HTTP MCP、调用预算和隐私安全审计。
 - 设备端本地唤醒、语音识别、完整回答合成与播放闭环。
 - 对话持久化、失败恢复、重试幂等和隐私安全的阶段诊断。
+- 管理员对话搜索、范围导出、单条/整段物理删除，以及 7 日/4 周 PostgreSQL 备份与隔离恢复验证。
 - 设备配对、JWT 凭据、WebSocket 心跳、触摸取消和停止动作命令。
 - 可控人设、确认后生效的长期记忆、单次/周期提醒和有限主动问候。
 - 八状态动态机械眼与可替换 PNG 宠物表情资源包。
@@ -41,6 +42,7 @@ pnpm --filter @stackchan/console run build
 ```
 
 详细环境、固件和部署命令见 [`docs/project/development.md`](docs/project/development.md)。
+个人数据备份布局、轮转和恢复演练见 [`docs/runbooks/personal-data-backup.md`](docs/runbooks/personal-data-backup.md)。
 
 ## 安全提示
 

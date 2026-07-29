@@ -22,6 +22,7 @@ describe('stackChan console routes', () => {
       expect.objectContaining({ name: 'companionChat', path: 'chat', meta: expect.objectContaining({ title: '陪伴聊天', keepAlive: true }) }),
       expect.objectContaining({ name: 'companionPersona', path: 'persona', meta: expect.objectContaining({ title: '人设设置' }) }),
       expect.objectContaining({ name: 'companionExpressionPacks', path: 'expressions', meta: expect.objectContaining({ title: '宠物表情包' }) }),
+      expect.objectContaining({ name: 'companionPersonalData', path: 'personal-data', meta: expect.objectContaining({ title: '对话与个人数据' }) }),
       expect.objectContaining({ name: 'companionMemoryList', path: 'memories', meta: expect.objectContaining({ title: '长期记忆', keepAlive: 'companionMemoryDetail' }) }),
       expect.objectContaining({
         name: 'companionMemoryDetail',
