@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.kj.stackchan.agent.AgentOrchestrator;
 import com.kj.stackchan.conversation.ConversationMessageSnapshot;
 import com.kj.stackchan.conversation.ConversationNotFoundException;
 import com.kj.stackchan.conversation.ConversationSnapshot;
@@ -11,7 +12,6 @@ import com.kj.stackchan.conversation.ConversationService;
 import com.kj.stackchan.conversation.GenerationStart;
 import com.kj.stackchan.conversation.GenerationStatus;
 import com.kj.stackchan.conversation.MessageRole;
-import com.kj.stackchan.llm.LlmRuntimeClientFactory;
 import com.kj.stackchan.llm.LlmProviderUnavailableException;
 import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.llm.ResolvedLlmSettings;
@@ -20,7 +20,6 @@ import com.kj.stackchan.security.AdminUserRepository;
 import com.kj.stackchan.security.SecurityConfiguration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -32,10 +31,8 @@ import reactor.core.publisher.Mono;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -64,7 +61,7 @@ class ConversationControllerTest {
     private ConversationService conversationService;
 
     @MockitoBean
-    private LlmRuntimeClientFactory llmRuntimeClientFactory;
+    private AgentOrchestrator agentOrchestrator;
 
     @MockitoBean
     private LlmSettingsService llmSettingsService;
@@ -101,16 +98,8 @@ class ConversationControllerTest {
                 "https://example.invalid/v1", "qwen3.7-plus", "你是温柔的陪伴", "sk-secret"
         ));
 
-        ChatClient chatClient = mock(ChatClient.class);
-        ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
-        ChatClient.StreamResponseSpec streamSpec = mock(ChatClient.StreamResponseSpec.class);
-        when(llmRuntimeClientFactory.createChatClient()).thenReturn(chatClient);
-        when(chatClient.prompt()).thenReturn(requestSpec);
-        when(requestSpec.system("你是温柔的陪伴")).thenReturn(requestSpec);
-        when(requestSpec.messages(anyList())).thenReturn(requestSpec);
-        when(requestSpec.user("今天有点累")).thenReturn(requestSpec);
-        when(requestSpec.stream()).thenReturn(streamSpec);
-        when(streamSpec.content()).thenReturn(Flux.just("你", "好"));
+        when(agentOrchestrator.stream(any(AgentOrchestrator.AgentRequest.class)))
+                .thenReturn(Flux.just("你", "好"));
 
         MvcResult result = mockMvc.perform(post("/api/v1/conversations/{conversationId}/messages:stream", conversationId)
                         .with(user("admin").roles("ADMIN"))
@@ -120,6 +109,7 @@ class ConversationControllerTest {
                 .andExpect(request().asyncStarted())
                 .andReturn();
 
+        result.getAsyncResult(5_000);
         mockMvc.perform(asyncDispatch(result))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(TEXT_EVENT_STREAM))
@@ -129,7 +119,7 @@ class ConversationControllerTest {
                 .andExpect(content().string(containsString("\"content\":\"你好\"")));
 
         verify(conversationService).completeGeneration(assistantMessageId, "你好");
-        verify(requestSpec).messages(anyList());
+        verify(agentOrchestrator).stream(any(AgentOrchestrator.AgentRequest.class));
     }
 
     @Test
@@ -144,16 +134,7 @@ class ConversationControllerTest {
                 "https://example.invalid/v1", "qwen3.7-plus", "你是温柔的陪伴", "sk-secret"
         ));
 
-        ChatClient chatClient = mock(ChatClient.class);
-        ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
-        ChatClient.StreamResponseSpec streamSpec = mock(ChatClient.StreamResponseSpec.class);
-        when(llmRuntimeClientFactory.createChatClient()).thenReturn(chatClient);
-        when(chatClient.prompt()).thenReturn(requestSpec);
-        when(requestSpec.system("你是温柔的陪伴")).thenReturn(requestSpec);
-        when(requestSpec.messages(anyList())).thenReturn(requestSpec);
-        when(requestSpec.user("在吗")).thenReturn(requestSpec);
-        when(requestSpec.stream()).thenReturn(streamSpec);
-        when(streamSpec.content()).thenReturn(Flux.concat(
+        when(agentOrchestrator.stream(any(AgentOrchestrator.AgentRequest.class))).thenReturn(Flux.concat(
                 Flux.just("我在"),
                 Mono.error(new LlmProviderUnavailableException())
         ));
@@ -166,6 +147,7 @@ class ConversationControllerTest {
                 .andExpect(request().asyncStarted())
                 .andReturn();
 
+        result.getAsyncResult(5_000);
         mockMvc.perform(asyncDispatch(result))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("event:error")))
@@ -176,7 +158,7 @@ class ConversationControllerTest {
     }
 
     @Test
-    void synchronousClientCreationFailureMarksTheAssistantFailedAndEmitsError() throws Exception {
+    void orchestratorFailureMarksTheAssistantFailedAndEmitsError() throws Exception {
         UUID conversationId = UUID.fromString("62b9630f-28d7-43f6-a0b5-cb908aa9b8d1");
         UUID clientMessageId = UUID.fromString("a206bc55-4dff-44ed-8657-ebf7b030956b");
         UUID userMessageId = UUID.fromString("640d8fe5-eaeb-4aaa-9fe3-bcabcc431dea");
@@ -184,8 +166,11 @@ class ConversationControllerTest {
         when(conversationService.loadHistory(conversationId)).thenReturn(List.of());
         when(conversationService.startGeneration(any(), any(), any()))
                 .thenReturn(new GenerationStart(conversationId, userMessageId, assistantMessageId, false, GenerationStatus.STREAMING, ""));
-        when(llmRuntimeClientFactory.createChatClient())
-                .thenThrow(new LlmProviderUnavailableException());
+        when(llmSettingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings(
+                "https://example.invalid/v1", "model", "system", "key"
+        ));
+        when(agentOrchestrator.stream(any(AgentOrchestrator.AgentRequest.class)))
+                .thenReturn(Flux.error(new LlmProviderUnavailableException()));
 
         MvcResult result = mockMvc.perform(post("/api/v1/conversations/{conversationId}/messages:stream", conversationId)
                         .with(user("admin").roles("ADMIN"))
@@ -195,6 +180,7 @@ class ConversationControllerTest {
                 .andExpect(request().asyncStarted())
                 .andReturn();
 
+        result.getAsyncResult(5_000);
         mockMvc.perform(asyncDispatch(result))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("event:error")));
@@ -212,16 +198,8 @@ class ConversationControllerTest {
         when(llmSettingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings(
                 "https://example.invalid/v1", "model", "system", "key"
         ));
-        ChatClient chatClient = mock(ChatClient.class);
-        ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
-        ChatClient.StreamResponseSpec streamSpec = mock(ChatClient.StreamResponseSpec.class);
-        when(llmRuntimeClientFactory.createChatClient()).thenReturn(chatClient);
-        when(chatClient.prompt()).thenReturn(requestSpec);
-        when(requestSpec.system("system")).thenReturn(requestSpec);
-        when(requestSpec.messages(anyList())).thenReturn(requestSpec);
-        when(requestSpec.user("test")).thenReturn(requestSpec);
-        when(requestSpec.stream()).thenReturn(streamSpec);
-        when(streamSpec.content()).thenReturn(Flux.just("part"));
+        when(agentOrchestrator.stream(any(AgentOrchestrator.AgentRequest.class)))
+                .thenReturn(Flux.just("part"));
         doThrow(new IllegalStateException("persistence unavailable"))
                 .when(conversationService).completeGeneration(assistantMessageId, "part");
 
@@ -307,7 +285,7 @@ class ConversationControllerTest {
                 .andExpect(content().string(containsString("event:completed")))
                 .andExpect(content().string(containsString("already done")));
 
-        verifyNoInteractions(llmRuntimeClientFactory, llmSettingsService);
+        verifyNoInteractions(agentOrchestrator, llmSettingsService);
     }
 
     @Test
@@ -336,7 +314,7 @@ class ConversationControllerTest {
                 .andExpect(content().string(containsString("event:error")))
                 .andExpect(content().string(containsString(LlmProviderUnavailableException.SAFE_MESSAGE)));
 
-        verifyNoInteractions(llmRuntimeClientFactory, llmSettingsService);
+        verifyNoInteractions(agentOrchestrator, llmSettingsService);
     }
 
     @Test
@@ -366,7 +344,7 @@ class ConversationControllerTest {
                 .andExpect(content().string(containsString("event:interrupted")))
                 .andExpect(content().string(containsString("partial reply")));
 
-        verifyNoInteractions(llmRuntimeClientFactory, llmSettingsService);
+        verifyNoInteractions(agentOrchestrator, llmSettingsService);
     }
 
     @Test
@@ -396,7 +374,7 @@ class ConversationControllerTest {
                 .andExpect(content().string(not(containsString("event:error"))))
                 .andExpect(content().string(not(containsString("event:interrupted"))));
 
-        verifyNoInteractions(llmRuntimeClientFactory, llmSettingsService);
+        verifyNoInteractions(agentOrchestrator, llmSettingsService);
     }
 
     @Test

@@ -1,17 +1,28 @@
 # 服务端工作流
 
-- 状态：STABLE
-- 最后更新：2026-07-28
-- 当前分支：`codex/int-007-pet-expression-packs`
-- 基准提交：`9f8e611`
-- 最后验证提交：`f91dbdb`
+- 状态：ACTIVE
+- 最后更新：2026-07-29
+- 当前分支：`codex/int-008-agent-tools-mcp`
+- 基准提交：`8122959`
+- 最后验证提交：`8122959`
 
 ## 当前目标
 
-提供可校验的八状态宠物表情资源包 V1、设备级选择/状态、认证下载和可靠安装调度，同时保持既有语音、提醒、记忆与旧固件兼容。
+完成 `INT-008` 受控 Agent、自定义 Skill 包生命周期和 DeepSeek V4 实机兼容：文本与语音统一经过 Spring AI Alibaba `ReactAgent`，在默认只读、可撤销和元数据审计边界内接入两个已验证 Tool、管理员导入的 Skill 与 Streamable HTTP MCP，并保留原 `ChatClient` 安全降级路径。
 
 ## 已完成
 
+- 新增 ADR 0024 和 Flyway V20 `agent_skills`；Skill 以完整 ZIP 导入，元数据存 PostgreSQL，完整目录存 `COMPANION_AGENT_SKILLS_DIRECTORY`，Compose 使用独立持久卷。
+- 新增 ADR 0025 和 Flyway V21 `agent_mcp_connections`；管理员可管理 Streamable HTTP 连接，Bearer Token 由既有 AES-256-GCM 密钥加密保存，API、页面和日志不返回明文。
+- `ManagedMcpClientRegistry` 为每条连接创建独立客户端，修改或删除后关闭旧客户端并清缓存；连接无需重启即可重新发现，同时保留 HTTPS、LAN 私网 HTTP、连接授权和逐 Tool 摘要授权边界。
+- ZIP 导入拒绝路径穿越、绝对路径、重复路径、链接、加密/特殊条目、非法单/多 Skill 结构和超限包；`references/`、`examples/` 等文件原样保留并在管理 API 列出，任何失败清理 staging。
+- Skill 导入后默认停用，启停在下一回合通过 `FilteringSkillRegistry` 生效；已启用包必须先停用再删除，删除使用隔离移动和数据库事务补偿。
+- 移除 `reminder-query`、`memory-query`、`device-status` 演示 Skill 及三个未实际开放的查询 Tool；当前保留 `current_date_time` 和 `list_agent_capabilities`。
+- V21 后端 Maven 全量 266/266 通过，Testcontainers 从空 PostgreSQL 成功应用 V1..V21；正式 LAN 镜像已运行 V21，Skill 包与 MCP 端到端人工验收已完成。
+- ReactAgent 直接 Tool 通过 `.tools(List<ToolCallback>)` 注册，测试同时断言最终模型请求的 `OpenAiChatOptions.toolCallbacks` 包含 `current_date_time`；已启用的文件系统 Skill 通过 `SkillsAgentHook` 注册 `read_skill`。
+- 安全模型包装层保留提供商原生 `OpenAiChatOptions`；DeepSeek 官方 V4 Agent Tool 请求单独关闭思考模式，避免当前 OpenAI 适配器缺失 `reasoning_content` 回放或与强制 `tool_choice` 冲突，普通 ChatClient 对话不受影响。
+- 此前未提交 Tool 修复的 Maven 全量测试通过 256/256；运行镜像已部署，用户已确认 `current_date_time` 与 `list_agent_capabilities` 可调用。
+- 实机复测确认 Tool 审计仍为 0 后，修正 ReactAgent 创建链路：`SafeChatModel` 允许框架反射读取默认选项，Builder 显式传入 Agent 专用 `OpenAiChatOptions`，移除自定义强制 `tool_choice`，并使用 `agent.call(messages)` 执行完整 Tool 循环；同时只记录提供商失败 HTTP 状态码，不记录请求、回复或凭据。
 - INT-007 新增 V18 `expression_packs`、`expression_pack_states` 和 `device_expression_packs`，保存版本化制品、八状态预览和设备安装状态。
 - 服务端要求恰好八张可真实解码的 `320×240` PNG，限制单图 384 KiB/制品 1.5 MiB，生成逐图及整体 SHA-256，并只向已选择该包的认证设备提供同源下载。
 - 安装调度使用 `READY -> INSTALLING -> ACTIVE/FAILED`，负载或连接失败可重试；设备重连会幂等补发当前包或清理命令，启用中的资源包禁止删除。
@@ -54,15 +65,17 @@
 
 ## 正在进行
 
-INT-007 `f91dbdb` 已通过正式 LAN overlay 只替换现有 server，运行库已升至 V18；旧 CoreS3 `2465427 / motion_disabled` 自动恢复新鲜心跳。
+当前 INT-008 任务版本已发布到 LAN：包含 DeepSeek V4 Tool 修复、V20 自定义 Skill ZIP 生命周期和 V21 页面管理 MCP 连接。真实 HTTPS MCP 已完成初始化和 8 个 Tool 发现，授权状态由管理员页面控制；用户已完成人工验收并授权推送。固件未修改。
+
+首次人工验收发现“现在几点”和“有哪些 Tool”均由模型直接编造且审计无 Tool 调用。根因是 `SafeChatModel` 未透传底层 `OpenAiChatOptions`，使 ReactAgent 只获得通用 `DefaultChatOptions`。当前工作树已透传模型默认选项，为日期时间和能力清单问题在首轮指定对应 Tool、工具成功后恢复自动选择，并校验必需 Tool 确实成功；未授权、失败或模型跳过时返回安全说明而不再降级猜测。系统指令同时列出本回合实际授权 Tool/Skill，禁止虚构天气、提醒写入或设备控制。
 
 ## 下一步操作
 
-保持 `f91dbdb` / V18 运行稳定；自定义资源包端到端实体测试按用户选择暂缓，取得授权后推送任务分支。
+任务分支保持相对 `master` 恰好一个中文提交，由用户创建 PR、人工审核并合并；合并后从最新 `master` 开始 `DATA-001`。
 
 ## 阻塞项
 
-服务端无阻塞；自定义资源包实体测试因当前没有额外素材而由用户明确暂缓，不阻塞任务完成。不得记录图片内容、认证载荷、配置秘密、音频、转写或回复。
+服务端无阻塞。MCP 页面连接可保存端点和 AES-256-GCM 密文认证，但不得返回或记录明文 Token；旧静态配置仅作无秘密兼容入口。不得记录 Tool 参数/结果、图片、认证载荷、配置秘密、音频、转写、回复正文或完整模型响应。
 
 ## 关键文件
 
@@ -92,6 +105,8 @@ INT-007 `f91dbdb` 已通过正式 LAN overlay 只替换现有 server，运行库
 
 ## 验证命令与最近结果
 
+- 自定义 Skill 工作树的主源码和测试源码已进入 `javac` 编译阶段且无 Java 诊断错误；当前 Codex 沙箱在编译器关闭依赖 JAR 时触发 `AccessDeniedException`，因此本轮 Maven 测试与 V20 Testcontainers 结果仍待正常构建环境复核。此前 DeepSeek V4 Tool 修复 Maven 全量 256/256 与 V1..V19 已通过并发布。
+- BASE-008 文档刷新未修改服务端代码；在合并基线 `8122959` 上运行 Maven 全量测试 244/244 通过，Testcontainers 套件从空 PostgreSQL 应用 V1..V18。未连接运行数据库、未执行迁移或替换容器。
 - INT-007 `mvn test` 全量 238/238 通过，包含真实 PNG 解码、八状态完整性、尺寸和截断拒绝测试；Spring/Testcontainers 空库上下文成功应用 V1..V18。测试 profile 已关闭表达资源调度器，避免容器结束后计划任务访问已关闭数据库。
 - INT-007 `f91dbdb` 已从正式 Dockerfile 构建为 `sha256:b7a8ea8c36b212d1e25e1f98a8a933c78fcbc530d247520e1ec0a34e270da321` 并只替换 LAN server，容器为 `b2d7e1f6e44e`；健康与网页为 200、Flyway `18|true`、成功迁移数 18、三张表达资源表存在、未登录表达资源 API 为 401、近期错误数为 0。CoreS3 `2465427 / motion_disabled` 恢复新鲜心跳。
 - `8394cb3` 固件首次连接时，服务端按默认资源状态下发 `clear_expression_pack`；服务端健康保持 200 且无错误，但固件同步擦除双槽后无法及时发送 ACK，设备进入重连。修复位于固件幂等清理和任务队列，server/V18 无需再次部署。
@@ -146,6 +161,7 @@ INT-007 `f91dbdb` 已通过正式 LAN overlay 只替换现有 server，运行库
 
 ## 相关设计、计划和决策
 
+- [下一阶段可执行任务清单](../todo.md)
 - [0002：后端保持 Java 21 / Spring Boot 与 Spring AI Alibaba-compatible 集成](../decisions/0002-java-spring-ai-alibaba-backend.md)
 - [0003：LLM 提供方配置由管理员管理并保护秘密](../decisions/0003-configurable-llm-provider.md)
 - [0006：聊天重试按 clientMessageId 对账并保持幂等](../decisions/0006-chat-retry-idempotency.md)
@@ -158,6 +174,8 @@ INT-007 `f91dbdb` 已通过正式 LAN overlay 只替换现有 server，运行库
 - [0016：唤醒词仅从 ESP-SR 内置模型目录选择并安全 OTA](../decisions/0016-built-in-esp-sr-wake-model-catalog.md)
 - [0018：触摸控制采用本地事件队列与幂等语音回合取消](../decisions/0018-touch-control-and-voice-turn-cancellation.md)
 - [0020：长期记忆必须经过确认并按会话范围组装](../decisions/0020-confirmed-scoped-long-term-memory.md)
+- [0023：文字与语音共享受控 ReactAgent、Skill、Tool 与 MCP](../decisions/0023-controlled-react-agent-skills-tools-mcp.md)
+- [Agent、Skill、Tool 与 MCP 运维 runbook](../../runbooks/agent-tools-mcp.md)
 
 ## 安全与兼容性约束
 

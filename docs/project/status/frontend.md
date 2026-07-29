@@ -1,17 +1,22 @@
 # 前端工作流
 
-- 状态：STABLE
-- 最后更新：2026-07-28
-- 当前分支：`codex/int-007-pet-expression-packs`
-- 基准提交：`9f8e611`
-- 最后验证提交：`f91dbdb`
+- 状态：ACTIVE
+- 最后更新：2026-07-29
+- 当前分支：`codex/int-008-agent-tools-mcp`
+- 基准提交：`8122959`
+- 最后验证提交：`8122959`
 
 ## 当前目标
 
-在 Fantastic-admin 中提供宠物表情包页面，让管理员完成八状态 PNG 本地预检、上传生成、预览、设备启用、恢复默认和安全删除。
+完成“Agent 能力”管理入口：查看运行开关、两个内置 Tool、自定义 Skill ZIP、MCP 连接/发现健康与安全审计，并允许管理员显式启停能力；可展示管理员配置的非秘密端点，但不得回显认证信息、调用参数或结果。
 
 ## 已完成
 
+- “可信 Skill”区域改为“自定义 Skill 包”：使用 `FaFileUpload` 选择完整 ZIP，导入后展示名称、说明、版本、文件数、大小和包内相对文件清单。
+- 页面明确导入后默认停用，且 Skill 不获得 Shell、Python、文件系统、新 Tool 或 MCP 权限；支持逐包启停和停用后删除确认。
+- 内置 Tool 表只保留 `current_date_time` 与 `list_agent_capabilities`，不再展示三个没有实际用途的查询 Tool。
+- 新增 MCP 连接表单和列表，支持连接名称、Base URL、endpoint、NONE/BEARER 认证、新增、编辑和删除；Token 只写不回显，新连接默认停用。
+- 当前页面通过 Vitest 22 个文件 62/62、`vue-tsc -b` 和 production build，并已随 V21 LAN server 发布；Skill 和 MCP 生命周期人工验收已完成。
 - INT-007 新增“陪伴交互 → 宠物表情包”路由和页面，使用单一 `ref model`、`FaForm/FaFormItem` 与八个 `FaFileUpload`，在浏览器预检 PNG MIME、384 KiB 上限和 `320×240` 尺寸。
 - 页面可生成资源包、显示八状态服务端预览、查看设备 `READY/INSTALLING/ACTIVE/FAILED/DISABLED`、启用、恢复默认和删除，并在卸载/重置时释放 blob URL。
 - 页面明确展示图片权利和隐私边界；生成动作不直接调用第三方 AI，允许按 runbook 使用任意受控工具生成输入图。
@@ -49,18 +54,21 @@
 
 ## 正在进行
 
-INT-007 页面、路由、API 和生产构建已完成本地验证，并已随 `f91dbdb` server 镜像发布到 LAN 控制台。
+用户已明确确认 `apps/stackchan-console`。`/settings/agent` 已发布并验收完整 Skill ZIP 生命周期和可移植 MCP 连接管理；真实 MCP 已发现 8 个 Tool，授权状态由管理员页面控制。
 
 ## 下一步操作
 
-保持已发布页面和认证边界不变；自定义资源素材可用或后续发现问题时，再按 runbook 补做八图上传、预览、启用、恢复默认和删除实体测试。
+由用户创建 PR、人工审核并合并当前单提交任务分支；合并后从最新 `master` 开始下一任务。
 
 ## 阻塞项
 
-代码无阻塞；用户因当前没有多余表情素材而明确暂缓页面端到端实体测试，该边界不阻塞任务完成。不得输出浏览器会话、上传图片或运行容器秘密。
+前端无阻塞。管理员可查看自己配置的 MCP 端点，但不得输出浏览器会话、Tool 参数/结果、Schema 正文、认证信息或运行容器秘密。
 
 ## 关键文件
 
+- `apps/stackchan-console/src/views/settings/agent/index.vue`
+- `apps/stackchan-console/src/api/modules/agent.ts`
+- `apps/stackchan-console/src/router/modules/settings.ts`
 - `apps/stackchan-console/src/views/companion/expressions/index.vue`
 - `apps/stackchan-console/src/api/modules/expressionPacks.ts`
 - `apps/stackchan-console/src/router/modules/companion.ts`
@@ -82,6 +90,8 @@ INT-007 页面、路由、API 和生产构建已完成本地验证，并已随 `
 
 ## 验证命令与最近结果
 
+- INT-008 在临时受支持的 Node v24.15.0 下完成控制台 Vitest 22 个文件 59/59、`vue-tsc -b` 和 production build；新增回归覆盖 API 请求、路由、隐私边界和紧急总停。Vitest 仍报告既有 close-timeout advisory，但退出码为 0。
+- BASE-008 文档刷新未修改前端代码；受支持的 Node v24.15.0 下 Vitest 20 个文件 57/57、`vue-tsc -b` 和 production build 通过。既有 Vitest close-timeout advisory 不影响退出码。
 - INT-007 Vitest 20 个文件 57/57、`vue-tsc -b` 和 production build 通过；新增测试覆盖八状态 multipart 生成、设备选择/启停/删除 API 和路由。Vitest close-timeout advisory 与 Node v24.14.0 engine 提示为既有非阻塞警告。
 - INT-007 `f91dbdb` 正式镜像已发布表达资源页面静态包；网页根地址为 200，容器内存在 `assets/expressions-CKQoQtb2.js`，未登录表达资源 API 为 401。尚未上传或记录用户图片。
 - `8394cb3` 固件首次刷写暴露默认清理导致的 WebSocket 重连，尚未开始上传图片或页面端到端验收；页面代码和已部署静态资源无需修改。
@@ -117,6 +127,7 @@ INT-007 页面、路由、API 和生产构建已完成本地验证，并已随 `
 
 ## 相关设计、计划和决策
 
+- [下一阶段可执行任务清单](../todo.md)
 - [0001：浏览器管理端采用 Vue 3 与 Fantastic-admin](../decisions/0001-fantastic-admin-frontend.md)
 - [0003：LLM 提供方配置由管理员管理并保护秘密](../decisions/0003-configurable-llm-provider.md)
 - [0006：聊天重试按 clientMessageId 对账并保持幂等](../decisions/0006-chat-retry-idempotency.md)
@@ -130,6 +141,7 @@ INT-007 页面、路由、API 和生产构建已完成本地验证，并已随 `
 - [0016：唤醒词仅从 ESP-SR 内置模型目录选择并安全 OTA](../decisions/0016-built-in-esp-sr-wake-model-catalog.md)
 - [0018：触摸控制采用本地事件队列与幂等语音回合取消](../decisions/0018-touch-control-and-voice-turn-cancellation.md)
 - [0020：长期记忆必须经过确认并按会话范围组装](../decisions/0020-confirmed-scoped-long-term-memory.md)
+- [0023：文字与语音共享受控 ReactAgent、Skill、Tool 与 MCP](../decisions/0023-controlled-react-agent-skills-tools-mcp.md)
 
 ## 安全与兼容性约束
 

@@ -41,6 +41,15 @@ const settingsRoute: RouteRecordRaw = {
         icon: 'i-ri:chat-smile-3-line',
       },
     },
+    {
+      path: 'agent',
+      name: 'agentCapabilities',
+      component: () => import('@/views/settings/agent/index.vue'),
+      meta: {
+        title: 'Agent 能力',
+        icon: 'i-ri:robot-2-line',
+      },
+    },
   ],
 }
 

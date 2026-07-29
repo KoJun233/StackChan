@@ -1,12 +1,12 @@
 # 全局工作流总览
 
-- 状态：STABLE
-- 最后更新：2026-07-28
-- 当前分支：`codex/int-007-pet-expression-packs`
-- 实现基准：`9f8e611`
-- 最后验证提交：`b05d60f`
-- 当前验证范围：server `f91dbdb` 与 V18 已发布；CoreS3 已完整刷入修复镜像 `b05d60f`，五区校验、启动检查、连续 WebSocket 与跨两个心跳周期的数据库刷新均通过。
-- 当前优先级：保持当前 LAN 运行资源稳定；取得明确授权后推送 INT-007 任务分支，由用户网页人工合并。
+- 状态：ACTIVE
+- 最后更新：2026-07-29
+- 当前分支：`codex/int-008-agent-tools-mcp`
+- 实现基准：`8122959`
+- 最后验证提交：`8122959`
+- 当前验证范围：工作树新增 V20 自定义 Skill ZIP 生命周期和 V21 页面管理的可移植 MCP 连接；后端 266/266、Testcontainers 空库 V1..V21、前端 62/62、`vue-tsc -b`、production build、文档与 LAN Compose 检查均通过。V21 已发布到既有 LAN server，真实 HTTPS MCP 完成初始化并发现 8 个 Tool。
+- 当前优先级：INT-008 已完成人工验收并获准交付任务分支；下一步由用户创建 PR 并人工合并，随后执行 `DATA-001`。
 - 当前部署：LAN HTTP development mode。
 - 生产边界：HTTPS-only。
 
@@ -14,12 +14,12 @@
 
 | 工作流 | 状态 | 状态文件 | 当前分支 | 下一步 |
 | --- | --- | --- | --- | --- |
-| 服务端 | STABLE | [server.md](server.md) | `codex/int-007-pet-expression-packs` | `f91dbdb` 与 V18 已发布并通过运行验证。 |
-| 前端 | STABLE | [frontend.md](frontend.md) | `codex/int-007-pet-expression-packs` | 页面已发布；用户选择暂缓无素材的自定义资源包实体测试。 |
-| 固件 | STABLE | [firmware.md](firmware.md) | `codex/int-007-pet-expression-packs` | `b05d60f` 已完整刷写，默认机械眼人工验收通过。 |
-| 部署 | STABLE | [deployment.md](deployment.md) | `codex/int-007-pet-expression-packs` | server `f91dbdb` / V18 与 CoreS3 `b05d60f` 稳定运行。 |
+| 服务端 | ACTIVE | [server.md](server.md) | `codex/int-008-agent-tools-mcp` | V21 可移植 MCP 连接已发布并验收；等待人工合并。 |
+| 前端 | ACTIVE | [frontend.md](frontend.md) | `codex/int-008-agent-tools-mcp` | Skill 与 MCP 连接管理已发布并验收；等待人工合并。 |
+| 固件 | STABLE | [firmware.md](firmware.md) | `codex/int-008-agent-tools-mcp` | `b05d60f` 保持不变；INT-008 不改协议、不刷写。 |
+| 部署 | ACTIVE | [deployment.md](deployment.md) | `codex/int-008-agent-tools-mcp` | LAN server 已升级至 V21；真实 HTTPS MCP 已接入并由管理员控制授权。 |
 
-唤醒词入口现改为“选择 ESP-SR 2.4.6 内置短语、服务端从锁定目录可信打包、设备双槽 OTA、重启健康确认、失败自动回退”。任意文本生成、第三方生成器和模型包上传均已从最终代码与页面移除；V12 只保留为已部署迁移历史，V13 清理临时字段。下拉包含“Hi, Stack Chan”“小峰小峰”等 13 项。CoreS3 曾使用 `0398073` 镜像完成 WakeNet9/WakeNet9l/WakeNet9s 三槽引导；管理员选择“小峰小峰”后，任务已完成 `READY -> INSTALLING -> INSTALLED`。INT-001 发布时设备升级为 `ecc40f3`，INT-002 升级为栈修复镜像 `216d383`，当前实机为 INT-006 `2465427`。
+唤醒词入口现改为“选择 ESP-SR 2.4.6 内置短语、服务端从锁定目录可信打包、设备双槽 OTA、重启健康确认、失败自动回退”。任意文本生成、第三方生成器和模型包上传均已从最终代码与页面移除；V12 只保留为已部署迁移历史，V13 清理临时字段。下拉包含“Hi, Stack Chan”“小峰小峰”等 13 项。CoreS3 曾使用 `0398073` 镜像完成 WakeNet9/WakeNet9l/WakeNet9s 三槽引导；管理员选择“小峰小峰”后，任务已完成 `READY -> INSTALLING -> INSTALLED`。INT-001 发布时设备升级为 `ecc40f3`，INT-002 升级为栈修复镜像 `216d383`，当前实机为 INT-007 `b05d60f`。
 
 内置目录版本此前部署到既有 `stackchan-foundation` LAN HTTP 服务时，健康和网页根地址均为 200、Flyway 为 V13、容器包含 13 组模型，CoreS3 心跳为 `0398073 / motion_disabled`。一次误用基础 Compose 导致端口暂时只监听 `127.0.0.1`，恢复正式 `compose.lan.yaml` 覆盖层后设备自动重连并完成“小峰小峰”安装。部署前保留了 `stackchan-foundation-server:rollback-upload-v12` 本地回退镜像；当前服务已由 INT-001 升级为 `ecc40f3` / V14。
 
@@ -55,6 +55,9 @@ INT-007 本地发布候选完成：默认表情升级为 M5Unified/M5GFX 独立�
 
 ## 验证与边界
 
+- V20 工作树后端 Maven 全量 264/264、Testcontainers 空库迁移 V1..V20、前端 Vitest 22 个文件 61/61、`vue-tsc -b`、production build、`git diff --check`、`pnpm docs:check` 和 LAN Compose 静态验证通过。正式 Dockerfile 只替换既有 LAN server 后，健康与网页根地址为 200、Flyway `20|true` 且迁移数 20、`agent_skills` 表和独立 Skill 卷存在、未登录 Agent API/页面为 401、启动错误数为 0；CoreS3 `b05d60f / motion_disabled` 恢复新鲜心跳。未连接 MCP、COM3，未刷写、OTA、修改凭据或生产 HTTPS-only 边界。
+- V20 改造前的 INT-008 服务端 Maven 全量 255/255 通过；真实 ReactAgent Tool 回合、强制事实 Tool 路由、MCP 授权、预算与元数据审计测试通过，Testcontainers 从空 PostgreSQL 应用 V1..V19。当时的 3 个 classpath 演示 Skill 已在当前工作树删除，该历史结果不能替代 V20 自定义 Skill 包复核。
+- BASE-008 文档刷新在 `8122959` 基线上完成：Maven 244/244、前端 Vitest 20 个文件 57/57、`vue-tsc -b`、production build、文档测试 7/7、LAN Compose 静态验证、`pnpm docs:check` 和 `git diff --check` 通过。固件源码未变；配网与语音危险预算夹具通过，配网真实报告通过，语音真实报告沿用 INT-007 已验证构建，当前干净工作树未重新生成忽略的 `.su` 分析产物。未部署、未连接 COM3、未刷写、未 OTA、未修改卷、端口、凭据或运行数据库。
 - INT-007 服务端全量 238/238、前端 Vitest 20 个文件 57/57、`vue-tsc -b` 和 production build 通过；`f91dbdb` 正式镜像只替换 server 后，健康与网页均为 200、Flyway `18|true`、成功迁移数 18、三张表达资源表存在、未登录表达资源 API 为 401、近期错误数为 0。经用户授权，修复后的 `b05d60f` LAN HTTP Quad 镜像五区写入和独立回读均通过且 NVS 未擦除；启动确认 ESP-IDF 5.3.3、8 MB Quad PSRAM/80 MHz、内存测试、CoreS3 外设、WakeNet 和 `motion_disabled`。42 秒启动窗口只建立一次 WebSocket，后续 32 秒窗口无断线、退避或崩溃，数据库心跳从 `22:42:52` 刷新到 `22:43:42`；server 健康 200、错误数 0。
 - INT-006 验收修复服务端全量 236/236、Testcontainers 空库 V1..V17、前端 19 个文件 55/55、`vue-tsc -b`、production build 均通过；ESP-IDF 5.3.3 协议与 LAN HTTP Quad profile 分别生成 `0x37880` / `0x143c40` 镜像，应用分区余量 93% / 58%。server 已发布，CoreS3 已刷入 `2465427`。
 - INT-006 经用户明确确认 CoreS3、`COM3`、LAN HTTP Quad development profile 和 `2465427` 后，从干净提交完整刷写 bootloader、分区表、应用、OTA data 和语音模型；五个区域独立 `verify_flash` 全部匹配，NVS 未擦除。启动确认应用版本、8 MB Quad PSRAM / 80 MHz 及内存测试、加密 NVS、CoreS3 外设、WakeNet“小峰小峰”、LAN HTTP、WebSocket 和 `motion_disabled`；数据库收到 `2465427` 新鲜心跳，35 秒窗口未见 panic、栈溢出或看门狗，server 健康保持 200、Flyway 保持 `17|true`。
@@ -151,15 +154,18 @@ INT-007 本地发布候选完成：默认表情升级为 M5Unified/M5GFX 独立�
 
 ## 跨工作流阻塞项与依赖
 
+- INT-007 已由 PR #8 合入 `master`；默认机械眼通过实体验收。自定义八状态资源包的实体测试因没有合适素材暂缓，但不阻塞 `INT-008`。
+- 用户将受控 Agent 调整为当前最高优先级；`codex/int-008-agent-tools-mcp` 已从最新 `master` 合并提交 `8122959` 创建。
+- 后续顺序为 `INT-008 Agent 基础 -> DATA-001 -> INT-009 连续对话 -> INT-010 安全语音操作 -> INT-011 记忆 2.0 -> INT-012 主动关心`；任务范围和验收条件见[下一阶段可执行任务清单](../todo.md)。
 - 软件链路和设备三槽引导已验证；内置模型文件已随锁定组件存在，不再依赖用户上传或外部生成器。首次实际模型切换会重启设备，必须由管理员主动选择后触发。
 - CoreS3 已具备 `model_a` / `model_b` 分区；后续更换兼容唤醒模型无需再刷整套固件。
 - INT-001 已完成服务端 V14、管理端、固件发布和用户人工验收；现有 1 个 `NO_SPEECH` 与 3 个成功回合作为 INT-002 前的基线。
 - 屏保视觉和离线提醒补发仍是既有待验收项，不在 INT-001 中扩展。
 - “小峰小峰”OTA 和实体声学命中已由三个成功语音回合确认。
 - INT-002 的显示修复与 INT-003 的触摸控制均已完成实机验收；当前没有设备侧交互阻塞。
-- INT-004 完整输出版本已完成软件、部署和人工验收；当前只等待任务分支推送与人工合并。
+- INT-004 完整输出版本已完成软件、部署、人工验收和任务合并。
 - 部署工作依赖维持 LAN HTTP development mode 与 HTTPS-only 生产边界，且不得组合 `compose.lan.yaml` 和 `compose.production.yaml`。
 
 ## 下一步
 
-保持当前 `f91dbdb` / Flyway V18 LAN server 和 `b05d60f` CoreS3 在线；取得用户对最终提交的明确授权后推送 `codex/int-007-pet-expression-packs`，不创建 PR，由用户网页人工合并。
+INT-008 已完成 `/settings/agent`、Agent Tool、Skill ZIP 和可移植 MCP 连接人工验收，任务分支压缩为单一中文提交并获准推送。下一步由用户创建 PR、人工审核并合并；随后从最新 `master` 开始 `DATA-001`。CoreS3 `b05d60f`、PostgreSQL、Redis、卷、端口和生产 HTTPS-only 边界保持不变。

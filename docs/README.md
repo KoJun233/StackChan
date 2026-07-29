@@ -12,6 +12,7 @@
 | [`project/architecture.md`](project/architecture.md) | 架构说明 |
 | [`project/development.md`](project/development.md) | 开发环境与验证命令 |
 | [`project/roadmap.md`](project/roadmap.md) | 产品路线图 |
+| [`project/todo.md`](project/todo.md) | 下一阶段任务顺序、范围与验收条件 |
 | [`project/decisions/README.md`](project/decisions/README.md) | 架构决策索引 |
 
 ## 当前状态
@@ -32,4 +33,5 @@
 | [`physical-device-smoke-test.md`](runbooks/physical-device-smoke-test.md) | CoreS3 实体设备验收 |
 | [`postgres-volume-migration.md`](runbooks/postgres-volume-migration.md) | PostgreSQL 数据卷迁移 |
 | [`secure-deployment.md`](runbooks/secure-deployment.md) | HTTPS-only 生产部署 |
+| [`agent-tools-mcp.md`](runbooks/agent-tools-mcp.md) | ReactAgent、Skill、Tool 与 MCP 配置和验收 |
 | [`device-v1.md`](protocol/device-v1.md) | 设备协议 |

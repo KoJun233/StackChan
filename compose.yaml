@@ -38,6 +38,9 @@ services:
       COMPANION_SECRETS_ENCRYPTION_KEY: ${COMPANION_SECRETS_ENCRYPTION_KEY:?set COMPANION_SECRETS_ENCRYPTION_KEY in .env}
       COMPANION_ADMIN_INITIAL_PASSWORD: ${COMPANION_ADMIN_INITIAL_PASSWORD:-}
       COMPANION_WAKE_MODEL_CATALOG_DIRECTORY: /app/wakenet-models
+      COMPANION_AGENT_SKILLS_DIRECTORY: /app/data/agent-skills
+      SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE: 4MB
+      SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE: 5MB
       SERVER_SERVLET_SESSION_COOKIE_HTTP_ONLY: "true"
       SERVER_SERVLET_SESSION_COOKIE_SAME_SITE: lax
       SERVER_SERVLET_SESSION_COOKIE_SECURE: ${COMPANION_PRODUCTION:-false}
@@ -45,7 +48,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - stackchan-agent-skills:/app/data/agent-skills
 
 volumes:
   stackchan-postgres-data:
     external: true
+  stackchan-agent-skills:

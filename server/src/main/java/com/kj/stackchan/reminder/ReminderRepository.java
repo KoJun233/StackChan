@@ -21,6 +21,13 @@ public interface ReminderRepository extends JpaRepository<ReminderEntity, UUID>,
 
     Optional<ReminderEntity> findByIdAndDeviceId(UUID id, UUID deviceId);
 
+    Optional<ReminderEntity> findFirstByStatusOrderByScheduledAtAscIdAsc(ReminderStatus status);
+
+    Optional<ReminderEntity> findFirstByDeviceIdAndStatusOrderByScheduledAtAscIdAsc(
+            UUID deviceId,
+            ReminderStatus status
+    );
+
     boolean existsByDeviceIdAndStatus(UUID deviceId, ReminderStatus status);
 
     boolean existsByDeviceIdAndSourceAndStatus(UUID deviceId, ReminderSource source, ReminderStatus status);

@@ -1,18 +1,30 @@
 # 部署工作流
 
-- 状态：STABLE
-- 最后更新：2026-07-28
-- 当前分支：`codex/int-007-pet-expression-packs`
-- 基准提交：`9f8e611`
-- 最后验证提交：`b05d60f`
-- 当前运行态代码：服务端 `f91dbdb`、CoreS3 `b05d60f`，Flyway V18。
+- 状态：ACTIVE
+- 最后更新：2026-07-29
+- 当前分支：`codex/int-008-agent-tools-mcp`
+- 基准提交：`8122959`
+- 最后验证提交：`8122959`
+- 当前运行态代码：INT-008 任务版本，包含 DeepSeek V4 Agent Tool 修复、自定义 Skill ZIP 生命周期与可移植 MCP 管理；CoreS3 `b05d60f`，Flyway V21。
 
 ## 当前目标
 
-保持 INT-007 `f91dbdb` / Flyway V18 LAN server 与 CoreS3 `b05d60f` 稳定运行；默认机械眼已验收，自定义资源包实体测试按用户选择暂缓。
+保持已发布且完成人工验收的 INT-008 / Flyway V21 LAN server 与 CoreS3 `b05d60f` 稳定运行。生产 MCP 必须使用 HTTPS，LAN HTTP 仅允许显式开发模式下的本机或私网地址；正式连接配置保存在 PostgreSQL，不依赖部署主机代理。
 
 ## 已完成
 
+- Compose 已将 `/app/data/agent-skills` 独立持久卷和 4 MiB 文件/5 MiB multipart 请求边界应用到既有 LAN 环境，运行数据库为 V21。
+- V21 正式镜像 `sha256:b4380b4c4dac9e9ed6702c83b6cc27ee7e55c2939dcb8d3737f8161c8541d4a9` 已只替换现有 server；回退标签为 `stackchan-foundation-server:rollback-int008-pre-v21-managed-mcp`，PostgreSQL、Redis、LAN overlay 和固件保持不变。
+- 真实 HTTPS MCP 连接已使用加密 Bearer 认证写入 V21，标准初始化与 `tools/list` 返回 200 并发现 8 个 Tool；本机 Nginx 代理和 `.mcp-local` 临时配置已删除，Tool 授权状态由管理员页面控制。
+- V20 使用正式 Dockerfile 与 `compose.yaml + compose.lan.yaml` 构建，只替换 `stackchan-foundation-server-1`；旧镜像保留为 `stackchan-foundation-server:rollback-int008-pre-v20-skill-import`。新容器 `e3123e318054` 使用镜像 `sha256:a5cdbca8d04c8ecd2ed27dded18d32c440459ff7ac19f78fd74710a1e94f1037`，PostgreSQL/Redis 容器保持不变。
+- 发布后健康与网页根地址为 200，Flyway `20|true` 且成功迁移数 20，`agent_skills` 表存在，`stackchan-foundation_stackchan-agent-skills` 挂载到 `/app/data/agent-skills`；未登录 Agent API 与 `/settings/agent` 均为 401，启动错误数为 0，CoreS3 `b05d60f / motion_disabled` 恢复新鲜心跳。
+- 用户明确授权后，部署前从 Flyway V18 运行库生成并校验仓库外 PostgreSQL 自定义格式快照，并将旧镜像保留为 `stackchan-foundation-server:rollback-8bb6332-pre-v19`。
+- 正式多阶段 Dockerfile 连续两次因 Maven Central TLS 握手失败而未替换服务；随后使用受支持 Node v24.15.0 与本机 Maven 缓存重新生成前后端产物，并使用相同固定 `eclipse-temurin:21-jre` 摘要组装等价镜像 `sha256:da0e576d8565c30a5156e2bfb475b61f8d829614150422b5c32713e687bc9ad7`。临时 Dockerfile 已删除且未提交，仓库正式 Dockerfile 未修改。
+- 只替换 `stackchan-foundation-server-1`，容器由 `b2d7e1f6e44e` 变为 `743d0f70f758`；Flyway 从 V18 升至 V19，健康与网页根地址为 200，未登录 `/settings/agent` 和 Agent API 均为 401，三张 Agent 表与管理页静态资源存在，近五分钟错误数为 0。
+- 首次 Agent 人工验收暴露 Tool Calling 选项被安全包装层丢失；修复镜像 `sha256:9b66191cc9e9d70cefa61e7cba6511a35fb68a162b4c7bf853fcb83afcef1212` 只替换 server，容器由 `743d0f70f758` 变为 `df681d889349`，上一镜像保留为 `stackchan-foundation-server:rollback-8bb6332-pre-tool-routing-fix`。发布后健康与网页为 200、Flyway `19|true`、近期错误和 ChatOptions 降级警告均为 0；PostgreSQL/Redis 容器未变。
+- 继续排查确认 ReactAgent 已通过 `.tools(List<ToolCallback>)` 注入直接 Tool，且测试会断言模型请求携带 `current_date_time` 回调；DeepSeek V4 Agent 请求现单独发送 `thinking.type=disabled`，普通聊天配置不变。修复镜像 `sha256:fc2940c183f87db25bc14ac8b786169bd001a8dfa5d6603eba99391a13d4ae35` 只替换 server，容器变为 `95904af388d5`，上一镜像保留为 `stackchan-foundation-server:rollback-int008-pre-deepseek-agent-fix`。发布后健康为 200、Flyway `19|true`、启动错误为 0；等待用户端到端复测，尚未提交或推送。
+- 用户复测仍得到安全固定回复且 Tool 审计总数为 0；进一步确认 Spring AI Alibaba 通过反射读取 ChatModel 默认选项，而私有 `SafeChatModel` 包装类导致访问失败并静默丢失原生选项。包装类现为公开可反射类型，ReactAgent Builder 同时显式接收同一份 `chatOptions`，并改用标准 `agent.call(messages)` 完成模型/Tool 循环。镜像 `sha256:a58041aff8efb79fecc109a9a9011ed9aaabff5ab2b663c6056b8a81d3ba9fcd` 只替换 server，容器变为 `0ec1fb91053b`；健康为 200、Flyway `19|true`、启动错误为 0，等待再次复测。
+- PostgreSQL/Redis 容器保持 `6d8feaa18623` / `58e31a403637`，LAN 继续绑定 `0.0.0.0:8080`；未连接 MCP 服务、COM3，未刷写、OTA、修改卷、端口、凭据或生产 HTTPS-only 边界。
 - INT-007 用户授权后，从干净 `f91dbdb` 使用正式 Dockerfile 构建镜像并通过 `compose.yaml + compose.lan.yaml` 只替换现有 server；旧镜像保留为 `stackchan-foundation-server:rollback-f91dbdb-pre-v18`。
 - 新镜像为 `sha256:b7a8ea8c36b212d1e25e1f98a8a933c78fcbc530d247520e1ec0a34e270da321`，server 容器由 `4d9db38c136c` 变为 `b2d7e1f6e44e`；Flyway 从 V17 升至 V18，健康与网页均为 200，未登录表达资源 API 为 401，三张表达资源表存在，近期错误数为 0。
 - PostgreSQL/Redis 容器保持 `6d8feaa18623` / `58e31a403637`，LAN 继续绑定 `0.0.0.0:8080`；CoreS3 `2465427 / motion_disabled` 自动恢复新鲜心跳。未连接 COM3、刷写、OTA、修改卷、端口、凭据或生产 HTTPS-only 边界。
@@ -52,7 +64,7 @@
 
 ## 正在进行
 
-INT-007 server、管理页面和 V18 已进入 LAN 运行环境；默认机械眼、表达资源 A/B 分区和设备安装协议已随 `b05d60f` 刷入 CoreS3，WebSocket 清理缺陷已通过持续心跳验证关闭。
+INT-008 任务版本已运行 V21；原有 Tool 可调用，Skill ZIP 和 MCP 连接管理页面已发布并完成人工验收，真实 HTTPS MCP 已发现 8 个 Tool。CoreS3 `b05d60f` 保持不变，不连接设备调试端口。
 
 当前 `stackchan-foundation` 使用正式 LAN overlay 运行 `f91dbdb` server，Flyway 为 V18，并发布 `0.0.0.0:8080`。CoreS3 运行 `b05d60f` LAN HTTP Quad 镜像并持续报告 `motion_disabled`；PostgreSQL、Redis、卷、端口、凭据和生产 HTTPS-only 边界未改变。
 
@@ -64,11 +76,11 @@ INT-003 server 发布后正常回合为 `COMPLETED`；随后 `717a8b1` 固件完
 
 ## 下一步操作
 
-保持当前运行资源不变；取得用户对最终提交的明确授权后推送任务分支，不创建 PR，由用户网页人工合并。
+保持当前 LAN 运行态，由用户创建 PR、人工审核并合并单提交任务分支；合并前不刷写固件或切换部署模式。
 
 ## 阻塞项
 
-部署与刷写无阻塞；默认机械眼已人工通过，自定义资源包实体测试因无额外素材由用户明确暂缓。工作区仍没有 `.env`；后续重建必须显式同时传入 `compose.yaml` 和 `compose.lan.yaml`，不得输出秘密、组合 LAN 与 production profile 或降低生产 HTTPS-only 边界。
+部署与刷写无阻塞；自定义资源包实体测试因无额外素材暂缓。工作区仍没有 `.env`；MCP Bearer Token 由管理 API 接收后使用现有密钥加密入库，页面/API/日志均不得回显。后续重建必须保留相同加密密钥并显式同时传入 `compose.yaml` 和 `compose.lan.yaml`，不得输出秘密、组合 LAN 与 production profile 或降低生产 HTTPS-only 边界。
 
 ## 关键文件
 
@@ -79,6 +91,10 @@ INT-003 server 发布后正常回合为 `COMPLETED`；随后 `717a8b1` 固件完
 
 ## 验证命令与最近结果
 
+- V21 工作树后端 Maven 全量 266/266、Testcontainers 空库 V1..V21、前端 Vitest 22 个文件 62/62、`vue-tsc -b`、production build、`git diff --check`、`pnpm docs:check` 和 LAN Compose 静态验证通过。发布后健康为 200、Flyway `21|true`、迁移数 21、MCP 连接表存在、启动错误数为 0；真实 HTTPS MCP 初始化和 `tools/list` 为 200，并发现 8 个 Tool，授权状态由管理员页面控制。
+- V20 工作树后端 Maven 全量 264/264、Testcontainers 空库 V1..V20、前端 Vitest 22 个文件 61/61、`vue-tsc -b`、production build、`git diff --check`、`pnpm docs:check` 和 LAN Compose 静态验证通过。发布后健康与网页为 200、Flyway `20|true`、迁移数 20、Skill 表与卷存在、未登录 Agent API/页面为 401、启动错误数为 0，CoreS3 心跳新鲜；未创建 `.env`、连接 MCP/COM3 或刷写固件。
+- INT-008 通过 LAN Compose 静态验证：基础模式仍只绑定 `127.0.0.1:8080`，LAN overlay 为 `0.0.0.0:8080`，PostgreSQL/Redis 不发布主机端口。发布后健康与网页根地址为 200、Flyway `19|true`、三张 Agent 表和三个 Agent 静态压缩资源存在、未登录路由/API 为 401、近五分钟错误数为 0；未创建 `.env` 或连接 MCP 服务。
+- BASE-008 使用仅限当前进程的非秘密占位值通过文档测试 7/7 和 LAN Compose 静态验证；基础模式仍只绑定 `127.0.0.1:8080`，LAN overlay 绑定 `0.0.0.0:8080`，PostgreSQL/Redis 均不发布主机端口。未创建 `.env`、未重建容器或修改运行资源。
 - INT-007 `f91dbdb` 只替换现有 LAN server 后，健康与网页均为 200、Flyway `18|true`、迁移数 18、三张表达资源表存在、未登录表达资源 API 为 401、容器包含表达资源页面静态包、近期错误数为 0；PostgreSQL/Redis 未重建，LAN 保持 `0.0.0.0:8080`，CoreS3 `2465427 / motion_disabled` 自动重连。新增固件分区表仍未刷写，不能把 server 发布误记为实体验收。
 - `8394cb3` 完整镜像五区写入与独立回读均通过，NVS 未擦除；启动确认版本、PSRAM、外设、WakeNet 和 `motion_disabled`。WebSocket 约两秒后停止并最终退避 60 秒，数据库固件版本更新为 `8394cb3` 但心跳不连续；server 健康 200、同期错误数 0。当前本地修复已通过协议/LAN 构建和固件安全回归，尚未重刷。
 - `b05d60f` 修复镜像五区重新写入和独立回读均通过，NVS 未擦除；42 秒启动窗口只建立一次 WebSocket，后续 32 秒无连接或故障事件，数据库心跳从 `22:42:52` 刷新到 `22:43:42`。server 健康 200、错误数 0，PostgreSQL/Redis、Flyway V18、LAN 端口和生产 HTTPS-only 边界未改变。
@@ -131,12 +147,15 @@ INT-003 server 发布后正常回合为 `COMPLETED`；随后 `717a8b1` 固件完
 
 ## 相关设计、计划和决策
 
+- [下一阶段可执行任务清单](../todo.md)
 - [安全部署 runbook](../../runbooks/secure-deployment.md)
 - [0004：LAN HTTP/WS 仅限显式编译的开发固件/profile](../decisions/0004-lan-http-development-only.md)
 - [0005：生产环境保持可信代理后的 HTTPS-only 边界](../decisions/0005-secure-production-boundary.md)
 - [0015：运行时生成并安全 OTA 自定义唤醒模型](../decisions/0015-runtime-wake-model-generation-and-ota.md)
 - [0016：唤醒词仅从 ESP-SR 内置模型目录选择并安全 OTA](../decisions/0016-built-in-esp-sr-wake-model-catalog.md)
 - [0018：触摸控制采用本地事件队列与幂等语音回合取消](../decisions/0018-touch-control-and-voice-turn-cancellation.md)
+- [0023：文字与语音共享受控 ReactAgent、Skill、Tool 与 MCP](../decisions/0023-controlled-react-agent-skills-tools-mcp.md)
+- [Agent、Skill、Tool 与 MCP 运维 runbook](../../runbooks/agent-tools-mcp.md)
 
 ## 安全与兼容性约束
 

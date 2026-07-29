@@ -33,3 +33,6 @@
 | [0020](0020-confirmed-scoped-long-term-memory.md) | ACCEPTED | 人设结构化管理，长期记忆按确认状态和会话范围进入文本与设备语音上下文。 |
 | [0021](0021-limited-proactive-interaction.md) | ACCEPTED | 重复提醒、免打扰和主动问候采用可追溯的设备级确定性规则，默认不主动打扰。 |
 | [0022](0022-versioned-expression-resource-packs.md) | ACCEPTED | 默认机械眼独立实现；自定义八状态 PNG 经可信打包、同源下载、A/B 校验切换和失败回退。 |
+| [0023](0023-controlled-react-agent-skills-tools-mcp.md) | ACCEPTED | 文字与语音共享受控 ReactAgent，只加载受信任 Skill 和明确授权且 schema 未变化的 MCP Tool。 |
+| [0024](0024-managed-skill-package-import.md) | ACCEPTED | 管理员安全导入完整 Skill ZIP，持久化后逐包启停且不继承执行权限。 |
+| [0025](0025-managed-mcp-connections.md) | ACCEPTED | 管理员跨部署管理 Streamable HTTP MCP 连接，认证秘密加密保存并逐连接、逐 Tool 授权。 |

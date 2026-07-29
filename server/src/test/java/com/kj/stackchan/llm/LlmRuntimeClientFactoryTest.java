@@ -1,8 +1,10 @@
 package com.kj.stackchan.llm;
 
-import java.util.List;
+import java.lang.reflect.Modifier;
 import java.net.ConnectException;
 import java.net.URI;
+import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -11,6 +13,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.ExchangeFunction;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -23,6 +27,39 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class LlmRuntimeClientFactoryTest {
+
+    @Test
+    void preservesOpenAiToolCallingOptionsThroughTheSafeModelWrapper() {
+        LlmSettingsService settingsService = mock(LlmSettingsService.class);
+        when(settingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings(
+                "http://localhost:18080/v1", "qwen3.7-plus", "companion prompt", "sk-secret"
+        ));
+        LlmRuntimeClientFactory factory = new LlmRuntimeClientFactory(settingsService, WebClient.builder());
+
+        ChatModel model = factory.createChatModel();
+        assertThat(Modifier.isPublic(model.getClass().getModifiers())).isTrue();
+        assertThat(model.getDefaultOptions())
+                .isInstanceOf(OpenAiChatOptions.class)
+                .satisfies(options -> assertThat(((OpenAiChatOptions) options).getModel())
+                        .isEqualTo("qwen3.7-plus"));
+    }
+
+    @Test
+    void disablesDeepSeekV4ThinkingOnlyForAgentToolInvocations() {
+        LlmSettingsService settingsService = mock(LlmSettingsService.class);
+        when(settingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings(
+                "https://api.deepseek.com", "deepseek-v4-flash", "companion prompt", "sk-secret"
+        ));
+        LlmRuntimeClientFactory factory = new LlmRuntimeClientFactory(settingsService, WebClient.builder());
+
+        OpenAiChatOptions normalOptions = (OpenAiChatOptions) factory.createChatModel().getDefaultOptions();
+        OpenAiChatOptions agentOptions = (OpenAiChatOptions) factory.createAgentChatModel().getDefaultOptions();
+
+        assertThat(normalOptions.getExtraBody()).isNullOrEmpty();
+        assertThat(agentOptions.getExtraBody()).containsEntry(
+                "thinking", Map.of("type", "disabled")
+        );
+    }
 
     @Test
     void streamsAnOpenAiCompatibleResponseUsingTheSavedSettings() {

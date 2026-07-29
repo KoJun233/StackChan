@@ -4,12 +4,14 @@ import java.util.List;
 import java.util.UUID;
 import java.nio.charset.StandardCharsets;
 
+import com.kj.stackchan.agent.AgentChannel;
+import com.kj.stackchan.agent.AgentInvocationContext;
+import com.kj.stackchan.agent.AgentOrchestrator;
 import com.kj.stackchan.conversation.ConversationMessageSnapshot;
 import com.kj.stackchan.conversation.ConversationSnapshot;
 import com.kj.stackchan.conversation.ConversationService;
 import com.kj.stackchan.conversation.GenerationStart;
 import com.kj.stackchan.conversation.MessageRole;
-import com.kj.stackchan.llm.LlmRuntimeClientFactory;
 import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.llm.LlmProviderUnavailableException;
 import com.kj.stackchan.memory.CompanionPromptService;
@@ -40,18 +42,18 @@ import reactor.core.scheduler.Schedulers;
 public class ConversationController {
 
     private final ConversationService conversationService;
-    private final LlmRuntimeClientFactory llmRuntimeClientFactory;
+    private final AgentOrchestrator agentOrchestrator;
     private final LlmSettingsService llmSettingsService;
     private final CompanionPromptService companionPromptService;
 
     public ConversationController(
             ConversationService conversationService,
-            LlmRuntimeClientFactory llmRuntimeClientFactory,
+            AgentOrchestrator agentOrchestrator,
             LlmSettingsService llmSettingsService,
             CompanionPromptService companionPromptService
     ) {
         this.conversationService = conversationService;
-        this.llmRuntimeClientFactory = llmRuntimeClientFactory;
+        this.agentOrchestrator = agentOrchestrator;
         this.llmSettingsService = llmSettingsService;
         this.companionPromptService = companionPromptService;
     }
@@ -95,18 +97,21 @@ public class ConversationController {
         GenerationContentBuffer generatedContent = new GenerationContentBuffer();
         return Flux.defer(() -> {
             List<Message> modelHistory = history.stream().map(this::toModelMessage).toList();
-            var chatClient = llmRuntimeClientFactory.createChatClient();
             String systemPrompt = companionPromptService.assemble(
                     conversationId,
                     llmSettingsService.resolveForInvocation().systemPrompt()
             );
-            Flux<ServerSentEvent<Object>> deltas = chatClient
-                    .prompt()
-                    .system(systemPrompt)
-                    .messages(modelHistory)
-                    .user(request.content())
-                    .stream()
-                    .content()
+            Flux<ServerSentEvent<Object>> deltas = agentOrchestrator.stream(new AgentOrchestrator.AgentRequest(
+                            new AgentInvocationContext(
+                                    start.assistantMessageId(),
+                                    conversationId,
+                                    null,
+                                    AgentChannel.WEB
+                            ),
+                            systemPrompt,
+                            modelHistory,
+                            request.content()
+                    ))
                     .map(text -> {
                         generatedContent.append(text);
                         return event("delta", new DeltaEvent(start.assistantMessageId(), text));

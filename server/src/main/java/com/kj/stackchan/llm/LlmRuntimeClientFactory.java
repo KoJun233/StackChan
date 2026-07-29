@@ -1,8 +1,15 @@
 package com.kj.stackchan.llm;
 
+import java.net.URI;
+import java.util.Locale;
+import java.util.Map;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
@@ -19,6 +26,8 @@ import reactor.core.publisher.Flux;
 @Component
 public class LlmRuntimeClientFactory {
 
+    private static final Logger logger = LoggerFactory.getLogger(LlmRuntimeClientFactory.class);
+
     private final LlmSettingsService settingsService;
     private final WebClient.Builder webClientBuilder;
 
@@ -28,6 +37,18 @@ public class LlmRuntimeClientFactory {
     }
 
     public ChatClient createChatClient() {
+        return ChatClient.create(createChatModel());
+    }
+
+    public ChatModel createChatModel() {
+        return createChatModel(false);
+    }
+
+    public ChatModel createAgentChatModel() {
+        return createChatModel(true);
+    }
+
+    private ChatModel createChatModel(boolean agentInvocation) {
         try {
             ResolvedLlmSettings settings = settingsService.resolveForInvocation();
             OpenAiApi openAiApi = OpenAiApi.builder()
@@ -36,12 +57,16 @@ public class LlmRuntimeClientFactory {
                     .completionsPath("/chat/completions")
                     .webClientBuilder(webClientBuilder)
                     .build();
+            OpenAiChatOptions.Builder options = OpenAiChatOptions.builder().model(settings.model());
+            if (agentInvocation && requiresNonThinkingAgentMode(settings)) {
+                options.extraBody(Map.of("thinking", Map.of("type", "disabled")));
+            }
             OpenAiChatModel chatModel = OpenAiChatModel.builder()
                     .openAiApi(openAiApi)
-                    .defaultOptions(OpenAiChatOptions.builder().model(settings.model()).build())
+                    .defaultOptions(options.build())
                     .retryTemplate(RetryUtils.SHORT_RETRY_TEMPLATE)
                     .build();
-            return ChatClient.create(new SafeChatModel(chatModel));
+            return new SafeChatModel(chatModel);
         } catch (InvalidLlmSettingsException exception) {
             throw exception;
         } catch (RuntimeException exception) {
@@ -49,7 +74,7 @@ public class LlmRuntimeClientFactory {
         }
     }
 
-    private static final class SafeChatModel implements ChatModel {
+    public static final class SafeChatModel implements ChatModel {
 
         private final ChatModel delegate;
 
@@ -70,9 +95,29 @@ public class LlmRuntimeClientFactory {
         public Flux<ChatResponse> stream(Prompt prompt) {
             return delegate.stream(prompt).onErrorMap(LlmRuntimeClientFactory::mapProviderException);
         }
+
+        @Override
+        public ChatOptions getDefaultOptions() {
+            return delegate.getDefaultOptions();
+        }
+    }
+
+    private boolean requiresNonThinkingAgentMode(ResolvedLlmSettings settings) {
+        try {
+            String host = URI.create(settings.baseUrl()).getHost();
+            return host != null
+                    && host.equalsIgnoreCase("api.deepseek.com")
+                    && settings.model().toLowerCase(Locale.ROOT).startsWith("deepseek-v4-");
+        } catch (IllegalArgumentException ignored) {
+            return false;
+        }
     }
 
     private static RuntimeException mapProviderException(Throwable exception) {
+        WebClientResponseException responseException = findResponseException(exception);
+        if (responseException != null) {
+            logger.warn("LLM provider request failed with HTTP status {}", responseException.getStatusCode().value());
+        }
         if (isProviderUnavailable(exception)) {
             return new LlmProviderUnavailableException();
         }
@@ -80,6 +125,17 @@ public class LlmRuntimeClientFactory {
             return runtimeException;
         }
         return new RuntimeException(exception);
+    }
+
+    private static WebClientResponseException findResponseException(Throwable exception) {
+        Throwable current = exception;
+        while (current != null) {
+            if (current instanceof WebClientResponseException responseException) {
+                return responseException;
+            }
+            current = current.getCause();
+        }
+        return null;
     }
 
     private static boolean isProviderUnavailable(Throwable exception) {
