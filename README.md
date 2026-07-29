@@ -1,13 +1,17 @@
 # StackChan 自定义 AI 陪伴机器人
 
-StackChan 是一个可自托管的 AI 陪伴机器人项目，包含 M5Stack 设备固件、Java 服务端、Fantastic-admin 管理前端和本地服务器部署配置。模型供应商、`apiKey`、`baseUrl` 和模型名称由用户配置，长期目标包括语音对话、记忆、主动关心和身体表达。
+StackChan 是一个可自托管的 AI 陪伴机器人项目，包含 M5Stack 设备固件、Java 服务端、Fantastic-admin 管理前端和本地服务器部署配置。对话能力基于 Spring AI 与 Spring AI Alibaba `ReactAgent`，模型供应商、`apiKey`、`baseUrl` 和模型名称仍由用户配置；阿里云百炼语音能力由项目内适配层接入。
 
 ## 当前能力
 
 - 管理员登录与密码轮换。
-- LLM 配置和基于 Spring AI Alibaba 的流式文字聊天。
-- 对话持久化、失败恢复和重试幂等。
-- 设备配对、JWT 凭据、WebSocket 心跳和停止动作命令。
+- LLM 配置，以及文字/语音共用的受控 ReactAgent 对话链路。
+- 管理员导入且默认停用的完整 Skill ZIP、两个已验证只读 Tool、页面管理且加密认证的 Streamable HTTP MCP、调用预算和隐私安全审计。
+- 设备端本地唤醒、语音识别、完整回答合成与播放闭环。
+- 对话持久化、失败恢复、重试幂等和隐私安全的阶段诊断。
+- 设备配对、JWT 凭据、WebSocket 心跳、触摸取消和停止动作命令。
+- 可控人设、确认后生效的长期记忆、单次/周期提醒和有限主动问候。
+- 八状态动态机械眼与可替换 PNG 宠物表情资源包。
 - LAN HTTP 开发固件与 HTTPS-only 生产部署边界。
 
 ## 仓库结构
@@ -21,7 +25,7 @@ StackChan 是一个可自托管的 AI 陪伴机器人项目，包含 M5Stack 设
 
 ## 新会话入口
 
-Agent 先读取 [`AGENTS.md`](AGENTS.md)，人类开发者和 Agent 再进入 [`docs/project/README.md`](docs/project/README.md)。当前进度以 `docs/project/status/` 为准，不以历史聊天或临时工作记录为准。
+Agent 先读取 [`AGENTS.md`](AGENTS.md)，人类开发者和 Agent 再进入 [`docs/project/README.md`](docs/project/README.md)。当前进度以 `docs/project/status/` 为准；下一阶段的任务边界、依赖和验收条件见 [`docs/project/todo.md`](docs/project/todo.md)，不以历史聊天或临时工作记录为准。
 
 ## 参与开发
 

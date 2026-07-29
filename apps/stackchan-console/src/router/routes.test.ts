@@ -30,6 +30,7 @@ describe('stackChan console routes', () => {
       }),
       expect.objectContaining({ name: 'llmSettings', path: 'llm', meta: expect.objectContaining({ title: 'AI 配置' }) }),
       expect.objectContaining({ name: 'speechSettings', path: 'speech', meta: expect.objectContaining({ title: '语音配置' }) }),
+      expect.objectContaining({ name: 'agentCapabilities', path: 'agent', meta: expect.objectContaining({ title: 'Agent 能力' }) }),
       expect.objectContaining({ name: 'reminderList', path: '', meta: expect.objectContaining({ keepAlive: 'reminderDetail' }) }),
       expect.objectContaining({
         name: 'reminderDetail',

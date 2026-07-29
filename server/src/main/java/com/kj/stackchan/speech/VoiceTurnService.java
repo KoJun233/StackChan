@@ -6,13 +6,15 @@ import java.util.UUID;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
+import com.kj.stackchan.agent.AgentChannel;
+import com.kj.stackchan.agent.AgentInvocationContext;
+import com.kj.stackchan.agent.AgentOrchestrator;
 import com.kj.stackchan.conversation.ConversationMessageSnapshot;
 import com.kj.stackchan.conversation.ConversationService;
 import com.kj.stackchan.conversation.DeviceVoiceConversationService;
 import com.kj.stackchan.conversation.GenerationStart;
 import com.kj.stackchan.conversation.MessageRole;
 import com.kj.stackchan.llm.LlmProviderUnavailableException;
-import com.kj.stackchan.llm.LlmRuntimeClientFactory;
 import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.memory.CompanionPromptService;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -35,7 +37,7 @@ public class VoiceTurnService {
     private final SpeechRuntimeClient speechRuntimeClient;
     private final DeviceVoiceConversationService deviceVoiceConversationService;
     private final ConversationService conversationService;
-    private final LlmRuntimeClientFactory llmRuntimeClientFactory;
+    private final AgentOrchestrator agentOrchestrator;
     private final LlmSettingsService llmSettingsService;
     private final CompanionPromptService companionPromptService;
     private final VoiceTurnDiagnosticsService diagnosticsService;
@@ -45,7 +47,7 @@ public class VoiceTurnService {
             SpeechRuntimeClient speechRuntimeClient,
             DeviceVoiceConversationService deviceVoiceConversationService,
             ConversationService conversationService,
-            LlmRuntimeClientFactory llmRuntimeClientFactory,
+            AgentOrchestrator agentOrchestrator,
             LlmSettingsService llmSettingsService,
             CompanionPromptService companionPromptService,
             VoiceTurnDiagnosticsService diagnosticsService,
@@ -54,7 +56,7 @@ public class VoiceTurnService {
         this.speechRuntimeClient = speechRuntimeClient;
         this.deviceVoiceConversationService = deviceVoiceConversationService;
         this.conversationService = conversationService;
-        this.llmRuntimeClientFactory = llmRuntimeClientFactory;
+        this.agentOrchestrator = agentOrchestrator;
         this.llmSettingsService = llmSettingsService;
         this.companionPromptService = companionPromptService;
         this.diagnosticsService = diagnosticsService;
@@ -92,13 +94,17 @@ public class VoiceTurnService {
                         llmSettingsService.resolveForInvocation().systemPrompt(),
                         VOICE_SYSTEM_INSTRUCTION
                 );
-                reply = llmRuntimeClientFactory.createChatClient()
-                        .prompt()
-                        .system(systemPrompt)
-                        .messages(modelHistory)
-                        .user(transcript)
-                        .stream()
-                        .content()
+                reply = agentOrchestrator.stream(new AgentOrchestrator.AgentRequest(
+                                new AgentInvocationContext(
+                                        turnId,
+                                        conversationId,
+                                        deviceId,
+                                        AgentChannel.VOICE
+                                ),
+                                systemPrompt,
+                                modelHistory,
+                                transcript
+                        ))
                         .takeUntilOther(cancellation.cancellationSignal())
                         .filter(chunk -> chunk != null && !chunk.isEmpty())
                         .collect(Collectors.joining())
