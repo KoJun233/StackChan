@@ -1,17 +1,24 @@
 # 服务端工作流
 
 - 状态：COMPLETE
-- 最后更新：2026-07-29
-- 当前分支：`codex/data-001-personal-data-lifecycle`
-- 基准提交：`2a3b712`
-- 最后验证提交：`2a3b712`
+- 最后更新：2026-07-31
+- 当前分支：`codex/int-009-continuous-conversation`
+- 基准提交：`a51ac83`
+- 最后验证提交：`62c727b`
 
 ## 当前目标
 
-完成 `DATA-001` 个人数据生命周期：管理员可分页搜索、查看、导出并物理删除对话正文；服务端只读展示独立 PostgreSQL 备份卷的安全状态，恢复演练只能使用一次性临时数据库。
+完成 `INT-009` 的服务端兼容层：V23 保存连续对话开关与跟进窗口，默认关闭时继续向旧固件发送四字段交互配置，并接受新增的隐私安全跟进阶段。
 
 ## 已完成
 
+- INT-009 新增 ADR 0027 与 Flyway V23：设备级交互设置保存连续对话开关和 3..8 秒跟进窗口，默认关闭；诊断阶段扩展 `FOLLOW_UP_LISTENING`、`FOLLOW_UP_TIMEOUT` 和 `CONVERSATION_ENDED`。
+- `configure_interaction` 按开关兼容下发：关闭时维持旧固件可接受的四字段命令，启用时下发六字段命令；跟进静音超时和明确结束均按正常完成语义收口，不保存静音音频、转写或回复正文。
+- INT-009 服务端全量 278/278 通过；Testcontainers 从空 PostgreSQL 成功应用 V1..V23，覆盖 V23 约束、四/六字段兼容、控制器映射和新增阶段白名单。
+- 修正 DashScope Qwen-TTS 非实时 HTTP 协议：与非实时 ASR 共用 Workspace 的 `multimodal-generation/generation` 端点，`input` 同时承载 `text` 和 `voice`，不再发送该接口不接受的 `format` / `sample_rate`；保留模型名原样传递、结果 WAV 标准化和安全阶段日志。
+- DashScope TTS 的 4xx 日志新增受限诊断：只记录 HTTP 状态、`request_id`、供应商错误码、最多 240 字符且移除控制字符的 message 和本地异常类型；不记录请求头、Workspace URL、完整响应、API Key、音频、转写或回复正文。
+- DashScope 临时音频下载继续使用精确 SSRF 白名单：在既有北京 OSS 主机之外，新增当前 Qwen-TTS 实际返回的乌兰察布 OSS 主机；HTTP 签名 URL 仍升级为 HTTPS，拒绝任意子域、后缀伪造、用户信息、非默认端口和片段。
+- 供应商合成结果允许把实测的 24 kHz、16-bit、单声道 PCM 线性重采样为设备要求的 16 kHz，并重建规范 WAV；设备上传和 ASR 输入仍严格拒绝非 16 kHz，其他供应商采样率也继续拒绝。
 - 新增 ADR 0026 和 Flyway V22：单条消息物理删除时把回复引用置空而不连带删除，整段对话级联删除消息/设备映射；正在流式生成的消息或对话返回冲突，不与生成写入竞争。
 - 新增 `/api/v1/personal-data` 管理 API，支持设备、更新时间和关键词过滤、分页消息查看、单条/整段删除及相同范围 JSON 导出；导出不包含认证、模型配置、诊断日志或 Tool 参数/结果。
 - 新增 `BackupStatusService` 只读投影，只返回尝试/成功/失败时间、恢复验证结果、日/周数量、保留上限和存储占用，不返回路径、dump、manifest、摘要、凭据或密钥。
@@ -70,15 +77,15 @@
 
 ## 正在进行
 
-DATA-001 已替换当前 LAN server 并迁移到 Flyway V22。健康与网页根地址为 200，新管理 API 未登录访问为 401，Agent、Skill 和 MCP 数据保留；用户已完成人工验收并确认功能正常。本任务没有固件或语音协议修改。
+无。INT-009 服务端兼容层、V23、DashScope TTS 兼容修复、发布和人工验收均已完成。
 
 ## 下一步操作
 
-推送任务分支，由用户创建 PR 并人工合入 `master`；随后从最新 `master` 开始 INT-009。
+取得用户外部推送授权后，只推送 `codex/int-009-continuous-conversation`；由用户创建 PR 并人工合并，随后从最新 `master` 创建 INT-010 独立任务分支。
 
 ## 阻塞项
 
-服务端实现、运行发布和人工验收均无阻塞。备份卷含完整逻辑备份，必须按数据库同等级保护；不得记录或返回 Tool 参数/结果、认证载荷、配置秘密、音频、转写、回复正文或完整模型响应。
+实现、自动化回归、发布和人工验收无阻塞。尚未取得外部推送授权，因此本分支不会主动推送；不得记录或返回 Tool 参数/结果、认证载荷、配置秘密、签名 URL、音频、转写、回复正文或完整模型响应。
 
 ## 关键文件
 
@@ -104,10 +111,27 @@ DATA-001 已替换当前 LAN server 并迁移到 Flyway V22。健康与网页根
 - `docs/project/decisions/0019-complete-voice-replies.md`
 - `docs/project/decisions/0020-confirmed-scoped-long-term-memory.md`
 - `docs/project/decisions/0021-limited-proactive-interaction.md`
+- `docs/project/decisions/0027-bounded-continuous-conversation.md`
 - `server/wakenet-models/`
 
 ## 验证命令与最近结果
 
+- 2026-07-31 收尾重跑 `mvn -f server/pom.xml test`：282/282 通过，Testcontainers PostgreSQL 从空库应用 V1..V23；运行 server 健康 200、重启 0。
+- `62c727b` 使用正式 Dockerfile 构建镜像 `sha256:090a3117fe970da14b53d2278df5967629abf5ae912c19e1e83bec9f08cd1d8b`，只替换 LAN server 为 `a3c3eb6efeb4`；健康 200、Flyway `23|true`、重启 0，CoreS3 保持 `dd81a7e / motion_disabled`。当前配置的不落盘端到端直连验证为 TTS 200、音频下载 200、规范化 16 kHz、ASR 200 且转写非空；未保存或输出秘密、签名 URL、音频或转写。
+- 用户确认发布后的页面语音测试成功，实体播放不再出现电流音；24→16 kHz 合成兼容的人工验收通过。
+- `2ec69e1` 正式 Dockerfile 构建镜像 `sha256:6a79deb2eded1541e22ae367b39d8c3d3d8ac70413a38394af1b4b01ad41f681` 并只替换 LAN server 为 `4ddd62c9ee5d`；健康 200、Flyway `23|true`、重启 0、LAN `0.0.0.0:8080`，当前 TTS 配置正确，数据库收到 4 秒内的 `dd81a7e / motion_disabled` 心跳。发布后 50 秒观察窗没有新的页面语音测试请求。
+- `1cd6f76` 正式 Dockerfile 首次构建因 Maven Central TLS 握手中断失败，重试成功构建镜像 `sha256:76d5a78c0504bc339cb1b37260c9e7e4acf351caef58daf98fbfe3e912277349` 并只替换 LAN server。健康/网页 200、Flyway `23|true`、重启 0、LAN `0.0.0.0:8080`，数据库收到 12 秒内的 `dd81a7e / motion_disabled` 心跳。
+- 一次性 Java 21 内存探测使用运行库的加密配置直连相同 Workspace：当前 `qwen-tts + Dylan` 返回 400 / `InvalidParameter`，供应商说明该版本只接受四个基础音色；`qwen-tts-latest + Dylan` 返回 200 且存在音频 URL。探测辅助文件已删除，未输出或写入 API Key、Workspace ID、请求正文、音频或转写。
+- 官方 Qwen-TTS 文档核对确认非实时端点与 `input.text` / `input.voice` 结构；安全错误诊断定向通过 15/15，`mvn -f server/pom.xml test` 全量通过 279/279。新增回归覆盖 request ID、错误码和控制字符受限 message 提取。
+- 当前配置直连返回 HTTP 200，音频 URL 的安全摘要为 `http` / `dashscope-result-wlcb.oss-cn-wulanchabu.aliyuncs.com`；升级 HTTPS 后下载 200、88,364 字节且 RIFF/WAVE 魔数匹配。辅助探测文件已删除，未输出签名 URL、API Key、Workspace ID、音频或正文。
+- 乌兰察布精确结果主机与伪造后缀拒绝回归定向通过 16/16，服务端 Maven 全量通过 280/280。
+- 当前配置的安全 WAV 头探测为 PCM format 1、单声道、24 kHz、16-bit、88,320 字节音频数据；未保存或输出音频正文。24→16 kHz 合成重采样、非 16 kHz 设备输入拒绝和适配器定向通过 20/20，服务端 Maven 全量通过 282/282。
+- 播放加固 `dd81a7e / motion_disabled` 刷写启动后恢复 WebSocket，数据库在核对时收到 13 秒内的新鲜心跳；server 健康 200、运行中且重启 0，Flyway 保持 V23。未变更 server、数据库、凭据或模式。
+- 用户确认新固件免唤醒跟进和静音退出正常；设备在完整接收服务端 WAV 后才开始播放，因此偶发播放杂音不归因于服务端网络分块。诊断未读取或记录音频、转写或回复正文。
+- INT-009 `a2f723e` 正式镜像只替换 server，Flyway 从 V22 升至 V23；健康/网页为 200、未登录交互设置为 401、设置默认关闭/8 秒、启动错误数和重启数为 0。旧 `b05d60f / motion_disabled` 自动重连并跨两个 25 秒周期刷新心跳；PostgreSQL、Redis、备份容器与固件未变。
+- 用户确认 V23 与旧 `b05d60f` 的普通单轮语音正常，完整播放并恢复 WakeNet；server-first 人工兼容 smoke test 通过。
+- 新固件 `af5bcbe / motion_disabled` 刷写后跨两个心跳周期在线；Flyway 保持 V23、连续对话设置关闭/8 秒，server 健康 200、重启和错误为 0。
+- INT-009 `mvn test` 全量 278/278 通过；Spring/Testcontainers 从空 PostgreSQL 应用 V1..V23。新增回归覆盖连续对话默认关闭、3..8 秒数据库约束、四/六字段配置兼容、控制器映射和三个隐私安全阶段。
 - 自定义 Skill 工作树的主源码和测试源码已进入 `javac` 编译阶段且无 Java 诊断错误；当前 Codex 沙箱在编译器关闭依赖 JAR 时触发 `AccessDeniedException`，因此本轮 Maven 测试与 V20 Testcontainers 结果仍待正常构建环境复核。此前 DeepSeek V4 Tool 修复 Maven 全量 256/256 与 V1..V19 已通过并发布。
 - BASE-008 文档刷新未修改服务端代码；在合并基线 `8122959` 上运行 Maven 全量测试 244/244 通过，Testcontainers 套件从空 PostgreSQL 应用 V1..V18。未连接运行数据库、未执行迁移或替换容器。
 - INT-007 `mvn test` 全量 238/238 通过，包含真实 PNG 解码、八状态完整性、尺寸和截断拒绝测试；Spring/Testcontainers 空库上下文成功应用 V1..V18。测试 profile 已关闭表达资源调度器，避免容器结束后计划任务访问已关闭数据库。

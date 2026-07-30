@@ -103,13 +103,36 @@ describe('device overview command availability', () => {
       failureCode: null,
       startedAt: '2026-07-18T12:00:00Z',
       updatedAt: '2026-07-18T12:00:02Z',
-      events: [{
-        stage: 'LISTENING_RESUMED',
-        source: 'DEVICE',
-        occurredAt: '2026-07-18T12:00:02Z',
-        elapsedMs: 2000,
-        failureCode: null,
-      }],
+      events: [
+        {
+          stage: 'FOLLOW_UP_LISTENING',
+          source: 'DEVICE',
+          occurredAt: '2026-07-18T12:00:00Z',
+          elapsedMs: 0,
+          failureCode: null,
+        },
+        {
+          stage: 'FOLLOW_UP_TIMEOUT',
+          source: 'DEVICE',
+          occurredAt: '2026-07-18T12:00:02Z',
+          elapsedMs: 1998,
+          failureCode: null,
+        },
+        {
+          stage: 'CONVERSATION_ENDED',
+          source: 'DEVICE',
+          occurredAt: '2026-07-18T12:00:02Z',
+          elapsedMs: 1999,
+          failureCode: null,
+        },
+        {
+          stage: 'LISTENING_RESUMED',
+          source: 'DEVICE',
+          occurredAt: '2026-07-18T12:00:02Z',
+          elapsedMs: 2000,
+          failureCode: null,
+        },
+      ],
     }])
     const container = document.createElement('div')
     document.body.append(container)
@@ -120,7 +143,10 @@ describe('device overview command availability', () => {
     buttons[1].click()
 
     await vi.waitFor(() => expect(deviceApi.listDeviceVoiceTurns).toHaveBeenCalledWith('connected'))
-    await vi.waitFor(() => expect(container.querySelector('[data-turn-id]')?.textContent).toContain('恢复待唤醒'))
+    await vi.waitFor(() => expect(container.querySelector('[data-turn-id]')?.textContent).toContain('恢复聆听'))
+    expect(container.querySelector('[data-turn-id]')?.textContent).toContain('跟进聆听')
+    expect(container.querySelector('[data-turn-id]')?.textContent).toContain('跟进超时')
+    expect(container.querySelector('[data-turn-id]')?.textContent).toContain('会话结束')
     expect(container.textContent).toContain('不保存音频、识别文本或机器人回复')
   })
 

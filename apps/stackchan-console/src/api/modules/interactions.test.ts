@@ -9,6 +9,8 @@ describe('interaction settings API', () => {
     const input = {
       volumePercent: 50,
       nightMode: false,
+      continuousConversationEnabled: true,
+      followUpWindowSeconds: 8,
       dndEnabled: true,
       dndStart: '22:00',
       dndEnd: '07:00',

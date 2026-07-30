@@ -94,10 +94,17 @@ class DashScopeSpeechProviderAdapter implements SpeechProviderAdapter {
             byte[] wav = OpenAiCompatibleSpeechProviderAdapter.requireWav(audio);
             return WavPcmAudio.normalizeSynthesizedMono16KhzWav(wav);
         } catch (SpeechProviderUnavailableException exception) {
-            throw new SpeechProviderUnavailableException("dashscope_tts_audio_invalid", exception);
+            throw invalidTtsAudio(audio, exception);
         } catch (RuntimeException exception) {
-            throw new SpeechProviderUnavailableException("dashscope_tts_audio_invalid", exception);
+            throw invalidTtsAudio(audio, exception);
         }
+    }
+
+    private static SpeechProviderUnavailableException invalidTtsAudio(byte[] audio, RuntimeException exception) {
+        return new SpeechProviderUnavailableException(
+                "dashscope_tts_audio_invalid_" + WavPcmAudio.layoutDiagnosticCode(audio),
+                exception
+        );
     }
 
     private static void validateAsrWav(byte[] wavAudio, boolean allowProviderLengthPlaceholder) {

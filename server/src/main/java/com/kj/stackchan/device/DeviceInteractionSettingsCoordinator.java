@@ -26,7 +26,8 @@ public class DeviceInteractionSettingsCoordinator {
         DeviceConnectionRegistry registry = registryProvider.getIfAvailable();
         if (registry != null) {
             registry.sendInteractionConfiguration(
-                    settings.deviceId(), settings.volumePercent(), settings.nightMode()
+                    settings.deviceId(), settings.volumePercent(), settings.nightMode(),
+                    settings.continuousConversationEnabled(), settings.followUpWindowSeconds()
             );
         }
     }
@@ -38,7 +39,8 @@ public class DeviceInteractionSettingsCoordinator {
         }
         var settings = settingsService.resolve(deviceId);
         registry.sendInteractionConfigurationIfActive(
-                deviceId, session, settings.volumePercent(), settings.nightMode()
+                deviceId, session, settings.volumePercent(), settings.nightMode(),
+                settings.continuousConversationEnabled(), settings.followUpWindowSeconds()
         );
     }
 }

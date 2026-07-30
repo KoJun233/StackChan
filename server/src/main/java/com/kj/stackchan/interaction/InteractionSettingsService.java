@@ -48,7 +48,8 @@ public class InteractionSettingsService {
         DeviceInteractionSettingsEntity settings = repository.findById(deviceId)
                 .orElseGet(() -> new DeviceInteractionSettingsEntity(deviceId, clock.instant()));
         settings.update(
-                command.volumePercent(), command.nightMode(), command.dndEnabled(),
+                command.volumePercent(), command.nightMode(), command.continuousConversationEnabled(),
+                command.followUpWindowSeconds(), command.dndEnabled(),
                 command.dndStart(), command.dndEnd(), zoneId.getId(), command.missedReminderPolicy(),
                 command.missedSnoozeMinutes(), command.proactiveEnabled(), command.proactiveStart(),
                 command.proactiveEnd(), command.proactiveMinIntervalMinutes(), command.proactiveDailyLimit(),
@@ -132,6 +133,7 @@ public class InteractionSettingsService {
 
     private void validateCommand(UpdateInteractionSettingsCommand command) {
         if (command == null || command.volumePercent() < 0 || command.volumePercent() > 100
+                || command.followUpWindowSeconds() < 3 || command.followUpWindowSeconds() > 8
                 || command.dndStart() == null || command.dndEnd() == null
                 || command.dndStart().equals(command.dndEnd()) || command.missedReminderPolicy() == null
                 || command.missedSnoozeMinutes() < 1 || command.missedSnoozeMinutes() > 1440
@@ -161,7 +163,8 @@ public class InteractionSettingsService {
 
     private InteractionSettingsSnapshot snapshot(DeviceInteractionSettingsEntity entity) {
         return new InteractionSettingsSnapshot(
-                entity.getDeviceId(), entity.getVolumePercent(), entity.isNightMode(), entity.isDndEnabled(),
+                entity.getDeviceId(), entity.getVolumePercent(), entity.isNightMode(),
+                entity.isContinuousConversationEnabled(), entity.getFollowUpWindowSeconds(), entity.isDndEnabled(),
                 entity.getDndStart(), entity.getDndEnd(), entity.getZoneId(), entity.getMissedReminderPolicy(),
                 entity.getMissedSnoozeMinutes(), entity.isProactiveEnabled(), entity.getProactiveStart(),
                 entity.getProactiveEnd(), entity.getProactiveMinIntervalMinutes(), entity.getProactiveDailyLimit(),
@@ -173,6 +176,8 @@ public class InteractionSettingsService {
     public record UpdateInteractionSettingsCommand(
             int volumePercent,
             boolean nightMode,
+            boolean continuousConversationEnabled,
+            int followUpWindowSeconds,
             boolean dndEnabled,
             LocalTime dndStart,
             LocalTime dndEnd,
@@ -192,6 +197,8 @@ public class InteractionSettingsService {
             UUID deviceId,
             int volumePercent,
             boolean nightMode,
+            boolean continuousConversationEnabled,
+            int followUpWindowSeconds,
             boolean dndEnabled,
             LocalTime dndStart,
             LocalTime dndEnd,

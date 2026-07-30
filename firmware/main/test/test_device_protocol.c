@@ -5,6 +5,7 @@
 #include "unity.h"
 
 #include "audio_wav.h"
+#include "continuous_conversation.h"
 #include "device_identity.h"
 #include "device_credentials.h"
 #include "device_endpoint.h"
@@ -676,6 +677,18 @@ TEST_CASE("interaction commands accept only the strict bounded schema", "[device
 {
     const char *configuration = "{\"type\":\"configure_interaction\",\"command_id\":\"cmd-ui\","
                                 "\"volume_percent\":65,\"night_mode\":true}";
+    const char *continuous = "{\"type\":\"configure_interaction\",\"command_id\":\"cmd-ui\","
+                             "\"volume_percent\":65,\"night_mode\":false,"
+                             "\"continuous_conversation_enabled\":true,"
+                             "\"follow_up_window_seconds\":8}";
+    const char *disabled_extended = "{\"type\":\"configure_interaction\",\"command_id\":\"cmd-ui\","
+                                    "\"volume_percent\":65,\"night_mode\":false,"
+                                    "\"continuous_conversation_enabled\":false,"
+                                    "\"follow_up_window_seconds\":8}";
+    const char *long_window = "{\"type\":\"configure_interaction\",\"command_id\":\"cmd-ui\","
+                              "\"volume_percent\":65,\"night_mode\":false,"
+                              "\"continuous_conversation_enabled\":true,"
+                              "\"follow_up_window_seconds\":9}";
     const char *bad_volume = "{\"type\":\"configure_interaction\",\"command_id\":\"cmd-ui\","
                              "\"volume_percent\":101,\"night_mode\":true}";
     const char *bad_night_mode = "{\"type\":\"configure_interaction\",\"command_id\":\"cmd-ui\","
@@ -687,6 +700,14 @@ TEST_CASE("interaction commands accept only the strict bounded schema", "[device
     TEST_ASSERT_EQUAL(DEVICE_COMMAND_CONFIGURE_INTERACTION, command.type);
     TEST_ASSERT_EQUAL_INT(65, command.volume_percent);
     TEST_ASSERT_TRUE(command.night_mode);
+    TEST_ASSERT_FALSE(command.continuous_conversation_enabled);
+    TEST_ASSERT_EQUAL_INT(8, command.follow_up_window_seconds);
+    TEST_ASSERT_TRUE(device_protocol_parse_command(continuous, strlen(continuous), &command));
+    TEST_ASSERT_TRUE(command.continuous_conversation_enabled);
+    TEST_ASSERT_EQUAL_INT(8, command.follow_up_window_seconds);
+    TEST_ASSERT_FALSE(device_protocol_parse_command(
+        disabled_extended, strlen(disabled_extended), &command));
+    TEST_ASSERT_FALSE(device_protocol_parse_command(long_window, strlen(long_window), &command));
     TEST_ASSERT_FALSE(device_protocol_parse_command(bad_volume, strlen(bad_volume), &command));
     TEST_ASSERT_FALSE(device_protocol_parse_command(bad_night_mode, strlen(bad_night_mode), &command));
     TEST_ASSERT_TRUE(device_protocol_parse_command(stop, strlen(stop), &command));
@@ -703,6 +724,29 @@ TEST_CASE("voice control rejects unsafe detection settings before applying them"
                       voice_control_configure(VOICE_WAKE_SENSITIVITY_NORMAL, 300, 300));
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG,
                       voice_control_configure((voice_wake_sensitivity_t)99, 350, 200));
+}
+
+TEST_CASE("continuous conversation policy enforces local bounds and exact exit phrase", "[voice_control]")
+{
+    continuous_conversation_settings_t settings = {
+        .enabled = true,
+        .follow_up_window_seconds = 8,
+    };
+    TEST_ASSERT_TRUE(continuous_conversation_settings_valid(&settings));
+    TEST_ASSERT_EQUAL(ESP_OK, voice_control_configure_continuous_conversation(true, 8));
+    TEST_ASSERT_EQUAL(
+        ESP_ERR_INVALID_ARG, voice_control_configure_continuous_conversation(true, 9));
+    TEST_ASSERT_TRUE(continuous_conversation_should_offer_follow_up(&settings, 0, 0, false, true));
+    TEST_ASSERT_FALSE(continuous_conversation_should_offer_follow_up(&settings, 3, 1000, false, true));
+    TEST_ASSERT_FALSE(continuous_conversation_should_offer_follow_up(&settings, 0, 120000, false, true));
+    TEST_ASSERT_FALSE(continuous_conversation_should_offer_follow_up(&settings, 0, 1000, true, true));
+    TEST_ASSERT_FALSE(continuous_conversation_should_offer_follow_up(&settings, 0, 1000, false, false));
+    TEST_ASSERT_EQUAL_UINT32(8, continuous_conversation_capture_seconds(&settings, 1000));
+    TEST_ASSERT_EQUAL_UINT32(2, continuous_conversation_capture_seconds(&settings, 118000));
+    settings.enabled = false;
+    TEST_ASSERT_EQUAL_UINT32(0, continuous_conversation_capture_seconds(&settings, 1000));
+    TEST_ASSERT_TRUE(continuous_conversation_transcript_requests_end("  结束聊天？！ "));
+    TEST_ASSERT_FALSE(continuous_conversation_transcript_requests_end("我们聊聊怎么结束聊天"));
 }
 
 TEST_CASE("wake model installation accepts only the strict bounded schema", "[device_protocol]")
@@ -941,6 +985,23 @@ TEST_CASE("voice turn diagnostics expose only bounded stage metadata", "[device_
     TEST_ASSERT_NOT_NULL(root);
     TEST_ASSERT_EQUAL_STRING(
         "CANCELLED", cJSON_GetObjectItemCaseSensitive(root, "stage")->valuestring);
+    TEST_ASSERT_NULL(cJSON_GetObjectItemCaseSensitive(root, "failure_code"));
+    cJSON_Delete(root);
+
+    TEST_ASSERT_EQUAL(
+        ESP_OK,
+        device_protocol_encode_voice_turn_stage(
+            payload,
+            sizeof(payload),
+            14,
+            turn_id,
+            DEVICE_VOICE_STAGE_FOLLOW_UP_TIMEOUT,
+            8000,
+            DEVICE_VOICE_FAILURE_NONE));
+    root = cJSON_Parse(payload);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_EQUAL_STRING(
+        "FOLLOW_UP_TIMEOUT", cJSON_GetObjectItemCaseSensitive(root, "stage")->valuestring);
     TEST_ASSERT_NULL(cJSON_GetObjectItemCaseSensitive(root, "failure_code"));
     cJSON_Delete(root);
 

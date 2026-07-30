@@ -62,6 +62,30 @@ class WavPcmAudioTest {
         assertThat(WavPcmAudio.extractMono16KhzPcm(normalized)).isEqualTo(pcm);
     }
 
+    @Test
+    void resamplesSynthesized24KhzMonoPcmForStrictDevicePlayback() {
+        byte[] pcm = constantPcm(6, 1200);
+
+        byte[] normalized = WavPcmAudio.normalizeSynthesizedMono16KhzWav(
+                wav(pcm, 24000, 1, 16)
+        );
+
+        assertThat(normalized).hasSize(44 + 4 * 2);
+        assertThat(readInt(normalized, 24)).isEqualTo(16000);
+        assertThat(WavPcmAudio.extractMono16KhzPcm(normalized))
+                .isEqualTo(constantPcm(4, 1200));
+        assertThatThrownBy(() -> WavPcmAudio.extractMono16KhzPcm(wav(pcm, 24000, 1, 16)))
+                .isInstanceOf(VoiceInputException.class);
+    }
+
+    @Test
+    void rejectsUnapprovedSynthesizedSampleRates() {
+        byte[] providerWav = wav(constantPcm(6, 1200), 22050, 1, 16);
+
+        assertThatThrownBy(() -> WavPcmAudio.normalizeSynthesizedMono16KhzWav(providerWav))
+                .isInstanceOf(VoiceInputException.class);
+    }
+
     private byte[] wav(byte[] pcm, int sampleRate, int channels, int bitsPerSample) {
         byte[] wav = new byte[44 + pcm.length];
         writeAscii(wav, 0, "RIFF");
@@ -79,6 +103,14 @@ class WavPcmAudioTest {
         writeInt(wav, 40, pcm.length);
         System.arraycopy(pcm, 0, wav, 44, pcm.length);
         return wav;
+    }
+
+    private byte[] constantPcm(int samples, int value) {
+        byte[] pcm = new byte[samples * 2];
+        for (int index = 0; index < samples; index++) {
+            writeShort(pcm, index * 2, value);
+        }
+        return pcm;
     }
 
     private void writeAscii(byte[] output, int offset, String value) {

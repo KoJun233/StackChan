@@ -39,6 +39,7 @@ try {
         (Join-Path $usageDirectory 'voice_control.c.su'),
         @(
             'voice_control.c:188:1:run_voice_turn 768 static'
+            'voice_control.c:320:1:execute_voice_conversation 256 static'
             'voice_control.c:390:1:voice_task 768 static'
         ),
         [Text.UTF8Encoding]::new($false)

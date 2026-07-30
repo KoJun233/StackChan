@@ -1,17 +1,20 @@
 # 前端工作流
 
 - 状态：COMPLETE
-- 最后更新：2026-07-29
-- 当前分支：`codex/data-001-personal-data-lifecycle`
-- 基准提交：`2a3b712`
-- 最后验证提交：`2a3b712`
+- 最后更新：2026-07-31
+- 当前分支：`codex/int-009-continuous-conversation`
+- 基准提交：`a51ac83`
+- 最后验证提交：`af5bcbe`
 
 ## 当前目标
 
-完成“对话与个人数据”管理入口：按设备、时间和关键词查看对话，精确删除单条消息或整段对话、导出当前范围，并只读展示备份与恢复验证状态。
+在既有“交互与主动陪伴”页面增加连续对话开关和 3..8 秒跟进窗口；默认关闭并清晰说明本地 VAD、三回合与两分钟上限。
 
 ## 已完成
 
+- INT-009 在“交互与主动陪伴”页面增加连续对话开关和 3..8 秒跟进窗口，明确本地 VAD、最多三个成功跟进回合、从首次唤醒起最多两分钟，以及触摸/静音/离线/错误/“结束聊天”的退出规则。
+- 交互设置 API 类型与测试覆盖新增字段；设备诊断时间线增加 `FOLLOW_UP_LISTENING`、`FOLLOW_UP_TIMEOUT`、`CONVERSATION_ENDED` 中文映射，并把既有 `LISTENING_RESUMED` 明确为“恢复聆听”。
+- INT-009 在 Node 24.15.0 下通过 Vitest 24 个文件 65/65、`vue-tsc -b` 和 production build；连续对话设置不进入 Pinia 或浏览器持久化。
 - 新增“AI 陪伴 → 对话与个人数据”路由和页面；列表、消息详情、筛选、范围导出、单条/整段删除均使用真实管理员 API，删除前明确提示立即失效和不可撤销。
 - 页面只读展示最近成功备份、最近恢复验证、7 日/4 周保留数量和存储占用；明确说明历史备份保留期及网页不提供恢复操作。
 - 新增 personal-data API、页面和路由测试；官方 Node 24.15.0 容器内前端全量 24 个文件 65/65、`vue-tsc -b` 和 production build 通过，验证镜像摘要为 `sha256:a5c838d459f4be05ea2716149e1ad471d1e98d6fb35d43ab1b26fee15aef987c`。
@@ -58,15 +61,15 @@
 
 ## 正在进行
 
-DATA-001 页面已随 V22 server 发布到当前 LAN，自动验证和未登录 401 边界通过；用户已完成人工验收并确认功能正常。
+无。INT-009 管理端静态资源已发布；用户已通过页面启用连续对话并确认免唤醒跟进、静音退出和页面语音测试正常。
 
 ## 下一步操作
 
-推送任务分支，由用户创建 PR 并人工合入 `master`；随后从最新 `master` 开始下一任务。
+保持当前页面与服务端设置；INT-010 只能在 INT-009 合入最新 `master` 后从独立任务分支开始。
 
 ## 阻塞项
 
-前端实现、发布和人工验收均无阻塞。导出文件包含用户主动选择范围内的对话正文，浏览器仅生成临时 Blob 下载，不写入 Pinia、localStorage 或诊断日志。
+前端实现、发布和人工验收无阻塞。连续对话配置不得进入 Pinia 或浏览器持久化，页面不读取或显示音频、转写或回复正文。
 
 ## 关键文件
 
@@ -94,6 +97,11 @@ DATA-001 页面已随 V22 server 发布到当前 LAN，自动验证和未登录 
 
 ## 验证命令与最近结果
 
+- 2026-07-31 使用 Node v24.15.0 收尾重跑：Vitest 24 个文件 65/65、`vue-tsc -b` 和 production build 通过；既有 Vitest close-timeout advisory 不影响退出码。
+- 用户通过页面启用连续对话后确认免唤醒跟进和静音退出正常；同轮发现的播放杂音不涉及页面数据或浏览器持久化，未读取或显示音频、转写或回复正文。
+- INT-009 正式 server 镜像已包含连续对话管理资源 `interaction-BKnLI4ot.js`；网页为 200、未登录交互设置 API 为 401，数据库设置保持关闭/8 秒。未在浏览器持久化配置，未连接或刷写设备。
+- `af5bcbe` 固件刷写并上线后，管理页和 API 保持关闭/8 秒默认值；机器侧发布验证未改变浏览器持久化与隐私边界。
+- INT-009 使用受支持的 Node v24.15.0：Vitest 24 个文件 65/65、`vue-tsc -b` 和 production build 通过。新增回归覆盖交互设置字段提交与三个连续对话诊断阶段；Vitest 既有 close-timeout advisory 不影响退出码。
 - INT-008 在临时受支持的 Node v24.15.0 下完成控制台 Vitest 22 个文件 59/59、`vue-tsc -b` 和 production build；新增回归覆盖 API 请求、路由、隐私边界和紧急总停。Vitest 仍报告既有 close-timeout advisory，但退出码为 0。
 - BASE-008 文档刷新未修改前端代码；受支持的 Node v24.15.0 下 Vitest 20 个文件 57/57、`vue-tsc -b` 和 production build 通过。既有 Vitest close-timeout advisory 不影响退出码。
 - INT-007 Vitest 20 个文件 57/57、`vue-tsc -b` 和 production build 通过；新增测试覆盖八状态 multipart 生成、设备选择/启停/删除 API 和路由。Vitest close-timeout advisory 与 Node v24.14.0 engine 提示为既有非阻塞警告。
@@ -147,6 +155,7 @@ DATA-001 页面已随 V22 server 发布到当前 LAN，自动验证和未登录 
 - [0020：长期记忆必须经过确认并按会话范围组装](../decisions/0020-confirmed-scoped-long-term-memory.md)
 - [0023：文字与语音共享受控 ReactAgent、Skill、Tool 与 MCP](../decisions/0023-controlled-react-agent-skills-tools-mcp.md)
 - [0026：个人数据物理删除、范围导出与隔离备份恢复](../decisions/0026-personal-data-lifecycle-and-isolated-backups.md)
+- [0027：连续对话采用设备本地有界跟进窗口](../decisions/0027-bounded-continuous-conversation.md)
 
 ## 安全与兼容性约束
 

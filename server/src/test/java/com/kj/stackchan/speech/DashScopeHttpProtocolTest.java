@@ -1,12 +1,15 @@
 package com.kj.stackchan.speech;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -22,7 +25,7 @@ class DashScopeHttpProtocolTest {
         assertThat(DashScopeEndpoints.asrHttp("llm-workspace123").toString())
                 .isEqualTo("https://llm-workspace123.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation");
         assertThat(DashScopeEndpoints.ttsHttp("llm-workspace123").toString())
-                .isEqualTo("https://llm-workspace123.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer");
+                .isEqualTo("https://llm-workspace123.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation");
     }
 
     @Test
@@ -69,10 +72,9 @@ class DashScopeHttpProtocolTest {
         assertThat(request.get("model")).isEqualTo("future-tts-model");
         assertThat(request.get("input")).isEqualTo(Map.of(
                 "text", "你好",
-                "voice", "custom-voice",
-                "format", "wav",
-                "sample_rate", 16000
+                "voice", "custom-voice"
         ));
+        assertThat(request).doesNotContainKey("parameters");
     }
 
     @Test
@@ -87,9 +89,42 @@ class DashScopeHttpProtocolTest {
     }
 
     @Test
+    void acceptsTheObservedWulanchabuResultHostWithoutBroadeningTheAllowlist() {
+        URI result = DashScopeEndpoints.validatedDownloadUri(
+                "http://dashscope-result-wlcb.oss-cn-wulanchabu.aliyuncs.com/pre/audio.wav?signature=value%2Fpart"
+        );
+
+        assertThat(result.getScheme()).isEqualTo("https");
+        assertThat(result.getHost()).isEqualTo("dashscope-result-wlcb.oss-cn-wulanchabu.aliyuncs.com");
+        assertThat(result.getRawQuery()).isEqualTo("signature=value%2Fpart");
+        assertThatThrownBy(() -> DashScopeEndpoints.validatedDownloadUri(
+                "https://dashscope-result-wlcb.oss-cn-wulanchabu.aliyuncs.com.evil.example/audio.wav"
+        )).isInstanceOf(SpeechProviderUnavailableException.class);
+    }
+
+    @Test
     void rejectsProviderControlledUrlsOutsideTheDocumentedResultHost() {
         assertThatThrownBy(() -> DashScopeEndpoints.validatedDownloadUri(
                 "http://127.0.0.1/internal.wav"
         )).isInstanceOf(SpeechProviderUnavailableException.class);
+    }
+
+    @Test
+    void extractsOnlyBoundedSafeProviderFailureDiagnostics() {
+        WebClientResponseException response = WebClientResponseException.create(
+                400,
+                "Bad Request",
+                HttpHeaders.EMPTY,
+                """
+                        {"request_id":"request-123","code":"InvalidParameter","message":"voice is invalid\\r\\nignored line"}
+                        """.getBytes(StandardCharsets.UTF_8),
+                StandardCharsets.UTF_8
+        );
+
+        DashScopeTtsHttpClient.ProviderError error = DashScopeTtsHttpClient.providerError(response);
+
+        assertThat(error.requestId()).isEqualTo("request-123");
+        assertThat(error.code()).isEqualTo("InvalidParameter");
+        assertThat(error.message()).isEqualTo("voice is invalid ignored line");
     }
 }

@@ -33,6 +33,7 @@ foreach ($usagePath in @($voiceControlUsagePath, $voiceServiceUsagePath)) {
 
 $requiredFrames = @(
     'voice_task',
+    'execute_voice_conversation',
     'run_voice_turn',
     'voice_service_send_turn',
     'perform_request',

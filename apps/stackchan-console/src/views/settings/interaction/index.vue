@@ -37,6 +37,8 @@ const validationSchema = toTypedSchema(z.object({
   deviceId: z.string().uuid('请选择目标机器人'),
   volumePercent: z.number().int().min(0).max(100),
   nightMode: z.boolean(),
+  continuousConversationEnabled: z.boolean(),
+  followUpWindowSeconds: z.number().int().min(3).max(8),
   dndEnabled: z.boolean(),
   dndStart: z.string().min(1, '请选择免打扰开始时间'),
   dndEnd: z.string().min(1, '请选择免打扰结束时间'),
@@ -56,6 +58,8 @@ function defaults(): InteractionFormModel {
     deviceId: '',
     volumePercent: 50,
     nightMode: false,
+    continuousConversationEnabled: false,
+    followUpWindowSeconds: 8,
     dndEnabled: false,
     dndStart: '22:00',
     dndEnd: '07:00',
@@ -99,6 +103,8 @@ async function loadSettings(deviceId: string) {
       deviceId,
       volumePercent: settings.volumePercent,
       nightMode: settings.nightMode,
+      continuousConversationEnabled: settings.continuousConversationEnabled,
+      followUpWindowSeconds: settings.followUpWindowSeconds,
       dndEnabled: settings.dndEnabled,
       dndStart: settings.dndStart.slice(0, 5),
       dndEnd: settings.dndEnd.slice(0, 5),
@@ -126,7 +132,7 @@ async function submit(values: InteractionFormModel) {
   try {
     const { deviceId, ...input } = values
     await saveInteractionSettings(deviceId, input)
-    useFaToast().success('设置已保存', { description: '在线机器人会立即收到音量和夜间模式配置。' })
+    useFaToast().success('设置已保存', { description: '在线机器人会立即收到本地呈现与连续对话配置。' })
   }
   catch (error) {
     useFaToast().error('保存失败', { description: error instanceof Error ? error.message : '无法保存交互设置。' })
@@ -196,6 +202,23 @@ onMounted(loadDevices)
                   立即停止播报
                 </FaButton>
               </div>
+            </div>
+            <div class="mt-6 grid grid-cols-1 gap-x-8 gap-y-6 border-t pt-6 md:grid-cols-2">
+              <FaFormItem
+                name="continuousConversationEnabled"
+                label="连续对话"
+                description="回答后仅在本地 VAD 检测到有效语音才上传；默认关闭。"
+              >
+                <FaSwitch v-model="model.continuousConversationEnabled" />
+              </FaFormItem>
+              <FaFormItem
+                name="followUpWindowSeconds"
+                label="跟进聆听窗口（秒）"
+                required
+                description="允许 3–8 秒；每次会话最多 3 个跟进回合且总计不超过 2 分钟。"
+              >
+                <FaNumberField v-model="model.followUpWindowSeconds" :min="3" :max="8" class="w-full" />
+              </FaFormItem>
             </div>
           </FaCard>
 

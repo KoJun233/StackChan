@@ -71,6 +71,8 @@ public class InteractionSettingsController {
     public record InteractionSettingsRequest(
             @Min(0) @Max(100) int volumePercent,
             boolean nightMode,
+            boolean continuousConversationEnabled,
+            @Min(3) @Max(8) int followUpWindowSeconds,
             boolean dndEnabled,
             @NotNull LocalTime dndStart,
             @NotNull LocalTime dndEnd,
@@ -86,7 +88,8 @@ public class InteractionSettingsController {
     ) {
         InteractionSettingsService.UpdateInteractionSettingsCommand toCommand() {
             return new InteractionSettingsService.UpdateInteractionSettingsCommand(
-                    volumePercent, nightMode, dndEnabled, dndStart, dndEnd, zoneId,
+                    volumePercent, nightMode, continuousConversationEnabled, followUpWindowSeconds,
+                    dndEnabled, dndStart, dndEnd, zoneId,
                     missedReminderPolicy, missedSnoozeMinutes, proactiveEnabled, proactiveStart,
                     proactiveEnd, proactiveMinIntervalMinutes, proactiveDailyLimit, proactiveContent
             );

@@ -20,6 +20,10 @@ esp_err_t voice_control_configure(voice_wake_sensitivity_t wake_sensitivity,
                                   uint32_t speech_start_threshold,
                                   uint32_t speech_silence_threshold);
 
+/** Applies the bounded local follow-up window used after successful replies. */
+esp_err_t voice_control_configure_continuous_conversation(bool enabled,
+                                                          uint32_t follow_up_window_seconds);
+
 /** Cancels the active voice turn and stops any current playback. */
 void voice_control_cancel_active_turn(void);
 

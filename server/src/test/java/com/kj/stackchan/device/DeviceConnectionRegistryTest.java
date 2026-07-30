@@ -89,7 +89,7 @@ class DeviceConnectionRegistryTest {
         WebSocketSession session = authenticatedSession(1L, FUTURE_EXPIRY);
         connectionRegistry.register(DEVICE_ID, session);
 
-        assertThat(connectionRegistry.sendInteractionConfiguration(DEVICE_ID, 65, true)).isTrue();
+        assertThat(connectionRegistry.sendInteractionConfiguration(DEVICE_ID, 65, true, false, 8)).isTrue();
         assertThat(commandGateway.stopAudio(DEVICE_ID)).isTrue();
 
         ArgumentCaptor<TextMessage> message = ArgumentCaptor.forClass(TextMessage.class);
@@ -100,6 +100,22 @@ class DeviceConnectionRegistryTest {
         );
         assertThat(message.getAllValues().get(1).getPayload()).matches(
                 "\\{\"type\":\"stop_audio\",\"command_id\":\"[0-9a-f-]{36}\"}"
+        );
+    }
+
+    @Test
+    void sendsContinuousConversationFieldsOnlyWhenTheFeatureIsEnabled() throws Exception {
+        WebSocketSession session = authenticatedSession(1L, FUTURE_EXPIRY);
+        connectionRegistry.register(DEVICE_ID, session);
+
+        assertThat(connectionRegistry.sendInteractionConfiguration(DEVICE_ID, 65, false, true, 8)).isTrue();
+
+        ArgumentCaptor<TextMessage> message = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session).sendMessage(message.capture());
+        assertThat(message.getValue().getPayload()).matches(
+                "\\{\"type\":\"configure_interaction\",\"command_id\":\"[0-9a-f-]{36}\","
+                        + "\"volume_percent\":65,\"night_mode\":false,"
+                        + "\"continuous_conversation_enabled\":true,\"follow_up_window_seconds\":8}"
         );
     }
 

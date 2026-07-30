@@ -87,6 +87,21 @@ class VoiceTurnDiagnosticsServiceTest {
     }
 
     @Test
+    void followUpTimeoutAndConversationEndAreNormalCompletionStages() {
+        UUID deviceId = UUID.randomUUID();
+        UUID turnId = UUID.randomUUID();
+        VoiceTurnEntity turn = new VoiceTurnEntity(turnId, deviceId, NOW);
+        when(turnRepository.findById(turnId)).thenReturn(Optional.of(turn));
+
+        service().recordDeviceStage(deviceId, turnId, VoiceTurnStage.FOLLOW_UP_LISTENING, 0, null);
+        service().recordDeviceStage(deviceId, turnId, VoiceTurnStage.FOLLOW_UP_TIMEOUT, 8000, null);
+        service().recordDeviceStage(deviceId, turnId, VoiceTurnStage.CONVERSATION_ENDED, 8001, null);
+
+        assertThat(turn.getStatus()).isEqualTo(VoiceTurnStatus.COMPLETED);
+        assertThat(turn.getFailureCode()).isNull();
+    }
+
+    @Test
     void cancelsEveryActiveTurnForADevice() {
         UUID deviceId = UUID.randomUUID();
         VoiceTurnEntity first = new VoiceTurnEntity(UUID.randomUUID(), deviceId, NOW);

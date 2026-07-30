@@ -1,18 +1,22 @@
 # 部署工作流
 
 - 状态：COMPLETE
-- 最后更新：2026-07-29
-- 当前分支：`codex/data-001-personal-data-lifecycle`
-- 基准提交：`2a3b712`
-- 最后验证提交：`2a3b712`
-- 当前运行态代码：INT-008 任务版本，包含 DeepSeek V4 Agent Tool 修复、自定义 Skill ZIP 生命周期与可移植 MCP 管理；CoreS3 `b05d60f`，Flyway V21。
+- 最后更新：2026-07-31
+- 当前分支：`codex/int-009-continuous-conversation`
+- 基准提交：`a51ac83`
+- 最后验证提交：`62c727b`
+- 当前运行态代码：INT-009 server `62c727b` / Flyway V23、独立 `postgres-backup` 服务；CoreS3 `dd81a7e / motion_disabled`。24→16 kHz 合成重采样已 server-only 发布，当前配置的 TTS→ASR 不落盘端到端直连通过。
 
 ## 当前目标
 
-在不改变当前 V21 LAN 运行态的前提下准备 DATA-001：新增独立备份卷和 PostgreSQL 工具容器、V22 server 及管理页面；只有用户明确授权后才实际发布。
+只替换 INT-009 / V23 LAN server 以发布 DashScope 非实时 TTS 请求结构修复，保持 PostgreSQL、Redis、卷、端口、凭据、固件、NVS 和生产 HTTPS-only 边界不变。
 
 ## 已完成
 
+- 用户明确授权后，发布前生成新 V22 逻辑备份并通过隔离恢复验证；旧 server 镜像保留为 `stackchan-foundation-server:rollback-a2f723e-pre-v23`。
+- 从 `a2f723e` 正式 Dockerfile 构建 `sha256:6902bf3e287568bef13d0fa1247676e475f34357fe7d22923687be10d651d332`，只将 server 容器替换为 `f3a9651e468b`；PostgreSQL、Redis 和备份容器 ID 未改变。
+- Flyway 从 V22 升至 V23；健康与网页为 200、未登录交互设置 API 为 401、启动错误和重启均为 0。旧 `b05d60f / motion_disabled` 自动重连并跨两个 25 秒周期刷新心跳；未连接 COM3、刷写或 OTA。
+- 用户明确授权 `af5bcbe`、CoreS3、`COM3` 和 LAN HTTP Quad profile 后，从干净提交重建并完整刷写五个非 NVS 区域；独立回读、启动和跨心跳周期验证通过，NVS、server、PostgreSQL、Redis、备份容器、卷、端口、凭据与生产 HTTPS-only 边界未改变。
 - 新增独立 `stackchan-postgres-backups` 卷、`postgres-backup` 服务和 server 只读挂载；备份镜像构建阶段执行 7 日/4 周轮转测试，覆盖跨月、跨年、同周重复与部分文件边界。
 - 当前运行 PostgreSQL 已通过明确命名的临时卷完成一次只读 `pg_dump`、SHA-256、一次性空 PostgreSQL 恢复和四类关键记录计数比对；结果成功，临时卷已删除，运行数据库、server、Redis、端口和固件均未改变。
 - 新增 `scripts/verify-latest-postgres-backup.ps1` 和备份 runbook；脚本不接收目标数据库地址，只允许恢复到备份容器创建的一次性实例。
@@ -73,23 +77,15 @@
 
 ## 正在进行
 
-当前 LAN 已运行 DATA-001 / Flyway V22 和独立 `postgres-backup` 服务，用户页面人工验收通过。真实 HTTPS MCP 和授权状态保持不变，CoreS3 `b05d60f` 保持不变，未连接设备调试端口。
-
-当前 `stackchan-foundation` 使用正式 LAN overlay 运行 `f91dbdb` server，Flyway 为 V18，并发布 `0.0.0.0:8080`。CoreS3 运行 `b05d60f` LAN HTTP Quad 镜像并持续报告 `motion_disabled`；PostgreSQL、Redis、卷、端口、凭据和生产 HTTPS-only 边界未改变。
-
-首轮验收修复的 server/前端已发布。首次提醒在重连窗口丢失 ACK，既有五分钟恢复任务重试后送达；主动问候下一调度周期一次送达。固件取消上报修复已随 `2465427` 完整刷写，等待实体复测。
-
-此前正常对话失败已定位为设备侧 `voice_control` 栈溢出；修复镜像 `216d383` 已部署到设备，正常回合、可恢复异常和恢复后的正常回合均完成人工验收。server 运行态、V14 数据库和 LAN overlay 无需修改。
-
-INT-003 server 发布后正常回合为 `COMPLETED`；随后 `717a8b1` 固件完整刷入 CoreS3，五区域校验、启动、WebSocket、心跳和四项实体触摸验收全部通过。最近运行数据包含真实 `TOUCH_STARTED` 与 `CANCELLED`，Flyway 保持 V15，近期服务端错误数为 0。
+无。INT-009 server/V23、CoreS3 `dd81a7e`、DashScope TTS 兼容修复和 LAN 人工验收均已完成，当前运行态保持健康。
 
 ## 下一步操作
 
-推送任务分支，由用户创建 PR 并人工合入 `master`。如需回退，只回退 server 到 `stackchan-foundation-server:rollback-data001-pre-v22`，并在操作前单独评估 V22 数据库兼容性和备份服务状态。
+保持当前 LAN server、Flyway V23、CoreS3 `dd81a7e`、NVS 和生产 HTTPS-only 边界不变；取得用户授权后只推送当前任务分支。
 
 ## 阻塞项
 
-实现、镜像、运行发布和人工验收均无阻塞。工作区仍没有 `.env`；后续重建必须继续从现有容器或受控环境文件保留相同数据库密码、设备密钥、加密密钥和 MCP 密文解密能力，不得输出秘密、组合 LAN 与 production profile 或降低生产 HTTPS-only 边界。
+INT-009 部署无阻塞；尚未取得外部推送授权。工作区仍没有 `.env`；任何后续重建必须继续从现有容器的受控进程环境保留相同秘密值，不得输出秘密、组合 LAN 与 production profile 或降低生产 HTTPS-only 边界。
 
 ## 关键文件
 
@@ -100,6 +96,19 @@ INT-003 server 发布后正常回合为 `COMPLETED`；随后 `717a8b1` 固件完
 
 ## 验证命令与最近结果
 
+- 2026-07-31 收尾重跑 LAN Compose 静态验证通过；仅使用当前进程内非秘密占位值。运行 server 健康 200、镜像 `sha256:090a3117fe970da14b53d2278df5967629abf5ae912c19e1e83bec9f08cd1d8b`、容器 `a3c3eb6efeb4`、重启 0、Flyway `23|true`，CoreS3 `dd81a7e / motion_disabled` 心跳 19 秒内。
+- `62c727b` 正式镜像为 `sha256:090a3117fe970da14b53d2278df5967629abf5ae912c19e1e83bec9f08cd1d8b`，只重建 server 为 `a3c3eb6efeb4`。健康 200、Flyway `23|true`、重启 0，CoreS3 保持 `dd81a7e / motion_disabled`；PostgreSQL、Redis、备份容器、固件和 NVS 未变。当前配置的不落盘端到端直连为 TTS 200、下载 200、规范化 16 kHz、ASR 200 且转写非空，临时探测文件已删除。
+- 用户确认页面语音测试成功且实体播放不再有电流音；本轮无需再次替换容器、刷写固件或改写配置。
+- `2ec69e1` 正式镜像为 `sha256:6a79deb2eded1541e22ae367b39d8c3d3d8ac70413a38394af1b4b01ad41f681`，只重建 server 为 `4ddd62c9ee5d`。健康 200、Flyway `23|true`、重启 0、LAN 端口正确，当前配置为 `qwen-tts-latest / NON_REALTIME / Dylan`，`dd81a7e / motion_disabled` 心跳 4 秒内；发布后 50 秒没有新的页面测试请求。
+- `1cd6f76` 正式 Dockerfile 首次构建因 Maven Central TLS 握手中断失败，重试成功生成 `sha256:76d5a78c0504bc339cb1b37260c9e7e4acf351caef58daf98fbfe3e912277349`；只重建 server 为 `2f4387d1a399`。健康/网页 200、Flyway `23|true`、重启 0、LAN `0.0.0.0:8080`，`dd81a7e / motion_disabled` 心跳 12 秒内；PostgreSQL、Redis 和备份容器 ID 未变。
+- 一次性内存直连确认当前 `qwen-tts + Dylan` 为供应商 400 / `InvalidParameter`，而 `qwen-tts-latest + Dylan` 为 200 且返回音频 URL；辅助文件已删除。安全诊断定向通过 15/15，服务端 Maven 全量通过 279/279。
+- 当前配置直连得到乌兰察布 OSS 签名 URL；不输出 URL 查询串的 HTTPS 下载验证为 200、88,364 字节且 RIFF/WAVE 魔数匹配。精确主机/伪造后缀拒绝定向通过 16/16，服务端全量通过 280/280。
+- 当前结果 WAV 头为 PCM/单声道/24 kHz/16-bit，数据区 88,320 字节。供应商合成 24→16 kHz 重采样及设备输入严格拒绝定向通过 20/20，服务端全量通过 282/282。
+- 经用户精确授权，`dd81a7e` LAN HTTP Quad 五个非 NVS 区域完整刷入 CoreS3 `COM3`，五次独立 `verify_flash` 均匹配。启动确认 `speaker DMA=512x8 task_priority=4`、8 MB Quad PSRAM/80 MHz、加密 NVS、CoreS3 外设、WakeNet、Wi-Fi、WebSocket 和 `motion_disabled`，45 秒致命错误为 0；server 健康 200、重启 0、Flyway V23，数据库收到新鲜 `dd81a7e` 心跳。
+- 用户确认 `af5bcbe` 的免唤醒跟进和静音退出正常；音量降至 50% 连续对话 2–3 轮后仍有电流音，基本排除高音量削波。播放加固提交 `0646cf6` 已从干净目录构建 LAN HTTP Quad 镜像 `0x14b5a0`、余量 57%，嵌入版本正确；未连接 COM3、未刷写或 OTA。
+- INT-009 发布前 V22 备份与隔离恢复通过；`a2f723e` 镜像只替换 server，Flyway `23|true`、迁移数 23、健康/网页 200、未登录交互设置 401、连续对话设置关闭/8 秒、静态资源存在、启动错误数和重启数 0。旧 `b05d60f / motion_disabled` 在退避后重连，心跳从 `12:38:39Z` 刷新至 `12:39:04Z`；PostgreSQL/Redis/备份容器、卷、端口、凭据和固件未变。
+- `af5bcbe` LAN HTTP Quad 五区完整刷写和独立 `verify_flash` 通过且 NVS 未擦除；启动与跨心跳周期验证通过，数据库收到 `af5bcbe / motion_disabled`，server 健康 200、重启和错误为 0，Flyway 保持 `23|true`，连续对话设置保持关闭/8 秒。
+- INT-009 使用仅限当前进程的非秘密占位值通过 LAN Compose 静态验证和 production Compose 展开；基础模式保持 `127.0.0.1:8080`，LAN overlay 保持 `0.0.0.0:8080`，PostgreSQL/Redis 不发布主机端口，production 继续维持 HTTPS-only 边界。未创建 `.env`、构建发布镜像、替换容器、执行 V23 运行迁移或连接设备端口。
 - V21 工作树后端 Maven 全量 266/266、Testcontainers 空库 V1..V21、前端 Vitest 22 个文件 62/62、`vue-tsc -b`、production build、`git diff --check`、`pnpm docs:check` 和 LAN Compose 静态验证通过。发布后健康为 200、Flyway `21|true`、迁移数 21、MCP 连接表存在、启动错误数为 0；真实 HTTPS MCP 初始化和 `tools/list` 为 200，并发现 8 个 Tool，授权状态由管理员页面控制。
 - V20 工作树后端 Maven 全量 264/264、Testcontainers 空库 V1..V20、前端 Vitest 22 个文件 61/61、`vue-tsc -b`、production build、`git diff --check`、`pnpm docs:check` 和 LAN Compose 静态验证通过。发布后健康与网页为 200、Flyway `20|true`、迁移数 20、Skill 表与卷存在、未登录 Agent API/页面为 401、启动错误数为 0，CoreS3 心跳新鲜；未创建 `.env`、连接 MCP/COM3 或刷写固件。
 - INT-008 通过 LAN Compose 静态验证：基础模式仍只绑定 `127.0.0.1:8080`，LAN overlay 为 `0.0.0.0:8080`，PostgreSQL/Redis 不发布主机端口。发布后健康与网页根地址为 200、Flyway `19|true`、三张 Agent 表和三个 Agent 静态压缩资源存在、未登录路由/API 为 401、近五分钟错误数为 0；未创建 `.env` 或连接 MCP 服务。
@@ -165,6 +174,7 @@ INT-003 server 发布后正常回合为 `COMPLETED`；随后 `717a8b1` 固件完
 - [0018：触摸控制采用本地事件队列与幂等语音回合取消](../decisions/0018-touch-control-and-voice-turn-cancellation.md)
 - [0023：文字与语音共享受控 ReactAgent、Skill、Tool 与 MCP](../decisions/0023-controlled-react-agent-skills-tools-mcp.md)
 - [0026：个人数据物理删除、范围导出与隔离备份恢复](../decisions/0026-personal-data-lifecycle-and-isolated-backups.md)
+- [0027：连续对话采用设备本地有界跟进窗口](../decisions/0027-bounded-continuous-conversation.md)
 - [个人数据备份与隔离恢复验证 runbook](../../runbooks/personal-data-backup.md)
 - [Agent、Skill、Tool 与 MCP 运维 runbook](../../runbooks/agent-tools-mcp.md)
 

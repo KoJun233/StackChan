@@ -5,6 +5,7 @@ import java.util.Arrays;
 final class WavPcmAudio {
 
     private static final int REQUIRED_SAMPLE_RATE = 16000;
+    private static final int SUPPORTED_SYNTHESIS_SAMPLE_RATE = 24000;
     private static final int CANONICAL_WAV_HEADER_SIZE = 44;
     private static final String INVALID_WAV = "WAV audio must be 16 kHz, 16-bit, mono PCM";
 
@@ -16,12 +17,23 @@ final class WavPcmAudio {
     }
 
     static byte[] extractMono16KhzPcm(byte[] wav, boolean allowFinalDataLengthPlaceholder) {
+        ParsedPcm parsed = parseMono16BitPcm(wav, allowFinalDataLengthPlaceholder);
+        if (parsed.sampleRate() != REQUIRED_SAMPLE_RATE) {
+            throw new VoiceInputException(INVALID_WAV);
+        }
+        return parsed.pcm();
+    }
+
+    private static ParsedPcm parseMono16BitPcm(byte[] wav, boolean allowFinalDataLengthPlaceholder) {
         if (wav == null || wav.length < 44
                 || !matches(wav, 0, "RIFF") || !matches(wav, 8, "WAVE")) {
             throw new VoiceInputException(INVALID_WAV);
         }
 
-        boolean validFormat = false;
+        int audioFormat = -1;
+        int channels = -1;
+        int sampleRate = -1;
+        int bitsPerSample = -1;
         int dataOffset = -1;
         int dataLength = -1;
         int offset = 12;
@@ -41,12 +53,10 @@ final class WavPcmAudio {
                 if (chunkLength < 16) {
                     throw new VoiceInputException(INVALID_WAV);
                 }
-                int audioFormat = readLittleEndianShort(wav, payloadOffset);
-                int channels = readLittleEndianShort(wav, payloadOffset + 2);
-                int sampleRate = readLittleEndianInt(wav, payloadOffset + 4);
-                int bitsPerSample = readLittleEndianShort(wav, payloadOffset + 14);
-                validFormat = audioFormat == 1 && channels == 1
-                        && sampleRate == REQUIRED_SAMPLE_RATE && bitsPerSample == 16;
+                audioFormat = readLittleEndianShort(wav, payloadOffset);
+                channels = readLittleEndianShort(wav, payloadOffset + 2);
+                sampleRate = readLittleEndianInt(wav, payloadOffset + 4);
+                bitsPerSample = readLittleEndianShort(wav, payloadOffset + 14);
             } else if (dataChunk) {
                 dataOffset = payloadOffset;
                 dataLength = chunkLength;
@@ -54,14 +64,22 @@ final class WavPcmAudio {
             offset = payloadOffset + chunkLength + (chunkLength & 1);
         }
 
-        if (!validFormat || dataOffset < 0 || dataLength <= 0 || (dataLength & 1) != 0) {
+        if (audioFormat != 1 || channels != 1 || sampleRate <= 0 || bitsPerSample != 16
+                || dataOffset < 0 || dataLength <= 0 || (dataLength & 1) != 0) {
             throw new VoiceInputException(INVALID_WAV);
         }
-        return Arrays.copyOfRange(wav, dataOffset, dataOffset + dataLength);
+        return new ParsedPcm(sampleRate, Arrays.copyOfRange(wav, dataOffset, dataOffset + dataLength));
     }
 
     static byte[] normalizeSynthesizedMono16KhzWav(byte[] wav) {
-        byte[] pcm = extractMono16KhzPcm(wav, true);
+        ParsedPcm parsed = parseMono16BitPcm(wav, true);
+        byte[] pcm = switch (parsed.sampleRate()) {
+            case REQUIRED_SAMPLE_RATE -> parsed.pcm();
+            case SUPPORTED_SYNTHESIS_SAMPLE_RATE -> resampleMono16BitPcm(
+                    parsed.pcm(), SUPPORTED_SYNTHESIS_SAMPLE_RATE, REQUIRED_SAMPLE_RATE
+            );
+            default -> throw new VoiceInputException(INVALID_WAV);
+        };
         byte[] normalized = new byte[CANONICAL_WAV_HEADER_SIZE + pcm.length];
         writeAscii(normalized, 0, "RIFF");
         writeLittleEndianInt(normalized, 4, normalized.length - 8);
@@ -78,6 +96,26 @@ final class WavPcmAudio {
         writeLittleEndianInt(normalized, 40, pcm.length);
         System.arraycopy(pcm, 0, normalized, CANONICAL_WAV_HEADER_SIZE, pcm.length);
         return normalized;
+    }
+
+    private static byte[] resampleMono16BitPcm(byte[] input, int sourceRate, int targetRate) {
+        int inputSamples = input.length / 2;
+        int outputSamples = Math.toIntExact((long) inputSamples * targetRate / sourceRate);
+        if (outputSamples <= 0) {
+            throw new VoiceInputException(INVALID_WAV);
+        }
+        byte[] output = new byte[outputSamples * 2];
+        for (int outputIndex = 0; outputIndex < outputSamples; outputIndex++) {
+            long scaledPosition = (long) outputIndex * sourceRate;
+            int lowerIndex = Math.toIntExact(scaledPosition / targetRate);
+            int upperIndex = Math.min(lowerIndex + 1, inputSamples - 1);
+            double fraction = (double) (scaledPosition % targetRate) / targetRate;
+            int lower = readSignedLittleEndianShort(input, lowerIndex * 2);
+            int upper = readSignedLittleEndianShort(input, upperIndex * 2);
+            int sample = (int) Math.round(lower + (upper - lower) * fraction);
+            writeLittleEndianShort(output, outputIndex * 2, sample);
+        }
+        return output;
     }
 
     static String layoutDiagnosticCode(byte[] wav) {
@@ -180,6 +218,10 @@ final class WavPcmAudio {
         return Byte.toUnsignedInt(input[offset]) | Byte.toUnsignedInt(input[offset + 1]) << 8;
     }
 
+    private static short readSignedLittleEndianShort(byte[] input, int offset) {
+        return (short) readLittleEndianShort(input, offset);
+    }
+
     private static int readLittleEndianInt(byte[] input, int offset) {
         if (offset < 0 || offset + 4 > input.length) {
             throw new VoiceInputException(INVALID_WAV);
@@ -206,5 +248,8 @@ final class WavPcmAudio {
         output[offset + 1] = (byte) (value >>> 8);
         output[offset + 2] = (byte) (value >>> 16);
         output[offset + 3] = (byte) (value >>> 24);
+    }
+
+    private record ParsedPcm(int sampleRate, byte[] pcm) {
     }
 }

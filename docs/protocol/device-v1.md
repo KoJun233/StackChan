@@ -40,7 +40,7 @@ New firmware may report a privacy-safe voice turn stage:
 {"type":"voice_turn_stage","sequence":3,"turn_id":"550e8400-e29b-41d4-a716-446655440000","stage":"LISTENING","elapsed_ms":120}
 ```
 
-`turn_id` is a canonical UUID generated at local wake detection or touch-to-talk start. `elapsed_ms` is an integer from 0 through 300000 measured from the device monotonic clock. Device stages are limited to `WAKE_DETECTED`, `TOUCH_STARTED`, `LISTENING`, `SPEECH_CAPTURED`, `UPLOAD_STARTED`, `PLAYBACK_STARTED`, `PLAYBACK_COMPLETED`, `LISTENING_RESUMED`, `CANCELLED`, and `FAILED`. `CANCELLED` is a terminal, idempotent control signal: the authenticated device may only cancel the same device's turn, and the device must also abort or ignore its local HTTP response so a late reply cannot play. A failed event has exactly one additional `failure_code` field from the protocol allowlist; other stages must not include it. Extra fields, free text, touch coordinates, transcripts, replies, audio, URLs, credentials, and server-only stages are rejected.
+`turn_id` is a canonical UUID generated at local wake detection, touch-to-talk start, or the start of one bounded follow-up window. `elapsed_ms` is an integer from 0 through 300000 measured from that turn's device monotonic start. Device stages are limited to `WAKE_DETECTED`, `TOUCH_STARTED`, `LISTENING`, `FOLLOW_UP_LISTENING`, `SPEECH_CAPTURED`, `UPLOAD_STARTED`, `PLAYBACK_STARTED`, `PLAYBACK_COMPLETED`, `FOLLOW_UP_TIMEOUT`, `CONVERSATION_ENDED`, `LISTENING_RESUMED`, `CANCELLED`, and `FAILED`. `FOLLOW_UP_TIMEOUT` and `CONVERSATION_ENDED` are normal completion stages and never carry a failure code. `LISTENING_RESUMED` confirms that the device audio/listening loop has been restored; it may be followed by another bounded follow-up turn or by WakeNet. `CANCELLED` is a terminal, idempotent control signal: the authenticated device may only cancel the same device's turn, and the device must also abort or ignore its local HTTP response so a late reply cannot play. A failed event has exactly one additional `failure_code` field from the protocol allowlist; other stages must not include it. Extra fields, free text, touch coordinates, transcripts, replies, audio, URLs, credentials, and server-only stages are rejected.
 
 ## Device-authenticated voice HTTP
 
@@ -131,13 +131,21 @@ Accept: audio/wav
 
 The server returns audio only when the reminder belongs to the authenticated device and is currently `DISPATCHED`. Offline reminders remain `PENDING`; after the device reconnects, the scheduler synthesizes the WAV and sends `speak_reminder` to the live authenticated session. A dispatch left unacknowledged for more than five minutes is recovered to `PENDING`.
 
-The bounded interaction configuration command is:
+The bounded interaction configuration command keeps this legacy form while continuous conversation is disabled:
 
 ```json
 {"type":"configure_interaction","command_id":"cmd-interaction","volume_percent":50,"night_mode":false}
 ```
 
 `volume_percent` is an integer from 0 through 100 and `night_mode` is boolean. The server sends current values after an administrator saves device interaction settings and whenever that device establishes an authenticated connection. Firmware maps volume to its bounded speaker range and uses night mode only to lower normal display brightness; neither field may enable motion or another actuator.
+
+When continuous conversation is enabled, the strict command has exactly two additional fields:
+
+```json
+{"type":"configure_interaction","command_id":"cmd-interaction","volume_percent":50,"night_mode":false,"continuous_conversation_enabled":true,"follow_up_window_seconds":8}
+```
+
+`follow_up_window_seconds` is an integer from 3 through 8 so the existing 8-second and 512 KiB voice-upload limits remain unchanged. New firmware accepts exactly the legacy four-field form or the extended six-field form; receiving the legacy form disables continuous conversation and restores the 8-second default. After a successful reply, enabled firmware may open a local-VAD follow-up window without WakeNet. Silence does not upload audio. The local conversation ends after at most three successful follow-ups or two minutes from the first trigger, and also ends on touch cancellation, the exact normalized phrase `结束聊天`, connectivity loss, or any turn failure. Existing SCV1 framing is unchanged.
 
 The immediate playback stop command is:
 

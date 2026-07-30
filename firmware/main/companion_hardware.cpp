@@ -25,12 +25,18 @@
 #define SCREENSAVER_FRAME_MS 2500
 #define FACE_ANIMATION_FRAME_MS 100
 #define AUDIO_WAIT_MARGIN_MS 3000
+#define SPEAKER_DMA_BUFFER_LENGTH 512
+#define SPEAKER_DMA_BUFFER_COUNT 8
+#define SPEAKER_TASK_PRIORITY 4
 #define LEFT_PUPIL_X 100
 #define RIGHT_PUPIL_X 220
 #define PUPIL_Y 92
 #define PUPIL_RADIUS 12
 #define EYE_COLOR 0xFFFFFF
 #define PUPIL_COLOR 0x101018
+
+static_assert(SPEAKER_DMA_BUFFER_LENGTH <= 1024, "M5Unified limits the speaker DMA buffer length to 1024");
+static_assert(SPEAKER_TASK_PRIORITY > UI_TASK_PRIORITY, "Speaker refill must outrank display animation");
 
 static const char *TAG = "companion_hardware";
 static SemaphoreHandle_t s_board_mutex;
@@ -462,6 +468,12 @@ extern "C" esp_err_t companion_hardware_init(void)
     config.internal_spk = true;
     config.led_brightness = 0;
     M5.begin(config);
+    M5.Speaker.end();
+    auto speaker_config = M5.Speaker.config();
+    speaker_config.dma_buf_len = SPEAKER_DMA_BUFFER_LENGTH;
+    speaker_config.dma_buf_count = SPEAKER_DMA_BUFFER_COUNT;
+    speaker_config.task_priority = SPEAKER_TASK_PRIORITY;
+    M5.Speaker.config(speaker_config);
     M5.Display.setRotation(1);
     M5.Display.setBrightness(active_brightness());
     s_face_canvas.setColorDepth(16);
@@ -470,7 +482,6 @@ extern "C" esp_err_t companion_hardware_init(void)
         ESP_LOGW(TAG, "Face canvas unavailable; using direct display fallback");
     }
     M5.Speaker.setVolume((uint8_t)((s_volume_percent * 255 + 50) / 100));
-    M5.Speaker.end();
     if (!M5.Mic.begin()) {
         return ESP_FAIL;
     }
@@ -483,7 +494,11 @@ extern "C" esp_err_t companion_hardware_init(void)
         s_initialized = false;
         return ESP_ERR_NO_MEM;
     }
-    ESP_LOGI(TAG, "CoreS3 display, touch, microphone, and speaker initialized; actuators remain disabled");
+    ESP_LOGI(TAG,
+             "CoreS3 display, touch, microphone, and speaker initialized; speaker DMA=%ux%u task_priority=%u; actuators remain disabled",
+             (unsigned int)speaker_config.dma_buf_len,
+             (unsigned int)speaker_config.dma_buf_count,
+             (unsigned int)speaker_config.task_priority);
     return ESP_OK;
 }
 
