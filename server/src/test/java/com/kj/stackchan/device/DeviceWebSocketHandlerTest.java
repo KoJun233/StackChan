@@ -189,6 +189,36 @@ class DeviceWebSocketHandlerTest {
     }
 
     @Test
+    void acceptsOnlyStructuredContinuousConversationStages() throws Exception {
+        WebSocketSession session = authenticatedSession();
+        handler.afterConnectionEstablished(session);
+        UUID turnId = UUID.randomUUID();
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"voice_turn_stage","sequence":9,"turn_id":"%s",\
+                "stage":"FOLLOW_UP_LISTENING","elapsed_ms":0}
+                """.formatted(turnId)));
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"voice_turn_stage","sequence":10,"turn_id":"%s",\
+                "stage":"FOLLOW_UP_TIMEOUT","elapsed_ms":8000}
+                """.formatted(turnId)));
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"voice_turn_stage","sequence":11,"turn_id":"%s",\
+                "stage":"CONVERSATION_ENDED","elapsed_ms":8001}
+                """.formatted(turnId)));
+
+        verify(voiceTurnDiagnosticsService).recordDeviceStage(
+                DEVICE_ID, turnId, VoiceTurnStage.FOLLOW_UP_LISTENING, 0, null
+        );
+        verify(voiceTurnDiagnosticsService).recordDeviceStage(
+                DEVICE_ID, turnId, VoiceTurnStage.FOLLOW_UP_TIMEOUT, 8000, null
+        );
+        verify(voiceTurnDiagnosticsService).recordDeviceStage(
+                DEVICE_ID, turnId, VoiceTurnStage.CONVERSATION_ENDED, 8001, null
+        );
+    }
+
+    @Test
     void cancelsTheMatchingVoiceTurnAfterDiagnosticsOwnershipValidation() throws Exception {
         WebSocketSession session = authenticatedSession();
         handler.afterConnectionEstablished(session);

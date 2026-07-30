@@ -55,7 +55,9 @@ public class VoiceTurnEntity {
             } else if (stage == VoiceTurnStage.CANCELLED) {
                 status = VoiceTurnStatus.CANCELLED;
                 failureCode = null;
-            } else if (stage == VoiceTurnStage.LISTENING_RESUMED) {
+            } else if (stage == VoiceTurnStage.LISTENING_RESUMED
+                    || stage == VoiceTurnStage.FOLLOW_UP_TIMEOUT
+                    || stage == VoiceTurnStage.CONVERSATION_ENDED) {
                 status = VoiceTurnStatus.COMPLETED;
                 failureCode = null;
             } else if (stage == VoiceTurnStage.TTS_COMPLETED) {

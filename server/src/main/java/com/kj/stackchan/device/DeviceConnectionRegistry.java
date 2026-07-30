@@ -113,8 +113,16 @@ public class DeviceConnectionRegistry {
         return sendPayload(deviceId, payload);
     }
 
-    public boolean sendInteractionConfiguration(UUID deviceId, int volumePercent, boolean nightMode) {
-        String payload = interactionConfigurationPayload(volumePercent, nightMode);
+    public boolean sendInteractionConfiguration(
+            UUID deviceId,
+            int volumePercent,
+            boolean nightMode,
+            boolean continuousConversationEnabled,
+            int followUpWindowSeconds
+    ) {
+        String payload = interactionConfigurationPayload(
+                volumePercent, nightMode, continuousConversationEnabled, followUpWindowSeconds
+        );
         return payload != null && sendPayload(deviceId, payload);
     }
 
@@ -122,16 +130,31 @@ public class DeviceConnectionRegistry {
             UUID deviceId,
             WebSocketSession session,
             int volumePercent,
-            boolean nightMode
+            boolean nightMode,
+            boolean continuousConversationEnabled,
+            int followUpWindowSeconds
     ) throws IOException {
-        String payload = interactionConfigurationPayload(volumePercent, nightMode);
+        String payload = interactionConfigurationPayload(
+                volumePercent, nightMode, continuousConversationEnabled, followUpWindowSeconds
+        );
         return payload != null && sendIfActive(deviceId, session, new TextMessage(payload));
     }
 
-    private String interactionConfigurationPayload(int volumePercent, boolean nightMode) {
+    private String interactionConfigurationPayload(
+            int volumePercent,
+            boolean nightMode,
+            boolean continuousConversationEnabled,
+            int followUpWindowSeconds
+    ) {
         try {
-            return objectMapper.writeValueAsString(new ConfigureInteractionCommand(
-                    "configure_interaction", UUID.randomUUID().toString(), volumePercent, nightMode
+            String commandId = UUID.randomUUID().toString();
+            if (!continuousConversationEnabled) {
+                return objectMapper.writeValueAsString(new ConfigureInteractionCommand(
+                        "configure_interaction", commandId, volumePercent, nightMode
+                ));
+            }
+            return objectMapper.writeValueAsString(new ConfigureContinuousInteractionCommand(
+                    "configure_interaction", commandId, volumePercent, nightMode, true, followUpWindowSeconds
             ));
         } catch (JsonProcessingException exception) {
             return null;
@@ -545,6 +568,16 @@ public class DeviceConnectionRegistry {
             String command_id,
             int volume_percent,
             boolean night_mode
+    ) {
+    }
+
+    private record ConfigureContinuousInteractionCommand(
+            String type,
+            String command_id,
+            int volume_percent,
+            boolean night_mode,
+            boolean continuous_conversation_enabled,
+            int follow_up_window_seconds
     ) {
     }
 

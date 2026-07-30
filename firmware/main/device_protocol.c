@@ -96,6 +96,8 @@ static const char *voice_stage_name(device_voice_turn_stage_t stage)
         return "TOUCH_STARTED";
     case DEVICE_VOICE_STAGE_LISTENING:
         return "LISTENING";
+    case DEVICE_VOICE_STAGE_FOLLOW_UP_LISTENING:
+        return "FOLLOW_UP_LISTENING";
     case DEVICE_VOICE_STAGE_SPEECH_CAPTURED:
         return "SPEECH_CAPTURED";
     case DEVICE_VOICE_STAGE_UPLOAD_STARTED:
@@ -104,6 +106,10 @@ static const char *voice_stage_name(device_voice_turn_stage_t stage)
         return "PLAYBACK_STARTED";
     case DEVICE_VOICE_STAGE_PLAYBACK_COMPLETED:
         return "PLAYBACK_COMPLETED";
+    case DEVICE_VOICE_STAGE_FOLLOW_UP_TIMEOUT:
+        return "FOLLOW_UP_TIMEOUT";
+    case DEVICE_VOICE_STAGE_CONVERSATION_ENDED:
+        return "CONVERSATION_ENDED";
     case DEVICE_VOICE_STAGE_LISTENING_RESUMED:
         return "LISTENING_RESUMED";
     case DEVICE_VOICE_STAGE_CANCELLED:
@@ -284,10 +290,26 @@ bool device_protocol_parse_command(const char *payload,
             command->speech_silence_threshold = speech_silence_threshold->valueint;
         }
     } else if (valid && strcmp(type->valuestring, "configure_interaction") == 0 &&
-               cJSON_GetArraySize(root) == 4) {
+               (cJSON_GetArraySize(root) == 4 || cJSON_GetArraySize(root) == 6)) {
         cJSON *volume_percent = cJSON_GetObjectItemCaseSensitive(root, "volume_percent");
         cJSON *night_mode = cJSON_GetObjectItemCaseSensitive(root, "night_mode");
         valid = is_integer_in_range(volume_percent, 0, 100) && cJSON_IsBool(night_mode);
+        command->continuous_conversation_enabled = false;
+        command->follow_up_window_seconds = DEVICE_PROTOCOL_FOLLOW_UP_WINDOW_SECONDS_DEFAULT;
+        if (valid && cJSON_GetArraySize(root) == 6) {
+            cJSON *continuous_enabled = cJSON_GetObjectItemCaseSensitive(
+                root, "continuous_conversation_enabled");
+            cJSON *follow_up_window_seconds = cJSON_GetObjectItemCaseSensitive(
+                root, "follow_up_window_seconds");
+            valid = cJSON_IsBool(continuous_enabled) && cJSON_IsTrue(continuous_enabled) &&
+                    is_integer_in_range(follow_up_window_seconds,
+                                        DEVICE_PROTOCOL_FOLLOW_UP_WINDOW_SECONDS_MIN,
+                                        DEVICE_PROTOCOL_FOLLOW_UP_WINDOW_SECONDS_MAX);
+            if (valid) {
+                command->continuous_conversation_enabled = true;
+                command->follow_up_window_seconds = follow_up_window_seconds->valueint;
+            }
+        }
         if (valid) {
             command->type = DEVICE_COMMAND_CONFIGURE_INTERACTION;
             command->volume_percent = volume_percent->valueint;

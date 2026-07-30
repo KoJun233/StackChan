@@ -2,6 +2,7 @@ set(stackchan_sources
     "audio_wav.c"
     "app_main.c"
     "companion_hardware.cpp"
+    "continuous_conversation.c"
     "device_credentials.c"
     "device_endpoint.c"
     "device_identity.c"

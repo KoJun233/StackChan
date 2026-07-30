@@ -386,7 +386,10 @@ static void websocket_event_handler(void *handler_args,
     }
     if (command.type == DEVICE_COMMAND_CONFIGURE_INTERACTION) {
         bool accepted = companion_hardware_configure_interaction(
-                            command.volume_percent, command.night_mode) == ESP_OK;
+                            command.volume_percent, command.night_mode) == ESP_OK &&
+                        voice_control_configure_continuous_conversation(
+                            command.continuous_conversation_enabled,
+                            (uint32_t)command.follow_up_window_seconds) == ESP_OK;
         send_command_ack(connection,
                          command.command_id,
                          accepted,

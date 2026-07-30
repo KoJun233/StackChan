@@ -1,18 +1,22 @@
 # 固件工作流
 
 - 状态：STABLE
-- 最后更新：2026-07-29
-- 当前分支：`codex/data-001-personal-data-lifecycle`
-- 基准提交：`2a3b712`
-- 最后验证提交：`2a3b712`
-- 当前实机镜像：`b05d60f`
+- 最后更新：2026-07-31
+- 当前分支：`codex/int-009-continuous-conversation`
+- 基准提交：`a51ac83`
+- 最后验证提交：`dd81a7e`
+- 当前实机镜像：`dd81a7e`
 
 ## 当前目标
 
-保持 CoreS3 `b05d60f`、WakeNet、触摸取消、SCV1、动态机械眼与 `motion_disabled` 稳定；`DATA-001` 不改固件，下一项设备能力属于 `INT-009` 连续对话。
+在保持 CoreS3、WakeNet、触摸取消、SCV1、八状态表情与 `motion_disabled` 边界的前提下，完成有界本地 VAD 跟进状态机的剩余人工验收。
 
 ## 已完成
 
+- INT-009 新增独立连续会话策略模块：严格接受四字段或六字段 `configure_interaction`，四字段会关闭连续对话并恢复默认 8 秒窗口；回答播放完成后以本地 VAD 判断是否产生新回合，静音不生成 WAV、不上传。
+- 跟进状态机限制最多三个成功跟进回合和从首次唤醒起最多两分钟；触摸、离线、错误、静音超时和规范化后的“结束聊天”立即退出并恢复 WakeNet，每个有效跟进分配新的 turn ID。
+- 协议测试、LAN HTTP Quad 和带栈分析的完整 profile 均构建通过；Unity 用例已编入协议镜像但未上板执行，未连接 COM3、未刷写、未 OTA。
+- 用户明确授权 `af5bcbe`、CoreS3、`COM3` 和 LAN HTTP Quad profile 后，从干净提交完整刷写 bootloader、分区表、应用、OTA data 和语音模型；五区独立回读匹配，NVS 未擦除。
 - INT-007 默认表情改为独立实现的 M5Unified/M5GFX 双缓冲机械眼，覆盖八个稳定状态以及眨眼、视线、聆听脉冲、思考扫描、播报嘴型和有界反馈动画；未复制 RoboEyes GPL 源码。
 - 新增 `expression_a` / `expression_b` 两个 1.5 MiB 分区。同源认证下载写入非活动槽，整体摘要、清单、状态集合、逐图摘要和 PNG 头全部通过后才原子更新 NVS；损坏自动回退内置表情。
 - 切换新包后擦除旧槽，停用后擦除双槽；静态宠物包不改变既有低亮度、低频内置机械眼屏保，`motion_disabled` 保持不变。
@@ -75,17 +79,15 @@
 
 ## 正在进行
 
-INT-008 已合入 `master`；`b05d60f` 已完整刷入 CoreS3 并通过五区回读、启动、安全状态、WebSocket 和默认机械眼人工验收。DATA-001 只修改管理端、服务端和部署备份能力，不修改 SCV1、设备阶段、音频正文或触摸取消语义，本分支不修改或刷写固件。
-
-DATA-001 LAN server 发布到 Flyway V22 后，CoreS3 自动恢复 `b05d60f / motion_disabled` 新鲜心跳；未连接 COM3、未刷写、未 OTA，固件与设备凭据保持不变。
+无。INT-009 连续对话状态机和播放加固固件 `dd81a7e / motion_disabled` 已发布，机器验证与用户人工验收通过。
 
 ## 下一步操作
 
-保持 `b05d60f / motion_disabled` 稳定运行。DATA-001 合入后，再从最新 `master` 为 `INT-009` 设计跟进聆听阶段、退出事件和旧固件兼容；未获得设备、端口、profile 与提交的逐次确认前不得刷写。
+保持 CoreS3 `dd81a7e / motion_disabled`、NVS 和当前 LAN HTTP 配置稳定；INT-010 不得在没有新的精确刷写授权时改写设备。
 
 ## 阻塞项
 
-固件无阻塞；默认机械眼已人工通过，自定义资源包实体测试因没有素材暂缓。不得记录 Wi-Fi 密码、Workspace ID、配对码、图片载荷、语音供应商密钥或设备 Token。
+INT-009 无阻塞。默认机械眼已人工通过，自定义资源包实体测试因没有素材暂缓且不阻塞后续任务。不得记录 Wi-Fi 密码、Workspace ID、配对码、图片载荷、音频/转写、语音供应商密钥或设备 Token。
 
 ## 关键文件
 
@@ -96,6 +98,8 @@ DATA-001 LAN server 发布到 Flyway V22 后，CoreS3 自动恢复 `b05d60f / mo
 - `docs/runbooks/physical-device-smoke-test.md`
 - `firmware/main/wake_model_ota.c`
 - `firmware/main/voice_service.c`
+- `firmware/main/continuous_conversation.c`
+- `firmware/main/continuous_conversation.h`
 - `firmware/main/device_transport.c`
 - `firmware/main/device_protocol.c`
 - `firmware/main/interaction_state.c`
@@ -105,9 +109,23 @@ DATA-001 LAN server 发布到 Flyway V22 后，CoreS3 自动恢复 `b05d60f / mo
 - `firmware/main/expression_pack.c`
 - `firmware/main/voice_control.c`
 - `firmware/partitions.csv`
+- `scripts/verify-firmware-voice-stack-budget.ps1`
+- `scripts/test-firmware-voice-stack-budget.ps1`
 
 ## 验证命令与最近结果
 
+- 2026-07-31 收尾重跑配网任务与语音任务栈预算：分别保留 8,736 字节和 22,112 字节外部调用余量，均通过；固件源码相对已刷写验证基线未改变，未连接 COM3、刷写或改写 NVS。
+- 经用户明确授权，提交 `dd81a7e` 的 LAN HTTP Quad bootloader、分区表、应用、OTA data 和语音模型已完整刷入 CoreS3 `COM3`；五个区域写入即时哈希和独立 `verify_flash` 全部匹配，写入范围未覆盖 `0x9000..0xefff` NVS。
+- `dd81a7e` 启动确认应用版本、8 MB Quad PSRAM/80 MHz、内存测试、加密 NVS、`motion_disabled`、CoreS3 外设、`speaker DMA=512x8 task_priority=4`、LAN HTTP、WakeNet“小峰小峰”、Wi-Fi 和 WebSocket；45 秒观察致命错误为 0。LAN server 健康 200、运行中且重启 0，Flyway `23|true`；数据库在核对时收到 13 秒内的 `dd81a7e / motion_disabled` 心跳。
+- 用户确认 `af5bcbe` 上免唤醒有效跟进和静音退出正常；音量从 80% 降至 50% 并连续对话 2–3 轮后仍有电流音，基本排除高音量削波，支持播放任务欠载判断。未读取或记录音频、转写或回复正文。
+- 服务端 `62c727b` 发布供应商 24→16 kHz 合成重采样后，用户确认页面语音测试成功且实体播放不再有电流音；本轮未再次刷写固件或改写 NVS。
+- 播放加固已压缩为唯一任务提交 `0646cf6`；使用官方 ESP-IDF 5.3.3 从该干净提交新建目录并完整构建 LAN HTTP Quad 镜像，应用 `0x14b5a0`、分区余量 57%、SHA-256 `CF64D7C3776A2C071DC82CA3E6A2702E893CD49D7F01F02A021B3416A278E268`。配置确认 ESP32-S3、16 MB Flash、Quad PSRAM、LAN HTTP 和嵌入版本 `0646cf6`；编译期约束保证扬声器任务优先级高于 UI，且 DMA 长度不超过 M5Unified 的 1024 上限。未连接 COM3、未刷写或 OTA。
+- INT-009 server/V23 发布后，未刷写的旧 CoreS3 `b05d60f / motion_disabled` 在最长重连退避后恢复心跳，并从 `12:38:39Z` 刷新至 `12:39:04Z`；server 错误数和重启数为 0。机器侧 server-first 兼容通过，用户随后确认普通单轮语音正常，人工 smoke test 通过。
+- 使用官方 ESP-IDF `v5.3.3` 从干净 `af5bcbe` 重建 LAN HTTP Quad 镜像，应用 `0x14b520`、分区余量 57%，构建配置确认 ESP32-S3、16 MB Flash、Quad PSRAM/80 MHz、LAN HTTP 和嵌入版本 `af5bcbe`。
+- CoreS3 `COM3` 的 bootloader、分区表、应用、OTA data 和语音模型五区写入即时哈希与独立 `verify_flash` 均匹配，NVS 未擦除。45 秒启动观察确认硬件、安全和网络状态，致命错误为 0；数据库跨两个心跳周期收到 `af5bcbe / motion_disabled`，server 健康 200、重启和错误为 0，连续对话设置保持关闭/8 秒。
+- INT-009 ESP-IDF 5.3.3 协议测试 profile 构建通过，镜像 `0x37880`、应用分区余量 93%；LAN HTTP Quad 完整镜像 `0x14b520`、余量 57%；带 `-fstack-usage` 的完整分析镜像 `0x15ac50`、余量 55%。
+- INT-009 语音栈真实预算为 `32768 / 10656 / 22112` 字节，12288 字节危险夹具被拒绝、32768 字节夹具通过；配网真实预算仍为 `16384 / 7648 / 8736`，8192 字节危险夹具被拒绝、16384 字节夹具通过；唤醒模型包安全回归通过。
+- INT-009 Unity 用例覆盖四/六字段配置、3..8 秒边界、本地 VAD 静音、明确结束、触摸、离线/错误、三回合与两分钟上限；用例已编译进协议镜像但未上板运行。未连接 COM3、未刷写或 OTA。
 - BASE-008 文档刷新未修改固件源码、profile 或分区表；配网 8192 拒绝/16384 接受、语音 12288 拒绝/32768 接受的危险预算夹具通过，配网真实报告为 `16384 / 7648 / 8736`。干净工作树没有忽略的 `build-voice-stack-analysis` `.su` 文件，因此未重复读取语音真实报告；INT-007 已验证的 `32768 / 10384 / 22384` 构建证据保持有效。未连接 COM3 或刷写。
 - INT-007 ESP-IDF 5.3.3 协议测试和带 `-fstack-usage` 的分析 profile 构建通过，镜像 `0x37880`、应用分区余量 93%；LAN HTTP Quad 完整镜像构建通过，镜像 `0x14ade0`、余量 57%，分区表包含两个 1.5 MiB 表达资源槽。Unity 用例已编入协议镜像但未上板执行。
 - INT-007 配网栈预算为 `16384 / 7648 / 8736` 字节，语音栈预算为 `32768 / 10384 / 22384` 字节；两项危险夹具拒绝回归和唤醒模型包安全回归均通过。未连接 COM3 或刷写。
@@ -199,6 +217,7 @@ DATA-001 LAN server 发布到 Flyway V22 后，CoreS3 自动恢复 `b05d60f / mo
 - [0017：交互阶段在设备本地映射为可区分的可见状态](../decisions/0017-local-user-visible-interaction-states.md)
 - [0018：触摸控制采用本地事件队列与幂等语音回合取消](../decisions/0018-touch-control-and-voice-turn-cancellation.md)
 - [0009：服务端增加阿里云百炼原生语音适配器](../decisions/0009-native-dashscope-speech-adapter.md)
+- [0027：连续对话采用设备本地有界跟进窗口](../decisions/0027-bounded-continuous-conversation.md)
 
 ## 安全与兼容性约束
 

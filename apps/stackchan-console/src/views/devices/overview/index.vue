@@ -60,6 +60,7 @@ const stageLabels: Record<string, string> = {
   WAKE_DETECTED: '检测到唤醒',
   TOUCH_STARTED: '触摸发起',
   LISTENING: '开始聆听',
+  FOLLOW_UP_LISTENING: '跟进聆听',
   SPEECH_CAPTURED: '采集到语音',
   UPLOAD_STARTED: '开始上传',
   REQUEST_RECEIVED: '服务端已接收',
@@ -68,7 +69,9 @@ const stageLabels: Record<string, string> = {
   TTS_COMPLETED: '语音合成完成',
   PLAYBACK_STARTED: '开始播放',
   PLAYBACK_COMPLETED: '播放完成',
-  LISTENING_RESUMED: '恢复待唤醒',
+  FOLLOW_UP_TIMEOUT: '跟进超时',
+  CONVERSATION_ENDED: '会话结束',
+  LISTENING_RESUMED: '恢复聆听',
   CANCELLED: '回合已取消',
   FAILED: '回合失败',
 }

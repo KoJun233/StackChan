@@ -37,3 +37,4 @@
 | [0024](0024-managed-skill-package-import.md) | ACCEPTED | 管理员安全导入完整 Skill ZIP，持久化后逐包启停且不继承执行权限。 |
 | [0025](0025-managed-mcp-connections.md) | ACCEPTED | 管理员跨部署管理 Streamable HTTP MCP 连接，认证秘密加密保存并逐连接、逐 Tool 授权。 |
 | [0026](0026-personal-data-lifecycle-and-isolated-backups.md) | ACCEPTED | 对话正文物理删除并按范围导出；逻辑备份独立轮转且只恢复到一次性临时 PostgreSQL。 |
+| [0027](0027-bounded-continuous-conversation.md) | ACCEPTED | 回答后使用设备本地 VAD 的有界跟进窗口，最多三个跟进回合且总时长最多两分钟。 |

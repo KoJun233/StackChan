@@ -2,11 +2,15 @@ package com.kj.stackchan.speech;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.Set;
 
 final class DashScopeEndpoints {
 
     private static final String WORKSPACE_DOMAIN_SUFFIX = ".cn-beijing.maas.aliyuncs.com";
-    private static final String RESULT_AUDIO_HOST = "dashscope-result-bj.oss-cn-beijing.aliyuncs.com";
+    private static final Set<String> RESULT_AUDIO_HOSTS = Set.of(
+            "dashscope-result-bj.oss-cn-beijing.aliyuncs.com",
+            "dashscope-result-wlcb.oss-cn-wulanchabu.aliyuncs.com"
+    );
 
     private DashScopeEndpoints() {
     }
@@ -22,7 +26,7 @@ final class DashScopeEndpoints {
 
     static URI ttsHttp(String workspaceId) {
         return URI.create("https://" + workspaceHost(workspaceId)
-                + "/api/v1/services/audio/tts/SpeechSynthesizer");
+                + "/api/v1/services/aigc/multimodal-generation/generation");
     }
 
     static URI validatedDownloadUri(String value) {
@@ -30,7 +34,7 @@ final class DashScopeEndpoints {
             URI uri = new URI(value);
             if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
                     || uri.getHost() == null
-                    || !RESULT_AUDIO_HOST.equalsIgnoreCase(uri.getHost())
+                    || RESULT_AUDIO_HOSTS.stream().noneMatch(host -> host.equalsIgnoreCase(uri.getHost()))
                     || uri.getUserInfo() != null
                     || uri.getPort() != -1
                     || uri.getRawFragment() != null) {

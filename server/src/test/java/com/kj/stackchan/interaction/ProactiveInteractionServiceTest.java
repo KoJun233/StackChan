@@ -36,7 +36,7 @@ class ProactiveInteractionServiceTest {
     void blocksOnlyOnRecentlyUpdatedVoiceTurns() {
         UUID deviceId = UUID.randomUUID();
         var settings = new InteractionSettingsService.InteractionSettingsSnapshot(
-                deviceId, 50, false, false, LocalTime.of(22, 0), LocalTime.of(7, 0), "UTC",
+                deviceId, 50, false, false, 8, false, LocalTime.of(22, 0), LocalTime.of(7, 0), "UTC",
                 MissedReminderPolicy.PLAY_NOW, 10, true, LocalTime.MIN, LocalTime.MAX,
                 30, 2, "hello", null, LocalDate.of(2026, 7, 27), 0, NOW
         );

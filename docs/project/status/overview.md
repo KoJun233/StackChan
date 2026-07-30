@@ -1,12 +1,12 @@
 # 全局工作流总览
 
 - 状态：ACTIVE
-- 最后更新：2026-07-29
-- 当前分支：`codex/data-001-personal-data-lifecycle`
-- 实现基准：`2a3b712`
-- 最后验证提交：`2a3b712`
-- 当前验证范围：DATA-001 后端 274/274、Testcontainers 空库 V1..V22；官方 Node 24.15.0 容器内前端 24 个文件 65/65、`vue-tsc -b` 和 production build 通过；正式 server/备份镜像与轮转测试通过；LAN 发布后 Flyway V22、健康/网页 200、隔离恢复、临时资源清理、备份只读挂载和 CoreS3 心跳通过。
-- 当前优先级：DATA-001 已发布到现有 LAN并通过用户人工验收；推送任务分支后由用户创建 PR，合入最新 `master` 后开始 INT-009 连续对话。
+- 最后更新：2026-07-31
+- 当前分支：`codex/int-009-continuous-conversation`
+- 实现基准：`a51ac83`
+- 最后验证提交：`62c727b`
+- 当前验证范围：Qwen-TTS 24→16 kHz 合成重采样定向测试 20/20、INT-009 服务端全量 282/282、Testcontainers 空库 V1..V23；前端 24 个文件 65/65、类型检查和 production build；三种 ESP-IDF profile、两项栈预算、唤醒模型包、LAN/production Compose、文档与差异检查通过。当前配置的 TTS→下载→16 kHz 规范化→ASR 不落盘直连通过；用户确认页面语音测试成功且 `dd81a7e` 实体播放不再有电流音。
+- 当前优先级：INT-009 已完成实现、发布与人工验收；取得用户授权后只推送任务分支，由用户创建 PR 并人工合并，之后开始 INT-010。
 - 当前部署：LAN HTTP development mode。
 - 生产边界：HTTPS-only。
 
@@ -14,12 +14,34 @@
 
 | 工作流 | 状态 | 状态文件 | 当前分支 | 下一步 |
 | --- | --- | --- | --- | --- |
-| 服务端 | COMPLETE | [server.md](server.md) | `codex/data-001-personal-data-lifecycle` | V22 API、备份服务和人工验收完成，等待 PR。 |
-| 前端 | COMPLETE | [frontend.md](frontend.md) | `codex/data-001-personal-data-lifecycle` | “对话与个人数据”页面人工验收完成，等待 PR。 |
-| 固件 | STABLE | [firmware.md](firmware.md) | `codex/data-001-personal-data-lifecycle` | `b05d60f` 保持不变；DATA-001 不改协议、不刷写。 |
-| 部署 | COMPLETE | [deployment.md](deployment.md) | `codex/data-001-personal-data-lifecycle` | DATA-001 已发布并验收；当前运行 V22 和独立备份服务。 |
+| 服务端 | COMPLETE | [server.md](server.md) | `codex/int-009-continuous-conversation` | INT-009 完成；等待分支推送授权。 |
+| 前端 | COMPLETE | [frontend.md](frontend.md) | `codex/int-009-continuous-conversation` | INT-009 页面与人工验收完成。 |
+| 固件 | STABLE | [firmware.md](firmware.md) | `codex/int-009-continuous-conversation` | 保持 `dd81a7e / motion_disabled` 和 NVS 不变。 |
+| 部署 | COMPLETE | [deployment.md](deployment.md) | `codex/int-009-continuous-conversation` | LAN 发布与人工验收完成；保持当前运行态。 |
 
-唤醒词入口现改为“选择 ESP-SR 2.4.6 内置短语、服务端从锁定目录可信打包、设备双槽 OTA、重启健康确认、失败自动回退”。任意文本生成、第三方生成器和模型包上传均已从最终代码与页面移除；V12 只保留为已部署迁移历史，V13 清理临时字段。下拉包含“Hi, Stack Chan”“小峰小峰”等 13 项。CoreS3 曾使用 `0398073` 镜像完成 WakeNet9/WakeNet9l/WakeNet9s 三槽引导；管理员选择“小峰小峰”后，任务已完成 `READY -> INSTALLING -> INSTALLED`。INT-001 发布时设备升级为 `ecc40f3`，INT-002 升级为栈修复镜像 `216d383`，当前实机为 INT-007 `b05d60f`。
+INT-009 已按 server-first 顺序发布：镜像 `sha256:6902bf3e287568bef13d0fa1247676e475f34357fe7d22923687be10d651d332` 只替换 LAN server，运行库从 V22 升至 V23；旧镜像保留为 `stackchan-foundation-server:rollback-a2f723e-pre-v23`。PostgreSQL、Redis、备份容器、卷、端口、凭据和生产 HTTPS-only 边界未改变；旧 CoreS3 `b05d60f / motion_disabled` 在退避后自动重连，并跨两个 25 秒周期持续刷新心跳。连续对话仍默认关闭，未连接 COM3、未刷写或 OTA。
+
+用户随后确认旧 `b05d60f` 的普通单轮语音正常；唤醒、说话、完整播放与恢复 WakeNet 的 server-first 人工兼容验收通过。该确认不授权连接 COM3、刷写或 OTA。
+
+用户明确授权 `af5bcbe`、CoreS3、`COM3` 和 LAN HTTP Quad profile 后，使用官方 ESP-IDF v5.3.3 从干净提交重建并完整写入 bootloader、分区表、应用、OTA data 和语音模型；五个区域即时哈希和独立 `verify_flash` 均匹配，NVS 未擦除。启动确认 `af5bcbe`、8 MB Quad PSRAM/80 MHz 及内存测试、加密 NVS、CoreS3 外设、WakeNet、LAN HTTP、WebSocket 和 `motion_disabled`；数据库跨心跳周期收到 `af5bcbe / motion_disabled`，server 保持健康 200、重启和错误为 0。连续对话设置仍为关闭/8 秒。
+
+用户启用连续对话后确认免唤醒有效跟进和静音退出正常，同时报告音量 80% 的回复播放偶发卡顿/电流音；把音量降至 50% 连续对话 2–3 轮后杂音仍存在，基本排除高音量削波。固件检查确认回复在完整接收后才播放，并发现默认扬声器后台任务低于动态表情任务、DMA 余量约 43 ms；`dd81a7e` 将扬声器任务提升到 UI 之上并把 DMA 余量扩大到约 85 ms。经用户精确授权，该 LAN HTTP Quad 完整镜像已刷入 CoreS3 `COM3`，保留 NVS；五区回读、启动、网络和心跳验证通过。
+
+用户随后修改语音设置并发现 `/api/v1/settings/speech/test` 返回语音提供方不可用。官方 Qwen-TTS 文档确认非实时调用应使用 `multimodal-generation/generation`，并在 `input` 内发送 `text` 与 `voice`，不发送 `format` / `sample_rate`；该候选发布后仍为 400。一次性内存直连进一步确认当前 `qwen-tts + Dylan` 被供应商以 `InvalidParameter` 拒绝，而 `qwen-tts-latest + Dylan` 返回 200 和音频 URL；代码新增只记录 request ID、错误码和受限 message 的安全诊断，不打印完整异常载荷。
+
+最终 `1cd6f76` 使用正式 Dockerfile 构建并只替换 LAN server；首次构建遇到 Maven Central TLS 握手中断，重试成功。运行镜像为 `sha256:76d5a78c0504bc339cb1b37260c9e7e4acf351caef58daf98fbfe3e912277349`，健康/网页 200、Flyway V23、重启 0、LAN 端口正确，CoreS3 `dd81a7e / motion_disabled` 心跳新鲜；部署未改写当前语音设置。
+
+用户保存 `qwen-tts-latest + Dylan` 后，请求不再返回 400，但旧结果白名单拒绝了百炼新返回的乌兰察布 OSS 签名 URL。安全直连只检查 scheme/host 并验证 HTTPS 下载为 200、RIFF/WAVE 内容正确；当前修复新增该精确主机并继续拒绝后缀伪造，不使用通配域名。
+
+`2ec69e1` 已通过正式 Dockerfile 构建并只替换 LAN server，运行镜像为 `sha256:6a79deb2eded1541e22ae367b39d8c3d3d8ac70413a38394af1b4b01ad41f681`。健康 200、Flyway V23、重启 0、LAN 端口和当前 TTS 配置正确，CoreS3 `dd81a7e / motion_disabled` 心跳新鲜；PostgreSQL、Redis、备份容器、固件和 NVS 未变。
+
+用户随后复测进入 `dashscope_tts_audio_invalid`；安全 WAV 头探测确认 Qwen-TTS 输出为 PCM、单声道、24 kHz、16-bit，而设备链路要求 16 kHz。当前修复只在供应商合成结果上执行 24→16 kHz 重采样并重建规范 WAV，设备上传与 ASR 输入继续严格拒绝非 16 kHz。
+
+`62c727b` 已通过正式 Dockerfile 构建并只替换 LAN server，运行镜像为 `sha256:090a3117fe970da14b53d2278df5967629abf5ae912c19e1e83bec9f08cd1d8b`，容器为 `a3c3eb6efeb4`。健康 200、Flyway V23、重启 0，CoreS3 保持 `dd81a7e / motion_disabled`；PostgreSQL、Redis、备份容器、固件和 NVS 未变。随后用当前加密配置执行不落盘端到端直连，TTS、音频下载和 ASR 均返回 200，24 kHz 音频经同算法规范化为 16 kHz 且转写非空；临时探测文件已删除，未输出或保存秘密、签名 URL、音频或转写。
+
+用户随后确认页面语音测试成功，并且实体回复播放不再出现电流音；24→16 kHz 合成兼容与当前软硬件组合的人工验收通过。本轮未再次替换容器、刷写固件或改写 NVS。
+
+唤醒词入口现改为“选择 ESP-SR 2.4.6 内置短语、服务端从锁定目录可信打包、设备双槽 OTA、重启健康确认、失败自动回退”。任意文本生成、第三方生成器和模型包上传均已从最终代码与页面移除；V12 只保留为已部署迁移历史，V13 清理临时字段。下拉包含“Hi, Stack Chan”“小峰小峰”等 13 项。CoreS3 曾使用 `0398073` 镜像完成 WakeNet9/WakeNet9l/WakeNet9s 三槽引导；管理员选择“小峰小峰”后，任务已完成 `READY -> INSTALLING -> INSTALLED`。INT-001 发布时设备升级为 `ecc40f3`，INT-002 升级为栈修复镜像 `216d383`，当前实机为 INT-009 `dd81a7e`。
 
 内置目录版本此前部署到既有 `stackchan-foundation` LAN HTTP 服务时，健康和网页根地址均为 200、Flyway 为 V13、容器包含 13 组模型，CoreS3 心跳为 `0398073 / motion_disabled`。一次误用基础 Compose 导致端口暂时只监听 `127.0.0.1`，恢复正式 `compose.lan.yaml` 覆盖层后设备自动重连并完成“小峰小峰”安装。部署前保留了 `stackchan-foundation-server:rollback-upload-v12` 本地回退镜像；当前服务已由 INT-001 升级为 `ecc40f3` / V14。
 
@@ -55,6 +77,12 @@ INT-007 本地发布候选完成：默认表情升级为 M5Unified/M5GFX 独立�
 
 ## 验证与边界
 
+- 2026-07-31 最终收尾重跑通过：服务端 282/282 与空库 Flyway V1..V23；Node v24.15.0 前端 24 个文件 65/65、类型检查和 production build；两项固件栈预算、LAN Compose、文档检查、文档测试和差异检查。运行 server 健康 200、重启 0、Flyway V23，CoreS3 `dd81a7e / motion_disabled` 心跳新鲜；未连接 COM3、刷写、改写 NVS 或推送远端。
+- INT-009 `a2f723e` 发布前完成新 V22 逻辑备份和隔离恢复验证；正式 Dockerfile 构建镜像 `sha256:6902bf3e287568bef13d0fa1247676e475f34357fe7d22923687be10d651d332`，只替换 server 容器为 `f3a9651e468b`。健康与网页为 200、Flyway `23|true` 且迁移数 23、未登录交互设置为 401、管理端包含连续对话资源、启动错误数和重启数均为 0；设置记录为关闭/8 秒，旧 `b05d60f / motion_disabled` 心跳跨两个周期刷新。未连接 COM3 或刷写固件。
+- 用户确认 V23 server 与旧 `b05d60f` 的普通单轮语音正常；server-first 兼容人工 smoke test 通过，未读取或记录音频、转写或回复正文。
+- `af5bcbe` LAN HTTP Quad 重建应用为 `0x14b520`、分区余量 57%；CoreS3 `COM3` 五区独立回读匹配且 NVS 未擦除。45 秒启动观察确认 ESP-IDF 5.3.3、8 MB Quad PSRAM/80 MHz、内存测试、加密 NVS、CoreS3 外设、WakeNet、Wi-Fi、WebSocket 与 `motion_disabled`，致命错误为 0；设备跨两个心跳周期在线。
+- 用户人工确认免唤醒跟进和静音退出正常，50% 音量对照仍有电流音。播放加固提交 `0646cf6` 的干净 LAN HTTP Quad 镜像完整构建通过，嵌入版本正确，应用 `0x14b5a0`、分区余量 57%；未连接 COM3、未刷写或 OTA。
+- `dd81a7e` LAN HTTP Quad 完整镜像经用户授权刷入 CoreS3 `COM3`，五区独立 `verify_flash` 匹配且 NVS 未写入。启动确认 `speaker DMA=512x8 task_priority=4`、PSRAM、加密 NVS、CoreS3 外设、WakeNet、Wi-Fi、WebSocket 与 `motion_disabled`，45 秒致命错误为 0；server 健康 200、重启 0、Flyway V23，数据库收到新鲜 `dd81a7e` 心跳。
 - V20 工作树后端 Maven 全量 264/264、Testcontainers 空库迁移 V1..V20、前端 Vitest 22 个文件 61/61、`vue-tsc -b`、production build、`git diff --check`、`pnpm docs:check` 和 LAN Compose 静态验证通过。正式 Dockerfile 只替换既有 LAN server 后，健康与网页根地址为 200、Flyway `20|true` 且迁移数 20、`agent_skills` 表和独立 Skill 卷存在、未登录 Agent API/页面为 401、启动错误数为 0；CoreS3 `b05d60f / motion_disabled` 恢复新鲜心跳。未连接 MCP、COM3，未刷写、OTA、修改凭据或生产 HTTPS-only 边界。
 - V20 改造前的 INT-008 服务端 Maven 全量 255/255 通过；真实 ReactAgent Tool 回合、强制事实 Tool 路由、MCP 授权、预算与元数据审计测试通过，Testcontainers 从空 PostgreSQL 应用 V1..V19。当时的 3 个 classpath 演示 Skill 已在当前工作树删除，该历史结果不能替代 V20 自定义 Skill 包复核。
 - BASE-008 文档刷新在 `8122959` 基线上完成：Maven 244/244、前端 Vitest 20 个文件 57/57、`vue-tsc -b`、production build、文档测试 7/7、LAN Compose 静态验证、`pnpm docs:check` 和 `git diff --check` 通过。固件源码未变；配网与语音危险预算夹具通过，配网真实报告通过，语音真实报告沿用 INT-007 已验证构建，当前干净工作树未重新生成忽略的 `.su` 分析产物。未部署、未连接 COM3、未刷写、未 OTA、未修改卷、端口、凭据或运行数据库。
@@ -168,4 +196,4 @@ INT-007 本地发布候选完成：默认表情升级为 M5Unified/M5GFX 独立�
 
 ## 下一步
 
-INT-008 已完成 `/settings/agent`、Agent Tool、Skill ZIP 和可移植 MCP 连接人工验收，任务分支压缩为单一中文提交并获准推送。下一步由用户创建 PR、人工审核并合并；随后从最新 `master` 开始 `DATA-001`。CoreS3 `b05d60f`、PostgreSQL、Redis、卷、端口和生产 HTTPS-only 边界保持不变。
+取得用户外部推送授权后，只推送 `codex/int-009-continuous-conversation`；由用户创建 PR 并人工合并。合入最新 `master` 后，按 `docs/project/todo.md` 从独立分支开始 INT-010。

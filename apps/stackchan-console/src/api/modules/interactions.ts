@@ -3,10 +3,12 @@ import { apiJson } from '../client'
 export type MissedReminderPolicy = 'PLAY_NOW' | 'SKIP' | 'SNOOZE'
 
 export interface InteractionSettings {
+  continuousConversationEnabled: boolean
   deviceId: string
   dndEnabled: boolean
   dndEnd: string
   dndStart: string
+  followUpWindowSeconds: number
   missedReminderPolicy: MissedReminderPolicy
   missedSnoozeMinutes: number
   nightMode: boolean

@@ -26,6 +26,12 @@ public class DeviceInteractionSettingsEntity {
     @Column(name = "night_mode", nullable = false)
     private boolean nightMode;
 
+    @Column(name = "continuous_conversation_enabled", nullable = false)
+    private boolean continuousConversationEnabled;
+
+    @Column(name = "follow_up_window_seconds", nullable = false)
+    private int followUpWindowSeconds;
+
     @Column(name = "dnd_enabled", nullable = false)
     private boolean dndEnabled;
 
@@ -82,6 +88,8 @@ public class DeviceInteractionSettingsEntity {
         this.deviceId = deviceId;
         this.volumePercent = 50;
         this.nightMode = false;
+        this.continuousConversationEnabled = false;
+        this.followUpWindowSeconds = 8;
         this.dndEnabled = false;
         this.dndStart = LocalTime.of(22, 0);
         this.dndEnd = LocalTime.of(7, 0);
@@ -101,6 +109,8 @@ public class DeviceInteractionSettingsEntity {
     public void update(
             int volumePercent,
             boolean nightMode,
+            boolean continuousConversationEnabled,
+            int followUpWindowSeconds,
             boolean dndEnabled,
             LocalTime dndStart,
             LocalTime dndEnd,
@@ -117,6 +127,8 @@ public class DeviceInteractionSettingsEntity {
     ) {
         this.volumePercent = volumePercent;
         this.nightMode = nightMode;
+        this.continuousConversationEnabled = continuousConversationEnabled;
+        this.followUpWindowSeconds = followUpWindowSeconds;
         this.dndEnabled = dndEnabled;
         this.dndStart = dndStart;
         this.dndEnd = dndEnd;
@@ -145,6 +157,8 @@ public class DeviceInteractionSettingsEntity {
     public UUID getDeviceId() { return deviceId; }
     public int getVolumePercent() { return volumePercent; }
     public boolean isNightMode() { return nightMode; }
+    public boolean isContinuousConversationEnabled() { return continuousConversationEnabled; }
+    public int getFollowUpWindowSeconds() { return followUpWindowSeconds; }
     public boolean isDndEnabled() { return dndEnabled; }
     public LocalTime getDndStart() { return dndStart; }
     public LocalTime getDndEnd() { return dndEnd; }
