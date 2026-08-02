@@ -8,6 +8,8 @@ import com.kj.stackchan.memory.MemoryConfirmationStatus;
 import com.kj.stackchan.memory.MemoryScopeType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
@@ -52,6 +54,11 @@ public class LongTermMemoryController {
     @GetMapping("/{id}")
     public LongTermMemoryService.MemorySnapshot get(@PathVariable UUID id) {
         return memoryService.get(id);
+    }
+
+    @GetMapping("/usage/{turnId}")
+    public MemoryUsageResponse usage(@PathVariable UUID turnId) {
+        return new MemoryUsageResponse(turnId, memoryService.usageReferencesForTurn(turnId));
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -110,10 +117,22 @@ public class LongTermMemoryController {
             UUID deviceId,
             @NotNull MemoryCategory category,
             @NotBlank @Size(max = 120) String title,
-            @NotBlank @Size(max = 2000) String content
+            @NotBlank @Size(max = 2000) String content,
+            @Size(max = 120) String topicKey,
+            @Min(1) @Max(5) Integer importance,
+            Boolean allowProactiveMention
     ) {
         LongTermMemoryService.MemoryCommand toCommand() {
-            return new LongTermMemoryService.MemoryCommand(scopeType, deviceId, category, title, content);
+            return new LongTermMemoryService.MemoryCommand(
+                    scopeType,
+                    deviceId,
+                    category,
+                    title,
+                    content,
+                    topicKey,
+                    importance,
+                    Boolean.TRUE.equals(allowProactiveMention)
+            );
         }
     }
 
@@ -130,5 +149,11 @@ public class LongTermMemoryController {
     }
 
     public record ClearMemoryResponse(long deletedCount) {
+    }
+
+    public record MemoryUsageResponse(
+            UUID turnId,
+            java.util.List<LongTermMemoryService.MemoryUsageReference> memories
+    ) {
     }
 }

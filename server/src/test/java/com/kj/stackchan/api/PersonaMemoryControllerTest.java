@@ -98,6 +98,29 @@ class PersonaMemoryControllerTest {
         verify(memoryService).confirm(memoryId);
     }
 
+    @Test
+    void explainsMemoryUsageWithoutReturningMemoryContent() throws Exception {
+        UUID turnId = UUID.randomUUID();
+        UUID memoryId = UUID.randomUUID();
+        when(memoryService.usageReferencesForTurn(turnId)).thenReturn(List.of(
+                new LongTermMemoryService.MemoryUsageReference(
+                        memoryId,
+                        "称呼偏好",
+                        "称呼偏好",
+                        MemoryScopeType.GLOBAL,
+                        MemorySource.USER_ENTERED,
+                        LongTermMemoryService.USER_ENTERED_DETAIL
+                )
+        ));
+
+        mockMvc.perform(get("/api/v1/memories/usage/{turnId}", turnId)
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.memories[0].memoryId").value(memoryId.toString()))
+                .andExpect(jsonPath("$.memories[0].sourceDetail").value(LongTermMemoryService.USER_ENTERED_DETAIL))
+                .andExpect(jsonPath("$.memories[0].content").doesNotExist());
+    }
+
     private PersonaService.PersonaSnapshot persona(String name) {
         return new PersonaService.PersonaSnapshot(
                 name, PersonaTone.WARM, PersonaReplyLength.SHORT, PersonaProactivity.BALANCED,

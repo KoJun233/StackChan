@@ -1,7 +1,11 @@
 package com.kj.stackchan.memory;
 
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -21,5 +25,72 @@ public interface LongTermMemoryRepository
     long countVisibleByDeviceAndStatus(
             @Param("deviceId") UUID deviceId,
             @Param("status") MemoryConfirmationStatus status
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select memory from LongTermMemoryEntity memory where memory.id = :id")
+    Optional<LongTermMemoryEntity> findByIdForUpdate(@Param("id") UUID id);
+
+    @Query("""
+            select memory from LongTermMemoryEntity memory
+            where memory.topicKey = :topicKey
+              and memory.scopeType = :scopeType
+              and ((:deviceId is null and memory.deviceId is null) or memory.deviceId = :deviceId)
+              and memory.confirmationStatus = com.kj.stackchan.memory.MemoryConfirmationStatus.CONFIRMED
+              and memory.enabled = true
+              and memory.supersededByMemoryId is null
+            order by memory.updatedAt desc, memory.id desc
+            """)
+    List<LongTermMemoryEntity> findActiveTopicMatches(
+            @Param("topicKey") String topicKey,
+            @Param("scopeType") MemoryScopeType scopeType,
+            @Param("deviceId") UUID deviceId
+    );
+
+    @Query("""
+            select memory from LongTermMemoryEntity memory
+            where memory.topicKey = :topicKey
+              and memory.scopeType = :scopeType
+              and ((:deviceId is null and memory.deviceId is null) or memory.deviceId = :deviceId)
+              and memory.id <> :excludedId
+              and memory.confirmationStatus <> com.kj.stackchan.memory.MemoryConfirmationStatus.REJECTED
+            order by memory.updatedAt desc, memory.id desc
+            """)
+    List<LongTermMemoryEntity> findPossibleDuplicates(
+            @Param("topicKey") String topicKey,
+            @Param("scopeType") MemoryScopeType scopeType,
+            @Param("deviceId") UUID deviceId,
+            @Param("excludedId") UUID excludedId
+    );
+
+    @Query(value = """
+            select memory.*
+            from long_term_memories memory
+            where memory.confirmation_status = 'CONFIRMED'
+              and memory.enabled = true
+              and memory.superseded_by_memory_id is null
+              and (
+                (:deviceId is null and memory.scope_type = 'GLOBAL')
+                or (:deviceId is not null and (
+                  memory.scope_type = 'GLOBAL'
+                  or (memory.scope_type = 'DEVICE' and memory.device_id = :deviceId)
+                ))
+              )
+            order by
+              case when trim(:queryText) = '' then 0.0 else greatest(
+                similarity(memory.topic_key, :queryText),
+                similarity(memory.title, :queryText),
+                similarity(memory.content, :queryText)
+              ) end desc,
+              memory.importance desc,
+              coalesce(memory.last_used_at, memory.confirmed_at, memory.updated_at) desc,
+              memory.updated_at desc,
+              memory.id desc
+            limit :limit
+            """, nativeQuery = true)
+    List<LongTermMemoryEntity> searchContext(
+            @Param("deviceId") UUID deviceId,
+            @Param("queryText") String queryText,
+            @Param("limit") int limit
     );
 }

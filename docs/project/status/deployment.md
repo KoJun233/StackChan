@@ -1,17 +1,21 @@
 # 部署工作流
 
 - 状态：READY
-- 最后更新：2026-08-02
-- 当前分支：`codex/int-010-safe-voice-actions`
-- 基准提交：`87a0938`
-- 最后验证提交：`a502f41`
-- 当前运行态代码：INT-009 server `62c727b` / Flyway V23、独立 `postgres-backup` 服务；CoreS3 `dd81a7e / motion_disabled`。24→16 kHz 合成重采样已 server-only 发布，当前配置的 TTS→ASR 不落盘端到端直连通过。
+- 最后更新：2026-08-04
+- 当前分支：`codex/int-011-memory-2`
+- 基准提交：`fbe5bde`
+- 最后验证提交：`fbe5bde`
+- 当前运行态代码：INT-011 本地候选 `09323bb` / Flyway V25、server 容器 `1a44042f18b8`、运行镜像 `sha256:573f9d5fa6972434e64223e8f0bb20fd07d8730b9651b2db30327c50a616aff5`；CoreS3 `dd81a7e / motion_disabled`。
 
 ## 当前目标
 
-为 INT-010 准备 server-first V24 候选与回退证据；未经用户明确授权不替换当前 LAN server，不改变 PostgreSQL、Redis、卷、端口、凭据、固件、NVS 或生产 HTTPS-only 边界。
+INT-011 server-first V25 已发布并完成自动及人工验证；用户确认无问题并授权推送。回退镜像、PostgreSQL、Redis、卷、端口、凭据、固件、NVS 和生产 HTTPS-only 边界保持不变。
 
 ## 已完成
+
+- INT-011 新增 V25 `pg_trgm`、长期记忆检索元数据和只含安全 ID 的使用记录表；发布前新建逻辑备份并完成隔离恢复，旧镜像保留为 `stackchan-foundation-server:rollback-09323bb-pre-v25`。
+- 正式 Dockerfile 构建清单为 `sha256:7e482cdfe35ca9368ebbaf9bd7d6635ec4359b4c18f9a23561527617203c0a08`，只替换 server；运行库从 V23 应用 V24/V25，其他三个容器 ID 未变，现有 `dd81a7e / motion_disabled` 自动恢复心跳。
+- INT-011 使用仅限当前进程的非秘密占位值通过 LAN Compose 验证和 production Compose 静态展开；未创建 `.env`、构建或替换运行 server、执行 V24/V25 运行迁移、连接 COM3 或改写 NVS。
 
 - INT-010 工作树已通过 Maven 290/290、Testcontainers 空库 V1..V24、前端 65/65、类型检查、production build、文档检查以及 LAN/production Compose 静态验证。验证仅使用当前进程非秘密占位值；未构建或替换运行 server，运行库仍为 V23，CoreS3 仍为 `dd81a7e / motion_disabled`。
 - V24 仅新增动作提案、安全审计和临时免打扰字段；server-first 发布与 V24 运行迁移尚未授权。发布时必须先保留 V23 回退镜像和数据库备份，再以旧固件验证普通聊天、确认跟进、提醒播放、音量和触摸取消。
@@ -84,7 +88,7 @@
 
 ## 下一步操作
 
-INT-010 实现完成后先执行 LAN/production Compose 静态验证、V23 备份恢复基线和旧固件兼容测试；只有用户明确授权后才发布 V24 server。
+用户已确认人工测试无问题并授权推送；下一步由用户创建 PR、人工审核并合并，不再重复替换服务。
 
 ## 阻塞项
 
@@ -99,6 +103,9 @@ INT-010 实现完成后先执行 LAN/production Compose 静态验证、V23 备�
 
 ## 验证命令与最近结果
 
+- 2026-08-04 发布前逻辑备份与隔离恢复成功；本地候选 `09323bb` 只替换 server，健康/网页 200、Flyway `25|true`、V25 扩展/字段/表存在、未登录记忆 API 401、server 错误与重启均为 0。PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 未变，CoreS3 `dd81a7e / motion_disabled` 心跳约 3 秒内。
+- 用户确认发布后的 INT-011 测试无问题并授权推送；最终核对 server 重启/错误为 0、Flyway `25|true`、`dd81a7e / motion_disabled` 心跳为 0 秒级，并存在 1 条仍待管理员确认且未启用的测试建议。未读取正文或认证载荷。
+- 2026-08-02 INT-011 通过 `verify-lan-compose.ps1` 和 production Compose `config --quiet`；基础模式仍绑定 `127.0.0.1:8080`，LAN overlay 仍绑定 `0.0.0.0:8080`，PostgreSQL/Redis 不发布主机端口，production 保持 HTTPS-only。验证只使用当前进程非秘密占位值。
 - 2026-07-31 收尾重跑 LAN Compose 静态验证通过；仅使用当前进程内非秘密占位值。运行 server 健康 200、镜像 `sha256:090a3117fe970da14b53d2278df5967629abf5ae912c19e1e83bec9f08cd1d8b`、容器 `a3c3eb6efeb4`、重启 0、Flyway `23|true`，CoreS3 `dd81a7e / motion_disabled` 心跳 19 秒内。
 - `62c727b` 正式镜像为 `sha256:090a3117fe970da14b53d2278df5967629abf5ae912c19e1e83bec9f08cd1d8b`，只重建 server 为 `a3c3eb6efeb4`。健康 200、Flyway `23|true`、重启 0，CoreS3 保持 `dd81a7e / motion_disabled`；PostgreSQL、Redis、备份容器、固件和 NVS 未变。当前配置的不落盘端到端直连为 TTS 200、下载 200、规范化 16 kHz、ASR 200 且转写非空，临时探测文件已删除。
 - 用户确认页面语音测试成功且实体播放不再有电流音；本轮无需再次替换容器、刷写固件或改写配置。
@@ -178,6 +185,7 @@ INT-010 实现完成后先执行 LAN/production Compose 静态验证、V23 备�
 - [0023：文字与语音共享受控 ReactAgent、Skill、Tool 与 MCP](../decisions/0023-controlled-react-agent-skills-tools-mcp.md)
 - [0026：个人数据物理删除、范围导出与隔离备份恢复](../decisions/0026-personal-data-lifecycle-and-isolated-backups.md)
 - [0027：连续对话采用设备本地有界跟进窗口](../decisions/0027-bounded-continuous-conversation.md)
+- [0029：长期记忆建议经过敏感过滤、冲突确认与有界检索](../decisions/0029-reviewed-memory-suggestions-and-bounded-retrieval.md)
 - [个人数据备份与隔离恢复验证 runbook](../../runbooks/personal-data-backup.md)
 - [Agent、Skill、Tool 与 MCP 运维 runbook](../../runbooks/agent-tools-mcp.md)
 

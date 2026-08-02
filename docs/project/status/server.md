@@ -1,16 +1,26 @@
 # 服务端工作流
 
 - 状态：READY
-- 最后更新：2026-08-02
-- 当前分支：`codex/int-010-safe-voice-actions`
-- 基准提交：`87a0938`
-- 最后验证提交：`a502f41`
+- 最后更新：2026-08-04
+- 当前分支：`codex/int-011-memory-2`
+- 基准提交：`fbe5bde`
+- 最后验证提交：`fbe5bde`
 
 ## 当前目标
 
-INT-010 软件候选已完成；等待用户审核后推送任务分支，并在另行授权的 server-first 发布中验证 V24 与现有 `dd81a7e` 旧固件兼容。
+INT-011 长期记忆 2.0 已发布到 LAN server/V25；自动健康、迁移、认证和旧固件重连验证通过，用户确认人工测试无问题并授权推送。
 
 ## 已完成
+
+- 新增 ADR 0029 与 Flyway V25：启用 `pg_trgm`，为长期记忆增加 `topicKey`、1..5 重要度、最后使用时间、来源回合、替代关系和允许主动提及开关；新增只保存 `turnId + memoryId + usedAt` 的使用记录表。
+- 网页和设备语音普通成功回合结束后异步执行至多一次结构化建议提取；供应商失败、畸形 JSON、取消/失败/重放和语音动作回合均不产生建议。自动建议固定为 `ASSISTANT_SUGGESTED + PENDING + disabled`，范围和来源回合由应用绑定。
+- 应用侧拒绝凭据、精确地址、身份号码、银行卡号及财务/医疗推断；拒绝内容、完整用户表达、机器人回答、模型响应和 Tool 参数/结果均不进入日志或审计。
+- 同范围同 `topicKey` 建议只记录待替代旧项；管理员确认后才以行锁停用旧项并保留双向替代审计，旧项无法重新进入上下文。修改、拒绝、停用和删除均在下一轮检索中立即生效。
+- 上下文检索综合 `pg_trgm` 相似度、重要度、最后使用和更新时间，每轮最多 8 条、渲染约 4,000 字符；扩展查询不可用时回退普通索引和确定性排序。成功回合幂等记录实际选择的记忆 ID。
+- 管理 API 增加不含记忆正文的按回合使用来源投影，返回记忆 ID、标题、主题、范围、来源与来源说明；真实 PostgreSQL 已验证 V1..V25、相似度排序和使用记录写入。
+- INT-011 服务端全量 299/299 通过；Testcontainers 从空 PostgreSQL 应用 V1..V25，覆盖原生 `pg_trgm` 检索、普通索引回退、建议安全过滤、冲突确认、使用记录幂等和成功/失败回合边界。
+- 本地候选 `09323bb` 已只替换 LAN server，运行库从 V23 成功应用 V24/V25；健康与网页 200、迁移 `25|true`、记忆 API 未登录 401、启动后错误 0，旧 `dd81a7e / motion_disabled` 自动恢复新鲜心跳。
+- 用户完成发布后的记忆与实体链路测试并确认无问题；验收时产生 1 条 `PENDING + disabled` 建议，符合“确认前不进入上下文”的边界。核对只读取状态与数量，未读取记忆或对话正文。
 
 - 新增 ADR 0028 与 Flyway V24：动作提案绑定固定管理员、设备、会话和来源回合，保存两分钟有效期、白名单字段和独立安全审计；临时免打扰只增加服务端字段，SCV1 与固件协议不变。
 - 明确动作先由确定性路由处理；复杂明确表达使用独立 ReactAgent，且只注册 `submit_voice_action_proposal`。该 Tool 只能保存经应用校验的提案，不能直接调用提醒、设置、记忆或设备服务；畸形输入、越权枚举、未调用 Tool 和提供商失败均不产生业务副作用。
@@ -83,15 +93,15 @@ INT-010 软件候选已完成；等待用户审核后推送任务分支，并在
 
 ## 正在进行
 
-从合并基线 `87a0938` 梳理现有 Agent、提醒、交互设置和长期记忆服务，冻结动作提案、确认、过期、重放和安全审计契约。
+最终全量回归、Compose 静态检查、状态文档和单一中文任务提交。
 
 ## 下一步操作
 
-新增 INT-010 ADR 与 V24 迁移测试，先覆盖取消、过期、重复确认、跨设备/会话确认、畸形结构和越权枚举，再实现业务执行器。
+用户已授权推送；下一步由用户创建 PR、人工审核并合入 `master`。合并前保持 LAN V25 回退镜像和现有安全边界。
 
 ## 阻塞项
 
-当前无阻塞。副作用 Tool 不得直接调用业务服务；审计不得记录用户原句、模型响应、Tool 参数/结果、认证载荷、音频、转写或回复正文。
+当前无阻塞。自动建议不得保存或记录凭据、精确地址、身份号码、财务/医疗推断、用户原句、模型响应、认证载荷、音频、转写或回复正文。
 
 ## 关键文件
 
@@ -106,6 +116,7 @@ INT-010 软件候选已完成；等待用户审核后推送任务分支，并在
 - `server/src/main/resources/db/migration/V14__voice_turn_diagnostics.sql`
 - `server/src/main/resources/db/migration/V15__voice_turn_cancellation.sql`
 - `server/src/main/resources/db/migration/V16__persona_and_long_term_memory.sql`
+- `server/src/main/resources/db/migration/V25__long_term_memory_2.sql`
 - `server/src/main/resources/db/migration/V17__proactive_interaction_and_recurring_reminders.sql`
 - `server/src/main/java/com/kj/stackchan/interaction/`
 - `server/src/main/java/com/kj/stackchan/reminder/`
@@ -122,6 +133,8 @@ INT-010 软件候选已完成；等待用户审核后推送任务分支，并在
 
 ## 验证命令与最近结果
 
+- 2026-08-04 从本地干净候选 `09323bb` 使用正式 Dockerfile 构建并只替换 LAN server；V23→V25 迁移成功，`pg_trgm`、7 个新记忆字段和使用记录表存在，健康/网页 200、未登录记忆 API 401、server 错误 0。PostgreSQL、Redis、备份容器、固件和 NVS 未改变。
+- 2026-08-02 INT-011 收尾运行 `mvn -f server/pom.xml test`：299/299 通过；Testcontainers PostgreSQL 从空库应用 V1..V25，原生 `pg_trgm` 检索和使用记录持久化通过。未连接运行数据库、未执行 V24/V25 运行迁移或替换容器。
 - 2026-07-31 收尾重跑 `mvn -f server/pom.xml test`：282/282 通过，Testcontainers PostgreSQL 从空库应用 V1..V23；运行 server 健康 200、重启 0。
 - `62c727b` 使用正式 Dockerfile 构建镜像 `sha256:090a3117fe970da14b53d2278df5967629abf5ae912c19e1e83bec9f08cd1d8b`，只替换 LAN server 为 `a3c3eb6efeb4`；健康 200、Flyway `23|true`、重启 0，CoreS3 保持 `dd81a7e / motion_disabled`。当前配置的不落盘端到端直连验证为 TTS 200、音频下载 200、规范化 16 kHz、ASR 200 且转写非空；未保存或输出秘密、签名 URL、音频或转写。
 - 用户确认发布后的页面语音测试成功，实体播放不再出现电流音；24→16 kHz 合成兼容的人工验收通过。
@@ -210,6 +223,7 @@ INT-010 软件候选已完成；等待用户审核后推送任务分支，并在
 - [0023：文字与语音共享受控 ReactAgent、Skill、Tool 与 MCP](../decisions/0023-controlled-react-agent-skills-tools-mcp.md)
 - [0026：个人数据物理删除、范围导出与隔离备份恢复](../decisions/0026-personal-data-lifecycle-and-isolated-backups.md)
 - [0028：语音副作用采用结构化提案、确定性确认与幂等执行](../decisions/0028-confirmed-idempotent-voice-actions.md)
+- [0029：长期记忆建议经过敏感过滤、冲突确认与有界检索](../decisions/0029-reviewed-memory-suggestions-and-bounded-retrieval.md)
 - [个人数据备份与隔离恢复验证 runbook](../../runbooks/personal-data-backup.md)
 - [Agent、Skill、Tool 与 MCP 运维 runbook](../../runbooks/agent-tools-mcp.md)
 

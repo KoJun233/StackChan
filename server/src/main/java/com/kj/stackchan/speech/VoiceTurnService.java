@@ -17,6 +17,7 @@ import com.kj.stackchan.conversation.MessageRole;
 import com.kj.stackchan.llm.LlmProviderUnavailableException;
 import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.memory.CompanionPromptService;
+import com.kj.stackchan.memory.CompletedTurnMemoryCoordinator;
 import com.kj.stackchan.voiceaction.VoiceActionCoordinator;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -45,6 +46,7 @@ public class VoiceTurnService {
     private final VoiceTurnDiagnosticsService diagnosticsService;
     private final VoiceTurnCancellationService cancellationService;
     private final VoiceActionCoordinator voiceActionCoordinator;
+    private final CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator;
 
     @Autowired
     public VoiceTurnService(
@@ -56,7 +58,8 @@ public class VoiceTurnService {
             CompanionPromptService companionPromptService,
             VoiceTurnDiagnosticsService diagnosticsService,
             VoiceTurnCancellationService cancellationService,
-            VoiceActionCoordinator voiceActionCoordinator
+            VoiceActionCoordinator voiceActionCoordinator,
+            CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator
     ) {
         this.speechRuntimeClient = speechRuntimeClient;
         this.deviceVoiceConversationService = deviceVoiceConversationService;
@@ -67,6 +70,7 @@ public class VoiceTurnService {
         this.diagnosticsService = diagnosticsService;
         this.cancellationService = cancellationService;
         this.voiceActionCoordinator = voiceActionCoordinator;
+        this.completedTurnMemoryCoordinator = completedTurnMemoryCoordinator;
     }
 
     public VoiceTurnService(
@@ -80,7 +84,7 @@ public class VoiceTurnService {
             VoiceTurnCancellationService cancellationService
     ) {
         this(speechRuntimeClient, deviceVoiceConversationService, conversationService, agentOrchestrator,
-                llmSettingsService, companionPromptService, diagnosticsService, cancellationService, null);
+                llmSettingsService, companionPromptService, diagnosticsService, cancellationService, null, null);
     }
 
     public VoiceTurnResult handle(UUID deviceId, byte[] wavAudio) {
@@ -95,6 +99,8 @@ public class VoiceTurnService {
             VoiceTurnStage lastCompletedStage = VoiceTurnStage.REQUEST_RECEIVED;
             GenerationStart start = null;
             String reply = "";
+            List<UUID> usedMemoryIds = List.of();
+            boolean extractMemorySuggestion = false;
             try {
                 String transcript = speechRuntimeClient.transcribe(wavAudio).trim();
                 cancellation.throwIfCancelled();
@@ -109,16 +115,30 @@ public class VoiceTurnService {
                 start = conversationService.startGeneration(conversationId, UUID.randomUUID(), transcript);
                 cancellation.throwIfCancelled();
                 List<Message> modelHistory = history.stream().map(this::toModelMessage).toList();
-                String systemPrompt = companionPromptService.assemble(
+                CompanionPromptService.PromptAssembly promptAssembly = companionPromptService.assembleWithMemoryContext(
                         conversationId,
                         llmSettingsService.resolveForInvocation().systemPrompt(),
-                        VOICE_SYSTEM_INSTRUCTION
+                        VOICE_SYSTEM_INSTRUCTION,
+                        transcript
                 );
+                if (promptAssembly == null) {
+                    promptAssembly = new CompanionPromptService.PromptAssembly(
+                            companionPromptService.assemble(
+                                    conversationId,
+                                    llmSettingsService.resolveForInvocation().systemPrompt(),
+                                    VOICE_SYSTEM_INSTRUCTION
+                            ),
+                            List.of()
+                    );
+                }
+                String systemPrompt = promptAssembly.prompt();
                 VoiceActionCoordinator.ActionResult actionResult = voiceActionCoordinator == null ? null
                         : voiceActionCoordinator.handle(deviceId, conversationId, turnId, transcript);
                 if (actionResult != null && actionResult.handled()) {
                     reply = actionResult.reply();
                 } else {
+                    usedMemoryIds = promptAssembly.memoryIds();
+                    extractMemorySuggestion = true;
                     reply = agentOrchestrator.stream(new AgentOrchestrator.AgentRequest(
                                     new AgentInvocationContext(
                                             turnId,
@@ -147,6 +167,17 @@ public class VoiceTurnService {
                 byte[] audio = speechRuntimeClient.synthesize(reply);
                 cancellation.throwIfCancelled();
                 conversationService.completeGeneration(start.assistantMessageId(), reply);
+                if (completedTurnMemoryCoordinator != null && extractMemorySuggestion) {
+                    completedTurnMemoryCoordinator.complete(
+                            turnId,
+                            turnId,
+                            deviceId,
+                            transcript,
+                            reply,
+                            usedMemoryIds,
+                            true
+                    );
+                }
                 recordStage(deviceId, turnId, VoiceTurnStage.TTS_COMPLETED, null);
                 return new VoiceTurnResult(transcript, reply, audio);
             } catch (VoiceTurnCancelledException exception) {

@@ -32,7 +32,7 @@ class CompanionPromptServiceTest {
                 "小栈", PersonaTone.WARM, PersonaReplyLength.SHORT, PersonaProactivity.BALANCED,
                 "不主动讨论密码", "不要挖苦用户", Instant.EPOCH
         ));
-        when(memoryService.loadContext(deviceId, 40)).thenReturn(List.of(
+        when(memoryService.loadContext(deviceId, "", 8)).thenReturn(List.of(
                 memory(MemoryCategory.EVENT, MemoryScopeType.DEVICE, deviceId, "项目进度", "已完成 <INT-004>"),
                 memory(MemoryCategory.USER_PROFILE, MemoryScopeType.GLOBAL, null, "称呼", "称呼用户为阿俊")
         ));
@@ -46,7 +46,7 @@ class CompanionPromptServiceTest {
         assertThat(prompt).contains("名字：小栈", "用户档案", "称呼用户为阿俊", "事件记忆", "已完成 ＜INT-004＞");
         assertThat(prompt.indexOf("用户档案")).isLessThan(prompt.indexOf("事件记忆"));
         assertThat(prompt).endsWith("语音渠道规则");
-        verify(memoryService).loadContext(deviceId, 40);
+        verify(memoryService).loadContext(deviceId, "", 8);
     }
 
     private LongTermMemoryService.MemorySnapshot memory(

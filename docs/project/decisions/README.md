@@ -39,3 +39,4 @@
 | [0026](0026-personal-data-lifecycle-and-isolated-backups.md) | ACCEPTED | 对话正文物理删除并按范围导出；逻辑备份独立轮转且只恢复到一次性临时 PostgreSQL。 |
 | [0027](0027-bounded-continuous-conversation.md) | ACCEPTED | 回答后使用设备本地 VAD 的有界跟进窗口，最多三个跟进回合且总时长最多两分钟。 |
 | [0028](0028-confirmed-idempotent-voice-actions.md) | ACCEPTED | 语音副作用先形成绑定设备与会话的结构化提案，经确定性确认后幂等执行。 |
+| [0029](0029-reviewed-memory-suggestions-and-bounded-retrieval.md) | ACCEPTED | 普通完成回合最多提出一条经敏感过滤的待确认记忆，冲突经确认替代，并按相关性有界检索和记录使用 ID。 |

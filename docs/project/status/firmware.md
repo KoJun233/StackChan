@@ -1,17 +1,21 @@
 # 固件工作流
 
 - 状态：STABLE
-- 最后更新：2026-08-02
-- 当前分支：`codex/int-010-safe-voice-actions`
-- 基准提交：`87a0938`
-- 最后验证提交：`a502f41`
+- 最后更新：2026-08-04
+- 当前分支：`codex/int-011-memory-2`
+- 基准提交：`fbe5bde`
+- 最后验证提交：`fbe5bde`
 - 当前实机镜像：`dd81a7e`
 
 ## 当前目标
 
-保持 CoreS3 `dd81a7e`、WakeNet、连续对话、触摸取消、SCV1、八状态表情与 `motion_disabled` 稳定；INT-010 复用现有语音跟进确认链路，不新增设备执行命令。
+保持 CoreS3 `dd81a7e`、WakeNet、连续对话、触摸取消、SCV1、八状态表情与 `motion_disabled` 稳定；INT-011 只扩展服务端记忆与管理端解释，不新增设备协议或命令。
 
 ## 已完成
+
+- INT-011 不修改 SCV1、WebSocket 命令、连续对话状态机、固件分区或设备配置；普通语音回合只在服务端完成后异步提取待确认建议。未连接 COM3、未构建或刷写固件、未修改 NVS；发布后仍须先用现有 `dd81a7e` 做旧固件人工兼容验证。
+- server/V25 发布后，现有 CoreS3 `dd81a7e / motion_disabled` 已自动恢复 WebSocket 并产生约 3 秒内的新鲜心跳；自动兼容检查通过，普通聊天、连续对话、提醒播放和触摸取消仍待用户实体确认。
+- 用户完成 server/V25 发布后的实体测试并确认无问题；核对时 `dd81a7e / motion_disabled` 心跳为 0 秒级、server 重启和错误为 0。未连接 COM3、未刷写或改写 NVS。
 
 - INT-010 只修改 server：SCV1、`configure_interaction`、连续对话跟进、固件分区和设备命令均未改变；未连接 COM3、未构建或刷写固件、未修改 NVS。发布后仍须先用现有 `dd81a7e` 做旧固件人工兼容验证。
 
@@ -85,7 +89,7 @@
 
 ## 下一步操作
 
-服务端实现完成后，用旧固件协议回归确认普通聊天、确认跟进和提醒播放不回退；未经新的精确授权不连接 COM3、刷写或改写 NVS。
+INT-011 旧固件人工兼容已通过；保持 `dd81a7e / motion_disabled` 和 NVS 不变，下一次固件操作仍需新的精确授权。
 
 ## 阻塞项
 
@@ -220,6 +224,7 @@
 - [0018：触摸控制采用本地事件队列与幂等语音回合取消](../decisions/0018-touch-control-and-voice-turn-cancellation.md)
 - [0009：服务端增加阿里云百炼原生语音适配器](../decisions/0009-native-dashscope-speech-adapter.md)
 - [0027：连续对话采用设备本地有界跟进窗口](../decisions/0027-bounded-continuous-conversation.md)
+- [0029：长期记忆建议经过敏感过滤、冲突确认与有界检索](../decisions/0029-reviewed-memory-suggestions-and-bounded-retrieval.md)
 
 ## 安全与兼容性约束
 

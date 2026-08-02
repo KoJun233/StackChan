@@ -66,6 +66,7 @@ const tableColumns = computed<TableColumn<LongTermMemory>[]>(() => [
   { id: 'category', header: '类型', width: 110, align: 'center' },
   { id: 'scope', header: '作用范围', minWidth: 150 },
   { id: 'status', header: '确认状态', width: 110, align: 'center' },
+  { id: 'importance', header: '重要度', width: 90, align: 'center' },
   { id: 'enabled', header: '上下文', width: 100, align: 'center' },
   { id: 'updatedAt', header: '更新时间', minWidth: 170 },
   { id: 'operation', header: '操作', width: 210, align: 'center', fixed: 'right' },
@@ -303,6 +304,12 @@ onBeforeUnmount(() => eventBus.off('get-memory-list'))
             <div class="text-xs text-muted-foreground mt-1" :title="row.original.sourceDetail">
               {{ row.original.sourceDetail }}
             </div>
+            <div class="text-xs text-muted-foreground mt-1">
+              主题：{{ row.original.topicKey }}
+              <span v-if="row.original.possibleDuplicateIds.length"> · 可能重复 {{ row.original.possibleDuplicateIds.length }} 条</span>
+              <span v-if="row.original.replacesMemoryId"> · 待确认替代旧记忆</span>
+              <span v-if="row.original.supersededByMemoryId"> · 已被替代</span>
+            </div>
           </div>
         </template>
         <template #cell-category="{ row }">
@@ -322,21 +329,24 @@ onBeforeUnmount(() => eventBus.off('get-memory-list'))
             {{ row.original.enabled ? '已启用' : '未启用' }}
           </FaTag>
         </template>
+        <template #cell-importance="{ row }">
+          {{ row.original.importance }} / 5
+        </template>
         <template #cell-updatedAt="{ row }">
           {{ formatTime(row.original.updatedAt) }}
         </template>
         <template #cell-operation="{ row }">
           <div class="flex-center gap-2">
             <template v-if="row.original.confirmationStatus === 'PENDING'">
-              <FaButton size="sm" @click="applyAction(() => confirmMemory(row.original.id), '记忆已确认并启用')">
-                确认
+              <FaButton size="sm" @click="applyAction(() => confirmMemory(row.original.id), row.original.replacesMemoryId ? '新记忆已确认，旧记忆已保留审计并停用' : '记忆已确认并启用')">
+                {{ row.original.replacesMemoryId ? '确认替代' : '确认' }}
               </FaButton>
               <FaButton size="sm" variant="outline" @click="applyAction(() => rejectMemory(row.original.id), '记忆建议已拒绝')">
                 拒绝
               </FaButton>
             </template>
             <FaButton
-              v-else-if="row.original.confirmationStatus === 'CONFIRMED'"
+              v-else-if="row.original.confirmationStatus === 'CONFIRMED' && !row.original.supersededByMemoryId"
               size="sm"
               variant="outline"
               @click="applyAction(() => setMemoryEnabled(row.original.id, !row.original.enabled), row.original.enabled ? '记忆已停用' : '记忆已启用')"
