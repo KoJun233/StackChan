@@ -17,12 +17,14 @@ import com.kj.stackchan.conversation.MessageRole;
 import com.kj.stackchan.llm.LlmProviderUnavailableException;
 import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.memory.CompanionPromptService;
+import com.kj.stackchan.voiceaction.VoiceActionCoordinator;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class VoiceTurnService {
@@ -42,6 +44,30 @@ public class VoiceTurnService {
     private final CompanionPromptService companionPromptService;
     private final VoiceTurnDiagnosticsService diagnosticsService;
     private final VoiceTurnCancellationService cancellationService;
+    private final VoiceActionCoordinator voiceActionCoordinator;
+
+    @Autowired
+    public VoiceTurnService(
+            SpeechRuntimeClient speechRuntimeClient,
+            DeviceVoiceConversationService deviceVoiceConversationService,
+            ConversationService conversationService,
+            AgentOrchestrator agentOrchestrator,
+            LlmSettingsService llmSettingsService,
+            CompanionPromptService companionPromptService,
+            VoiceTurnDiagnosticsService diagnosticsService,
+            VoiceTurnCancellationService cancellationService,
+            VoiceActionCoordinator voiceActionCoordinator
+    ) {
+        this.speechRuntimeClient = speechRuntimeClient;
+        this.deviceVoiceConversationService = deviceVoiceConversationService;
+        this.conversationService = conversationService;
+        this.agentOrchestrator = agentOrchestrator;
+        this.llmSettingsService = llmSettingsService;
+        this.companionPromptService = companionPromptService;
+        this.diagnosticsService = diagnosticsService;
+        this.cancellationService = cancellationService;
+        this.voiceActionCoordinator = voiceActionCoordinator;
+    }
 
     public VoiceTurnService(
             SpeechRuntimeClient speechRuntimeClient,
@@ -53,14 +79,8 @@ public class VoiceTurnService {
             VoiceTurnDiagnosticsService diagnosticsService,
             VoiceTurnCancellationService cancellationService
     ) {
-        this.speechRuntimeClient = speechRuntimeClient;
-        this.deviceVoiceConversationService = deviceVoiceConversationService;
-        this.conversationService = conversationService;
-        this.agentOrchestrator = agentOrchestrator;
-        this.llmSettingsService = llmSettingsService;
-        this.companionPromptService = companionPromptService;
-        this.diagnosticsService = diagnosticsService;
-        this.cancellationService = cancellationService;
+        this(speechRuntimeClient, deviceVoiceConversationService, conversationService, agentOrchestrator,
+                llmSettingsService, companionPromptService, diagnosticsService, cancellationService, null);
     }
 
     public VoiceTurnResult handle(UUID deviceId, byte[] wavAudio) {
@@ -94,23 +114,29 @@ public class VoiceTurnService {
                         llmSettingsService.resolveForInvocation().systemPrompt(),
                         VOICE_SYSTEM_INSTRUCTION
                 );
-                reply = agentOrchestrator.stream(new AgentOrchestrator.AgentRequest(
-                                new AgentInvocationContext(
-                                        turnId,
-                                        conversationId,
-                                        deviceId,
-                                        AgentChannel.VOICE
-                                ),
-                                systemPrompt,
-                                modelHistory,
-                                transcript
-                        ))
-                        .takeUntilOther(cancellation.cancellationSignal())
-                        .filter(chunk -> chunk != null && !chunk.isEmpty())
-                        .collect(Collectors.joining())
-                        .timeout(VOICE_LLM_TIMEOUT)
-                        .onErrorMap(TimeoutException.class, ignored -> new LlmProviderUnavailableException())
-                        .block();
+                VoiceActionCoordinator.ActionResult actionResult = voiceActionCoordinator == null ? null
+                        : voiceActionCoordinator.handle(deviceId, conversationId, turnId, transcript);
+                if (actionResult != null && actionResult.handled()) {
+                    reply = actionResult.reply();
+                } else {
+                    reply = agentOrchestrator.stream(new AgentOrchestrator.AgentRequest(
+                                    new AgentInvocationContext(
+                                            turnId,
+                                            conversationId,
+                                            deviceId,
+                                            AgentChannel.VOICE
+                                    ),
+                                    systemPrompt,
+                                    modelHistory,
+                                    transcript
+                            ))
+                            .takeUntilOther(cancellation.cancellationSignal())
+                            .filter(chunk -> chunk != null && !chunk.isEmpty())
+                            .collect(Collectors.joining())
+                            .timeout(VOICE_LLM_TIMEOUT)
+                            .onErrorMap(TimeoutException.class, ignored -> new LlmProviderUnavailableException())
+                            .block();
+                }
                 cancellation.throwIfCancelled();
                 if (reply == null || reply.isBlank()) {
                     throw new LlmProviderUnavailableException();

@@ -280,6 +280,7 @@ class ConversationControllerTest {
                 .andExpect(request().asyncStarted())
                 .andReturn();
 
+        result.getAsyncResult(5_000);
         mockMvc.perform(asyncDispatch(result))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("event:message")))
@@ -309,6 +310,7 @@ class ConversationControllerTest {
                 .andExpect(request().asyncStarted())
                 .andReturn();
 
+        result.getAsyncResult(5_000);
         mockMvc.perform(asyncDispatch(result))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("event:message")))
@@ -368,6 +370,7 @@ class ConversationControllerTest {
                 .andExpect(request().asyncStarted())
                 .andReturn();
 
+        result.getAsyncResult(5_000);
         mockMvc.perform(asyncDispatch(result))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("event:message")))

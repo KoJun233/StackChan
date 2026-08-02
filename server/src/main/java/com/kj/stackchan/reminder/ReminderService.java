@@ -115,6 +115,35 @@ public class ReminderService {
         return toSnapshot(reminder);
     }
 
+    @Transactional(readOnly = true)
+    public ReminderSnapshot nextPending(UUID deviceId) {
+        if (deviceId == null || !deviceRepository.existsById(deviceId)) {
+            throw new InvalidReminderException("Reminder device is invalid");
+        }
+        return reminderRepository.findFirstByDeviceIdAndStatusOrderByScheduledAtAscIdAsc(
+                        deviceId, ReminderStatus.PENDING)
+                .map(this::toSnapshot)
+                .orElse(null);
+    }
+
+    @Transactional
+    public ReminderSnapshot snoozeNext(UUID deviceId, int minutes) {
+        ReminderSnapshot next = nextPending(deviceId);
+        if (next == null) {
+            throw new InvalidReminderException("No pending reminder exists");
+        }
+        return snooze(next.id(), minutes);
+    }
+
+    @Transactional
+    public ReminderSnapshot skipNextPending(UUID deviceId) {
+        ReminderSnapshot next = nextPending(deviceId);
+        if (next == null) {
+            throw new InvalidReminderException("No pending reminder exists");
+        }
+        return skipNext(next.id());
+    }
+
     @Transactional
     public ReminderSnapshot skipNext(UUID id) {
         ReminderEntity reminder = reminderRepository.findById(id).orElseThrow(ReminderNotFoundException::new);

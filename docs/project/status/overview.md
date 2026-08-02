@@ -1,12 +1,12 @@
 # 全局工作流总览
 
-- 状态：ACTIVE
-- 最后更新：2026-07-31
-- 当前分支：`codex/int-009-continuous-conversation`
-- 实现基准：`a51ac83`
-- 最后验证提交：`62c727b`
-- 当前验证范围：Qwen-TTS 24→16 kHz 合成重采样定向测试 20/20、INT-009 服务端全量 282/282、Testcontainers 空库 V1..V23；前端 24 个文件 65/65、类型检查和 production build；三种 ESP-IDF profile、两项栈预算、唤醒模型包、LAN/production Compose、文档与差异检查通过。当前配置的 TTS→下载→16 kHz 规范化→ASR 不落盘直连通过；用户确认页面语音测试成功且 `dd81a7e` 实体播放不再有电流音。
-- 当前优先级：INT-009 已完成实现、发布与人工验收；取得用户授权后只推送任务分支，由用户创建 PR 并人工合并，之后开始 INT-010。
+- 状态：READY
+- 最后更新：2026-08-02
+- 当前分支：`codex/int-010-safe-voice-actions`
+- 实现基准：`87a0938`
+- 最后验证提交：`a502f41`
+- 当前验证范围：INT-010 服务端全量 290/290、Testcontainers 空库 V1..V24；前端 24 个文件 65/65、`vue-tsc -b` 和 production build；LAN/production Compose、文档与差异检查通过。新增边界测试覆盖普通聊天不误触发、取消、过期、重放、跨设备确认、临时免打扰和提案 Tool 无直接业务副作用。
+- 当前优先级：INT-010 软件候选收尾；等待推送与人工合并，随后另行授权 server-first 发布并使用现有 `dd81a7e` 验证旧固件兼容。
 - 当前部署：LAN HTTP development mode。
 - 生产边界：HTTPS-only。
 
@@ -14,10 +14,10 @@
 
 | 工作流 | 状态 | 状态文件 | 当前分支 | 下一步 |
 | --- | --- | --- | --- | --- |
-| 服务端 | COMPLETE | [server.md](server.md) | `codex/int-009-continuous-conversation` | INT-009 完成；等待分支推送授权。 |
-| 前端 | COMPLETE | [frontend.md](frontend.md) | `codex/int-009-continuous-conversation` | INT-009 页面与人工验收完成。 |
-| 固件 | STABLE | [firmware.md](firmware.md) | `codex/int-009-continuous-conversation` | 保持 `dd81a7e / motion_disabled` 和 NVS 不变。 |
-| 部署 | COMPLETE | [deployment.md](deployment.md) | `codex/int-009-continuous-conversation` | LAN 发布与人工验收完成；保持当前运行态。 |
+| 服务端 | READY | [server.md](server.md) | `codex/int-010-safe-voice-actions` | 推送单提交候选；发布仍需用户明确授权。 |
+| 前端 | READY | [frontend.md](frontend.md) | `codex/int-010-safe-voice-actions` | 无产品改动；保持现有管理端稳定。 |
+| 固件 | STABLE | [firmware.md](firmware.md) | `codex/int-010-safe-voice-actions` | 复用现有连续对话确认链路，保持 `dd81a7e / motion_disabled` 和 NVS 不变。 |
+| 部署 | READY | [deployment.md](deployment.md) | `codex/int-010-safe-voice-actions` | V24 候选已通过静态验证；未经授权不替换运行服务。 |
 
 INT-009 已按 server-first 顺序发布：镜像 `sha256:6902bf3e287568bef13d0fa1247676e475f34357fe7d22923687be10d651d332` 只替换 LAN server，运行库从 V22 升至 V23；旧镜像保留为 `stackchan-foundation-server:rollback-a2f723e-pre-v23`。PostgreSQL、Redis、备份容器、卷、端口、凭据和生产 HTTPS-only 边界未改变；旧 CoreS3 `b05d60f / motion_disabled` 在退避后自动重连，并跨两个 25 秒周期持续刷新心跳。连续对话仍默认关闭，未连接 COM3、未刷写或 OTA。
 
@@ -196,4 +196,4 @@ INT-007 本地发布候选完成：默认表情升级为 M5Unified/M5GFX 独立�
 
 ## 下一步
 
-取得用户外部推送授权后，只推送 `codex/int-009-continuous-conversation`；由用户创建 PR 并人工合并。合入最新 `master` 后，按 `docs/project/todo.md` 从独立分支开始 INT-010。
+将当前任务分支压缩为一个中文提交并在用户授权后推送；由用户创建 PR 并人工合并。合并后如用户另行授权，只发布 server/V24，先用现有 `dd81a7e` 验证旧固件普通聊天、确认跟进、提醒播放、音量和触摸取消。

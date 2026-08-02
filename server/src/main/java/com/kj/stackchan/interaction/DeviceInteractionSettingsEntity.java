@@ -41,6 +41,9 @@ public class DeviceInteractionSettingsEntity {
     @Column(name = "dnd_end", nullable = false)
     private LocalTime dndEnd;
 
+    @Column(name = "temporary_dnd_until")
+    private Instant temporaryDndUntil;
+
     @Column(name = "zone_id", nullable = false, length = 80)
     private String zoneId;
 
@@ -93,6 +96,7 @@ public class DeviceInteractionSettingsEntity {
         this.dndEnabled = false;
         this.dndStart = LocalTime.of(22, 0);
         this.dndEnd = LocalTime.of(7, 0);
+        this.temporaryDndUntil = null;
         this.zoneId = "Asia/Shanghai";
         this.missedReminderPolicy = MissedReminderPolicy.PLAY_NOW;
         this.missedSnoozeMinutes = 10;
@@ -154,6 +158,16 @@ public class DeviceInteractionSettingsEntity {
         updatedAt = now;
     }
 
+    public void setVolume(int volumePercent, Instant now) {
+        this.volumePercent = volumePercent;
+        this.updatedAt = now;
+    }
+
+    public void setTemporaryDndUntil(Instant until, Instant now) {
+        this.temporaryDndUntil = until;
+        this.updatedAt = now;
+    }
+
     public UUID getDeviceId() { return deviceId; }
     public int getVolumePercent() { return volumePercent; }
     public boolean isNightMode() { return nightMode; }
@@ -162,6 +176,7 @@ public class DeviceInteractionSettingsEntity {
     public boolean isDndEnabled() { return dndEnabled; }
     public LocalTime getDndStart() { return dndStart; }
     public LocalTime getDndEnd() { return dndEnd; }
+    public Instant getTemporaryDndUntil() { return temporaryDndUntil; }
     public String getZoneId() { return zoneId; }
     public MissedReminderPolicy getMissedReminderPolicy() { return missedReminderPolicy; }
     public int getMissedSnoozeMinutes() { return missedSnoozeMinutes; }

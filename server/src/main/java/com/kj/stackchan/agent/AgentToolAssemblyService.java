@@ -14,6 +14,8 @@ import com.alibaba.cloud.ai.graph.skills.registry.SkillRegistry;
 import com.alibaba.cloud.ai.graph.skills.registry.filesystem.FileSystemSkillRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kj.stackchan.config.AppProperties;
+import com.kj.stackchan.memory.LongTermMemoryService;
+import com.kj.stackchan.reminder.ReminderService;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.stereotype.Service;
@@ -23,7 +25,9 @@ public class AgentToolAssemblyService {
 
     public static final Set<String> BUILTIN_TOOL_IDS = Set.of(
             CurrentTimeTool.ID,
-            CapabilityListTool.ID
+            CapabilityListTool.ID,
+            NextReminderTool.ID,
+            PendingMemoryCountTool.ID
     );
 
     private final AgentSettingsService settingsService;
@@ -33,6 +37,8 @@ public class AgentToolAssemblyService {
     private final ObjectMapper objectMapper;
     private final AppProperties appProperties;
     private final Clock clock;
+    private final ReminderService reminderService;
+    private final LongTermMemoryService memoryService;
 
     public AgentToolAssemblyService(
             AgentSettingsService settingsService,
@@ -41,7 +47,9 @@ public class AgentToolAssemblyService {
             AgentSkillPackageService skillPackageService,
             ObjectMapper objectMapper,
             AppProperties appProperties,
-            Clock clock
+            Clock clock,
+            ReminderService reminderService,
+            LongTermMemoryService memoryService
     ) {
         this.settingsService = settingsService;
         this.mcpCatalog = mcpCatalog;
@@ -50,6 +58,8 @@ public class AgentToolAssemblyService {
         this.objectMapper = objectMapper;
         this.appProperties = appProperties;
         this.clock = clock;
+        this.reminderService = reminderService;
+        this.memoryService = memoryService;
     }
 
     public AgentToolAssembly assemble(AgentInvocationContext context) {
@@ -67,6 +77,20 @@ public class AgentToolAssemblyService {
                     null,
                     null
             ));
+        }
+
+        if (context.deviceId() != null && settingsService.isEnabled(AgentCapabilityType.BUILTIN_TOOL, NextReminderTool.ID)) {
+            ToolCallback callback = callback(new NextReminderTool(context.deviceId(), reminderService, objectMapper));
+            directTools.add(callback);
+            auditMetadata.put(callback.getToolDefinition().name(), new AgentToolPolicyInterceptor.ToolAuditMetadata(
+                    AgentToolSource.BUILTIN, null, null));
+        }
+        if (context.deviceId() != null && settingsService.isEnabled(
+                AgentCapabilityType.BUILTIN_TOOL, PendingMemoryCountTool.ID)) {
+            ToolCallback callback = callback(new PendingMemoryCountTool(context.deviceId(), memoryService, objectMapper));
+            directTools.add(callback);
+            auditMetadata.put(callback.getToolDefinition().name(), new AgentToolPolicyInterceptor.ToolAuditMetadata(
+                    AgentToolSource.BUILTIN, null, null));
         }
 
         for (AgentMcpCatalog.AuthorizedMcpTool mcpTool : mcpTools.tools()) {
