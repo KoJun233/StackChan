@@ -65,6 +65,31 @@ public class InteractionSettingsService {
                 .orElseGet(() -> snapshot(new DeviceInteractionSettingsEntity(deviceId, clock.instant())));
     }
 
+    @Transactional
+    public InteractionSettingsSnapshot setVolume(UUID deviceId, int volumePercent) {
+        validateDevice(deviceId);
+        if (volumePercent < 0 || volumePercent > 100) {
+            throw new InvalidInteractionSettingsException("Interaction volume is invalid");
+        }
+        DeviceInteractionSettingsEntity settings = repository.findById(deviceId)
+                .orElseGet(() -> new DeviceInteractionSettingsEntity(deviceId, clock.instant()));
+        settings.setVolume(volumePercent, clock.instant());
+        return snapshot(repository.save(settings));
+    }
+
+    @Transactional
+    public InteractionSettingsSnapshot setTemporaryDndUntil(UUID deviceId, Instant until) {
+        validateDevice(deviceId);
+        Instant now = clock.instant();
+        if (until == null || !until.isAfter(now) || until.isAfter(now.plus(Duration.ofHours(24)))) {
+            throw new InvalidInteractionSettingsException("Temporary DND duration is invalid");
+        }
+        DeviceInteractionSettingsEntity settings = repository.findById(deviceId)
+                .orElseGet(() -> new DeviceInteractionSettingsEntity(deviceId, now));
+        settings.setTemporaryDndUntil(until, now);
+        return snapshot(repository.save(settings));
+    }
+
     @Transactional(readOnly = true)
     public List<InteractionSettingsSnapshot> proactiveCandidates() {
         return repository.findAll().stream()
@@ -85,6 +110,9 @@ public class InteractionSettingsService {
     }
 
     public boolean isDnd(InteractionSettingsSnapshot settings, Instant instant) {
+        if (settings.temporaryDndUntil() != null && settings.temporaryDndUntil().isAfter(instant)) {
+            return true;
+        }
         if (!settings.dndEnabled()) {
             return false;
         }
@@ -93,8 +121,15 @@ public class InteractionSettingsService {
     }
 
     public Instant nextDndEnd(InteractionSettingsSnapshot settings, Instant instant) {
+        Instant temporaryEnd = settings.temporaryDndUntil() != null
+                && settings.temporaryDndUntil().isAfter(instant) ? settings.temporaryDndUntil() : null;
         ZoneId zone = ZoneId.of(settings.zoneId());
         ZonedDateTime now = instant.atZone(zone);
+        boolean recurringActive = settings.dndEnabled()
+                && inWindow(now.toLocalTime(), settings.dndStart(), settings.dndEnd());
+        if (!recurringActive && temporaryEnd != null) {
+            return temporaryEnd;
+        }
         LocalDate endDate = now.toLocalDate();
         if (settings.dndStart().isAfter(settings.dndEnd()) && !now.toLocalTime().isBefore(settings.dndStart())) {
             endDate = endDate.plusDays(1);
@@ -104,7 +139,8 @@ public class InteractionSettingsService {
         if (!zonedEnd.toInstant().isAfter(instant)) {
             zonedEnd = end.plusDays(1).atZone(zone);
         }
-        return zonedEnd.toInstant();
+        Instant recurringEnd = zonedEnd.toInstant();
+        return temporaryEnd != null && temporaryEnd.isAfter(recurringEnd) ? temporaryEnd : recurringEnd;
     }
 
     public boolean isProactiveEligible(InteractionSettingsSnapshot settings, Instant now) {
@@ -169,7 +205,7 @@ public class InteractionSettingsService {
                 entity.getMissedSnoozeMinutes(), entity.isProactiveEnabled(), entity.getProactiveStart(),
                 entity.getProactiveEnd(), entity.getProactiveMinIntervalMinutes(), entity.getProactiveDailyLimit(),
                 entity.getProactiveContent(), entity.getProactiveLastAt(), entity.getProactiveCounterDate(),
-                entity.getProactiveCounter(), entity.getUpdatedAt()
+                entity.getProactiveCounter(), entity.getUpdatedAt(), entity.getTemporaryDndUntil()
         );
     }
 
@@ -214,7 +250,23 @@ public class InteractionSettingsService {
             Instant proactiveLastAt,
             LocalDate proactiveCounterDate,
             int proactiveCounter,
-            Instant updatedAt
+            Instant updatedAt,
+            Instant temporaryDndUntil
     ) {
+        public InteractionSettingsSnapshot(
+                UUID deviceId, int volumePercent, boolean nightMode,
+                boolean continuousConversationEnabled, int followUpWindowSeconds, boolean dndEnabled,
+                LocalTime dndStart, LocalTime dndEnd, String zoneId, MissedReminderPolicy missedReminderPolicy,
+                int missedSnoozeMinutes, boolean proactiveEnabled, LocalTime proactiveStart,
+                LocalTime proactiveEnd, int proactiveMinIntervalMinutes, int proactiveDailyLimit,
+                String proactiveContent, Instant proactiveLastAt, LocalDate proactiveCounterDate,
+                int proactiveCounter, Instant updatedAt
+        ) {
+            this(deviceId, volumePercent, nightMode, continuousConversationEnabled, followUpWindowSeconds,
+                    dndEnabled, dndStart, dndEnd, zoneId, missedReminderPolicy, missedSnoozeMinutes,
+                    proactiveEnabled, proactiveStart, proactiveEnd, proactiveMinIntervalMinutes,
+                    proactiveDailyLimit, proactiveContent, proactiveLastAt, proactiveCounterDate,
+                    proactiveCounter, updatedAt, null);
+        }
     }
 }

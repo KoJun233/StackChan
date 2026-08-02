@@ -181,6 +181,14 @@ public class LongTermMemoryService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public long pendingVisibleCount(UUID deviceId) {
+        if (deviceId == null || !deviceRepository.existsById(deviceId)) {
+            throw new InvalidMemoryException("Memory device scope is invalid");
+        }
+        return repository.countVisibleByDeviceAndStatus(deviceId, MemoryConfirmationStatus.PENDING);
+    }
+
     private Specification<LongTermMemoryEntity> baseSpecification(
             String queryText,
             MemoryCategory category,

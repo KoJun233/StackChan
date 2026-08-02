@@ -59,6 +59,21 @@ class InteractionSettingsServiceTest {
         assertThat(service().isProactiveEligible(settings, NOW)).isFalse();
     }
 
+    @Test
+    void temporaryDndOverridesDisabledRecurringWindowOnlyUntilItsDeadline() {
+        UUID deviceId = UUID.randomUUID();
+        Instant until = NOW.plusSeconds(900);
+        var settings = new InteractionSettingsService.InteractionSettingsSnapshot(
+                deviceId, 50, false, false, 8, false, LocalTime.of(22, 0), LocalTime.of(7, 0), "UTC",
+                MissedReminderPolicy.PLAY_NOW, 10, false, LocalTime.of(9, 0), LocalTime.of(21, 0),
+                60, 2, "你好", null, null, 0, NOW, until
+        );
+
+        assertThat(service().isDnd(settings, NOW)).isTrue();
+        assertThat(service().nextDndEnd(settings, NOW)).isEqualTo(until);
+        assertThat(service().isDnd(settings, until)).isFalse();
+    }
+
     private InteractionSettingsService service() {
         return new InteractionSettingsService(
                 repository, deviceRepository, Clock.fixed(NOW, ZoneOffset.UTC)

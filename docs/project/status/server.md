@@ -1,16 +1,22 @@
 # 服务端工作流
 
-- 状态：COMPLETE
-- 最后更新：2026-07-31
-- 当前分支：`codex/int-009-continuous-conversation`
-- 基准提交：`a51ac83`
-- 最后验证提交：`62c727b`
+- 状态：READY
+- 最后更新：2026-08-02
+- 当前分支：`codex/int-010-safe-voice-actions`
+- 基准提交：`87a0938`
+- 最后验证提交：`a502f41`
 
 ## 当前目标
 
-完成 `INT-009` 的服务端兼容层：V23 保存连续对话开关与跟进窗口，默认关闭时继续向旧固件发送四字段交互配置，并接受新增的隐私安全跟进阶段。
+INT-010 软件候选已完成；等待用户审核后推送任务分支，并在另行授权的 server-first 发布中验证 V24 与现有 `dd81a7e` 旧固件兼容。
 
 ## 已完成
+
+- 新增 ADR 0028 与 Flyway V24：动作提案绑定固定管理员、设备、会话和来源回合，保存两分钟有效期、白名单字段和独立安全审计；临时免打扰只增加服务端字段，SCV1 与固件协议不变。
+- 明确动作先由确定性路由处理；复杂明确表达使用独立 ReactAgent，且只注册 `submit_voice_action_proposal`。该 Tool 只能保存经应用校验的提案，不能直接调用提醒、设置、记忆或设备服务；畸形输入、越权枚举、未调用 Tool 和提供商失败均不产生业务副作用。
+- 提醒、稍后、跳过下一次、临时免打扰和音量必须确定性复述并由同设备同会话确认；确认使用提案行锁保持幂等，取消、过期、跨范围和重放均不能重复执行。“记住”仅创建 `ASSISTANT_SUGGESTED + PENDING + disabled` 建议。
+- 普通 Agent 新增当前设备范围的下一条提醒和待确认记忆数量两个只读 Tool；模型不能提供设备 ID。动作审计不保存用户原话、模型回复、业务正文或 Tool 参数/结果。
+- 服务端全量 290/290 通过，Testcontainers 从空 PostgreSQL 成功应用 V1..V24；新增定向测试覆盖普通聊天不误触发、取消、过期、重复确认、跨设备确认、临时免打扰和提案 Tool 不直接调用业务服务；既有 SSE 回放测试补齐异步完成等待，消除 MockMvc 响应头并发竞态。
 
 - INT-009 新增 ADR 0027 与 Flyway V23：设备级交互设置保存连续对话开关和 3..8 秒跟进窗口，默认关闭；诊断阶段扩展 `FOLLOW_UP_LISTENING`、`FOLLOW_UP_TIMEOUT` 和 `CONVERSATION_ENDED`。
 - `configure_interaction` 按开关兼容下发：关闭时维持旧固件可接受的四字段命令，启用时下发六字段命令；跟进静音超时和明确结束均按正常完成语义收口，不保存静音音频、转写或回复正文。
@@ -77,15 +83,15 @@
 
 ## 正在进行
 
-无。INT-009 服务端兼容层、V23、DashScope TTS 兼容修复、发布和人工验收均已完成。
+从合并基线 `87a0938` 梳理现有 Agent、提醒、交互设置和长期记忆服务，冻结动作提案、确认、过期、重放和安全审计契约。
 
 ## 下一步操作
 
-取得用户外部推送授权后，只推送 `codex/int-009-continuous-conversation`；由用户创建 PR 并人工合并，随后从最新 `master` 创建 INT-010 独立任务分支。
+新增 INT-010 ADR 与 V24 迁移测试，先覆盖取消、过期、重复确认、跨设备/会话确认、畸形结构和越权枚举，再实现业务执行器。
 
 ## 阻塞项
 
-实现、自动化回归、发布和人工验收无阻塞。尚未取得外部推送授权，因此本分支不会主动推送；不得记录或返回 Tool 参数/结果、认证载荷、配置秘密、签名 URL、音频、转写、回复正文或完整模型响应。
+当前无阻塞。副作用 Tool 不得直接调用业务服务；审计不得记录用户原句、模型响应、Tool 参数/结果、认证载荷、音频、转写或回复正文。
 
 ## 关键文件
 
@@ -203,6 +209,7 @@
 - [0020：长期记忆必须经过确认并按会话范围组装](../decisions/0020-confirmed-scoped-long-term-memory.md)
 - [0023：文字与语音共享受控 ReactAgent、Skill、Tool 与 MCP](../decisions/0023-controlled-react-agent-skills-tools-mcp.md)
 - [0026：个人数据物理删除、范围导出与隔离备份恢复](../decisions/0026-personal-data-lifecycle-and-isolated-backups.md)
+- [0028：语音副作用采用结构化提案、确定性确认与幂等执行](../decisions/0028-confirmed-idempotent-voice-actions.md)
 - [个人数据备份与隔离恢复验证 runbook](../../runbooks/personal-data-backup.md)
 - [Agent、Skill、Tool 与 MCP 运维 runbook](../../runbooks/agent-tools-mcp.md)
 

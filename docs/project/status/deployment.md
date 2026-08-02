@@ -1,17 +1,20 @@
 # 部署工作流
 
-- 状态：COMPLETE
-- 最后更新：2026-07-31
-- 当前分支：`codex/int-009-continuous-conversation`
-- 基准提交：`a51ac83`
-- 最后验证提交：`62c727b`
+- 状态：READY
+- 最后更新：2026-08-02
+- 当前分支：`codex/int-010-safe-voice-actions`
+- 基准提交：`87a0938`
+- 最后验证提交：`a502f41`
 - 当前运行态代码：INT-009 server `62c727b` / Flyway V23、独立 `postgres-backup` 服务；CoreS3 `dd81a7e / motion_disabled`。24→16 kHz 合成重采样已 server-only 发布，当前配置的 TTS→ASR 不落盘端到端直连通过。
 
 ## 当前目标
 
-只替换 INT-009 / V23 LAN server 以发布 DashScope 非实时 TTS 请求结构修复，保持 PostgreSQL、Redis、卷、端口、凭据、固件、NVS 和生产 HTTPS-only 边界不变。
+为 INT-010 准备 server-first V24 候选与回退证据；未经用户明确授权不替换当前 LAN server，不改变 PostgreSQL、Redis、卷、端口、凭据、固件、NVS 或生产 HTTPS-only 边界。
 
 ## 已完成
+
+- INT-010 工作树已通过 Maven 290/290、Testcontainers 空库 V1..V24、前端 65/65、类型检查、production build、文档检查以及 LAN/production Compose 静态验证。验证仅使用当前进程非秘密占位值；未构建或替换运行 server，运行库仍为 V23，CoreS3 仍为 `dd81a7e / motion_disabled`。
+- V24 仅新增动作提案、安全审计和临时免打扰字段；server-first 发布与 V24 运行迁移尚未授权。发布时必须先保留 V23 回退镜像和数据库备份，再以旧固件验证普通聊天、确认跟进、提醒播放、音量和触摸取消。
 
 - 用户明确授权后，发布前生成新 V22 逻辑备份并通过隔离恢复验证；旧 server 镜像保留为 `stackchan-foundation-server:rollback-a2f723e-pre-v23`。
 - 从 `a2f723e` 正式 Dockerfile 构建 `sha256:6902bf3e287568bef13d0fa1247676e475f34357fe7d22923687be10d651d332`，只将 server 容器替换为 `f3a9651e468b`；PostgreSQL、Redis 和备份容器 ID 未改变。
@@ -77,15 +80,15 @@
 
 ## 正在进行
 
-无。INT-009 server/V23、CoreS3 `dd81a7e`、DashScope TTS 兼容修复和 LAN 人工验收均已完成，当前运行态保持健康。
+无部署正在进行；当前运行态保持 INT-009 server/Flyway V23 与 CoreS3 `dd81a7e / motion_disabled`。
 
 ## 下一步操作
 
-保持当前 LAN server、Flyway V23、CoreS3 `dd81a7e`、NVS 和生产 HTTPS-only 边界不变；取得用户授权后只推送当前任务分支。
+INT-010 实现完成后先执行 LAN/production Compose 静态验证、V23 备份恢复基线和旧固件兼容测试；只有用户明确授权后才发布 V24 server。
 
 ## 阻塞项
 
-INT-009 部署无阻塞；尚未取得外部推送授权。工作区仍没有 `.env`；任何后续重建必须继续从现有容器的受控进程环境保留相同秘密值，不得输出秘密、组合 LAN 与 production profile 或降低生产 HTTPS-only 边界。
+当前无阻塞。工作区仍没有 `.env`；不得输出秘密、组合 LAN 与 production profile、降低生产 HTTPS-only 边界或未经授权变更运行资源。
 
 ## 关键文件
 
