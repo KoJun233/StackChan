@@ -8,11 +8,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.kj.stackchan.interaction.InteractionSettingsService;
+import com.kj.stackchan.interaction.ProactiveTopicCooldownService;
 import com.kj.stackchan.memory.LongTermMemoryService;
 import com.kj.stackchan.memory.MemoryCategory;
 import com.kj.stackchan.reminder.ReminderRecurrence;
 import com.kj.stackchan.reminder.ReminderService;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class VoiceActionCoordinator {
@@ -27,21 +29,38 @@ public class VoiceActionCoordinator {
     private final InteractionSettingsService settingsService;
     private final Clock clock;
     private final VoiceActionProposalOrchestrator proposalOrchestrator;
+    private final ProactiveTopicCooldownService topicCooldownService;
 
+    @Autowired
     public VoiceActionCoordinator(VoiceActionProposalService proposalService, ReminderService reminderService,
                                   LongTermMemoryService memoryService, InteractionSettingsService settingsService,
-                                  Clock clock, VoiceActionProposalOrchestrator proposalOrchestrator) {
+                                  Clock clock, VoiceActionProposalOrchestrator proposalOrchestrator,
+                                  ProactiveTopicCooldownService topicCooldownService) {
         this.proposalService = proposalService;
         this.reminderService = reminderService;
         this.memoryService = memoryService;
         this.settingsService = settingsService;
         this.clock = clock;
         this.proposalOrchestrator = proposalOrchestrator;
+        this.topicCooldownService = topicCooldownService;
+    }
+
+    public VoiceActionCoordinator(VoiceActionProposalService proposalService, ReminderService reminderService,
+                                  LongTermMemoryService memoryService, InteractionSettingsService settingsService,
+                                  Clock clock, VoiceActionProposalOrchestrator proposalOrchestrator) {
+        this(proposalService, reminderService, memoryService, settingsService, clock, proposalOrchestrator, null);
     }
 
     public ActionResult handle(UUID deviceId, UUID conversationId, UUID turnId, String transcript) {
         String text = transcript == null ? "" : transcript.trim();
         if (text.isBlank()) return null;
+        if (isMuteLastTopic(text) && topicCooldownService != null) {
+            boolean muted = topicCooldownService.muteLastTopic(deviceId);
+            return new ActionResult(
+                    muted ? "好的，我不会再主动提这个话题。" : "目前没有可以停止主动提及的话题。",
+                    true
+            );
+        }
         VoiceActionProposalService.ProposalSnapshot pending = proposalService.latestPending(deviceId, conversationId);
         if (isCancel(text) && pending != null) {
             proposalService.cancel(pending.id(), deviceId, conversationId);
@@ -54,7 +73,6 @@ public class VoiceActionCoordinator {
         if (pending != null) {
             return new ActionResult(proposalService.restatement(pending), true);
         }
-
         Matcher snooze = SNOOZE_MINUTES.matcher(text);
         if (snooze.find() && text.contains("提醒")) {
             int minutes = Integer.parseInt(snooze.group(1));
@@ -130,6 +148,9 @@ public class VoiceActionCoordinator {
         return text.contains("提醒我") || text.contains("稍后提醒") || text.contains("跳过下一次")
                 || text.contains("音量调到") || text.contains("安静到") || text.startsWith("记住")
                 || text.startsWith("请记住");
+    }
+    private boolean isMuteLastTopic(String text) {
+        return text.matches("^(?:别再提这个(?:话题)?(?:了)?|不要再提这个(?:话题)?(?:了)?|别提这个了|别再主动提这个(?:话题)?(?:了)?)[。！!,.，]?$");
     }
     private String statusReply(VoiceActionProposalService.ProposalSnapshot proposal) {
         return proposal.status() == VoiceActionStatus.EXECUTING ? "操作正在执行。" : "这项操作没有执行。";

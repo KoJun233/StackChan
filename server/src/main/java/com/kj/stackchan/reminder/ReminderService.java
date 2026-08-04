@@ -193,6 +193,8 @@ public class ReminderService {
                 reminder.getRecurrenceType(),
                 reminder.getRecurrenceInterval(),
                 reminder.getSource(),
+                reminder.getProactiveTopicKey(),
+                reminder.getProactiveGenerationStatus(),
                 reminder.getLastOutcome(),
                 reminder.getLastCompletedAt(),
                 reminder.getAttemptCount(),
@@ -236,6 +238,8 @@ public class ReminderService {
             ReminderRecurrence recurrenceType,
             int recurrenceInterval,
             ReminderSource source,
+            String proactiveTopicKey,
+            ProactiveGenerationStatus proactiveGenerationStatus,
             ReminderStatus lastOutcome,
             Instant lastCompletedAt,
             int attemptCount,
@@ -257,9 +261,20 @@ public class ReminderService {
         ) {
             this(
                     id, deviceId, content, scheduledAt, zoneId, status,
-                    ReminderRecurrence.NONE, 1, ReminderSource.USER, null, null,
+                    ReminderRecurrence.NONE, 1, ReminderSource.USER, null, null, null, null,
                     attemptCount, failureCode, createdAt, updatedAt
             );
+        }
+
+        public ReminderSnapshot(
+                UUID id, UUID deviceId, String content, Instant scheduledAt, String zoneId,
+                ReminderStatus status, ReminderRecurrence recurrenceType, int recurrenceInterval,
+                ReminderSource source, ReminderStatus lastOutcome, Instant lastCompletedAt,
+                int attemptCount, String failureCode, Instant createdAt, Instant updatedAt
+        ) {
+            this(id, deviceId, content, scheduledAt, zoneId, status, recurrenceType,
+                    recurrenceInterval, source, null, null, lastOutcome, lastCompletedAt,
+                    attemptCount, failureCode, createdAt, updatedAt);
         }
     }
 

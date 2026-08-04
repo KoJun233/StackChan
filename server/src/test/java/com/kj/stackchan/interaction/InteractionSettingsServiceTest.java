@@ -37,12 +37,13 @@ class InteractionSettingsServiceTest {
         var settings = service.save(deviceId, new InteractionSettingsService.UpdateInteractionSettingsCommand(
                 50, false, true, 6, true, LocalTime.of(22, 0), LocalTime.of(7, 0), "Asia/Shanghai",
                 MissedReminderPolicy.PLAY_NOW, 10, false, LocalTime.of(9, 0), LocalTime.of(21, 0),
-                240, 2, "你好"
+                240, 2, "你好", true
         ));
 
         assertThat(service.isDnd(settings, NOW)).isTrue();
         assertThat(settings.continuousConversationEnabled()).isTrue();
         assertThat(settings.followUpWindowSeconds()).isEqualTo(6);
+        assertThat(settings.proactivePersonalizationEnabled()).isTrue();
         assertThat(service.nextDndEnd(settings, NOW)).isEqualTo(Instant.parse("2026-07-27T23:00:00Z"));
     }
 

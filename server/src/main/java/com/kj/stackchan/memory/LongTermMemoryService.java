@@ -236,6 +236,18 @@ public class LongTermMemoryService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public List<MemorySnapshot> loadProactiveCandidates(UUID deviceId, int limit) {
+        if (deviceId == null) return List.of();
+        int safeLimit = Math.min(Math.max(limit, 1), 8);
+        return repository.findProactiveCandidates(deviceId, PageRequest.of(0, safeLimit)).stream()
+                .filter(memory -> safetyPolicy.isAllowed(
+                        memory.getTitle(), memory.getContent(), memory.getSourceDetail()
+                ))
+                .map(this::toSnapshot)
+                .toList();
+    }
+
     private List<MemorySnapshot> loadContextFallback(UUID deviceId, int limit) {
         Specification<LongTermMemoryEntity> specification = (root, query, builder) -> builder.and(
                 builder.equal(root.get("confirmationStatus"), MemoryConfirmationStatus.CONFIRMED),

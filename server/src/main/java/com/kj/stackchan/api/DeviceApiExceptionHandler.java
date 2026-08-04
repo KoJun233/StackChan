@@ -13,6 +13,7 @@ import com.kj.stackchan.expression.InvalidExpressionPackException;
 import com.kj.stackchan.llm.InvalidLlmSettingsException;
 import com.kj.stackchan.llm.LlmProviderUnavailableException;
 import com.kj.stackchan.interaction.InvalidInteractionSettingsException;
+import com.kj.stackchan.interaction.ProactiveTopicCooldownNotFoundException;
 import com.kj.stackchan.memory.InvalidMemoryException;
 import com.kj.stackchan.memory.MemoryNotFoundException;
 import com.kj.stackchan.persona.InvalidPersonaException;
@@ -93,6 +94,9 @@ public class DeviceApiExceptionHandler {
     );
     public static final ApiError INVALID_INTERACTION_SETTINGS = new ApiError(
             "invalid_interaction_settings", "交互设置无效。"
+    );
+    public static final ApiError PROACTIVE_TOPIC_NOT_FOUND = new ApiError(
+            "proactive_topic_not_found", "未找到指定的主动关心主题。"
     );
     public static final ApiError MEMORY_NOT_FOUND = new ApiError(
             "memory_not_found", "未找到指定记忆。"
@@ -207,6 +211,11 @@ public class DeviceApiExceptionHandler {
     @ExceptionHandler(InvalidInteractionSettingsException.class)
     ResponseEntity<ApiError> invalidInteractionSettings(InvalidInteractionSettingsException exception) {
         return response(HttpStatus.BAD_REQUEST, INVALID_INTERACTION_SETTINGS);
+    }
+
+    @ExceptionHandler(ProactiveTopicCooldownNotFoundException.class)
+    ResponseEntity<ApiError> proactiveTopicNotFound(ProactiveTopicCooldownNotFoundException exception) {
+        return response(HttpStatus.NOT_FOUND, PROACTIVE_TOPIC_NOT_FOUND);
     }
 
     @ExceptionHandler(MemoryNotFoundException.class)

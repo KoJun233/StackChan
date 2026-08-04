@@ -2,15 +2,19 @@
 
 - 状态：READY
 - 最后更新：2026-08-04
-- 当前分支：`codex/int-011-memory-2`
-- 基准提交：`fbe5bde`
-- 最后验证提交：`fbe5bde`
+- 当前分支：`codex/int-012-bounded-proactive-care`
+- 基准提交：`d7f38bf`
+- 最后验证提交：`b35918b`
 
 ## 当前目标
 
-INT-011 管理端静态资源已随 LAN server 发布；用户确认人工测试无问题并授权推送。建议和正文仍不进入 Pinia 或浏览器持久化。
+INT-012 管理端静态资源已随 LAN server/V26 发布；自动网页与认证边界、用户个性化配置和主动问候人工验收均通过。主题状态和记忆正文不进入 Pinia 或浏览器持久化，等待明确推送授权。
 
 ## 已完成
+
+- “交互与主动陪伴”增加默认关闭的个性化措辞开关，明确只有确定性规则通过后才读取一条经授权确认记忆；固定问候继续作为无候选或生成失败时的回退。
+- 页面只显示主题键、最近主动时间、冷却截止和用户静音状态，支持管理员解除冷却/静音，不复制记忆正文；主题状态 API 失败不阻断既有交互设置加载。
+- API 类型补齐 V26 设置、主题状态和主动提醒生成状态；Node v24.15.0 下 Vitest 24 个文件 66/66、`vue-tsc -b` 与 production build 通过，保留既有 Vitest close-timeout advisory。
 
 - 长期记忆 API 和表单增加主题键、1..5 重要度和“允许主动提及”开关；手工新增留空主题键时使用标题，自动建议仍由服务端固定为待确认且未启用。
 - 长期记忆列表展示可能重复数量、待替代/已替代关系和重要度；冲突建议使用明确的“确认替代”，确认后旧项保留来源审计但不再提供启用操作。
@@ -167,6 +171,7 @@ INT-011 管理端静态资源已随 LAN server 发布；用户确认人工测试
 - [0026：个人数据物理删除、范围导出与隔离备份恢复](../decisions/0026-personal-data-lifecycle-and-isolated-backups.md)
 - [0027：连续对话采用设备本地有界跟进窗口](../decisions/0027-bounded-continuous-conversation.md)
 - [0029：长期记忆建议经过敏感过滤、冲突确认与有界检索](../decisions/0029-reviewed-memory-suggestions-and-bounded-retrieval.md)
+- [0030：个性化主动关心必须经过规则门控与主题冷却](../decisions/0030-rule-gated-personalized-proactive-care.md)
 
 ## 安全与兼容性约束
 

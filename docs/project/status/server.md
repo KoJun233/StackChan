@@ -2,15 +2,23 @@
 
 - 状态：READY
 - 最后更新：2026-08-04
-- 当前分支：`codex/int-011-memory-2`
-- 基准提交：`fbe5bde`
-- 最后验证提交：`fbe5bde`
+- 当前分支：`codex/int-012-bounded-proactive-care`
+- 基准提交：`d7f38bf`
+- 最后验证提交：`b35918b`
 
 ## 当前目标
 
-INT-011 长期记忆 2.0 已发布到 LAN server/V25；自动健康、迁移、认证和旧固件重连验证通过，用户确认人工测试无问题并授权推送。
+INT-012 有边界的个性化主动关心已发布到 LAN server/V26；自动健康、迁移、认证、旧固件重连和用户人工行为验收通过。等待明确“推送吧”授权。
 
 ## 已完成
+
+- 新增 ADR 0030 与 Flyway V26：交互设置增加默认关闭的个性化开关，主动提醒记录可空主题键和 `FIXED/GENERATED/FALLBACK` 状态，设备主题状态保存七天冷却与用户永久静音。
+- 现有允许时段、免打扰、在线、语音忙碌、提醒忙碌、最小间隔和每日上限始终先于记忆查询与模型调用；成功占用配额后最多读取一条 `CONFIRMED + enabled + allowProactiveMention` 且通过敏感过滤的当前范围记忆。
+- 个性化生成限制为八秒和 2..100 字单句纯文本；供应商失败、超时或 URL、Markdown、医疗/情绪诊断等违规输出均回退现有固定问候。模型调用不持有调度行锁，安全日志只记录失败阶段。
+- 同设备同主题创建提醒后七天内不再候选；用户整句说“别再提这个”可永久静音最近主动主题，普通聊天中的引用不误触发，管理员可在页面恢复且不删除原记忆。
+- 服务端全量 309/309 通过；Testcontainers 从空 PostgreSQL 应用 V1..V26，并在真实数据库覆盖主动授权筛选和敏感记忆排除。
+- 正式镜像 `sha256:bfe34a0206969ccd7fecb073b00025bfe5c1f7f266c55f0aa2e829127ea97cd7` 已只替换 LAN server；健康与网页 200、V26 三个新增列存在、未登录主题 API 为 401、启动错误与重启为 0。
+- 用户确认个性化主动问候测试无问题；安全元数据核对最新主动提醒为 `DELIVERED + GENERATED`、主题存在、尝试 1 次、失败码为空，未读取提醒或记忆正文。
 
 - 新增 ADR 0029 与 Flyway V25：启用 `pg_trgm`，为长期记忆增加 `topicKey`、1..5 重要度、最后使用时间、来源回合、替代关系和允许主动提及开关；新增只保存 `turnId + memoryId + usedAt` 的使用记录表。
 - 网页和设备语音普通成功回合结束后异步执行至多一次结构化建议提取；供应商失败、畸形 JSON、取消/失败/重放和语音动作回合均不产生建议。自动建议固定为 `ASSISTANT_SUGGESTED + PENDING + disabled`，范围和来源回合由应用绑定。
@@ -224,6 +232,7 @@ INT-011 长期记忆 2.0 已发布到 LAN server/V25；自动健康、迁移、�
 - [0026：个人数据物理删除、范围导出与隔离备份恢复](../decisions/0026-personal-data-lifecycle-and-isolated-backups.md)
 - [0028：语音副作用采用结构化提案、确定性确认与幂等执行](../decisions/0028-confirmed-idempotent-voice-actions.md)
 - [0029：长期记忆建议经过敏感过滤、冲突确认与有界检索](../decisions/0029-reviewed-memory-suggestions-and-bounded-retrieval.md)
+- [0030：个性化主动关心必须经过规则门控与主题冷却](../decisions/0030-rule-gated-personalized-proactive-care.md)
 - [个人数据备份与隔离恢复验证 runbook](../../runbooks/personal-data-backup.md)
 - [Agent、Skill、Tool 与 MCP 运维 runbook](../../runbooks/agent-tools-mcp.md)
 

@@ -59,4 +59,29 @@ class LongTermMemoryPersistenceTest {
                 selected.stream().map(LongTermMemoryService.MemorySnapshot::id).toList()
         );
     }
+
+    @Test
+    void proactiveCandidatesRequireExplicitPermissionAndPassSensitiveFiltering() {
+        LongTermMemoryService.MemorySnapshot allowed = memoryService.create(
+                new LongTermMemoryService.MemoryCommand(
+                        MemoryScopeType.GLOBAL, null, MemoryCategory.USER_PROFILE,
+                        "饮品偏好", "用户喜欢喝美式咖啡", "主动饮品偏好", 5, true
+                )
+        );
+        memoryService.create(new LongTermMemoryService.MemoryCommand(
+                MemoryScopeType.GLOBAL, null, MemoryCategory.USER_PROFILE,
+                "普通偏好", "用户喜欢散步", "未授权主动偏好", 5, false
+        ));
+        memoryService.create(new LongTermMemoryService.MemoryCommand(
+                MemoryScopeType.GLOBAL, null, MemoryCategory.USER_PROFILE,
+                "住址", "用户住在北京市朝阳区建国路88号", "敏感地址", 5, true
+        ));
+
+        List<LongTermMemoryService.MemorySnapshot> selected =
+                memoryService.loadProactiveCandidates(UUID.randomUUID(), 8);
+
+        assertThat(selected).extracting(LongTermMemoryService.MemorySnapshot::id).contains(allowed.id());
+        assertThat(selected).allMatch(LongTermMemoryService.MemorySnapshot::allowProactiveMention);
+        assertThat(selected).noneMatch(memory -> memory.topicKey().equals("敏感地址"));
+    }
 }

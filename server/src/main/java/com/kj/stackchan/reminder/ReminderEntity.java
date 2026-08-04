@@ -52,6 +52,13 @@ public class ReminderEntity {
     @Column(name = "last_outcome", length = 24)
     private ReminderStatus lastOutcome;
 
+    @Column(name = "proactive_topic_key", length = 120)
+    private String proactiveTopicKey;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "proactive_generation_status", length = 16)
+    private ProactiveGenerationStatus proactiveGenerationStatus;
+
     @Column(name = "last_completed_at")
     private Instant lastCompletedAt;
 
@@ -94,6 +101,23 @@ public class ReminderEntity {
             ReminderSource source,
             Instant now
     ) {
+        this(deviceId, content, scheduledAt, zoneId, recurrenceType, recurrenceInterval,
+                recurrenceAnchorLocal, source, null, null, now);
+    }
+
+    public ReminderEntity(
+            UUID deviceId,
+            String content,
+            Instant scheduledAt,
+            String zoneId,
+            ReminderRecurrence recurrenceType,
+            int recurrenceInterval,
+            LocalDateTime recurrenceAnchorLocal,
+            ReminderSource source,
+            String proactiveTopicKey,
+            ProactiveGenerationStatus proactiveGenerationStatus,
+            Instant now
+    ) {
         this.id = UUID.randomUUID();
         this.deviceId = deviceId;
         this.content = content;
@@ -104,6 +128,8 @@ public class ReminderEntity {
         this.recurrenceInterval = recurrenceInterval;
         this.recurrenceAnchorLocal = recurrenceAnchorLocal;
         this.source = source;
+        this.proactiveTopicKey = proactiveTopicKey;
+        this.proactiveGenerationStatus = proactiveGenerationStatus;
         this.createdAt = now;
         this.updatedAt = now;
     }
@@ -131,6 +157,8 @@ public class ReminderEntity {
         this.recurrenceInterval = recurrenceInterval;
         this.recurrenceAnchorLocal = recurrenceAnchorLocal;
         this.source = ReminderSource.USER;
+        this.proactiveTopicKey = null;
+        this.proactiveGenerationStatus = null;
         this.lastOutcome = null;
         this.lastCompletedAt = null;
         this.commandId = null;
@@ -230,6 +258,8 @@ public class ReminderEntity {
     public ReminderSource getSource() { return source; }
     public ReminderStatus getLastOutcome() { return lastOutcome; }
     public Instant getLastCompletedAt() { return lastCompletedAt; }
+    public String getProactiveTopicKey() { return proactiveTopicKey; }
+    public ProactiveGenerationStatus getProactiveGenerationStatus() { return proactiveGenerationStatus; }
 
     public String getCommandId() {
         return commandId;

@@ -7,6 +7,7 @@ import com.kj.stackchan.device.DeviceCommandGateway;
 import com.kj.stackchan.device.DeviceInteractionSettingsCoordinator;
 import com.kj.stackchan.interaction.InteractionSettingsService;
 import com.kj.stackchan.interaction.MissedReminderPolicy;
+import com.kj.stackchan.interaction.ProactiveTopicCooldownService;
 import com.kj.stackchan.speech.VoiceTurnDiagnosticsService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,6 +26,7 @@ class InteractionSettingsControllerTest {
     @Mock private DeviceInteractionSettingsCoordinator settingsCoordinator;
     @Mock private DeviceCommandGateway commandGateway;
     @Mock private VoiceTurnDiagnosticsService diagnosticsService;
+    @Mock private ProactiveTopicCooldownService topicCooldownService;
 
     @Test
     void cancelsActiveTurnsAfterTheDeviceAcceptsStop() {
@@ -52,11 +54,12 @@ class InteractionSettingsControllerTest {
         var command = new InteractionSettingsController.InteractionSettingsRequest(
                 65, false, true, 6, false, LocalTime.of(22, 0), LocalTime.of(7, 0),
                 "Asia/Shanghai", MissedReminderPolicy.PLAY_NOW, 10, false,
-                LocalTime.of(9, 0), LocalTime.of(21, 0), 240, 2, "你好"
+                LocalTime.of(9, 0), LocalTime.of(21, 0), 240, 2, "你好", true
         ).toCommand();
 
         assertThat(command.continuousConversationEnabled()).isTrue();
         assertThat(command.followUpWindowSeconds()).isEqualTo(6);
+        assertThat(command.proactivePersonalizationEnabled()).isTrue();
     }
 
     private InteractionSettingsController controller() {
@@ -64,7 +67,8 @@ class InteractionSettingsControllerTest {
                 settingsService,
                 settingsCoordinator,
                 commandGateway,
-                diagnosticsService
+                diagnosticsService,
+                topicCooldownService
         );
     }
 }

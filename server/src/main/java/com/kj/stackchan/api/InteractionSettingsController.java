@@ -7,6 +7,7 @@ import com.kj.stackchan.device.DeviceCommandGateway;
 import com.kj.stackchan.device.DeviceInteractionSettingsCoordinator;
 import com.kj.stackchan.interaction.InteractionSettingsService;
 import com.kj.stackchan.interaction.MissedReminderPolicy;
+import com.kj.stackchan.interaction.ProactiveTopicCooldownService;
 import com.kj.stackchan.speech.VoiceTurnDiagnosticsService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -31,17 +32,20 @@ public class InteractionSettingsController {
     private final DeviceInteractionSettingsCoordinator settingsCoordinator;
     private final DeviceCommandGateway commandGateway;
     private final VoiceTurnDiagnosticsService voiceTurnDiagnosticsService;
+    private final ProactiveTopicCooldownService topicCooldownService;
 
     public InteractionSettingsController(
             InteractionSettingsService settingsService,
             DeviceInteractionSettingsCoordinator settingsCoordinator,
             DeviceCommandGateway commandGateway,
-            VoiceTurnDiagnosticsService voiceTurnDiagnosticsService
+            VoiceTurnDiagnosticsService voiceTurnDiagnosticsService,
+            ProactiveTopicCooldownService topicCooldownService
     ) {
         this.settingsService = settingsService;
         this.settingsCoordinator = settingsCoordinator;
         this.commandGateway = commandGateway;
         this.voiceTurnDiagnosticsService = voiceTurnDiagnosticsService;
+        this.topicCooldownService = topicCooldownService;
     }
 
     @GetMapping("/{deviceId}")
@@ -68,6 +72,19 @@ public class InteractionSettingsController {
         return new CommandResponse(accepted);
     }
 
+    @GetMapping("/{deviceId}/proactive-topics")
+    public java.util.List<ProactiveTopicCooldownService.TopicCooldownSnapshot> topics(@PathVariable UUID deviceId) {
+        return topicCooldownService.list(deviceId);
+    }
+
+    @PostMapping(path = "/{deviceId}/proactive-topics:resume", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ProactiveTopicCooldownService.TopicCooldownSnapshot resumeTopic(
+            @PathVariable UUID deviceId,
+            @Valid @RequestBody ResumeTopicRequest request
+    ) {
+        return topicCooldownService.resume(deviceId, request.topicKey());
+    }
+
     public record InteractionSettingsRequest(
             @Min(0) @Max(100) int volumePercent,
             boolean nightMode,
@@ -84,16 +101,34 @@ public class InteractionSettingsController {
             @NotNull LocalTime proactiveEnd,
             @Min(30) @Max(1440) int proactiveMinIntervalMinutes,
             @Min(1) @Max(10) int proactiveDailyLimit,
-            @NotBlank @Size(max = 500) String proactiveContent
+            @NotBlank @Size(max = 500) String proactiveContent,
+            boolean proactivePersonalizationEnabled
     ) {
         InteractionSettingsService.UpdateInteractionSettingsCommand toCommand() {
             return new InteractionSettingsService.UpdateInteractionSettingsCommand(
                     volumePercent, nightMode, continuousConversationEnabled, followUpWindowSeconds,
                     dndEnabled, dndStart, dndEnd, zoneId,
                     missedReminderPolicy, missedSnoozeMinutes, proactiveEnabled, proactiveStart,
-                    proactiveEnd, proactiveMinIntervalMinutes, proactiveDailyLimit, proactiveContent
+                    proactiveEnd, proactiveMinIntervalMinutes, proactiveDailyLimit, proactiveContent,
+                    proactivePersonalizationEnabled
             );
         }
+
+        public InteractionSettingsRequest(
+                int volumePercent, boolean nightMode, boolean continuousConversationEnabled,
+                int followUpWindowSeconds, boolean dndEnabled, LocalTime dndStart, LocalTime dndEnd,
+                String zoneId, MissedReminderPolicy missedReminderPolicy, int missedSnoozeMinutes,
+                boolean proactiveEnabled, LocalTime proactiveStart, LocalTime proactiveEnd,
+                int proactiveMinIntervalMinutes, int proactiveDailyLimit, String proactiveContent
+        ) {
+            this(volumePercent, nightMode, continuousConversationEnabled, followUpWindowSeconds,
+                    dndEnabled, dndStart, dndEnd, zoneId, missedReminderPolicy, missedSnoozeMinutes,
+                    proactiveEnabled, proactiveStart, proactiveEnd, proactiveMinIntervalMinutes,
+                    proactiveDailyLimit, proactiveContent, false);
+        }
+    }
+
+    public record ResumeTopicRequest(@NotBlank @Size(max = 120) String topicKey) {
     }
 
     public record CommandResponse(boolean accepted) {
