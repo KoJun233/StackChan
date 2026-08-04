@@ -12,6 +12,8 @@ import com.kj.stackchan.conversation.GenerationStatus;
 import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.llm.ResolvedLlmSettings;
 import com.kj.stackchan.memory.CompanionPromptService;
+import com.kj.stackchan.memory.CompletedTurnMemoryCoordinator;
+import com.kj.stackchan.voiceaction.VoiceActionCoordinator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -46,6 +48,10 @@ class VoiceTurnServiceTest {
     private CompanionPromptService companionPromptService;
     @Mock
     private VoiceTurnDiagnosticsService diagnosticsService;
+    @Mock
+    private VoiceActionCoordinator voiceActionCoordinator;
+    @Mock
+    private CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator;
     private final VoiceTurnCancellationService cancellationService =
             new VoiceTurnCancellationService(Clock.systemUTC());
 
@@ -82,6 +88,10 @@ class VoiceTurnServiceTest {
         );
         verify(diagnosticsService).recordServerStage(
                 eq(deviceId), any(UUID.class), eq(VoiceTurnStage.TTS_COMPLETED), eq(null)
+        );
+        verify(completedTurnMemoryCoordinator).complete(
+                any(UUID.class), any(UUID.class), eq(deviceId), eq("提醒我拿外卖"),
+                eq("好的，记得去拿外卖。"), eq(List.of()), eq(true)
         );
     }
 
@@ -229,7 +239,9 @@ class VoiceTurnServiceTest {
                 llmSettingsService,
                 companionPromptService,
                 diagnosticsService,
-                cancellationService
+                cancellationService,
+                voiceActionCoordinator,
+                completedTurnMemoryCoordinator
         );
     }
 }

@@ -3,6 +3,7 @@ import {
   clearMemories,
   confirmMemory,
   createMemory,
+  getMemoryUsage,
   listMemories,
   savePersona,
   setMemoryEnabled,
@@ -34,6 +35,15 @@ describe('persona and memory API', () => {
     )
   })
 
+  it('loads privacy-safe memory usage references by turn id', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ turnId: 'turn/id', memories: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getMemoryUsage('turn/id')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/memories/usage/turn%2Fid', expect.any(Object))
+  })
+
   it('uses explicit mutation endpoints for persona and memory controls', async () => {
     const persona = {
       displayName: '小栈',
@@ -49,6 +59,9 @@ describe('persona and memory API', () => {
       category: 'EVENT' as const,
       title: '项目进度',
       content: '完成联调',
+      topicKey: '项目进度',
+      importance: 3,
+      allowProactiveMention: false,
     }
     const responseBody = { id: 'memory-id', ...memory }
     const fetchMock = vi.fn()

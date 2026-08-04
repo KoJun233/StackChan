@@ -22,6 +22,9 @@ const model = ref<MemoryInput>({
   category: 'USER_PROFILE',
   title: '',
   content: '',
+  topicKey: '',
+  importance: 3,
+  allowProactiveMention: false,
 })
 
 const scopeOptions = [
@@ -43,6 +46,9 @@ const validationSchema = toTypedSchema(z.object({
   category: z.enum(['USER_PROFILE', 'EVENT']),
   title: z.string().trim().min(1, '请输入记忆标题').max(120, '标题不能超过 120 个字符'),
   content: z.string().trim().min(1, '请输入记忆内容').max(2000, '内容不能超过 2000 个字符'),
+  topicKey: z.string().trim().max(120, '主题键不能超过 120 个字符'),
+  importance: z.number().int().min(1).max(5),
+  allowProactiveMention: z.boolean(),
 }).superRefine((value, context) => {
   if (value.scopeType === 'DEVICE' && !value.deviceId) {
     context.addIssue({ code: 'custom', message: '请选择目标设备', path: ['deviceId'] })
@@ -74,6 +80,9 @@ async function loadMemory(id: string) {
       category: memory.category,
       title: memory.title,
       content: memory.content,
+      topicKey: memory.topicKey,
+      importance: memory.importance,
+      allowProactiveMention: memory.allowProactiveMention,
     }
     metadata.value = {
       confirmationStatus: memory.confirmationStatus,
@@ -100,6 +109,9 @@ async function resetForRoute(id: string) {
     category: 'USER_PROFILE',
     title: '',
     content: '',
+    topicKey: '',
+    importance: 3,
+    allowProactiveMention: false,
   }
 }
 
@@ -115,6 +127,7 @@ async function submit(): Promise<boolean> {
       deviceId: model.value.scopeType === 'DEVICE' ? model.value.deviceId : null,
       title: model.value.title.trim(),
       content: model.value.content.trim(),
+      topicKey: model.value.topicKey.trim() || model.value.title.trim(),
     }
     if (props.id) {
       await updateMemory(props.id, input)
@@ -179,6 +192,15 @@ defineExpose({ submit })
       </FaFormItem>
       <FaFormItem name="content" label="记忆内容" required description="使用明确、可核对的事实描述，不要写成给模型的命令。">
         <FaTextarea v-model="model.content" rows="7" align="block" placeholder="例如：用户喜欢被称为阿俊。" />
+      </FaFormItem>
+      <FaFormItem name="topicKey" label="主题键" description="留空时使用标题；同一主题使用相同键，确认冲突建议时才会替代旧记忆。">
+        <FaInput v-model="model.topicKey" placeholder="例如：称呼偏好" />
+      </FaFormItem>
+      <FaFormItem name="importance" label="重要度" required description="1 最低，5 最高；只影响有界检索排序。">
+        <FaNumberField v-model="model.importance" :min="1" :max="5" class="w-full" />
+      </FaFormItem>
+      <FaFormItem name="allowProactiveMention" label="允许主动提及" description="默认关闭；仅供后续受限主动关心使用，不会让模型自行决定打扰时间。">
+        <FaSwitch v-model="model.allowProactiveMention" />
       </FaFormItem>
     </FaForm>
   </div>

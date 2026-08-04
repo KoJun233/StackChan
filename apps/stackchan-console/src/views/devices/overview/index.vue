@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { Device, VoiceTurn, VoiceTurnEvent, VoiceTurnStatus } from '@/api/modules/devices'
+import type { MemoryUsageReference } from '@/api/modules/personaMemory'
 import { listDevices, listDeviceVoiceTurns, stopDeviceMotion } from '@/api/modules/devices'
+import { getMemoryUsage } from '@/api/modules/personaMemory'
 
 defineOptions({ name: 'DeviceOverview' })
 
@@ -10,6 +12,7 @@ const commandDeviceId = ref<string | null>(null)
 const selectedDevice = ref<Device | null>(null)
 const voiceTurns = ref<VoiceTurn[]>([])
 const voiceTurnsLoading = ref(false)
+const memoryUsageByTurn = ref<Record<string, MemoryUsageReference[]>>({})
 const columns = [
   { accessorKey: 'displayName', header: '设备名称' },
   { accessorKey: 'onlineLabel', header: '状态' },
@@ -94,9 +97,20 @@ async function showVoiceTurns(device: Device) {
   voiceTurnsLoading.value = true
   try {
     voiceTurns.value = await listDeviceVoiceTurns(device.id)
+    const usageEntries = await Promise.all(voiceTurns.value.map(async (turn) => {
+      try {
+        const usage = await getMemoryUsage(turn.turnId)
+        return [turn.turnId, usage.memories] as const
+      }
+      catch {
+        return [turn.turnId, []] as const
+      }
+    }))
+    memoryUsageByTurn.value = Object.fromEntries(usageEntries)
   }
   catch (error) {
     voiceTurns.value = []
+    memoryUsageByTurn.value = {}
     useFaToast().error('加载交互诊断失败', { description: error instanceof Error ? error.message : '无法获取最近语音回合。' })
   }
   finally {
@@ -190,6 +204,15 @@ onMounted(load)
               </div>
             </li>
           </ol>
+          <div v-if="memoryUsageByTurn[turn.turnId]?.length" class="mt-3 rounded-md border border-dashed p-3">
+            <div class="text-sm font-medium">本回合引用的长期记忆</div>
+            <ul class="mt-2 space-y-1 text-xs text-muted-foreground">
+              <li v-for="memory in memoryUsageByTurn[turn.turnId]" :key="memory.memoryId">
+                {{ memory.title }} · 主题 {{ memory.topicKey }} · {{ memory.scopeType === 'DEVICE' ? '当前设备' : '全局' }} · {{ memory.sourceDetail }}
+              </li>
+            </ul>
+            <div class="mt-2 text-xs text-muted-foreground">这里只按记忆 ID 查询当前来源说明，使用记录本身不复制记忆正文。</div>
+          </div>
         </section>
       </div>
     </FaCard>

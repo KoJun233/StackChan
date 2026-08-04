@@ -16,6 +16,7 @@ import com.kj.stackchan.llm.LlmProviderUnavailableException;
 import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.llm.ResolvedLlmSettings;
 import com.kj.stackchan.memory.CompanionPromptService;
+import com.kj.stackchan.memory.CompletedTurnMemoryCoordinator;
 import com.kj.stackchan.security.AdminUserRepository;
 import com.kj.stackchan.security.SecurityConfiguration;
 import org.junit.jupiter.api.Test;
@@ -70,12 +71,20 @@ class ConversationControllerTest {
     private CompanionPromptService companionPromptService;
 
     @MockitoBean
+    private CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator;
+
+    @MockitoBean
     private AdminUserRepository adminUserRepository;
 
     @BeforeEach
     void preserveTheConfiguredBasePromptByDefault() {
         lenient().when(companionPromptService.assemble(any(UUID.class), any(String.class)))
                 .thenAnswer(invocation -> invocation.getArgument(1, String.class));
+        lenient().when(companionPromptService.assembleWithMemoryContext(
+                        any(UUID.class), any(String.class), any(String.class), any(String.class)))
+                .thenAnswer(invocation -> new CompanionPromptService.PromptAssembly(
+                        invocation.getArgument(1, String.class), List.of()
+                ));
     }
 
     @Test
@@ -120,6 +129,9 @@ class ConversationControllerTest {
 
         verify(conversationService).completeGeneration(assistantMessageId, "你好");
         verify(agentOrchestrator).stream(any(AgentOrchestrator.AgentRequest.class));
+        verify(completedTurnMemoryCoordinator).complete(
+                assistantMessageId, assistantMessageId, null, "今天有点累", "你好", List.of(), true
+        );
     }
 
     @Test
@@ -155,6 +167,7 @@ class ConversationControllerTest {
                 .andExpect(content().string(containsString("模型服务暂时不可用")));
 
         verify(conversationService).failGeneration(assistantMessageId, "provider_unavailable", "我在");
+        verifyNoInteractions(completedTurnMemoryCoordinator);
     }
 
     @Test

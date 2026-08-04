@@ -13,8 +13,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class CompanionPromptService {
 
-    private static final int MEMORY_CONTEXT_LIMIT = 40;
-    private static final int MEMORY_CONTEXT_CHARACTER_LIMIT = 12_000;
+    private static final int MEMORY_CONTEXT_LIMIT = 8;
+    private static final int MEMORY_CONTEXT_CHARACTER_LIMIT = 4_000;
 
     private final PersonaService personaService;
     private final LongTermMemoryService memoryService;
@@ -35,10 +35,19 @@ public class CompanionPromptService {
     }
 
     public String assemble(UUID conversationId, String baseSystemPrompt, String channelInstruction) {
+        return assembleWithMemoryContext(conversationId, baseSystemPrompt, channelInstruction, "").prompt();
+    }
+
+    public PromptAssembly assembleWithMemoryContext(
+            UUID conversationId,
+            String baseSystemPrompt,
+            String channelInstruction,
+            String currentUserText
+    ) {
         UUID deviceId = deviceVoiceConversationService.findDeviceIdByConversationId(conversationId).orElse(null);
         PersonaService.PersonaSnapshot persona = personaService.get();
         List<LongTermMemoryService.MemorySnapshot> memories = memoryService.loadContext(
-                deviceId, MEMORY_CONTEXT_LIMIT
+                deviceId, currentUserText, MEMORY_CONTEXT_LIMIT
         );
 
         StringBuilder prompt = new StringBuilder(baseSystemPrompt.trim());
@@ -59,7 +68,10 @@ public class CompanionPromptService {
         if (channelInstruction != null && !channelInstruction.isBlank()) {
             prompt.append('\n').append(channelInstruction.trim());
         }
-        return prompt.toString();
+        return new PromptAssembly(
+                prompt.toString(),
+                memories.stream().map(LongTermMemoryService.MemorySnapshot::id).toList()
+        );
     }
 
     private String renderMemories(List<LongTermMemoryService.MemorySnapshot> memories) {
@@ -130,5 +142,8 @@ public class CompanionPromptService {
             case BALANCED -> "适度主动";
             case PROACTIVE -> "积极主动关心";
         };
+    }
+
+    public record PromptAssembly(String prompt, List<UUID> memoryIds) {
     }
 }

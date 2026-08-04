@@ -154,7 +154,8 @@ public class VoiceActionProposalService {
                 case CREATE_MEMORY_SUGGESTION -> memoryService.suggest(new LongTermMemoryService.MemorySuggestionCommand(
                         new LongTermMemoryService.MemoryCommand(MemoryScopeType.DEVICE, proposal.getDeviceId(),
                                 MemoryCategory.valueOf(proposal.getMemoryCategory()), proposal.getTitle(), proposal.getContent()),
-                        "voice_action_proposal")).id();
+                        "voice_action_proposal",
+                        proposal.getSourceTurnId())).id();
             };
             Instant completed = clock.instant();
             proposal.markExecuted(result, completed);

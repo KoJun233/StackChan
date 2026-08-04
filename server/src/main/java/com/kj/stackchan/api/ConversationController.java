@@ -15,6 +15,7 @@ import com.kj.stackchan.conversation.MessageRole;
 import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.llm.LlmProviderUnavailableException;
 import com.kj.stackchan.memory.CompanionPromptService;
+import com.kj.stackchan.memory.CompletedTurnMemoryCoordinator;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -23,6 +24,7 @@ import jakarta.validation.constraints.Size;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.codec.ServerSentEvent;
@@ -45,6 +47,9 @@ public class ConversationController {
     private final AgentOrchestrator agentOrchestrator;
     private final LlmSettingsService llmSettingsService;
     private final CompanionPromptService companionPromptService;
+
+    @Autowired(required = false)
+    private CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator;
 
     public ConversationController(
             ConversationService conversationService,
@@ -97,10 +102,23 @@ public class ConversationController {
         GenerationContentBuffer generatedContent = new GenerationContentBuffer();
         return Flux.defer(() -> {
             List<Message> modelHistory = history.stream().map(this::toModelMessage).toList();
-            String systemPrompt = companionPromptService.assemble(
+            CompanionPromptService.PromptAssembly promptAssembly = companionPromptService.assembleWithMemoryContext(
                     conversationId,
-                    llmSettingsService.resolveForInvocation().systemPrompt()
+                    llmSettingsService.resolveForInvocation().systemPrompt(),
+                    "",
+                    request.content()
             );
+            if (promptAssembly == null) {
+                promptAssembly = new CompanionPromptService.PromptAssembly(
+                        companionPromptService.assemble(
+                                conversationId,
+                                llmSettingsService.resolveForInvocation().systemPrompt()
+                        ),
+                        List.of()
+                );
+            }
+            String systemPrompt = promptAssembly.prompt();
+            List<UUID> usedMemoryIds = promptAssembly.memoryIds();
             Flux<ServerSentEvent<Object>> deltas = agentOrchestrator.stream(new AgentOrchestrator.AgentRequest(
                             new AgentInvocationContext(
                                     start.assistantMessageId(),
@@ -119,6 +137,17 @@ public class ConversationController {
             Mono<ServerSentEvent<Object>> completed = Mono.fromSupplier(() -> {
                 String content = generatedContent.snapshot();
                 conversationService.completeGeneration(start.assistantMessageId(), content);
+                if (completedTurnMemoryCoordinator != null) {
+                    completedTurnMemoryCoordinator.complete(
+                            start.assistantMessageId(),
+                            start.assistantMessageId(),
+                            null,
+                            request.content(),
+                            content,
+                            usedMemoryIds,
+                            true
+                    );
+                }
                 return event("completed", new CompletedEvent(start.assistantMessageId(), content));
             });
             return Flux.concat(

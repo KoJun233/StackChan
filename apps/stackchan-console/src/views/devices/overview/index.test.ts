@@ -7,7 +7,12 @@ const deviceApi = vi.hoisted(() => ({
   stopDeviceMotion: vi.fn(),
 }))
 
+const memoryApi = vi.hoisted(() => ({
+  getMemoryUsage: vi.fn().mockResolvedValue({ turnId: '', memories: [] }),
+}))
+
 vi.mock('@/api/modules/devices', () => deviceApi)
+vi.mock('@/api/modules/personaMemory', () => memoryApi)
 
 vi.mock('@fantastic-admin/components', () => {
   const passthrough = defineComponent({
@@ -134,6 +139,17 @@ describe('device overview command availability', () => {
         },
       ],
     }])
+    memoryApi.getMemoryUsage.mockResolvedValue({
+      turnId: '550e8400-e29b-41d4-a716-446655440000',
+      memories: [{
+        memoryId: 'memory-id',
+        title: '称呼偏好',
+        topicKey: '称呼偏好',
+        scopeType: 'GLOBAL',
+        source: 'USER_ENTERED',
+        sourceDetail: '由管理员在控制台明确添加',
+      }],
+    })
     const container = document.createElement('div')
     document.body.append(container)
 
@@ -148,6 +164,8 @@ describe('device overview command availability', () => {
     expect(container.querySelector('[data-turn-id]')?.textContent).toContain('跟进超时')
     expect(container.querySelector('[data-turn-id]')?.textContent).toContain('会话结束')
     expect(container.textContent).toContain('不保存音频、识别文本或机器人回复')
+    expect(container.textContent).toContain('本回合引用的长期记忆')
+    expect(container.textContent).toContain('使用记录本身不复制记忆正文')
   })
 
   it('labels a touch-started cancelled turn without treating it as a failure', async () => {

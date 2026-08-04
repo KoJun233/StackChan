@@ -1,16 +1,21 @@
 # 前端工作流
 
 - 状态：READY
-- 最后更新：2026-08-02
-- 当前分支：`codex/int-010-safe-voice-actions`
-- 基准提交：`87a0938`
-- 最后验证提交：`a502f41`
+- 最后更新：2026-08-04
+- 当前分支：`codex/int-011-memory-2`
+- 基准提交：`fbe5bde`
+- 最后验证提交：`fbe5bde`
 
 ## 当前目标
 
-保持 INT-009 管理端稳定；INT-010 首先交付语音动作服务端契约，只有确有管理或审计需求时才增加只读投影，不在浏览器保存动作提案或确认状态。
+INT-011 管理端静态资源已随 LAN server 发布；用户确认人工测试无问题并授权推送。建议和正文仍不进入 Pinia 或浏览器持久化。
 
 ## 已完成
+
+- 长期记忆 API 和表单增加主题键、1..5 重要度和“允许主动提及”开关；手工新增留空主题键时使用标题，自动建议仍由服务端固定为待确认且未启用。
+- 长期记忆列表展示可能重复数量、待替代/已替代关系和重要度；冲突建议使用明确的“确认替代”，确认后旧项保留来源审计但不再提供启用操作。
+- 设备交互诊断按回合读取只含记忆 ID、标题、主题、范围和来源说明的投影，明确使用记录不复制记忆正文；API 失败只隐藏该可选解释，不影响既有阶段时间线。
+- 新增 API 与页面回归覆盖使用来源 URL 编码、长期记忆 2.0 字段和诊断页来源说明；Node v24.15.0 下 Vitest 24 个文件 66/66、`vue-tsc -b` 和 production build 通过。
 
 - INT-010 不新增页面、路由、浏览器持久化或写入入口；现有管理端在 Node 24.15.0 下通过 Vitest 24 个文件 65/65、`vue-tsc -b` 和 production build。Vitest 仍有既知的关闭超时提示，但命令成功退出。
 
@@ -63,15 +68,15 @@
 
 ## 正在进行
 
-无前端修改正在进行；等待 INT-010 服务端契约冻结。
+最终前端全量 Vitest、`vue-tsc -b` 和 production build 回归。
 
 ## 下一步操作
 
-服务端契约冻结后检查是否需要补充动作审计只读页面或 API 类型；没有明确验收价值则保持前端零改动。
+人工验收与推送授权已完成；下一步由用户创建 PR、人工审核并合并。
 
 ## 阻塞项
 
-当前无阻塞。动作提案、确认状态和原始语音内容不得进入 Pinia 或浏览器持久化，页面不得读取或显示音频、转写或模型响应正文。
+当前无阻塞。页面不得把建议、使用记录或正文写入 Pinia/localStorage，不得读取或显示音频、转写、模型响应、凭据或 Tool 参数/结果。
 
 ## 关键文件
 
@@ -91,6 +96,7 @@
 - `apps/stackchan-console/src/api/modules/personaMemory.ts`
 - `apps/stackchan-console/src/views/companion/persona/index.vue`
 - `apps/stackchan-console/src/views/companion/memories/`
+- `apps/stackchan-console/src/views/devices/overview/index.vue`
 - `apps/stackchan-console/src/router/modules/companion.ts`
 - `apps/stackchan-console/src/views/settings/interaction/index.vue`
 - `apps/stackchan-console/src/api/modules/interactions.ts`
@@ -99,6 +105,8 @@
 
 ## 验证命令与最近结果
 
+- 2026-08-04 INT-011 正式镜像已发布新的记忆列表/详情和设备诊断静态资源；网页 200、记忆 API 未登录 401，既有认证边界不变。
+- 2026-08-02 INT-011 使用 Node v24.15.0：Vitest 24 个文件 66/66、`vue-tsc -b` 和 production build 通过；既有 Vitest close-timeout advisory 不影响退出码。
 - 2026-07-31 使用 Node v24.15.0 收尾重跑：Vitest 24 个文件 65/65、`vue-tsc -b` 和 production build 通过；既有 Vitest close-timeout advisory 不影响退出码。
 - 用户通过页面启用连续对话后确认免唤醒跟进和静音退出正常；同轮发现的播放杂音不涉及页面数据或浏览器持久化，未读取或显示音频、转写或回复正文。
 - INT-009 正式 server 镜像已包含连续对话管理资源 `interaction-BKnLI4ot.js`；网页为 200、未登录交互设置 API 为 401，数据库设置保持关闭/8 秒。未在浏览器持久化配置，未连接或刷写设备。
@@ -158,6 +166,7 @@
 - [0023：文字与语音共享受控 ReactAgent、Skill、Tool 与 MCP](../decisions/0023-controlled-react-agent-skills-tools-mcp.md)
 - [0026：个人数据物理删除、范围导出与隔离备份恢复](../decisions/0026-personal-data-lifecycle-and-isolated-backups.md)
 - [0027：连续对话采用设备本地有界跟进窗口](../decisions/0027-bounded-continuous-conversation.md)
+- [0029：长期记忆建议经过敏感过滤、冲突确认与有界检索](../decisions/0029-reviewed-memory-suggestions-and-bounded-retrieval.md)
 
 ## 安全与兼容性约束
 

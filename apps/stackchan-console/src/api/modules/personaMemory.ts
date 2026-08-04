@@ -37,10 +37,18 @@ export interface LongTermMemory {
   deviceId: string | null
   enabled: boolean
   id: string
+  importance: number
+  lastUsedAt: string | null
+  sourceTurnId: string | null
+  replacesMemoryId: string | null
+  supersededByMemoryId: string | null
+  allowProactiveMention: boolean
+  possibleDuplicateIds: string[]
   scopeType: MemoryScopeType
   source: MemorySource
   sourceDetail: string
   title: string
+  topicKey: string
   updatedAt: string
 }
 
@@ -50,6 +58,9 @@ export interface MemoryInput {
   deviceId: string | null
   scopeType: MemoryScopeType
   title: string
+  topicKey: string
+  importance: number
+  allowProactiveMention: boolean
 }
 
 export interface MemoryPage {
@@ -157,4 +168,17 @@ export function clearMemories(input: ClearMemoryInput = {}): Promise<{ deletedCo
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   })
+}
+
+export interface MemoryUsageReference {
+  memoryId: string
+  title: string
+  topicKey: string
+  scopeType: MemoryScopeType
+  source: MemorySource
+  sourceDetail: string
+}
+
+export function getMemoryUsage(turnId: string): Promise<{ turnId: string, memories: MemoryUsageReference[] }> {
+  return apiJson(`/api/v1/memories/usage/${encodeURIComponent(turnId)}`)
 }
