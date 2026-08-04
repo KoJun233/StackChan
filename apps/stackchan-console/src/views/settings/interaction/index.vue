@@ -3,9 +3,11 @@ import { toTypedSchema } from '@vee-validate/zod'
 import * as z from 'zod'
 import type { Device } from '@/api/modules/devices'
 import { listDevices } from '@/api/modules/devices'
-import type { MissedReminderPolicy, SaveInteractionSettingsInput } from '@/api/modules/interactions'
+import type { MissedReminderPolicy, ProactiveTopicCooldown, SaveInteractionSettingsInput } from '@/api/modules/interactions'
 import {
   getInteractionSettings,
+  listProactiveTopics,
+  resumeProactiveTopic,
   saveInteractionSettings,
   stopDeviceAudio,
 } from '@/api/modules/interactions'
@@ -20,6 +22,8 @@ interface InteractionFormModel extends SaveInteractionSettingsInput {
 const devices = ref<Device[]>([])
 const loading = ref(false)
 const stopping = ref(false)
+const topicCooldowns = ref<ProactiveTopicCooldown[]>([])
+const resumingTopic = ref('')
 const model = ref<InteractionFormModel>(defaults())
 
 const deviceOptions = computed(() => devices.value.map(device => ({
@@ -49,6 +53,7 @@ const validationSchema = toTypedSchema(z.object({
   proactiveStart: z.string().min(1, '请选择主动问候开始时间'),
   proactiveEnd: z.string().min(1, '请选择主动问候结束时间'),
   proactiveMinIntervalMinutes: z.number().int().min(30).max(1440),
+  proactivePersonalizationEnabled: z.boolean(),
   proactiveDailyLimit: z.number().int().min(1).max(10),
   proactiveContent: z.string().trim().min(1, '请输入主动问候内容').max(500),
 }))
@@ -70,6 +75,7 @@ function defaults(): InteractionFormModel {
     proactiveStart: '09:00',
     proactiveEnd: '21:00',
     proactiveMinIntervalMinutes: 240,
+    proactivePersonalizationEnabled: false,
     proactiveDailyLimit: 2,
     proactiveContent: '你好呀，记得休息一下，也可以和我聊聊天。',
   }
@@ -115,8 +121,15 @@ async function loadSettings(deviceId: string) {
       proactiveStart: settings.proactiveStart.slice(0, 5),
       proactiveEnd: settings.proactiveEnd.slice(0, 5),
       proactiveMinIntervalMinutes: settings.proactiveMinIntervalMinutes,
+      proactivePersonalizationEnabled: settings.proactivePersonalizationEnabled ?? false,
       proactiveDailyLimit: settings.proactiveDailyLimit,
       proactiveContent: settings.proactiveContent,
+    }
+    try {
+      topicCooldowns.value = await listProactiveTopics(deviceId)
+    }
+    catch {
+      topicCooldowns.value = []
     }
   }
   catch (error) {
@@ -124,6 +137,22 @@ async function loadSettings(deviceId: string) {
   }
   finally {
     loading.value = false
+  }
+}
+
+async function resumeTopic(topicKey: string) {
+  if (!model.value.deviceId) return
+  resumingTopic.value = topicKey
+  try {
+    await resumeProactiveTopic(model.value.deviceId, topicKey)
+    topicCooldowns.value = await listProactiveTopics(model.value.deviceId)
+    useFaToast().success('已解除主题冷却')
+  }
+  catch (error) {
+    useFaToast().error('操作失败', { description: error instanceof Error ? error.message : '无法解除主题冷却。' })
+  }
+  finally {
+    resumingTopic.value = ''
   }
 }
 
@@ -252,6 +281,13 @@ onMounted(loadDevices)
               <FaFormItem name="proactiveEnabled" label="允许主动问候">
                 <FaSwitch v-model="model.proactiveEnabled" />
               </FaFormItem>
+              <FaFormItem
+                name="proactivePersonalizationEnabled"
+                label="使用确认记忆生成一句个性化措辞"
+                description="默认关闭。只读取已确认、启用且允许主动提及的一条记忆；规则不通过时不会调用模型。"
+              >
+                <FaSwitch v-model="model.proactivePersonalizationEnabled" />
+              </FaFormItem>
               <FaFormItem name="proactiveStart" label="允许开始" required>
                 <FaInput v-model="model.proactiveStart" type="time" class="w-full" />
               </FaFormItem>
@@ -267,6 +303,35 @@ onMounted(loadDevices)
               <FaFormItem name="proactiveContent" label="固定问候内容" required>
                 <FaTextarea v-model="model.proactiveContent" rows="4" align="block" class="w-full" />
               </FaFormItem>
+              <div class="border-t pt-5">
+                <div class="mb-3 text-sm font-medium">最近主动主题</div>
+                <FaAlert
+                  v-if="topicCooldowns.length === 0"
+                  title="暂无主题记录"
+                  description="个性化主题成功进入主动提醒后才会出现；使用记录不复制记忆正文。"
+                />
+                <div v-for="topic in topicCooldowns" :key="topic.topicKey" class="mb-3 rounded-md border p-3 text-sm">
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="min-w-0">
+                      <div class="truncate font-medium">{{ topic.topicKey }}</div>
+                      <div class="mt-1 text-xs text-muted-foreground">
+                        冷却至 {{ new Date(topic.cooldownUntil).toLocaleString() }}
+                        <span v-if="topic.userMuted"> · 用户已要求不再主动提及</span>
+                      </div>
+                    </div>
+                    <FaButton
+                      v-if="topic.userMuted || new Date(topic.cooldownUntil).getTime() > Date.now()"
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      :loading="resumingTopic === topic.topicKey"
+                      @click="resumeTopic(topic.topicKey)"
+                    >
+                      解除冷却
+                    </FaButton>
+                  </div>
+                </div>
+              </div>
             </div>
           </FaCard>
 

@@ -6,6 +6,7 @@ import java.time.ZoneOffset;
 import java.util.UUID;
 
 import com.kj.stackchan.interaction.InteractionSettingsService;
+import com.kj.stackchan.interaction.ProactiveTopicCooldownService;
 import com.kj.stackchan.memory.LongTermMemoryService;
 import com.kj.stackchan.reminder.ReminderService;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,12 +26,13 @@ class VoiceActionCoordinatorTest {
     @Mock private ReminderService reminderService;
     @Mock private LongTermMemoryService memoryService;
     @Mock private InteractionSettingsService settingsService;
+    @Mock private ProactiveTopicCooldownService topicCooldownService;
     private VoiceActionCoordinator coordinator;
 
     @BeforeEach
     void setUp() {
         coordinator = new VoiceActionCoordinator(proposalService, reminderService, memoryService, settingsService,
-                Clock.fixed(Instant.parse("2026-08-02T08:00:00Z"), ZoneOffset.UTC), null);
+                Clock.fixed(Instant.parse("2026-08-02T08:00:00Z"), ZoneOffset.UTC), null, topicCooldownService);
     }
 
     @Test
@@ -56,5 +58,28 @@ class VoiceActionCoordinatorTest {
         verify(proposalService).propose(any(), any(), any(), draft.capture());
         assertThat(draft.getValue().volumePercent()).isEqualTo(50);
         verifyNoInteractions(settingsService);
+    }
+
+    @Test
+    void explicitRequestPermanentlyMutesTheMostRecentProactiveTopic() {
+        UUID deviceId = UUID.randomUUID();
+        when(topicCooldownService.muteLastTopic(deviceId)).thenReturn(true);
+
+        var result = coordinator.handle(deviceId, UUID.randomUUID(), UUID.randomUUID(), "别再提这个了");
+
+        assertThat(result.handled()).isTrue();
+        assertThat(result.reply()).isEqualTo("好的，我不会再主动提这个话题。");
+        verify(topicCooldownService).muteLastTopic(deviceId);
+        verify(proposalService, never()).propose(any(), any(), any(), any());
+    }
+
+    @Test
+    void quotedMutePhraseInsideOrdinaryConversationDoesNotChangeTopicState() {
+        var result = coordinator.handle(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "他说别再提这个以后就离开了"
+        );
+
+        assertThat(result).isNull();
+        verifyNoInteractions(topicCooldownService);
     }
 }

@@ -2,16 +2,22 @@
 
 - 状态：READY
 - 最后更新：2026-08-04
-- 当前分支：`codex/int-011-memory-2`
-- 基准提交：`fbe5bde`
-- 最后验证提交：`fbe5bde`
-- 当前运行态代码：INT-011 本地候选 `09323bb` / Flyway V25、server 容器 `1a44042f18b8`、运行镜像 `sha256:573f9d5fa6972434e64223e8f0bb20fd07d8730b9651b2db30327c50a616aff5`；CoreS3 `dd81a7e / motion_disabled`。
+- 当前分支：`codex/int-012-bounded-proactive-care`
+- 基准提交：`d7f38bf`
+- 最后验证提交：`b35918b`
+- 当前运行态代码：INT-012 本地候选 `b35918b` / Flyway V26、server 容器 `865d9acf3984`、运行镜像 `sha256:bfe34a0206969ccd7fecb073b00025bfe5c1f7f266c55f0aa2e829127ea97cd7`；CoreS3 `dd81a7e / motion_disabled`。
 
 ## 当前目标
 
-INT-011 server-first V25 已发布并完成自动及人工验证；用户确认无问题并授权推送。回退镜像、PostgreSQL、Redis、卷、端口、凭据、固件、NVS 和生产 HTTPS-only 边界保持不变。
+INT-012 server-first V26 已发布并完成自动及人工验证；用户确认无问题，等待明确推送授权。回退镜像、PostgreSQL、Redis、卷、端口、凭据、固件、NVS 和生产 HTTPS-only 边界保持不变。
 
 ## 已完成
+
+- INT-012 正式候选包含 V26 交互开关、主动提醒生成元数据和主题冷却表；本地 Maven 309/309、空库 V1..V26、前端 66/66、类型检查和生产构建通过。
+- 发布前恢复既有备份容器并完成启动备份与最新备份隔离恢复验证；V25 镜像保留为 `stackchan-foundation-server:rollback-b35918b-pre-v26`。
+- 正式 Dockerfile 构建并只替换 server 为 `sha256:bfe34a0206969ccd7fecb073b00025bfe5c1f7f266c55f0aa2e829127ea97cd7`；PostgreSQL、Redis 和备份容器 ID 未变。
+- 发布后健康与网页 200、Flyway `26|true` 且成功迁移数 26、V26 三个新增列存在、未登录新主题 API 为 401、启动错误与重启为 0；旧 CoreS3 `dd81a7e / motion_disabled` 自动恢复新鲜心跳。未连接 COM3、刷写或改写 NVS。
+- 用户完成个性化主动问候人工测试并确认无问题；验收后最新提醒安全元数据为 `DELIVERED + GENERATED`、失败码为空，server 健康 200、错误与重启为 0，旧固件心跳新鲜。
 
 - INT-011 新增 V25 `pg_trgm`、长期记忆检索元数据和只含安全 ID 的使用记录表；发布前新建逻辑备份并完成隔离恢复，旧镜像保留为 `stackchan-foundation-server:rollback-09323bb-pre-v25`。
 - 正式 Dockerfile 构建清单为 `sha256:7e482cdfe35ca9368ebbaf9bd7d6635ec4359b4c18f9a23561527617203c0a08`，只替换 server；运行库从 V23 应用 V24/V25，其他三个容器 ID 未变，现有 `dd81a7e / motion_disabled` 自动恢复心跳。
@@ -186,6 +192,7 @@ INT-011 server-first V25 已发布并完成自动及人工验证；用户确认�
 - [0026：个人数据物理删除、范围导出与隔离备份恢复](../decisions/0026-personal-data-lifecycle-and-isolated-backups.md)
 - [0027：连续对话采用设备本地有界跟进窗口](../decisions/0027-bounded-continuous-conversation.md)
 - [0029：长期记忆建议经过敏感过滤、冲突确认与有界检索](../decisions/0029-reviewed-memory-suggestions-and-bounded-retrieval.md)
+- [0030：个性化主动关心必须经过规则门控与主题冷却](../decisions/0030-rule-gated-personalized-proactive-care.md)
 - [个人数据备份与隔离恢复验证 runbook](../../runbooks/personal-data-backup.md)
 - [Agent、Skill、Tool 与 MCP 运维 runbook](../../runbooks/agent-tools-mcp.md)
 

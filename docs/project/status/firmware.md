@@ -2,16 +2,20 @@
 
 - 状态：STABLE
 - 最后更新：2026-08-04
-- 当前分支：`codex/int-011-memory-2`
-- 基准提交：`fbe5bde`
-- 最后验证提交：`fbe5bde`
+- 当前分支：`codex/int-012-bounded-proactive-care`
+- 基准提交：`d7f38bf`
+- 最后验证提交：`b35918b`
 - 当前实机镜像：`dd81a7e`
 
 ## 当前目标
 
-保持 CoreS3 `dd81a7e`、WakeNet、连续对话、触摸取消、SCV1、八状态表情与 `motion_disabled` 稳定；INT-011 只扩展服务端记忆与管理端解释，不新增设备协议或命令。
+保持 CoreS3 `dd81a7e`、WakeNet、连续对话、触摸取消、SCV1、八状态表情与 `motion_disabled` 稳定；INT-012 只生成既有提醒内容，不新增设备协议、命令或分区。
 
 ## 已完成
+
+- INT-012 不修改 SCV1、WebSocket、`speak_reminder`、连续对话状态机、固件分区或设备配置；固定/生成/回退状态只留在服务端元数据。未连接 COM3、未构建或刷写固件、未修改 NVS；LAN 发布后使用现有 `dd81a7e / motion_disabled` 做旧固件兼容验证。
+- server/V26 发布后，现有 CoreS3 `dd81a7e / motion_disabled` 自动恢复 WebSocket，检查时心跳约 13 秒；无需新固件。
+- 用户确认 server/V26 个性化主动问候实体测试无问题；验收后 `dd81a7e / motion_disabled` 心跳约 11 秒，server 错误和重启为 0。未连接 COM3、未刷写或改写 NVS。
 
 - INT-011 不修改 SCV1、WebSocket 命令、连续对话状态机、固件分区或设备配置；普通语音回合只在服务端完成后异步提取待确认建议。未连接 COM3、未构建或刷写固件、未修改 NVS；发布后仍须先用现有 `dd81a7e` 做旧固件人工兼容验证。
 - server/V25 发布后，现有 CoreS3 `dd81a7e / motion_disabled` 已自动恢复 WebSocket 并产生约 3 秒内的新鲜心跳；自动兼容检查通过，普通聊天、连续对话、提醒播放和触摸取消仍待用户实体确认。
@@ -225,6 +229,7 @@ INT-011 旧固件人工兼容已通过；保持 `dd81a7e / motion_disabled` 和 
 - [0009：服务端增加阿里云百炼原生语音适配器](../decisions/0009-native-dashscope-speech-adapter.md)
 - [0027：连续对话采用设备本地有界跟进窗口](../decisions/0027-bounded-continuous-conversation.md)
 - [0029：长期记忆建议经过敏感过滤、冲突确认与有界检索](../decisions/0029-reviewed-memory-suggestions-and-bounded-retrieval.md)
+- [0030：个性化主动关心必须经过规则门控与主题冷却](../decisions/0030-rule-gated-personalized-proactive-care.md)
 
 ## 安全与兼容性约束
 

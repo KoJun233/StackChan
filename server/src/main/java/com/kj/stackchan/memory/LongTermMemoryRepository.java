@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Pageable;
 
 public interface LongTermMemoryRepository
         extends JpaRepository<LongTermMemoryEntity, UUID>, JpaSpecificationExecutor<LongTermMemoryEntity> {
@@ -92,5 +93,24 @@ public interface LongTermMemoryRepository
             @Param("deviceId") UUID deviceId,
             @Param("queryText") String queryText,
             @Param("limit") int limit
+    );
+
+    @Query("""
+            select memory from LongTermMemoryEntity memory
+            where memory.confirmationStatus = com.kj.stackchan.memory.MemoryConfirmationStatus.CONFIRMED
+              and memory.enabled = true
+              and memory.allowProactiveMention = true
+              and memory.supersededByMemoryId is null
+              and (memory.scopeType = com.kj.stackchan.memory.MemoryScopeType.GLOBAL
+                   or (memory.scopeType = com.kj.stackchan.memory.MemoryScopeType.DEVICE
+                       and memory.deviceId = :deviceId))
+            order by memory.importance desc,
+                     coalesce(memory.lastUsedAt, memory.confirmedAt, memory.updatedAt) desc,
+                     memory.updatedAt desc,
+                     memory.id desc
+            """)
+    List<LongTermMemoryEntity> findProactiveCandidates(
+            @Param("deviceId") UUID deviceId,
+            Pageable pageable
     );
 }

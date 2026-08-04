@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getInteractionSettings, saveInteractionSettings, stopDeviceAudio } from './interactions'
+import { getInteractionSettings, listProactiveTopics, resumeProactiveTopic, saveInteractionSettings, stopDeviceAudio } from './interactions'
 
 describe('interaction settings API', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -21,6 +21,7 @@ describe('interaction settings API', () => {
       proactiveStart: '09:00',
       proactiveEnd: '21:00',
       proactiveMinIntervalMinutes: 240,
+      proactivePersonalizationEnabled: false,
       proactiveDailyLimit: 2,
       proactiveContent: '你好',
     }
@@ -34,11 +35,19 @@ describe('interaction settings API', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ accepted: true }), {
         headers: { 'Content-Type': 'application/json' },
       }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ topicKey: '咖啡偏好', userMuted: false }), {
+        headers: { 'Content-Type': 'application/json' },
+      }))
     vi.stubGlobal('fetch', fetchMock)
 
     await getInteractionSettings(deviceId)
     await saveInteractionSettings(deviceId, input)
     await stopDeviceAudio(deviceId)
+    await listProactiveTopics(deviceId)
+    await resumeProactiveTopic(deviceId, '咖啡偏好')
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, `/api/v1/settings/interactions/${deviceId}`, expect.any(Object))
     expect(fetchMock).toHaveBeenNthCalledWith(2, `/api/v1/settings/interactions/${deviceId}`, expect.objectContaining({
@@ -47,6 +56,11 @@ describe('interaction settings API', () => {
     }))
     expect(fetchMock).toHaveBeenNthCalledWith(3, `/api/v1/settings/interactions/${deviceId}:stop`, expect.objectContaining({
       method: 'POST',
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(4, `/api/v1/settings/interactions/${deviceId}/proactive-topics`, expect.any(Object))
+    expect(fetchMock).toHaveBeenNthCalledWith(5, `/api/v1/settings/interactions/${deviceId}/proactive-topics:resume`, expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ topicKey: '咖啡偏好' }),
     }))
   })
 })

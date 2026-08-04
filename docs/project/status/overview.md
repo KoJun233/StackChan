@@ -2,11 +2,11 @@
 
 - 状态：READY
 - 最后更新：2026-08-04
-- 当前分支：`codex/int-011-memory-2`
-- 实现基准：`fbe5bde`
-- 最后验证提交：`fbe5bde`
-- 当前验证范围：INT-011 服务端 299/299 与 Testcontainers 空库 V1..V25、真实 `pg_trgm` 检索；前端 Vitest 24 个文件 66/66、`vue-tsc -b` 和 production build；LAN/production Compose、文档与差异检查。LAN server 已从本地候选 `09323bb` 发布到 V25，健康/网页、迁移、认证边界和旧固件心跳自动验证通过。
-- 当前优先级：用户已确认 INT-011 记忆与旧固件实体测试无问题并明确授权推送；下一步由用户创建 PR、人工审核并合并。
+- 当前分支：`codex/int-012-bounded-proactive-care`
+- 实现基准：`d7f38bf`
+- 最后验证提交：`b35918b`
+- 当前验证范围：INT-012 服务端 309/309 与 Testcontainers 空库 V1..V26、真实主动候选筛选；前端 Vitest 24 个文件 66/66、`vue-tsc -b` 和 production build；LAN/production Compose、文档与差异检查。LAN server/V26、旧固件自动兼容和个性化主动问候人工验收均通过。
+- 当前优先级：用户已确认人工测试无问题；等待其明确说“推送吧”后只推送当前任务分支。
 - 当前部署：LAN HTTP development mode。
 - 生产边界：HTTPS-only。
 
@@ -14,12 +14,12 @@
 
 | 工作流 | 状态 | 状态文件 | 当前分支 | 下一步 |
 | --- | --- | --- | --- | --- |
-| 服务端 | READY | [server.md](server.md) | `codex/int-011-memory-2` | V25 发布与人工验收通过，等待用户创建 PR。 |
-| 前端 | READY | [frontend.md](frontend.md) | `codex/int-011-memory-2` | 新记忆页面人工验收通过，等待用户创建 PR。 |
-| 固件 | STABLE | [firmware.md](firmware.md) | `codex/int-011-memory-2` | `dd81a7e / motion_disabled` 实体兼容通过，保持 NVS 不变。 |
-| 部署 | READY | [deployment.md](deployment.md) | `codex/int-011-memory-2` | server/V25 发布与人工验收通过，保持回退镜像。 |
+| 服务端 | READY | [server.md](server.md) | `codex/int-012-bounded-proactive-care` | V26 自动与人工验收通过，等待推送授权。 |
+| 前端 | READY | [frontend.md](frontend.md) | `codex/int-012-bounded-proactive-care` | 个性化配置人工验收通过，等待推送授权。 |
+| 固件 | STABLE | [firmware.md](firmware.md) | `codex/int-012-bounded-proactive-care` | `dd81a7e / motion_disabled` 实体兼容通过，无需刷写。 |
+| 部署 | READY | [deployment.md](deployment.md) | `codex/int-012-bounded-proactive-care` | server/V26 人工验收通过，V25 回退镜像已保留。 |
 
-INT-010 已由 PR #12 合入 `master`，合并提交为 `fbe5bde`。INT-011 从该最新基线创建独立分支；经用户授权，本地候选 `09323bb` 已只替换 LAN server 并把运行库从 V23 迁移到 V25。未连接 COM3、未刷写固件或修改 NVS。
+INT-011 已由 PR #13 合入 `master`，合并提交为 `d7f38bf`。INT-012 从该最新基线创建独立分支；本地单提交候选 `b35918b` 已只替换 LAN server 并把运行库从 V25 迁移到 V26。未连接 COM3、未刷写固件或修改 NVS。
 
 INT-009 已按 server-first 顺序发布：镜像 `sha256:6902bf3e287568bef13d0fa1247676e475f34357fe7d22923687be10d651d332` 只替换 LAN server，运行库从 V22 升至 V23；旧镜像保留为 `stackchan-foundation-server:rollback-a2f723e-pre-v23`。PostgreSQL、Redis、备份容器、卷、端口、凭据和生产 HTTPS-only 边界未改变；旧 CoreS3 `b05d60f / motion_disabled` 在退避后自动重连，并跨两个 25 秒周期持续刷新心跳。连续对话仍默认关闭，未连接 COM3、未刷写或 OTA。
 
@@ -186,7 +186,7 @@ INT-007 本地发布候选完成：默认表情升级为 M5Unified/M5GFX 独立�
 
 - INT-007 已由 PR #8 合入 `master`；默认机械眼通过实体验收。自定义八状态资源包的实体测试因没有合适素材暂缓，但不阻塞 `INT-008`。
 - 用户将受控 Agent 调整为当前最高优先级；`codex/int-008-agent-tools-mcp` 已从最新 `master` 合并提交 `8122959` 创建。
-- `INT-008`、`DATA-001`、`INT-009`、`INT-010` 和 `INT-011` 软件交付已依序完成；下一项为 `INT-012 主动关心`，但必须先完成 INT-011 推送与人工合并。任务范围和验收条件见[下一阶段可执行任务清单](../todo.md)。
+- `INT-008`、`DATA-001`、`INT-009`、`INT-010` 和 `INT-011` 已依序合并；`INT-012 主动关心` 已完成本地实现和自动验证，等待 LAN 旧固件与人工验收。任务范围和验收条件见[下一阶段可执行任务清单](../todo.md)。
 - 软件链路和设备三槽引导已验证；内置模型文件已随锁定组件存在，不再依赖用户上传或外部生成器。首次实际模型切换会重启设备，必须由管理员主动选择后触发。
 - CoreS3 已具备 `model_a` / `model_b` 分区；后续更换兼容唤醒模型无需再刷整套固件。
 - INT-001 已完成服务端 V14、管理端、固件发布和用户人工验收；现有 1 个 `NO_SPEECH` 与 3 个成功回合作为 INT-002 前的基线。
@@ -198,4 +198,4 @@ INT-007 本地发布候选完成：默认表情升级为 M5Unified/M5GFX 独立�
 
 ## 下一步
 
-用户已确认 INT-011 实体测试无问题并授权推送；当前任务分支保持一个中文提交。下一步由用户创建 PR、人工审核并合并到 `master`，随后从最新 `master` 创建 INT-012 独立任务分支。
+用户已确认 INT-012 人工测试无问题；运行元数据核对为 `DELIVERED + GENERATED`、主题已记录、失败码为空，server 健康且旧固件心跳新鲜。下一步等待用户明确说“推送吧”，随后只推送当前任务分支，由用户创建 PR 并人工合并。

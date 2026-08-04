@@ -20,10 +20,18 @@ export interface InteractionSettings {
   proactiveEnd: string
   proactiveLastAt: string | null
   proactiveMinIntervalMinutes: number
+  proactivePersonalizationEnabled: boolean
   proactiveStart: string
   updatedAt: string | null
   volumePercent: number
   zoneId: string
+}
+
+export interface ProactiveTopicCooldown {
+  cooldownUntil: string
+  lastMentionedAt: string
+  topicKey: string
+  userMuted: boolean
 }
 
 export type SaveInteractionSettingsInput = Omit<
@@ -48,4 +56,16 @@ export function saveInteractionSettings(
 
 export function stopDeviceAudio(deviceId: string): Promise<{ accepted: boolean }> {
   return apiJson(`/api/v1/settings/interactions/${encodeURIComponent(deviceId)}:stop`, { method: 'POST' })
+}
+
+export function listProactiveTopics(deviceId: string): Promise<ProactiveTopicCooldown[]> {
+  return apiJson(`/api/v1/settings/interactions/${encodeURIComponent(deviceId)}/proactive-topics`)
+}
+
+export function resumeProactiveTopic(deviceId: string, topicKey: string): Promise<ProactiveTopicCooldown> {
+  return apiJson(`/api/v1/settings/interactions/${encodeURIComponent(deviceId)}/proactive-topics:resume`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ topicKey }),
+  })
 }

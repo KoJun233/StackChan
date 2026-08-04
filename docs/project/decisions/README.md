@@ -40,3 +40,4 @@
 | [0027](0027-bounded-continuous-conversation.md) | ACCEPTED | 回答后使用设备本地 VAD 的有界跟进窗口，最多三个跟进回合且总时长最多两分钟。 |
 | [0028](0028-confirmed-idempotent-voice-actions.md) | ACCEPTED | 语音副作用先形成绑定设备与会话的结构化提案，经确定性确认后幂等执行。 |
 | [0029](0029-reviewed-memory-suggestions-and-bounded-retrieval.md) | ACCEPTED | 普通完成回合最多提出一条经敏感过滤的待确认记忆，冲突经确认替代，并按相关性有界检索和记录使用 ID。 |
+| [0030](0030-rule-gated-personalized-proactive-care.md) | ACCEPTED | 个性化主动关心仅在确定性规则通过后生成，使用单条授权记忆并执行七天主题冷却。 |

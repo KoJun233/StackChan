@@ -3,6 +3,7 @@ import { apiJson } from '../client'
 export type ReminderStatus = 'PENDING' | 'DISPATCHED' | 'DELIVERED' | 'FAILED' | 'CANCELLED' | 'SKIPPED'
 export type ReminderRecurrence = 'DAILY' | 'NONE' | 'WEEKLY'
 export type ReminderSource = 'PROACTIVE' | 'USER'
+export type ProactiveGenerationStatus = 'FALLBACK' | 'FIXED' | 'GENERATED'
 
 export interface Reminder {
   attemptCount: number
@@ -18,6 +19,8 @@ export interface Reminder {
   scheduledAt: string
   status: ReminderStatus
   source: ReminderSource
+  proactiveTopicKey: string | null
+  proactiveGenerationStatus: ProactiveGenerationStatus | null
   updatedAt: string
   zoneId: string
 }
