@@ -1,17 +1,25 @@
 # 固件工作流
 
-- 状态：STABLE
-- 最后更新：2026-08-04
-- 当前分支：`codex/int-012-bounded-proactive-care`
-- 基准提交：`d7f38bf`
-- 最后验证提交：`b35918b`
-- 当前实机镜像：`dd81a7e`
+- 状态：IN_PROGRESS
+- 最后更新：2026-08-10
+- 当前分支：`codex/ops-002-firmware-ota-health`
+- 基准提交：`9377b8d`
+- 最后验证提交：`3ebdb65`
+- 当前实机镜像：`3ebdb65`
 
 ## 当前目标
 
-保持 CoreS3 `dd81a7e`、WakeNet、连续对话、触摸取消、SCV1、八状态表情与 `motion_disabled` 稳定；INT-012 只生成既有提醒内容，不新增设备协议、命令或分区。
+应用 OTA 候选已通过真实构建，server-first 旧固件兼容和 CoreS3 一次 USB 引导均已完成。当前设备运行 `3ebdb65 / motion_disabled / OTA=true`；下一步等待健康中心页面确认，实际应用 OTA 与回退演练仍需新的逐次授权。
 
 ## 已完成
+
+- 新增严格 `install_firmware`、七字段能力心跳与 `firmware_update_status`；旧五/六字段心跳保持兼容并显式记录能力 false。
+- artifact 从固定同源路径下载且拒绝重定向，流式验证长度/SHA-256/项目名/版本，只写非活动 `ota_0/ota_1`。待确认与最终结果写入独立 NVS namespace，NVS 和资源分区不作为写入目标。
+- 所有新生成 profile 默认启用 bootloader application rollback，源码编译期再次强制该配置；硬件、WakeNet、传输和配网任务初始化成功后才确认新应用，30 秒未确认则重启回退。
+- 刷写前候选验证中，ESP-IDF 5.3.3 协议测试 Quad 为 `0x37880`、余量 93%；LAN HTTP Quad 为 `0x14e8c0`、余量 56%，两者构建配置均确认 rollback 为 1。固件栈预算和唤醒模型包回归通过。
+- 经用户精确授权，使用官方 ESP-IDF 5.3.3 从干净 `3ebdb65` 新建独立目录构建 LAN HTTP Quad；应用描述符为 `stackchan_firmware / 3ebdb65`，大小 `0x14e8c0`、余量 56%，配置确认 rollback、16 MB Flash、Quad PSRAM 和 LAN HTTP。
+- bootloader `0x0`、分区表 `0x8000`、应用 `0x10000`、OTA data `0x910000` 和语音模型 `0x912000` 完整写入 CoreS3 `COM3`，即时哈希与五次独立 `verify_flash` 全部匹配；擦写范围未覆盖 `0x9000..0xefff` NVS。
+- 启动确认 8 MB PSRAM/80 MHz、内存测试、CoreS3 显示/触摸/麦克风/扬声器、WakeNet“小峰小峰”、Wi-Fi、WebSocket 与 `motion_disabled`；50 秒内致命错误为 0。原 NVS 身份直接联网，服务端跨两个心跳周期收到 `3ebdb65 / OTA=true`。
 
 - INT-012 不修改 SCV1、WebSocket、`speak_reminder`、连续对话状态机、固件分区或设备配置；固定/生成/回退状态只留在服务端元数据。未连接 COM3、未构建或刷写固件、未修改 NVS；LAN 发布后使用现有 `dd81a7e / motion_disabled` 做旧固件兼容验证。
 - server/V26 发布后，现有 CoreS3 `dd81a7e / motion_disabled` 自动恢复 WebSocket，检查时心跳约 13 秒；无需新固件。
@@ -89,15 +97,15 @@
 
 ## 正在进行
 
-无固件修改正在进行；当前实机继续运行 `dd81a7e / motion_disabled`。
+一次 USB 引导已完成；当前实机运行 `3ebdb65 / motion_disabled` 并向 V27 server 显式报告 `OTA=true`。等待用户刷新健康中心确认页面状态。
 
 ## 下一步操作
 
-INT-011 旧固件人工兼容已通过；保持 `dd81a7e / motion_disabled` 和 NVS 不变，下一次固件操作仍需新的精确授权。
+用户确认健康中心不再显示“需 USB 引导”。任何实际应用 OTA 或回退演练必须另外精确授权目标版本、设备和测试范围；当前不创建升级任务。
 
 ## 阻塞项
 
-当前无阻塞。INT-010 不开放删除、部署、凭据、固件、摄像头、舵机或其他设备控制；不得记录 Wi-Fi 密码、Workspace ID、配对码、音频/转写、语音供应商密钥或设备 Token。
+当前软件无阻塞；实体 OTA/回退验收受新的逐次硬件授权约束。不得记录 Wi-Fi 密码、Workspace ID、配对码、音频/转写、语音供应商密钥或设备 Token。
 
 ## 关键文件
 

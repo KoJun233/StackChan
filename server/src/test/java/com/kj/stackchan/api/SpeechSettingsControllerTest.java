@@ -3,6 +3,7 @@ package com.kj.stackchan.api;
 import java.time.Instant;
 
 import com.kj.stackchan.device.DeviceVoiceSettingsCoordinator;
+import com.kj.stackchan.health.ProviderHealthRegistry;
 import com.kj.stackchan.security.AdminUserRepository;
 import com.kj.stackchan.security.SecurityConfiguration;
 import com.kj.stackchan.speech.SpeechAccessMode;
@@ -48,6 +49,9 @@ class SpeechSettingsControllerTest {
 
     @MockitoBean
     private AdminUserRepository adminUserRepository;
+
+    @MockitoBean
+    private ProviderHealthRegistry providerHealthRegistry;
 
     @Test
     void returnsSettingsWithoutTheApiKey() throws Exception {

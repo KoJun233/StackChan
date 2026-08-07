@@ -35,6 +35,8 @@ class DeviceWebSocketHandlerTest {
             mock(DeviceVoiceSettingsCoordinator.class);
     private final DeviceWakeModelStatusService wakeModelStatusService =
             mock(DeviceWakeModelStatusService.class);
+    private final DeviceFirmwareUpdateStatusService firmwareUpdateStatusService =
+            mock(DeviceFirmwareUpdateStatusService.class);
     private final VoiceTurnDiagnosticsService voiceTurnDiagnosticsService =
             mock(VoiceTurnDiagnosticsService.class);
     private final VoiceTurnCancellationService voiceTurnCancellationService =
@@ -50,11 +52,16 @@ class DeviceWebSocketHandlerTest {
             voiceTurnCancellationService
     );
 
+    private DeviceWebSocketHandler handler() {
+        handler.setFirmwareUpdateStatusService(firmwareUpdateStatusService);
+        return handler;
+    }
+
     @Test
     void sendsCurrentVoiceSettingsWhenTheDeviceConnects() throws Exception {
         WebSocketSession session = authenticatedSession();
 
-        handler.afterConnectionEstablished(session);
+        handler().afterConnectionEstablished(session);
 
         verify(voiceSettingsCoordinator).sendCurrent(DEVICE_ID, session);
     }
@@ -74,7 +81,7 @@ class DeviceWebSocketHandlerTest {
                 {"type":"heartbeat","sequence":6,"battery_percent":82,"rssi":-56,"safety_state":"motion_disabled"}
                 """));
 
-        verify(deviceEventService).recordHeartbeat(DEVICE_ID, "motion_disabled", null);
+        verify(deviceEventService).recordHeartbeat(DEVICE_ID, "motion_disabled", null, -54, false);
     }
 
     @Test
@@ -86,7 +93,31 @@ class DeviceWebSocketHandlerTest {
                 {"type":"heartbeat","sequence":7,"battery_percent":80,"rssi":-54,"safety_state":"motion_disabled","firmware_version":"b954a43"}
                 """));
 
-        verify(deviceEventService).recordHeartbeat(DEVICE_ID, "motion_disabled", "b954a43");
+        verify(deviceEventService).recordHeartbeat(DEVICE_ID, "motion_disabled", "b954a43", -54, false);
+    }
+
+    @Test
+    void recordsApplicationOtaCapabilityAndFirmwareStatus() throws Exception {
+        WebSocketSession session = authenticatedSession();
+        handler().afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"heartbeat","sequence":7,"battery_percent":80,"rssi":-54,"safety_state":"motion_disabled","firmware_version":"ops-002","application_ota_supported":true}
+                """));
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"firmware_update_status","sequence":8,"job_id":"550e8400-e29b-41d4-a716-446655440000","status":"INSTALLED","version":"ops-002","sha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+                """));
+
+        verify(deviceEventService).recordHeartbeat(
+                DEVICE_ID, "motion_disabled", "ops-002", -54, true
+        );
+        verify(firmwareUpdateStatusService).record(
+                DEVICE_ID,
+                UUID.fromString("550e8400-e29b-41d4-a716-446655440000"),
+                "INSTALLED",
+                "ops-002",
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
     }
 
     @Test

@@ -22,7 +22,13 @@ The accepted heartbeat includes the current firmware version:
 
 `battery_percent` is an integer from 0 through 100. `rssi` is an integer. `safety_state` must be exactly `motion_disabled` in this phase. `firmware_version` is one through 80 ASCII letters, digits, dots, underscores, or hyphens. A heartbeat records device liveness and cannot enable motion; when a version is present the server persists it as the device's current firmware version.
 
-For a rolling upgrade, the server also accepts the original five-field heartbeat from older firmware. New firmware must always send `firmware_version`.
+OTA-capable firmware adds an explicit capability bit:
+
+```json
+{"type":"heartbeat","sequence":1,"battery_percent":75,"rssi":-58,"safety_state":"motion_disabled","firmware_version":"b954a43","application_ota_supported":true}
+```
+
+For a rolling server-first upgrade, the server still accepts the original five-field heartbeat and the six-field heartbeat with `firmware_version`. Those legacy forms always record `application_ota_supported=false`; a missing field never implies support. New OTA-capable firmware must send all seven fields.
 
 Devices may acknowledge a received command with:
 
@@ -33,6 +39,8 @@ Devices may acknowledge a received command with:
 `command_id` is nonblank and `accepted` is boolean. New firmware may add `"result":"cancelled"` or `"result":"failed"` only when `accepted=false`; older firmware may omit `result`. An acknowledgement is never treated as an actuator command. For `speak_reminder`, `accepted=true` means the device downloaded and completed playback, `accepted=false,result=cancelled` means the user deliberately stopped playback, and missing or `failed` result means download/playback failed. The server marks those outcomes `DELIVERED`, `CANCELLED`, or `FAILED`. For `configure_voice_detection`, the acknowledgement only reports whether the bounded local settings were accepted; it does not change reminder state.
 
 For `install_wake_model`, `accepted=true` means the device downloaded the fixed same-origin artifact, verified its size, SHA-256 and ESP-SR structure, and persisted a pending model slot before restarting. It does not mean the new WakeNet listener is healthy; final health is reported separately after restart. `accepted=false` means the model was not selected for boot.
+
+For `install_firmware`, `accepted=true` means the device downloaded the fixed same-origin application artifact, verified its length, SHA-256, project name and version, wrote the inactive OTA slot, persisted pending state in NVS and selected that slot for boot. It does not mean the new application is healthy; `INSTALLED` or `ROLLED_BACK` is reported separately after restart. `accepted=false` means the target slot was not selected for boot.
 
 New firmware may report a privacy-safe voice turn stage:
 
@@ -120,6 +128,30 @@ After boot-time WakeNet health confirmation or automatic rollback, the device se
 ```
 
 `status` is exactly `INSTALLED` or `ROLLED_BACK`. The event is persisted on the device and sent once on every WebSocket reconnect, so the server must handle repeats idempotently. It never enables motion.
+
+The safe application-firmware installation command is:
+
+```json
+{"type":"install_firmware","command_id":"cmd-firmware","job_id":"222e8400-e29b-41d4-a716-446655440000","version":"abc1234","sha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","artifact_size":227456}
+```
+
+The schema is strict. `job_id` is a canonical UUID, `version` is 1 through 32 ASCII letters, digits, dots, underscores or hyphens, `sha256` is exactly 64 lowercase hexadecimal characters, and `artifact_size` is 256 through 3145728. A URL or any extra field is rejected. The device derives this fixed same-origin path and authenticates with its existing device Bearer token:
+
+```http
+GET /api/v1/device/firmware-updates/222e8400-e29b-41d4-a716-446655440000/artifact
+Authorization: Bearer <device-token>
+Accept: application/vnd.stackchan.firmware
+```
+
+The server returns an artifact only while the authenticated device owns the matching `READY` or `INSTALLING` task. Responses use `Cache-Control: no-store`; redirects are rejected. The device writes only the non-running `ota_0` or `ota_1` application partition, never NVS or resource partitions.
+
+After the bootloader validates the new application or rolls it back, the device sends:
+
+```json
+{"type":"firmware_update_status","sequence":3,"job_id":"222e8400-e29b-41d4-a716-446655440000","status":"INSTALLED","version":"abc1234","sha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+```
+
+`status` is exactly `INSTALLED` or `ROLLED_BACK`. The event is persisted in NVS and sent on every WebSocket reconnect, so the server handles repeats idempotently. It never enables motion.
 
 The schema is strict: no URL or extra field is accepted, and `reminder_id` must be a canonical UUID. The device derives the fixed same-origin path below from its provisioned server origin and sends the same device Bearer token:
 

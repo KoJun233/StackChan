@@ -6,6 +6,7 @@ import com.kj.stackchan.llm.InvalidLlmSettingsException;
 import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.llm.LlmProviderUnavailableException;
 import com.kj.stackchan.llm.LlmRuntimeClientFactory;
+import com.kj.stackchan.health.ProviderHealthRegistry;
 import com.kj.stackchan.security.AdminUserRepository;
 import com.kj.stackchan.security.SecurityConfiguration;
 import org.junit.jupiter.api.Test;
@@ -47,6 +48,9 @@ class LlmSettingsControllerTest {
 
     @MockitoBean
     private LlmRuntimeClientFactory llmRuntimeClientFactory;
+
+    @MockitoBean
+    private ProviderHealthRegistry providerHealthRegistry;
 
     @Test
     void returnsConfigurationWithoutAnyApiKeyField() throws Exception {

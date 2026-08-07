@@ -3,6 +3,7 @@ package com.kj.stackchan.api;
 import java.time.Instant;
 
 import com.kj.stackchan.device.DeviceVoiceSettingsCoordinator;
+import com.kj.stackchan.health.ProviderHealthRegistry;
 import com.kj.stackchan.speech.SpeechRuntimeClient;
 import com.kj.stackchan.speech.SpeechAccessMode;
 import com.kj.stackchan.speech.SpeechProviderType;
@@ -29,15 +30,18 @@ public class SpeechSettingsController {
     private final SpeechSettingsService settingsService;
     private final SpeechRuntimeClient speechRuntimeClient;
     private final DeviceVoiceSettingsCoordinator deviceVoiceSettingsCoordinator;
+    private final ProviderHealthRegistry providerHealthRegistry;
 
     public SpeechSettingsController(
             SpeechSettingsService settingsService,
             SpeechRuntimeClient speechRuntimeClient,
-            DeviceVoiceSettingsCoordinator deviceVoiceSettingsCoordinator
+            DeviceVoiceSettingsCoordinator deviceVoiceSettingsCoordinator,
+            ProviderHealthRegistry providerHealthRegistry
     ) {
         this.settingsService = settingsService;
         this.speechRuntimeClient = speechRuntimeClient;
         this.deviceVoiceSettingsCoordinator = deviceVoiceSettingsCoordinator;
+        this.providerHealthRegistry = providerHealthRegistry;
     }
 
     @GetMapping
@@ -68,8 +72,14 @@ public class SpeechSettingsController {
 
     @PostMapping("/test")
     public SpeechConnectionTestResponse testConnection() {
-        speechRuntimeClient.testConnection();
-        return new SpeechConnectionTestResponse(true, "测试音频已成功生成并识别。");
+        try {
+            speechRuntimeClient.testConnection();
+            providerHealthRegistry.succeeded("speech");
+            return new SpeechConnectionTestResponse(true, "测试音频已成功生成并识别。");
+        } catch (RuntimeException exception) {
+            providerHealthRegistry.failed("speech");
+            throw exception;
+        }
     }
 
     private SpeechSettingsResponse toResponse(SpeechSettingsService.SpeechSettingsSnapshot settings) {

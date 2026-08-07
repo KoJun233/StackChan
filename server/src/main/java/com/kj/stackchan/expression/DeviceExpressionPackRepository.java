@@ -25,6 +25,8 @@ public interface DeviceExpressionPackRepository extends JpaRepository<DeviceExpr
             Instant updatedAt
     );
 
+    long countByStatusIn(java.util.Collection<DeviceExpressionPackStatus> statuses);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select mapping from DeviceExpressionPackEntity mapping where mapping.deviceId = :deviceId")
     Optional<DeviceExpressionPackEntity> findByDeviceIdForUpdate(@Param("deviceId") UUID deviceId);

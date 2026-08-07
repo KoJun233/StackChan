@@ -1,12 +1,14 @@
 import { apiJson, csrfHeaders, notifySessionExpired, responseError } from '../client'
 
 export interface Device {
+  applicationOtaSupported: boolean
   commandAvailable: boolean
   displayName: string
   firmwareVersion: string
   id: string
   lastSeenAt: string | null
   online: boolean
+  rssi: number | null
   safetyState: string
 }
 

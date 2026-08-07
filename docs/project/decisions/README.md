@@ -41,3 +41,4 @@
 | [0028](0028-confirmed-idempotent-voice-actions.md) | ACCEPTED | 语音副作用先形成绑定设备与会话的结构化提案，经确定性确认后幂等执行。 |
 | [0029](0029-reviewed-memory-suggestions-and-bounded-retrieval.md) | ACCEPTED | 普通完成回合最多提出一条经敏感过滤的待确认记忆，冲突经确认替代，并按相关性有界检索和记录使用 ID。 |
 | [0030](0030-rule-gated-personalized-proactive-care.md) | ACCEPTED | 个性化主动关心仅在确定性规则通过后生成，使用单条授权记忆并执行七天主题冷却。 |
+| [0031](0031-safe-application-firmware-ota-and-health-center.md) | ACCEPTED | 应用固件由管理员手工导入，经同源认证下载、A/B 写入、启动健康确认和 bootloader 自动回退；健康中心只展示安全元数据。 |

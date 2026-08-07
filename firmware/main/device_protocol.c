@@ -200,6 +200,34 @@ esp_err_t device_protocol_encode_heartbeat(char *output,
     return err;
 }
 
+esp_err_t device_protocol_encode_heartbeat_with_ota(char *output,
+                                                    size_t output_size,
+                                                    uint32_t sequence,
+                                                    int battery_percent,
+                                                    int rssi,
+                                                    const char *firmware_version)
+{
+    if (output == NULL || output_size == 0 || sequence == 0 ||
+        battery_percent < 0 || battery_percent > 100 ||
+        !is_valid_firmware_version(firmware_version)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    bool complete = cJSON_AddStringToObject(root, "type", "heartbeat") != NULL &&
+                    cJSON_AddNumberToObject(root, "sequence", sequence) != NULL &&
+                    cJSON_AddNumberToObject(root, "battery_percent", battery_percent) != NULL &&
+                    cJSON_AddNumberToObject(root, "rssi", rssi) != NULL &&
+                    cJSON_AddStringToObject(root, "safety_state", "motion_disabled") != NULL &&
+                    cJSON_AddStringToObject(root, "firmware_version", firmware_version) != NULL &&
+                    cJSON_AddBoolToObject(root, "application_ota_supported", true) != NULL;
+    esp_err_t err = complete ? print_json(root, output, output_size) : ESP_ERR_NO_MEM;
+    cJSON_Delete(root);
+    return err;
+}
+
 bool device_protocol_parse_stop_motion(const char *payload,
                                        size_t payload_size,
                                        char *command_id,
@@ -359,6 +387,26 @@ bool device_protocol_parse_command(const char *payload,
     } else if (valid && strcmp(type->valuestring, "clear_expression_pack") == 0 &&
                cJSON_GetArraySize(root) == 2) {
         command->type = DEVICE_COMMAND_CLEAR_EXPRESSION_PACK;
+    } else if (valid && strcmp(type->valuestring, "install_firmware") == 0 &&
+               cJSON_GetArraySize(root) == 6) {
+        cJSON *job_id = cJSON_GetObjectItemCaseSensitive(root, "job_id");
+        cJSON *version = cJSON_GetObjectItemCaseSensitive(root, "version");
+        cJSON *sha256 = cJSON_GetObjectItemCaseSensitive(root, "sha256");
+        cJSON *artifact_size = cJSON_GetObjectItemCaseSensitive(root, "artifact_size");
+        valid = cJSON_IsString(job_id) && job_id->valuestring != NULL &&
+                is_valid_uuid(job_id->valuestring) &&
+                cJSON_IsString(version) && version->valuestring != NULL &&
+                is_valid_firmware_version(version->valuestring) && strlen(version->valuestring) < 33 &&
+                cJSON_IsString(sha256) && sha256->valuestring != NULL &&
+                is_valid_sha256(sha256->valuestring) &&
+                is_integer_in_range(artifact_size, 256, DEVICE_PROTOCOL_FIRMWARE_MAX_SIZE);
+        if (valid) {
+            command->type = DEVICE_COMMAND_INSTALL_FIRMWARE;
+            memcpy(command->firmware_job_id, job_id->valuestring, strlen(job_id->valuestring) + 1);
+            memcpy(command->firmware_version, version->valuestring, strlen(version->valuestring) + 1);
+            memcpy(command->firmware_sha256, sha256->valuestring, strlen(sha256->valuestring) + 1);
+            command->firmware_artifact_size = artifact_size->valueint;
+        }
     } else {
         valid = false;
     }
@@ -437,6 +485,36 @@ esp_err_t device_protocol_encode_wake_model_status(char *output,
                     cJSON_AddStringToObject(root, "job_id", job_id) != NULL &&
                     cJSON_AddStringToObject(root, "status", status) != NULL &&
                     cJSON_AddStringToObject(root, "model_name", model_name) != NULL &&
+                    cJSON_AddStringToObject(root, "sha256", sha256) != NULL;
+    esp_err_t err = complete ? print_json(root, output, output_size) : ESP_ERR_NO_MEM;
+    cJSON_Delete(root);
+    return err;
+}
+
+esp_err_t device_protocol_encode_firmware_update_status(char *output,
+                                                        size_t output_size,
+                                                        uint32_t sequence,
+                                                        const char *job_id,
+                                                        const char *status,
+                                                        const char *version,
+                                                        const char *sha256)
+{
+    if (output == NULL || output_size == 0 || sequence == 0 || !is_valid_uuid(job_id) ||
+        !(status != NULL && (strcmp(status, "INSTALLED") == 0 ||
+                             strcmp(status, "ROLLED_BACK") == 0)) ||
+        !is_valid_firmware_version(version) || strlen(version) >= 33 ||
+        !is_valid_sha256(sha256)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    bool complete = cJSON_AddStringToObject(root, "type", "firmware_update_status") != NULL &&
+                    cJSON_AddNumberToObject(root, "sequence", sequence) != NULL &&
+                    cJSON_AddStringToObject(root, "job_id", job_id) != NULL &&
+                    cJSON_AddStringToObject(root, "status", status) != NULL &&
+                    cJSON_AddStringToObject(root, "version", version) != NULL &&
                     cJSON_AddStringToObject(root, "sha256", sha256) != NULL;
     esp_err_t err = complete ? print_json(root, output, output_size) : ESP_ERR_NO_MEM;
     cJSON_Delete(root);

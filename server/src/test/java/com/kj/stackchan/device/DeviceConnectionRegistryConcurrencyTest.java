@@ -46,7 +46,7 @@ class DeviceConnectionRegistryConcurrencyTest {
             heartbeatEntered.countDown();
             assertThat(releaseHeartbeat.await(5, TimeUnit.SECONDS)).isTrue();
             return null;
-        }).when(deviceEventService).recordHeartbeat(DEVICE_A, "motion_disabled", null);
+        }).when(deviceEventService).recordHeartbeat(DEVICE_A, "motion_disabled", null, -54, false);
         handler.afterConnectionEstablished(deviceASession);
         handler.afterConnectionEstablished(deviceBSession);
 

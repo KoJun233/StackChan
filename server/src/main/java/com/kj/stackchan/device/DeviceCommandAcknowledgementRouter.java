@@ -4,6 +4,7 @@ import java.util.UUID;
 
 import com.kj.stackchan.reminder.ReminderDeliveryService;
 import com.kj.stackchan.expression.ExpressionPackService;
+import com.kj.stackchan.firmwareupdate.FirmwareUpdateService;
 import com.kj.stackchan.wakeword.WakeWordModelJobService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -15,15 +16,18 @@ public class DeviceCommandAcknowledgementRouter implements DeviceCommandAcknowle
     private final WakeWordModelJobService wakeWordModelJobService;
     private final ReminderDeliveryService reminderDeliveryService;
     private final ExpressionPackService expressionPackService;
+    private final FirmwareUpdateService firmwareUpdateService;
 
     public DeviceCommandAcknowledgementRouter(
             WakeWordModelJobService wakeWordModelJobService,
             ReminderDeliveryService reminderDeliveryService,
-            ExpressionPackService expressionPackService
+            ExpressionPackService expressionPackService,
+            FirmwareUpdateService firmwareUpdateService
     ) {
         this.wakeWordModelJobService = wakeWordModelJobService;
         this.reminderDeliveryService = reminderDeliveryService;
         this.expressionPackService = expressionPackService;
+        this.firmwareUpdateService = firmwareUpdateService;
     }
 
     @Override
@@ -33,7 +37,8 @@ public class DeviceCommandAcknowledgementRouter implements DeviceCommandAcknowle
 
     @Override
     public void record(UUID deviceId, String commandId, boolean accepted, DeviceCommandResult result) {
-        if (!wakeWordModelJobService.recordCommandAcknowledgement(deviceId, commandId, accepted) &&
+        if (!firmwareUpdateService.recordCommandAcknowledgement(deviceId, commandId, accepted) &&
+                !wakeWordModelJobService.recordCommandAcknowledgement(deviceId, commandId, accepted) &&
                 !expressionPackService.recordCommandAcknowledgement(deviceId, commandId, accepted)) {
             reminderDeliveryService.record(deviceId, commandId, accepted, result);
         }

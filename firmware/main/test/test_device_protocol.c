@@ -194,6 +194,8 @@ TEST_CASE("fixed endpoints stay same-origin and credentials stay out of URIs", "
     char voice[256] = {0};
     char reminder[256] = {0};
     char wake_model[256] = {0};
+    char expression_pack[256] = {0};
+    char firmware_update[256] = {0};
     char websocket[256] = {0};
     TEST_ASSERT_TRUE(device_endpoint_build_http_url(identity.server_base_url,
                                                     DEVICE_ENDPOINT_PAIRING_CLAIM_PATH,
@@ -214,6 +216,16 @@ TEST_CASE("fixed endpoints stay same-origin and credentials stay out of URIs", "
         "550e8400-e29b-41d4-a716-446655440000",
         wake_model,
         sizeof(wake_model)));
+    TEST_ASSERT_TRUE(device_endpoint_build_expression_pack_url(
+        identity.server_base_url,
+        "550e8400-e29b-41d4-a716-446655440000",
+        expression_pack,
+        sizeof(expression_pack)));
+    TEST_ASSERT_TRUE(device_endpoint_build_firmware_update_url(
+        identity.server_base_url,
+        "550e8400-e29b-41d4-a716-446655440000",
+        firmware_update,
+        sizeof(firmware_update)));
     TEST_ASSERT_TRUE(device_endpoint_build_websocket_uri(&identity, websocket, sizeof(websocket)));
     TEST_ASSERT_NOT_NULL(strstr(claim, "/api/v1/pairing/claim"));
     TEST_ASSERT_NOT_NULL(strstr(refresh, "/api/v1/devices/token:refresh"));
@@ -222,6 +234,10 @@ TEST_CASE("fixed endpoints stay same-origin and credentials stay out of URIs", "
                                  "/api/v1/device/reminders/f20b6177-3f7a-466a-9eae-70120bbf1912/audio"));
     TEST_ASSERT_NOT_NULL(strstr(wake_model,
                                 "/api/v1/device/wake-models/550e8400-e29b-41d4-a716-446655440000/artifact"));
+    TEST_ASSERT_NOT_NULL(strstr(expression_pack,
+                                "/api/v1/device/expression-packs/550e8400-e29b-41d4-a716-446655440000/artifact"));
+    TEST_ASSERT_NOT_NULL(strstr(firmware_update,
+                                "/api/v1/device/firmware-updates/550e8400-e29b-41d4-a716-446655440000/artifact"));
     TEST_ASSERT_EQUAL_STRING(TEST_WEBSOCKET_URL, websocket);
     TEST_ASSERT_NULL(strchr(websocket, '?'));
     TEST_ASSERT_NULL(strstr(websocket, identity.access_token));
@@ -231,6 +247,8 @@ TEST_CASE("fixed endpoints stay same-origin and credentials stay out of URIs", "
         identity.server_base_url, "../voice/turn", reminder, sizeof(reminder)));
     TEST_ASSERT_FALSE(device_endpoint_build_wake_model_url(
         identity.server_base_url, "../voice/turn", wake_model, sizeof(wake_model)));
+    TEST_ASSERT_FALSE(device_endpoint_build_firmware_update_url(
+        identity.server_base_url, "../voice/turn", firmware_update, sizeof(firmware_update)));
 }
 
 TEST_CASE("compiled mode selects one redirect-safe transport profile", "[device_endpoint]")
@@ -618,6 +636,19 @@ TEST_CASE("heartbeat rejects invalid sequence and battery values", "[device_prot
                       device_protocol_encode_heartbeat(payload, sizeof(payload), 1, 50, -60, NULL));
 }
 
+TEST_CASE("ota capable heartbeat adds one strict capability bit", "[device_protocol]")
+{
+    char payload[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
+    TEST_ASSERT_EQUAL(ESP_OK, device_protocol_encode_heartbeat_with_ota(
+                                  payload, sizeof(payload), 2, 75, -58, "ops-002"));
+    cJSON *root = cJSON_Parse(payload);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_EQUAL_UINT(7, cJSON_GetArraySize(root));
+    TEST_ASSERT_TRUE(cJSON_IsTrue(
+        cJSON_GetObjectItemCaseSensitive(root, "application_ota_supported")));
+    cJSON_Delete(root);
+}
+
 TEST_CASE("only a well-formed stop_motion command is accepted", "[device_protocol]")
 {
     char command_id[DEVICE_PROTOCOL_COMMAND_ID_MAX_LEN] = {0};
@@ -782,6 +813,37 @@ TEST_CASE("wake model installation accepts only the strict bounded schema", "[de
     }
 }
 
+TEST_CASE("application ota accepts only fixed origin verified metadata", "[device_protocol]")
+{
+    const char *sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    char valid[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
+    snprintf(valid, sizeof(valid),
+             "{\"type\":\"install_firmware\",\"command_id\":\"cmd-firmware\","
+             "\"job_id\":\"550e8400-e29b-41d4-a716-446655440000\","
+             "\"version\":\"ops-002\",\"sha256\":\"%s\",\"artifact_size\":3145728}", sha256);
+    device_command_t command = {0};
+
+    TEST_ASSERT_TRUE(device_protocol_parse_command(valid, strlen(valid), &command));
+    TEST_ASSERT_EQUAL(DEVICE_COMMAND_INSTALL_FIRMWARE, command.type);
+    TEST_ASSERT_EQUAL_STRING("550e8400-e29b-41d4-a716-446655440000", command.firmware_job_id);
+    TEST_ASSERT_EQUAL_STRING("ops-002", command.firmware_version);
+    TEST_ASSERT_EQUAL_STRING(sha256, command.firmware_sha256);
+    TEST_ASSERT_EQUAL_INT(3145728, command.firmware_artifact_size);
+
+    const char *external_url =
+        "{\"type\":\"install_firmware\",\"command_id\":\"cmd-firmware\","
+        "\"job_id\":\"550e8400-e29b-41d4-a716-446655440000\",\"version\":\"ops-002\","
+        "\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\","
+        "\"artifact_size\":1024,\"url\":\"https://evil.example/app.bin\"}";
+    const char *too_large =
+        "{\"type\":\"install_firmware\",\"command_id\":\"cmd-firmware\","
+        "\"job_id\":\"550e8400-e29b-41d4-a716-446655440000\",\"version\":\"ops-002\","
+        "\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\","
+        "\"artifact_size\":3145729}";
+    TEST_ASSERT_FALSE(device_protocol_parse_command(external_url, strlen(external_url), &command));
+    TEST_ASSERT_FALSE(device_protocol_parse_command(too_large, strlen(too_large), &command));
+}
+
 TEST_CASE("expression package commands accept only fixed origin metadata", "[device_protocol]")
 {
     const char *sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -842,6 +904,24 @@ TEST_CASE("wake model status preserves verified model identity", "[device_protoc
                                                    payload, sizeof(payload), 10,
                                                    "550e8400-e29b-41d4-a716-446655440000", "FAILED",
                                                    "wn9l_stackchan_custom", sha256));
+}
+
+TEST_CASE("firmware status preserves verified release identity", "[device_protocol]")
+{
+    const char *sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    char payload[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
+    TEST_ASSERT_EQUAL(ESP_OK, device_protocol_encode_firmware_update_status(
+                                  payload, sizeof(payload), 11,
+                                  "550e8400-e29b-41d4-a716-446655440000", "INSTALLED",
+                                  "ops-002", sha256));
+    cJSON *root = cJSON_Parse(payload);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_EQUAL_UINT(6, cJSON_GetArraySize(root));
+    TEST_ASSERT_EQUAL_STRING("firmware_update_status",
+                             cJSON_GetObjectItemCaseSensitive(root, "type")->valuestring);
+    TEST_ASSERT_EQUAL_STRING("ops-002",
+                             cJSON_GetObjectItemCaseSensitive(root, "version")->valuestring);
+    cJSON_Delete(root);
 }
 
 TEST_CASE("wake word selection uses exact packaged names and an explicit fallback", "[wake_word]")

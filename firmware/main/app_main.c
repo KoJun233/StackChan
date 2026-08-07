@@ -1,5 +1,6 @@
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -8,6 +9,7 @@
 #include "device_provisioning.h"
 #include "device_transport.h"
 #include "expression_pack.h"
+#include "firmware_ota.h"
 #include "safety_state.h"
 #include "voice_control.h"
 #include "wake_model_ota.h"
@@ -54,6 +56,18 @@ void app_main(void)
     } else if (hardware_err == ESP_OK) {
         companion_hardware_refresh_face();
     }
+    esp_err_t firmware_ota_err = firmware_ota_init();
+    if (firmware_ota_err != ESP_OK) {
+        ESP_LOGE(TAG, "Firmware OTA state initialization failed: %s", esp_err_to_name(firmware_ota_err));
+    } else {
+        esp_err_t guard_err = firmware_ota_start_health_guard();
+        if (guard_err != ESP_OK) {
+            ESP_LOGE(TAG, "Firmware OTA health guard did not start: %s", esp_err_to_name(guard_err));
+            if (firmware_ota_is_pending()) {
+                esp_restart();
+            }
+        }
+    }
     esp_err_t wake_model_err = wake_model_ota_init();
     if (wake_model_err != ESP_OK) {
         ESP_LOGE(TAG, "Wake model OTA state initialization failed: %s", esp_err_to_name(wake_model_err));
@@ -75,6 +89,13 @@ void app_main(void)
     if (provisioning_err != ESP_OK) {
         ESP_LOGE(TAG, "Provisioning task did not start: %s", esp_err_to_name(provisioning_err));
         safety_state_stop_motion();
+    }
+    if (firmware_ota_err == ESP_OK && firmware_ota_is_pending() && hardware_err == ESP_OK &&
+        wake_model_err == ESP_OK && transport_err == ESP_OK && provisioning_err == ESP_OK) {
+        esp_err_t confirm_err = firmware_ota_confirm_active();
+        if (confirm_err != ESP_OK) {
+            ESP_LOGE(TAG, "Firmware OTA health confirmation failed: %s", esp_err_to_name(confirm_err));
+        }
     }
     if (wake_model_err == ESP_OK) {
         esp_err_t guard_err = wake_model_ota_start_health_guard();

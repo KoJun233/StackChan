@@ -51,6 +51,8 @@ public class DeviceController {
                         device.getDisplayName(),
                         device.getFirmwareVersion(),
                         device.getSafetyState(),
+                        device.getRssi(),
+                        device.isApplicationOtaSupported(),
                         device.getLastSeenAt(),
                         isOnline(device),
                         deviceCommandGateway.isConnected(device.getId())
@@ -80,6 +82,8 @@ public class DeviceController {
             String displayName,
             String firmwareVersion,
             String safetyState,
+            Integer rssi,
+            boolean applicationOtaSupported,
             Instant lastSeenAt,
             boolean online,
             boolean commandAvailable

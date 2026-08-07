@@ -15,6 +15,9 @@
 #define DEVICE_PROTOCOL_WAKE_MODEL_MAX_SIZE (1024 * 1024)
 #define DEVICE_PROTOCOL_EXPRESSION_PACK_ID_MAX_LEN 37
 #define DEVICE_PROTOCOL_EXPRESSION_PACK_MAX_SIZE (1536 * 1024)
+#define DEVICE_PROTOCOL_FIRMWARE_JOB_ID_MAX_LEN 37
+#define DEVICE_PROTOCOL_FIRMWARE_VERSION_MAX_LEN 33
+#define DEVICE_PROTOCOL_FIRMWARE_MAX_SIZE (3 * 1024 * 1024)
 #define DEVICE_PROTOCOL_TURN_ID_LEN 37
 #define DEVICE_PROTOCOL_SPEECH_START_THRESHOLD_MIN 100
 #define DEVICE_PROTOCOL_SPEECH_START_THRESHOLD_MAX 5000
@@ -39,6 +42,7 @@ typedef enum {
     DEVICE_COMMAND_INSTALL_WAKE_MODEL,
     DEVICE_COMMAND_INSTALL_EXPRESSION_PACK,
     DEVICE_COMMAND_CLEAR_EXPRESSION_PACK,
+    DEVICE_COMMAND_INSTALL_FIRMWARE,
 } device_command_type_t;
 
 typedef enum {
@@ -93,6 +97,10 @@ typedef struct {
     char expression_pack_id[DEVICE_PROTOCOL_EXPRESSION_PACK_ID_MAX_LEN];
     char expression_pack_sha256[DEVICE_PROTOCOL_SHA256_MAX_LEN];
     int expression_pack_artifact_size;
+    char firmware_job_id[DEVICE_PROTOCOL_FIRMWARE_JOB_ID_MAX_LEN];
+    char firmware_version[DEVICE_PROTOCOL_FIRMWARE_VERSION_MAX_LEN];
+    char firmware_sha256[DEVICE_PROTOCOL_SHA256_MAX_LEN];
+    int firmware_artifact_size;
 } device_command_t;
 
 esp_err_t device_protocol_encode_heartbeat(char *output,
@@ -101,6 +109,13 @@ esp_err_t device_protocol_encode_heartbeat(char *output,
                                            int battery_percent,
                                            int rssi,
                                            const char *firmware_version);
+
+esp_err_t device_protocol_encode_heartbeat_with_ota(char *output,
+                                                    size_t output_size,
+                                                    uint32_t sequence,
+                                                    int battery_percent,
+                                                    int rssi,
+                                                    const char *firmware_version);
 
 bool device_protocol_parse_stop_motion(const char *payload,
                                        size_t payload_size,
@@ -131,6 +146,14 @@ esp_err_t device_protocol_encode_wake_model_status(char *output,
                                                    const char *status,
                                                    const char *model_name,
                                                    const char *sha256);
+
+esp_err_t device_protocol_encode_firmware_update_status(char *output,
+                                                        size_t output_size,
+                                                        uint32_t sequence,
+                                                        const char *job_id,
+                                                        const char *status,
+                                                        const char *version,
+                                                        const char *sha256);
 
 esp_err_t device_protocol_encode_voice_turn_stage(char *output,
                                                   size_t output_size,

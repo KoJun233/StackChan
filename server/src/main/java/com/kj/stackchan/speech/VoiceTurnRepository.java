@@ -23,4 +23,6 @@ public interface VoiceTurnRepository extends JpaRepository<VoiceTurnEntity, UUID
     );
 
     List<VoiceTurnEntity> findByDeviceIdAndStatusIn(UUID deviceId, Collection<VoiceTurnStatus> statuses);
+
+    List<VoiceTurnEntity> findTop10ByStatusOrderByUpdatedAtDesc(VoiceTurnStatus status);
 }

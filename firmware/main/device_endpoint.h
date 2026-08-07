@@ -32,5 +32,9 @@ bool device_endpoint_build_expression_pack_url(const char *server_base_url,
                                                const char *pack_id,
                                                char *url,
                                                size_t size);
+bool device_endpoint_build_firmware_update_url(const char *server_base_url,
+                                               const char *job_id,
+                                               char *url,
+                                               size_t size);
 void device_endpoint_configure_http_client(esp_http_client_config_t *config);
 void device_endpoint_configure_websocket_client(esp_websocket_client_config_t *config);
