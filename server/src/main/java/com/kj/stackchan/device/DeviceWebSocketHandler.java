@@ -36,6 +36,10 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     private static final Set<String> HEARTBEAT_WITH_FIRMWARE_FIELDS = Set.of(
             "type", "sequence", "battery_percent", "rssi", "safety_state", "firmware_version"
     );
+    private static final Set<String> HEARTBEAT_WITH_OTA_FIELDS = Set.of(
+            "type", "sequence", "battery_percent", "rssi", "safety_state", "firmware_version",
+            "application_ota_supported"
+    );
     private static final Pattern FIRMWARE_VERSION_PATTERN = Pattern.compile("[A-Za-z0-9._-]{1,80}");
     private static final Set<String> COMMAND_ACK_FIELDS = Set.of(
             "type", "sequence", "command_id", "accepted"
@@ -45,6 +49,9 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     );
     private static final Set<String> WAKE_MODEL_STATUS_FIELDS = Set.of(
             "type", "sequence", "job_id", "status", "model_name", "sha256"
+    );
+    private static final Set<String> FIRMWARE_UPDATE_STATUS_FIELDS = Set.of(
+            "type", "sequence", "job_id", "status", "version", "sha256"
     );
     private static final Pattern WAKE_MODEL_NAME_PATTERN = Pattern.compile("[a-z0-9_]{1,31}");
     private static final Pattern SHA256_PATTERN = Pattern.compile("[a-f0-9]{64}");
@@ -68,10 +75,16 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     private final VoiceTurnDiagnosticsService voiceTurnDiagnosticsService;
     private final VoiceTurnCancellationService voiceTurnCancellationService;
     private DeviceExpressionPackCoordinator expressionPackCoordinator;
+    private DeviceFirmwareUpdateStatusService firmwareUpdateStatusService;
 
     @Autowired(required = false)
     void setExpressionPackCoordinator(DeviceExpressionPackCoordinator expressionPackCoordinator) {
         this.expressionPackCoordinator = expressionPackCoordinator;
+    }
+
+    @Autowired(required = false)
+    void setFirmwareUpdateStatusService(DeviceFirmwareUpdateStatusService firmwareUpdateStatusService) {
+        this.firmwareUpdateStatusService = firmwareUpdateStatusService;
     }
 
     @Autowired
@@ -264,7 +277,13 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
 
     private void processEvent(UUID deviceId, DeviceInboundEvent event) {
         if (event instanceof HeartbeatEvent heartbeat) {
-            deviceEventService.recordHeartbeat(deviceId, heartbeat.safetyState(), heartbeat.firmwareVersion());
+            deviceEventService.recordHeartbeat(
+                    deviceId,
+                    heartbeat.safetyState(),
+                    heartbeat.firmwareVersion(),
+                    heartbeat.rssi(),
+                    heartbeat.applicationOtaSupported()
+            );
             return;
         }
         if (event instanceof WakeModelStatusEvent modelStatus) {
@@ -275,6 +294,18 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
                     modelStatus.modelName(),
                     modelStatus.sha256()
             );
+            return;
+        }
+        if (event instanceof FirmwareUpdateStatusEvent firmwareStatus) {
+            if (firmwareUpdateStatusService != null) {
+                firmwareUpdateStatusService.record(
+                        deviceId,
+                        firmwareStatus.jobId(),
+                        firmwareStatus.status(),
+                        firmwareStatus.version(),
+                        firmwareStatus.sha256()
+                );
+            }
             return;
         }
         if (event instanceof VoiceTurnStageEvent voiceTurnStage) {
@@ -334,6 +365,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
                 case "heartbeat" -> parseHeartbeat(root);
                 case "command_ack" -> parseCommandAcknowledgement(root);
                 case "wake_model_status" -> parseWakeModelStatus(root);
+                case "firmware_update_status" -> parseFirmwareUpdateStatus(root);
                 case "voice_turn_stage" -> parseVoiceTurnStage(root);
                 default -> throw new InvalidDeviceEventException();
             };
@@ -360,7 +392,17 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         if (firmwareVersion != null && !FIRMWARE_VERSION_PATTERN.matcher(firmwareVersion).matches()) {
             throw new InvalidDeviceEventException();
         }
-        return new HeartbeatEvent(sequence, batteryPercent, rssi, safetyState, firmwareVersion);
+        boolean applicationOtaSupported = false;
+        if (root.has("application_ota_supported")) {
+            JsonNode otaSupported = root.get("application_ota_supported");
+            if (!otaSupported.isBoolean() || !otaSupported.booleanValue()) {
+                throw new InvalidDeviceEventException();
+            }
+            applicationOtaSupported = true;
+        }
+        return new HeartbeatEvent(
+                sequence, batteryPercent, rssi, safetyState, firmwareVersion, applicationOtaSupported
+        );
     }
 
     private CommandAcknowledgementEvent parseCommandAcknowledgement(JsonNode root) {
@@ -407,6 +449,24 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             throw new InvalidDeviceEventException();
         }
         return new WakeModelStatusEvent(sequence, UUID.fromString(jobId), status, modelName, sha256);
+    }
+
+    private FirmwareUpdateStatusEvent parseFirmwareUpdateStatus(JsonNode root) {
+        requireOnlyFields(root, FIRMWARE_UPDATE_STATUS_FIELDS);
+        long sequence = requiredPositiveSequence(root);
+        String jobId = requiredText(root, "job_id");
+        String status = requiredText(root, "status");
+        String version = requiredText(root, "version");
+        String sha256 = requiredText(root, "sha256");
+        if (!UUID_PATTERN.matcher(jobId).matches() ||
+                !("INSTALLED".equals(status) || "ROLLED_BACK".equals(status)) ||
+                !FIRMWARE_VERSION_PATTERN.matcher(version).matches() ||
+                !SHA256_PATTERN.matcher(sha256).matches()) {
+            throw new InvalidDeviceEventException();
+        }
+        return new FirmwareUpdateStatusEvent(
+                sequence, UUID.fromString(jobId), status, version, sha256
+        );
     }
 
     private VoiceTurnStageEvent parseVoiceTurnStage(JsonNode root) {
@@ -488,7 +548,9 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         return (root.size() == HEARTBEAT_FIELDS.size() && root.properties().stream()
                 .allMatch(entry -> HEARTBEAT_FIELDS.contains(entry.getKey())))
                 || (root.size() == HEARTBEAT_WITH_FIRMWARE_FIELDS.size() && root.properties().stream()
-                .allMatch(entry -> HEARTBEAT_WITH_FIRMWARE_FIELDS.contains(entry.getKey())));
+                .allMatch(entry -> HEARTBEAT_WITH_FIRMWARE_FIELDS.contains(entry.getKey())))
+                || (root.size() == HEARTBEAT_WITH_OTA_FIELDS.size() && root.properties().stream()
+                .allMatch(entry -> HEARTBEAT_WITH_OTA_FIELDS.contains(entry.getKey())));
     }
 
     private AtomicLong lastSequence(WebSocketSession session) {
@@ -511,7 +573,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     }
 
     private sealed interface DeviceInboundEvent permits HeartbeatEvent, CommandAcknowledgementEvent,
-            WakeModelStatusEvent, VoiceTurnStageEvent {
+            WakeModelStatusEvent, FirmwareUpdateStatusEvent, VoiceTurnStageEvent {
 
         long sequence();
     }
@@ -521,7 +583,8 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             int batteryPercent,
             int rssi,
             String safetyState,
-            String firmwareVersion
+            String firmwareVersion,
+            boolean applicationOtaSupported
     )
             implements DeviceInboundEvent {
     }
@@ -540,6 +603,15 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             UUID jobId,
             String status,
             String modelName,
+            String sha256
+    ) implements DeviceInboundEvent {
+    }
+
+    private record FirmwareUpdateStatusEvent(
+            long sequence,
+            UUID jobId,
+            String status,
+            String version,
             String sha256
     ) implements DeviceInboundEvent {
     }

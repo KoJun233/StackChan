@@ -19,6 +19,15 @@ public interface DeviceCommandGateway {
             String commandId
     );
 
+    boolean installFirmware(
+            UUID deviceId,
+            UUID jobId,
+            String version,
+            String sha256,
+            int artifactSize,
+            String commandId
+    );
+
     boolean installExpressionPack(
             UUID deviceId,
             UUID packId,

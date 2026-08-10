@@ -23,17 +23,30 @@ public class DeviceEventService {
 
     @Transactional
     public void recordHeartbeat(UUID deviceId, String safetyState) {
-        recordHeartbeat(deviceId, safetyState, null);
+        recordHeartbeat(deviceId, safetyState, null, null, false);
     }
 
     @Transactional
     public void recordHeartbeat(UUID deviceId, String safetyState, String firmwareVersion) {
+        recordHeartbeat(deviceId, safetyState, firmwareVersion, null, false);
+    }
+
+    @Transactional
+    public void recordHeartbeat(
+            UUID deviceId,
+            String safetyState,
+            String firmwareVersion,
+            Integer rssi,
+            boolean applicationOtaSupported
+    ) {
         if (!MOTION_DISABLED.equals(safetyState)) {
             throw new IllegalArgumentException("Heartbeats cannot enable motion");
         }
 
         deviceRepository.findById(deviceId).ifPresent(device ->
-                device.recordHeartbeat(clock.instant(), MOTION_DISABLED, firmwareVersion)
+                device.recordHeartbeat(
+                        clock.instant(), MOTION_DISABLED, firmwareVersion, rssi, applicationOtaSupported
+                )
         );
     }
 }

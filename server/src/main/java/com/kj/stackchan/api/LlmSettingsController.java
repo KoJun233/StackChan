@@ -4,6 +4,7 @@ import java.time.Instant;
 
 import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.llm.LlmRuntimeClientFactory;
+import com.kj.stackchan.health.ProviderHealthRegistry;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -22,13 +23,16 @@ public class LlmSettingsController {
 
     private final LlmSettingsService llmSettingsService;
     private final LlmRuntimeClientFactory llmRuntimeClientFactory;
+    private final ProviderHealthRegistry providerHealthRegistry;
 
     public LlmSettingsController(
             LlmSettingsService llmSettingsService,
-            LlmRuntimeClientFactory llmRuntimeClientFactory
+            LlmRuntimeClientFactory llmRuntimeClientFactory,
+            ProviderHealthRegistry providerHealthRegistry
     ) {
         this.llmSettingsService = llmSettingsService;
         this.llmRuntimeClientFactory = llmRuntimeClientFactory;
+        this.providerHealthRegistry = providerHealthRegistry;
     }
 
     @GetMapping
@@ -48,12 +52,18 @@ public class LlmSettingsController {
 
     @PostMapping(path = "/test")
     public LlmConnectionTestResponse testConnection() {
-        String message = llmRuntimeClientFactory.createChatClient()
-                .prompt()
-                .user("请只返回 pong，不要解释。")
-                .call()
-                .content();
-        return new LlmConnectionTestResponse(true, message);
+        try {
+            String message = llmRuntimeClientFactory.createChatClient()
+                    .prompt()
+                    .user("请只返回 pong，不要解释。")
+                    .call()
+                    .content();
+            providerHealthRegistry.succeeded("llm");
+            return new LlmConnectionTestResponse(true, message);
+        } catch (RuntimeException exception) {
+            providerHealthRegistry.failed("llm");
+            throw exception;
+        }
     }
 
     private LlmSettingsResponse toResponse(LlmSettingsService.LlmSettingsSnapshot settings) {

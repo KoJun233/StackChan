@@ -13,6 +13,8 @@ import com.kj.stackchan.expression.InvalidExpressionPackException;
 import com.kj.stackchan.llm.InvalidLlmSettingsException;
 import com.kj.stackchan.llm.LlmProviderUnavailableException;
 import com.kj.stackchan.interaction.InvalidInteractionSettingsException;
+import com.kj.stackchan.firmwareupdate.FirmwareUpdateNotFoundException;
+import com.kj.stackchan.firmwareupdate.InvalidFirmwareUpdateException;
 import com.kj.stackchan.interaction.ProactiveTopicCooldownNotFoundException;
 import com.kj.stackchan.memory.InvalidMemoryException;
 import com.kj.stackchan.memory.MemoryNotFoundException;
@@ -121,6 +123,13 @@ public class DeviceApiExceptionHandler {
     );
     public static final ApiError EXPRESSION_PACK_NOT_FOUND = new ApiError(
             "expression_pack_not_found", "未找到可用的宠物表情资源包。"
+    );
+    public static final ApiError INVALID_FIRMWARE_UPDATE = new ApiError(
+            "invalid_firmware_update",
+            "固件必须是版本匹配的 StackChan 应用镜像，目标设备需在线、已完成 OTA 引导并通过当前版本确认。"
+    );
+    public static final ApiError FIRMWARE_UPDATE_NOT_FOUND = new ApiError(
+            "firmware_update_not_found", "未找到可供当前设备下载的固件升级任务。"
     );
 
     @ExceptionHandler(PairingCodeUnavailableException.class)
@@ -258,6 +267,16 @@ public class DeviceApiExceptionHandler {
         return response(HttpStatus.NOT_FOUND, EXPRESSION_PACK_NOT_FOUND);
     }
 
+    @ExceptionHandler(InvalidFirmwareUpdateException.class)
+    ResponseEntity<ApiError> invalidFirmwareUpdate(InvalidFirmwareUpdateException exception) {
+        return response(HttpStatus.CONFLICT, INVALID_FIRMWARE_UPDATE);
+    }
+
+    @ExceptionHandler(FirmwareUpdateNotFoundException.class)
+    ResponseEntity<ApiError> firmwareUpdateNotFound(FirmwareUpdateNotFoundException exception) {
+        return response(HttpStatus.NOT_FOUND, FIRMWARE_UPDATE_NOT_FOUND);
+    }
+
 
 
     @ExceptionHandler({
@@ -278,6 +297,9 @@ public class DeviceApiExceptionHandler {
         }
         if (requestUri.startsWith("/api/v1/settings/interactions")) {
             return response(HttpStatus.BAD_REQUEST, INVALID_INTERACTION_SETTINGS);
+        }
+        if (requestUri.startsWith("/api/v1/firmware")) {
+            return response(HttpStatus.CONFLICT, INVALID_FIRMWARE_UPDATE);
         }
         if (requestUri.startsWith("/api/v1/persona")) {
             return response(HttpStatus.BAD_REQUEST, INVALID_PERSONA);

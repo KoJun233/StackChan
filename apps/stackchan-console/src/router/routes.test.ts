@@ -19,6 +19,7 @@ describe('stackChan console routes', () => {
     expect(routes).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'deviceOverview', path: 'overview' }),
       expect.objectContaining({ name: 'devicePairing', path: 'pairing', meta: expect.objectContaining({ title: '设备配网' }) }),
+      expect.objectContaining({ name: 'deviceHealth', path: 'health', meta: expect.objectContaining({ title: '健康中心' }) }),
       expect.objectContaining({ name: 'companionChat', path: 'chat', meta: expect.objectContaining({ title: '陪伴聊天', keepAlive: true }) }),
       expect.objectContaining({ name: 'companionPersona', path: 'persona', meta: expect.objectContaining({ title: '人设设置' }) }),
       expect.objectContaining({ name: 'companionExpressionPacks', path: 'expressions', meta: expect.objectContaining({ title: '宠物表情包' }) }),

@@ -199,6 +199,23 @@ public class DeviceConnectionRegistry {
         return sendPayload(deviceId, payload);
     }
 
+    public boolean sendFirmwareInstall(
+            UUID deviceId,
+            UUID jobId,
+            String version,
+            String sha256,
+            int artifactSize,
+            String commandId
+    ) {
+        try {
+            return sendPayload(deviceId, objectMapper.writeValueAsString(new InstallFirmwareCommand(
+                    "install_firmware", commandId, jobId.toString(), version, sha256, artifactSize
+            )));
+        } catch (JsonProcessingException exception) {
+            return false;
+        }
+    }
+
     public boolean sendExpressionPackInstall(
             UUID deviceId,
             UUID packId,
@@ -589,6 +606,16 @@ public class DeviceConnectionRegistry {
             String command_id,
             String job_id,
             String model_name,
+            String sha256,
+            int artifact_size
+    ) {
+    }
+
+    private record InstallFirmwareCommand(
+            String type,
+            String command_id,
+            String job_id,
+            String version,
             String sha256,
             int artifact_size
     ) {

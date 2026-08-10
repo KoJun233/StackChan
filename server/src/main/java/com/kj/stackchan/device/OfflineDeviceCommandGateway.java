@@ -50,6 +50,20 @@ class OfflineDeviceCommandGateway implements DeviceCommandGateway {
     }
 
     @Override
+    public boolean installFirmware(
+            UUID deviceId,
+            UUID jobId,
+            String version,
+            String sha256,
+            int artifactSize,
+            String commandId
+    ) {
+        return connectionRegistry.sendFirmwareInstall(
+                deviceId, jobId, version, sha256, artifactSize, commandId
+        );
+    }
+
+    @Override
     public boolean installExpressionPack(
             UUID deviceId,
             UUID packId,

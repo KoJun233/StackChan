@@ -26,6 +26,7 @@
 #include "device_endpoint.h"
 #include "device_protocol.h"
 #include "expression_pack.h"
+#include "firmware_ota.h"
 #include "safety_state.h"
 #include "voice_control.h"
 #include "wake_model_ota.h"
@@ -61,6 +62,11 @@ typedef struct {
 } expression_pack_command_t;
 
 typedef struct {
+    char command_id[DEVICE_PROTOCOL_COMMAND_ID_MAX_LEN];
+    firmware_ota_request_t request;
+} firmware_command_t;
+
+typedef struct {
     char turn_id[DEVICE_PROTOCOL_TURN_ID_LEN];
     device_voice_turn_stage_t stage;
     uint32_t elapsed_ms;
@@ -72,6 +78,7 @@ typedef struct {
     QueueHandle_t reminder_queue;
     QueueHandle_t wake_model_queue;
     QueueHandle_t expression_pack_queue;
+    QueueHandle_t firmware_queue;
     SemaphoreHandle_t send_mutex;
     portMUX_TYPE sequence_lock;
     uint32_t next_sequence;
@@ -79,6 +86,7 @@ typedef struct {
     volatile bool failed;
     bool heartbeat_sent;
     bool wake_model_report_sent;
+    bool firmware_report_sent;
 } websocket_connection_t;
 
 static const char *TAG = "device_transport";
@@ -430,6 +438,19 @@ static void websocket_event_handler(void *handler_args,
             xQueueSend(connection->expression_pack_queue, &clear, 0) != pdTRUE) {
             send_command_ack(connection, command.command_id, false, DEVICE_COMMAND_RESULT_FAILED);
         }
+        return;
+    }
+    if (command.type == DEVICE_COMMAND_INSTALL_FIRMWARE) {
+        firmware_command_t install = {0};
+        memcpy(install.command_id, command.command_id, sizeof(install.command_id));
+        memcpy(install.request.job_id, command.firmware_job_id, sizeof(install.request.job_id));
+        memcpy(install.request.version, command.firmware_version, sizeof(install.request.version));
+        memcpy(install.request.sha256, command.firmware_sha256, sizeof(install.request.sha256));
+        install.request.artifact_size = (size_t)command.firmware_artifact_size;
+        if (connection->firmware_queue == NULL ||
+            xQueueSend(connection->firmware_queue, &install, 0) != pdTRUE) {
+            send_command_ack(connection, command.command_id, false, DEVICE_COMMAND_RESULT_FAILED);
+        }
     }
 }
 
@@ -590,9 +611,10 @@ static bool run_websocket_connection(const device_identity_t *identity)
     connection.reminder_queue = xQueueCreate(REMINDER_QUEUE_LENGTH, sizeof(reminder_command_t));
     connection.wake_model_queue = xQueueCreate(1, sizeof(wake_model_command_t));
     connection.expression_pack_queue = xQueueCreate(1, sizeof(expression_pack_command_t));
+    connection.firmware_queue = xQueueCreate(1, sizeof(firmware_command_t));
     connection.send_mutex = xSemaphoreCreateMutex();
     if (connection.reminder_queue == NULL || connection.wake_model_queue == NULL ||
-        connection.expression_pack_queue == NULL ||
+        connection.expression_pack_queue == NULL || connection.firmware_queue == NULL ||
         connection.send_mutex == NULL) {
         if (connection.reminder_queue != NULL) {
             vQueueDelete(connection.reminder_queue);
@@ -602,6 +624,9 @@ static bool run_websocket_connection(const device_identity_t *identity)
         }
         if (connection.expression_pack_queue != NULL) {
             vQueueDelete(connection.expression_pack_queue);
+        }
+        if (connection.firmware_queue != NULL) {
+            vQueueDelete(connection.firmware_queue);
         }
         if (connection.send_mutex != NULL) {
             vSemaphoreDelete(connection.send_mutex);
@@ -616,6 +641,7 @@ static bool run_websocket_connection(const device_identity_t *identity)
         vQueueDelete(connection.reminder_queue);
         vQueueDelete(connection.wake_model_queue);
         vQueueDelete(connection.expression_pack_queue);
+        vQueueDelete(connection.firmware_queue);
         vSemaphoreDelete(connection.send_mutex);
         memset(authorization_header, 0, sizeof(authorization_header));
         memset(uri, 0, sizeof(uri));
@@ -637,8 +663,9 @@ static bool run_websocket_connection(const device_identity_t *identity)
             const esp_app_desc_t *app_description = esp_app_get_description();
             if (sequence == 0 ||
                 app_description == NULL ||
-                device_protocol_encode_heartbeat(heartbeat, sizeof(heartbeat), sequence, 0, transport_rssi(),
-                                                 app_description->version) != ESP_OK ||
+                device_protocol_encode_heartbeat_with_ota(
+                    heartbeat, sizeof(heartbeat), sequence, 0, transport_rssi(),
+                    app_description->version) != ESP_OK ||
                 !connection_send_text(&connection, heartbeat)) {
                 connection.failed = true;
                 safety_state_stop_motion();
@@ -665,6 +692,37 @@ static bool run_websocket_connection(const device_identity_t *identity)
                     break;
                 }
                 connection.wake_model_report_sent = true;
+            }
+        }
+        if (connection.connected && !connection.firmware_report_sent) {
+            firmware_ota_report_t report = {0};
+            if (firmware_ota_get_report(&report)) {
+                char payload[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
+                uint32_t sequence = connection_next_sequence(&connection);
+                const char *status = report.status == FIRMWARE_OTA_REPORT_INSTALLED
+                                         ? "INSTALLED" : "ROLLED_BACK";
+                if (sequence == 0 ||
+                    device_protocol_encode_firmware_update_status(
+                        payload, sizeof(payload), sequence, report.job_id, status,
+                        report.version, report.sha256) != ESP_OK ||
+                    !connection_send_text(&connection, payload)) {
+                    connection.failed = true;
+                    safety_state_stop_motion();
+                    break;
+                }
+                connection.firmware_report_sent = true;
+            }
+        }
+        firmware_command_t firmware_install = {0};
+        if (connection.connected &&
+            xQueueReceive(connection.firmware_queue, &firmware_install, 0) == pdTRUE) {
+            bool accepted = firmware_ota_install(identity, &firmware_install.request) == ESP_OK;
+            send_command_ack(&connection, firmware_install.command_id, accepted,
+                             accepted ? DEVICE_COMMAND_RESULT_NONE : DEVICE_COMMAND_RESULT_FAILED);
+            if (accepted) {
+                ESP_LOGI(TAG, "Firmware verified; restarting into pending OTA partition");
+                vTaskDelay(pdMS_TO_TICKS(250));
+                esp_restart();
             }
         }
         wake_model_command_t install = {0};
@@ -738,6 +796,7 @@ static bool run_websocket_connection(const device_identity_t *identity)
     vQueueDelete(connection.reminder_queue);
     vQueueDelete(connection.wake_model_queue);
     vQueueDelete(connection.expression_pack_queue);
+    vQueueDelete(connection.firmware_queue);
     vSemaphoreDelete(connection.send_mutex);
     memset(authorization_header, 0, sizeof(authorization_header));
     memset(uri, 0, sizeof(uri));

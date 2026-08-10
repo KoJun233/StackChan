@@ -30,6 +30,12 @@ public class DeviceEntity {
     @Column(name = "safety_state", nullable = false)
     private String safetyState = "motion_disabled";
 
+    @Column
+    private Integer rssi;
+
+    @Column(name = "application_ota_supported", nullable = false)
+    private boolean applicationOtaSupported;
+
     @Column(name = "refresh_token_hash")
     private String refreshTokenHash;
 
@@ -71,6 +77,14 @@ public class DeviceEntity {
         return safetyState;
     }
 
+    public Integer getRssi() {
+        return rssi;
+    }
+
+    public boolean isApplicationOtaSupported() {
+        return applicationOtaSupported;
+    }
+
     public String getRefreshTokenHash() {
         return refreshTokenHash;
     }
@@ -86,6 +100,7 @@ public class DeviceEntity {
     void prepareForRepairing(String firmwareVersion) {
         this.firmwareVersion = firmwareVersion;
         this.safetyState = "motion_disabled";
+        this.applicationOtaSupported = false;
     }
 
     void rotateCredentials(String refreshTokenHash, Instant issuedAt) {
@@ -94,11 +109,23 @@ public class DeviceEntity {
         this.credentialVersion++;
     }
 
-    void recordHeartbeat(Instant lastSeenAt, String safetyState, String firmwareVersion) {
+    void recordHeartbeat(
+            Instant lastSeenAt,
+            String safetyState,
+            String firmwareVersion,
+            Integer rssi,
+            boolean applicationOtaSupported
+    ) {
         this.lastSeenAt = lastSeenAt;
         this.safetyState = safetyState;
+        this.rssi = rssi;
+        this.applicationOtaSupported = applicationOtaSupported;
         if (firmwareVersion != null) {
             this.firmwareVersion = firmwareVersion;
         }
+    }
+
+    void recordHeartbeat(Instant lastSeenAt, String safetyState, String firmwareVersion) {
+        recordHeartbeat(lastSeenAt, safetyState, firmwareVersion, null, false);
     }
 }

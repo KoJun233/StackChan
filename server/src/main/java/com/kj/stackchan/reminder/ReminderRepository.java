@@ -31,4 +31,6 @@ public interface ReminderRepository extends JpaRepository<ReminderEntity, UUID>,
     boolean existsByDeviceIdAndStatus(UUID deviceId, ReminderStatus status);
 
     boolean existsByDeviceIdAndSourceAndStatus(UUID deviceId, ReminderSource source, ReminderStatus status);
+
+    long countByStatusIn(java.util.Collection<ReminderStatus> statuses);
 }

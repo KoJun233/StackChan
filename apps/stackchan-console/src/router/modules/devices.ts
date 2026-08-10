@@ -32,6 +32,15 @@ const deviceRoute: RouteRecordRaw = {
         icon: 'i-ri:wifi-line',
       },
     },
+    {
+      path: 'health',
+      name: 'deviceHealth',
+      component: () => import('@/views/devices/health/index.vue'),
+      meta: {
+        title: '健康中心',
+        icon: 'i-ri:heart-pulse-line',
+      },
+    },
   ],
 }
 

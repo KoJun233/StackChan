@@ -1,17 +1,25 @@
 # 部署工作流
 
-- 状态：READY
-- 最后更新：2026-08-04
-- 当前分支：`codex/int-012-bounded-proactive-care`
-- 基准提交：`d7f38bf`
-- 最后验证提交：`b35918b`
-- 当前运行态代码：INT-012 本地候选 `b35918b` / Flyway V26、server 容器 `865d9acf3984`、运行镜像 `sha256:bfe34a0206969ccd7fecb073b00025bfe5c1f7f266c55f0aa2e829127ea97cd7`；CoreS3 `dd81a7e / motion_disabled`。
+- 状态：IN_PROGRESS
+- 最后更新：2026-08-10
+- 当前分支：`codex/ops-002-firmware-ota-health`
+- 基准提交：`9377b8d`
+- 最后验证提交：`3ebdb65`
+- 当前运行态代码：OPS-002 server 候选 `2bd8cdb` / Flyway V27、server 镜像 `sha256:c8224e760c85750abe5b4b048540e028ab8b403d4ecbf1d9f73eb4ee3579cbf3`；CoreS3 `3ebdb65 / motion_disabled / OTA=true`。
 
 ## 当前目标
 
-INT-012 server-first V26 已发布并完成自动及人工验证；用户确认无问题，等待明确推送授权。回退镜像、PostgreSQL、Redis、卷、端口、凭据、固件、NVS 和生产 HTTPS-only 边界保持不变。
+OPS-002 候选已按 server-first 顺序替换 LAN server、迁移到 V27 并完成旧固件兼容；经精确授权，一次 USB 引导也已完成。下一步等待健康中心人工验收，实际应用 OTA 或回退演练仍需新的逐次授权。
 
 ## 已完成
+
+- 候选已通过服务端 322/322、空库 V1..V27、前端 66/66、类型检查、production build、ESP-IDF 协议/LAN HTTP Quad 构建、固件回归和 rollback 配置检查。
+- 新增应用 OTA runbook，明确 server-first、旧固件能力 false、首次 USB 引导逐次授权、同源认证下载、NVS 保留和回退演练边界；生产仍为 HTTPS-only。
+- 发布前使用既有备份容器完成新逻辑备份与最新备份隔离恢复验证，均成功退出；V26 镜像保留为 `stackchan-foundation-server:rollback-2bd8cdb-pre-v27`。
+- 正式 Dockerfile 构建 `sha256:c8224e760c85750abe5b4b048540e028ab8b403d4ecbf1d9f73eb4ee3579cbf3`，仅替换 server 为容器 `333b3f91d4f8`。PostgreSQL、Redis 与备份容器保持 `6d8feaa18623`、`58e31a403637`、`c94b190f0428`，LAN `0.0.0.0:8080` 和生产 HTTPS-only 边界未变。
+- 发布后公开健康接口与网页为 200、Flyway `27|true`、固件表存在、server 重启和错误为 0；未登录健康与固件 API 均为 401。旧 CoreS3 心跳保持 `dd81a7e / motion_disabled / OTA=false`，固件发布、升级任务和活动任务均为 0，未发送 `install_firmware`。
+- 备份检查时曾误用默认 Compose 项目名，短暂创建 `stackchan-postgres-1`、`stackchan_default` 和空备份卷，其中临时 PostgreSQL 容器约 17 秒挂载了现有外部数据卷。发现后先核对精确目标，再仅删除这三个临时资源；既有 `stackchan-foundation-*` 容器未删除。随后确认 PostgreSQL 可读写就绪、V27 迁移完整、无损坏相关日志，并重新完成逻辑备份与隔离恢复；未安装额外数据库扩展，当前未观察到数据损坏迹象。
+- 经用户精确授权，从干净 `3ebdb65` 构建并完整刷入 CoreS3 `COM3` 的 LAN HTTP Quad 五个非 NVS 区域；五次独立回读、启动与跨两个心跳周期验证通过。设备复用原 NVS 身份，当前为 `3ebdb65 / motion_disabled / OTA=true`；固件发布和升级任务均为 0，server 健康 200、重启和错误为 0。
 
 - INT-012 正式候选包含 V26 交互开关、主动提醒生成元数据和主题冷却表；本地 Maven 309/309、空库 V1..V26、前端 66/66、类型检查和生产构建通过。
 - 发布前恢复既有备份容器并完成启动备份与最新备份隔离恢复验证；V25 镜像保留为 `stackchan-foundation-server:rollback-b35918b-pre-v26`。
@@ -90,11 +98,11 @@ INT-012 server-first V26 已发布并完成自动及人工验证；用户确认�
 
 ## 正在进行
 
-无部署正在进行；当前运行态保持 INT-009 server/Flyway V23 与 CoreS3 `dd81a7e / motion_disabled`。
+server-first 与一次 USB 引导均已完成；当前运行态为 OPS-002 server 候选 `2bd8cdb` / Flyway V27 与 CoreS3 `3ebdb65 / motion_disabled / OTA=true`。等待人工健康中心验收，不创建 OTA 任务。
 
 ## 下一步操作
 
-用户已确认人工测试无问题并授权推送；下一步由用户创建 PR、人工审核并合并，不再重复替换服务。
+用户刷新已登录控制台“机器人设备 → 健康中心”，确认设备显示 `3ebdb65` 且不再提示 USB 引导；确认无问题并明确说“推送吧”后，才推送当前任务分支。实体 OTA/回退另需新的逐次授权。
 
 ## 阻塞项
 

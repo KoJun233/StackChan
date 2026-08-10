@@ -26,6 +26,8 @@ public interface WakeWordModelJobRepository extends JpaRepository<WakeWordModelJ
 
     boolean existsByDeviceIdAndStatusIn(UUID deviceId, Collection<WakeWordModelJobStatus> statuses);
 
+    long countByStatusIn(Collection<WakeWordModelJobStatus> statuses);
+
     Optional<WakeWordModelJobEntity> findByCommandId(String commandId);
 
     Optional<WakeWordModelJobEntity> findByIdAndDeviceId(UUID id, UUID deviceId);
