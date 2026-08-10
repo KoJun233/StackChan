@@ -1,15 +1,15 @@
 # 部署工作流
 
-- 状态：IN_PROGRESS
+- 状态：READY
 - 最后更新：2026-08-10
-- 当前分支：`codex/ops-002-firmware-ota-health`
-- 基准提交：`9377b8d`
-- 最后验证提交：`3ebdb65`
-- 当前运行态代码：OPS-002 server 候选 `2bd8cdb` / Flyway V27、server 镜像 `sha256:c8224e760c85750abe5b4b048540e028ab8b403d4ecbf1d9f73eb4ee3579cbf3`；CoreS3 `3ebdb65 / motion_disabled / OTA=true`。
+- 当前分支：`codex/ops-002-ota-stack-fix`
+- 基准提交：`ce8faaa`
+- 最后验证提交：`7e7c55f`
+- 当前运行态代码：OPS-002 server 候选 `2bd8cdb` / Flyway V27、server 镜像 `sha256:c8224e760c85750abe5b4b048540e028ab8b403d4ecbf1d9f73eb4ee3579cbf3`；CoreS3 `7e7c55f / motion_disabled / OTA=true`。
 
 ## 当前目标
 
-OPS-002 候选已按 server-first 顺序替换 LAN server、迁移到 V27 并完成旧固件兼容；经精确授权，一次 USB 引导也已完成。下一步等待健康中心人工验收，实际应用 OTA 或回退演练仍需新的逐次授权。
+OPS-002 server/V27、健康中心、`cf26fd7` USB 修复引导、`cf26fd7 -> 7e7c55f` 实体应用 OTA 和普通交互人工烟雾测试均已通过。当前没有活动 OTA 任务，等待推送授权。
 
 ## 已完成
 
@@ -20,6 +20,10 @@ OPS-002 候选已按 server-first 顺序替换 LAN server、迁移到 V27 并完
 - 发布后公开健康接口与网页为 200、Flyway `27|true`、固件表存在、server 重启和错误为 0；未登录健康与固件 API 均为 401。旧 CoreS3 心跳保持 `dd81a7e / motion_disabled / OTA=false`，固件发布、升级任务和活动任务均为 0，未发送 `install_firmware`。
 - 备份检查时曾误用默认 Compose 项目名，短暂创建 `stackchan-postgres-1`、`stackchan_default` 和空备份卷，其中临时 PostgreSQL 容器约 17 秒挂载了现有外部数据卷。发现后先核对精确目标，再仅删除这三个临时资源；既有 `stackchan-foundation-*` 容器未删除。随后确认 PostgreSQL 可读写就绪、V27 迁移完整、无损坏相关日志，并重新完成逻辑备份与隔离恢复；未安装额外数据库扩展，当前未观察到数据损坏迹象。
 - 经用户精确授权，从干净 `3ebdb65` 构建并完整刷入 CoreS3 `COM3` 的 LAN HTTP Quad 五个非 NVS 区域；五次独立回读、启动与跨两个心跳周期验证通过。设备复用原 NVS 身份，当前为 `3ebdb65 / motion_disabled / OTA=true`；固件发布和升级任务均为 0，server 健康 200、重启和错误为 0。
+- 用户从健康中心发起 `3ebdb65 -> 91a8a28` 后，两次设备命令均进入 `INSTALLING` 但无 ACK；串口诊断重试确认设备传输任务栈溢出并重启。页面刷新不是原因，目标应用未写成可启动槽。
+- 两条任务已安全标记 `FAILED`，失败码分别为 `device_command_unacknowledged` 与 `device_transport_stack_overflow`；活动任务为 0，server/V27、PostgreSQL、Redis、备份、LAN overlay 和生产 HTTPS-only 边界未改变。
+- 经精确授权，干净 `cf26fd7` LAN HTTP Quad 五个非 NVS 区域完整刷入 CoreS3 `COM3` 并五次独立回读匹配；设备复用原 NVS 配置，跨两个心跳周期稳定报告 `cf26fd7 / motion_disabled / OTA=true`。server 与其他容器、卷、端口和网络模式未变。
+- 经精确授权，健康中心导入干净 `7e7c55f` 应用并完成 `cf26fd7 -> 7e7c55f`；任务 ACK=true 且最终 `INSTALLED`，设备从 OTA 分区启动并跨两个心跳周期稳定在线。NVS、server、PostgreSQL、Redis、备份、卷、端口、LAN overlay 和生产 HTTPS-only 边界未改变。
 
 - INT-012 正式候选包含 V26 交互开关、主动提醒生成元数据和主题冷却表；本地 Maven 309/309、空库 V1..V26、前端 66/66、类型检查和生产构建通过。
 - 发布前恢复既有备份容器并完成启动备份与最新备份隔离恢复验证；V25 镜像保留为 `stackchan-foundation-server:rollback-b35918b-pre-v26`。
@@ -98,15 +102,15 @@ OPS-002 候选已按 server-first 顺序替换 LAN server、迁移到 V27 并完
 
 ## 正在进行
 
-server-first 与一次 USB 引导均已完成；当前运行态为 OPS-002 server 候选 `2bd8cdb` / Flyway V27 与 CoreS3 `3ebdb65 / motion_disabled / OTA=true`。等待人工健康中心验收，不创建 OTA 任务。
+当前运行态为 OPS-002 server/V27 与 CoreS3 `7e7c55f / motion_disabled / OTA=true`；最近任务 `INSTALLED`，活动 OTA 任务为 0，人工烟雾测试通过。
 
 ## 下一步操作
 
-用户刷新已登录控制台“机器人设备 → 健康中心”，确认设备显示 `3ebdb65` 且不再提示 USB 引导；确认无问题并明确说“推送吧”后，才推送当前任务分支。实体 OTA/回退另需新的逐次授权。
+完成单一提交收尾并等待推送授权。
 
 ## 阻塞项
 
-当前无阻塞。工作区仍没有 `.env`；不得输出秘密、组合 LAN 与 production profile、降低生产 HTTPS-only 边界或未经授权变更运行资源。
+回退演练仍受新的逐次授权，本轮不执行。工作区仍没有 `.env`；不得输出秘密、组合 LAN 与 production profile、降低生产 HTTPS-only 边界或未经授权变更运行资源。
 
 ## 关键文件
 
@@ -117,6 +121,11 @@ server-first 与一次 USB 引导均已完成；当前运行态为 OPS-002 serve
 
 ## 验证命令与最近结果
 
+- 2026-08-10 用户确认 OTA 后普通唤醒对话、播放中触摸停止和后续再次对话均正常；运行资源、NVS 与网络边界未改变。
+- 2026-08-10 健康中心完成 `cf26fd7 -> 7e7c55f` 应用 OTA：任务 `INSTALLED`、ACK=true、失败码为空；串口确认从 `ota_0` 启动目标版本，数据库跨两个心跳周期保持 `7e7c55f / motion_disabled / OTA=true`，活动任务为 0。未回退、未替换容器或切换模式。
+- 2026-08-10 `cf26fd7` LAN HTTP Quad 五区完整刷写和五次独立回读通过且 NVS 未擦除；设备从 `13:57:59Z` 到 `13:59:15Z` 持续报告 `cf26fd7 / motion_disabled / OTA=true`，RSSI -46..-48 dBm，server 无新错误。未发起应用 OTA、替换容器或切换模式。
+- 2026-08-10 使用仅限当前进程的非秘密占位值通过 LAN Compose 与 production Compose 静态展开；LAN 仍为显式开发覆盖层，production 保持 HTTPS-only。未创建 `.env`、替换容器、改写数据库或切换运行模式。
+- 2026-08-10 `91a8a28` 应用制品校验通过，但两次安装均因设备侧传输任务栈溢出而无 ACK；设备重启回 `3ebdb65`，NVS 保持，活动 OTA 任务已清零。未替换 server、数据库容器或网络模式。
 - 2026-08-04 发布前逻辑备份与隔离恢复成功；本地候选 `09323bb` 只替换 server，健康/网页 200、Flyway `25|true`、V25 扩展/字段/表存在、未登录记忆 API 401、server 错误与重启均为 0。PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 未变，CoreS3 `dd81a7e / motion_disabled` 心跳约 3 秒内。
 - 用户确认发布后的 INT-011 测试无问题并授权推送；最终核对 server 重启/错误为 0、Flyway `25|true`、`dd81a7e / motion_disabled` 心跳为 0 秒级，并存在 1 条仍待管理员确认且未启用的测试建议。未读取正文或认证载荷。
 - 2026-08-02 INT-011 通过 `verify-lan-compose.ps1` 和 production Compose `config --quiet`；基础模式仍绑定 `127.0.0.1:8080`，LAN overlay 仍绑定 `0.0.0.0:8080`，PostgreSQL/Redis 不发布主机端口，production 保持 HTTPS-only。验证只使用当前进程非秘密占位值。

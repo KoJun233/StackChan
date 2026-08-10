@@ -1,14 +1,14 @@
 # 服务端工作流
 
-- 状态：IN_PROGRESS
+- 状态：READY
 - 最后更新：2026-08-10
-- 当前分支：`codex/ops-002-firmware-ota-health`
-- 基准提交：`9377b8d`
-- 最后验证提交：`3ebdb65`
+- 当前分支：`codex/ops-002-ota-stack-fix`
+- 基准提交：`ce8faaa`
+- 最后验证提交：`7e7c55f`
 
 ## 当前目标
 
-OPS-002 服务端候选已实现并发布 V27 应用固件发布/任务、严格设备能力协商、同源设备认证下载、健康中心和供应商人工测试状态。`dd81a7e` 旧固件兼容与 `3ebdb65` 一次 USB 引导均通过，下一步等待健康中心人工验收。
+OPS-002 server/V27、健康中心、`cf26fd7 -> 7e7c55f` 实体应用 OTA 和普通交互人工烟雾测试均已通过，等待推送授权。
 
 ## 已完成
 
@@ -19,6 +19,10 @@ OPS-002 服务端候选已实现并发布 V27 应用固件发布/任务、严格
 - `2bd8cdb` 正式镜像已只替换 LAN server，运行镜像为 `sha256:c8224e760c85750abe5b4b048540e028ab8b403d4ecbf1d9f73eb4ee3579cbf3`；公开健康接口与网页为 200、Flyway `27|true`、server 重启和错误为 0。
 - 旧 CoreS3 在发布后持续报告 `dd81a7e / motion_disabled / OTA=false`，RSSI 与心跳持续刷新；固件发布、升级任务和活动任务均为 0，server 日志没有 `install_firmware`，旧固件未收到 OTA 命令。
 - 一次 USB 引导后，同一设备跨两个心跳周期持续报告 `3ebdb65 / motion_disabled / OTA=true`，RSSI 正常；固件发布和升级任务继续为 0，server 健康 200、重启和错误为 0。
+- `3ebdb65 -> 91a8a28` 首次任务与一次诊断重试均进入 `INSTALLING`，但 ACK 为空且设备版本未改变；页面刷新不影响任务。串口证据确认根因是设备传输任务栈溢出，而不是服务端下载、调度或浏览器状态。
+- 两条故障任务已分别以 `device_command_unacknowledged` 和 `device_transport_stack_overflow` 标记 `FAILED`，活动 OTA 任务为 0；未公开 artifact，未修改认证、Flyway 或服务端运行资源。
+- `cf26fd7` USB 引导后，服务端跨两个心跳周期收到 `cf26fd7 / motion_disabled / OTA=true`，RSSI 为 -46..-48 dBm，近期没有新错误；活动 OTA 任务保持 0。
+- `cf26fd7 -> 7e7c55f` 任务在约 10 秒内完成 `READY -> INSTALLING -> INSTALLED`，`command_accepted=true`、失败码为空；目标版本心跳从 `14:13:05Z` 刷新到 `14:13:55Z`，活动任务回到 0，没有回退或新 server 错误。
 
 - 新增 ADR 0030 与 Flyway V26：交互设置增加默认关闭的个性化开关，主动提醒记录可空主题键和 `FIXED/GENERATED/FALLBACK` 状态，设备主题状态保存七天冷却与用户永久静音。
 - 现有允许时段、免打扰、在线、语音忙碌、提醒忙碌、最小间隔和每日上限始终先于记忆查询与模型调用；成功占用配额后最多读取一条 `CONFIRMED + enabled + allowProactiveMention` 且通过敏感过滤的当前范围记忆。
@@ -109,15 +113,15 @@ OPS-002 服务端候选已实现并发布 V27 应用固件发布/任务、严格
 
 ## 正在进行
 
-候选已完成全量回归、单一中文任务提交和 server-first 发布；等待用户在已登录控制台验收健康中心。
+server/V27 和健康中心保持已验收运行态；`7e7c55f` 已通过真实 OTA 和普通交互人工验收，没有活动 OTA 任务。
 
 ## 下一步操作
 
-用户刷新“机器人设备 → 健康中心”，核对服务版本 `2bd8cdb`、Flyway V27、设备 `3ebdb65 / OTA=true`，并确认“一次 USB 引导”提示消失；确认无问题并明确说“推送吧”后，才推送当前任务分支。
+压缩临时提交为单一中文任务提交；只有用户明确说“推送吧”才推送当前任务分支。
 
 ## 阻塞项
 
-当前无阻塞。自动建议不得保存或记录凭据、精确地址、身份号码、财务/医疗推断、用户原句、模型响应、认证载荷、音频、转写或回复正文。
+回退演练仍需新的逐次授权，本轮明确不执行。不得保存或记录认证载荷、下载 URL、音频、转写或回复正文。
 
 ## 关键文件
 
@@ -149,6 +153,11 @@ OPS-002 服务端候选已实现并发布 V27 应用固件发布/任务、严格
 
 ## 验证命令与最近结果
 
+- 2026-08-10 用户确认 OTA 后普通唤醒对话、播放中触摸停止和后续再次对话均正常；服务端运行态无须调整。
+- 2026-08-10 实体应用 OTA 任务完成为 `INSTALLED / command_accepted=true / failure_code=''`，设备版本从 `cf26fd7` 更新到 `7e7c55f` 并跨两个心跳周期保持 `motion_disabled / OTA=true`；活动任务为 0，没有回退或新 server 错误。
+- 2026-08-10 `cf26fd7` USB 引导后，数据库心跳从 `13:57:59Z` 刷新到 `13:59:15Z`，均为 `motion_disabled / OTA=true`；RSSI 正常，活动 OTA 任务为 0，server/V27 无新错误。
+- 2026-08-10 修复工作树服务端全量 322/322 通过；Testcontainers PostgreSQL 从空库应用 V1..V27。服务端源码、运行容器、数据库和认证边界未修改。
+- 2026-08-10 两条 `INSTALLING` 任务均无 ACK，设备始终报告 `3ebdb65`；串口诊断确认设备侧传输任务栈溢出。任务已安全标记失败且活动数为 0，server/V27、Flyway、容器和认证边界未改。
 - 2026-08-04 从本地干净候选 `09323bb` 使用正式 Dockerfile 构建并只替换 LAN server；V23→V25 迁移成功，`pg_trgm`、7 个新记忆字段和使用记录表存在，健康/网页 200、未登录记忆 API 401、server 错误 0。PostgreSQL、Redis、备份容器、固件和 NVS 未改变。
 - 2026-08-02 INT-011 收尾运行 `mvn -f server/pom.xml test`：299/299 通过；Testcontainers PostgreSQL 从空库应用 V1..V25，原生 `pg_trgm` 检索和使用记录持久化通过。未连接运行数据库、未执行 V24/V25 运行迁移或替换容器。
 - 2026-07-31 收尾重跑 `mvn -f server/pom.xml test`：282/282 通过，Testcontainers PostgreSQL 从空库应用 V1..V23；运行 server 健康 200、重启 0。
