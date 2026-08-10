@@ -1,12 +1,12 @@
 # 全局工作流总览
 
-- 状态：IN_PROGRESS
+- 状态：READY
 - 最后更新：2026-08-10
-- 当前分支：`codex/ops-002-firmware-ota-health`
-- 实现基准：`9377b8d`
-- 最后验证提交：`3ebdb65`
-- 当前验证范围：OPS-002 服务端 322/322 与 Testcontainers 空库 V1..V27；前端 Vitest 24 个文件 66/66、`vue-tsc -b` 和 production build；ESP-IDF 5.3.3 协议测试与 LAN HTTP Quad 构建、rollback 配置、固件栈预算、唤醒模型包、CoreS3 五区刷写/独立回读、启动与跨心跳验证、文档与差异检查。
-- 当前优先级：LAN server/V27、`dd81a7e` 旧固件兼容和 `3ebdb65` 一次 USB 引导均已通过；下一步由用户刷新“机器人设备 → 健康中心”，确认设备显示 OTA 可用。任何实际应用 OTA 或回退演练仍需新的逐次授权。
+- 当前分支：`codex/ops-002-ota-stack-fix`
+- 实现基准：`ce8faaa`
+- 最后验证提交：`7e7c55f`
+- 当前验证范围：OPS-002 server/V27、健康中心、`device_transport` 栈修复、`cf26fd7` USB 引导、`cf26fd7 -> 7e7c55f` 真实应用 OTA、NVS 保留和普通交互人工烟雾测试均通过。
+- 当前优先级：设备稳定运行 `7e7c55f / motion_disabled / OTA=true`，活动 OTA 任务为 0；用户已确认普通唤醒对话、触摸停止和后续对话无问题。压缩为单一中文任务提交后等待用户明确授权推送。
 - 当前部署：LAN HTTP development mode。
 - 生产边界：HTTPS-only。
 
@@ -14,14 +14,20 @@
 
 | 工作流 | 状态 | 状态文件 | 当前分支 | 下一步 |
 | --- | --- | --- | --- | --- |
-| 服务端 | IN_PROGRESS | [server.md](server.md) | `codex/ops-002-firmware-ota-health` | V27 已发布且旧固件兼容通过；等待健康中心人工验收。 |
-| 前端 | IN_PROGRESS | [frontend.md](frontend.md) | `codex/ops-002-firmware-ota-health` | 已随 server 发布；等待健康中心页面与旧固件引导提示人工验收。 |
-| 固件 | IN_PROGRESS | [firmware.md](firmware.md) | `codex/ops-002-firmware-ota-health` | `3ebdb65` 一次 USB 引导已通过；等待页面确认，实际 OTA/回退另行授权。 |
-| 部署 | IN_PROGRESS | [deployment.md](deployment.md) | `codex/ops-002-firmware-ota-health` | server/V27 与 OTA-capable 固件已发布并验证；等待页面人工验收。 |
+| 服务端 | READY | [server.md](server.md) | `codex/ops-002-ota-stack-fix` | V27、真实 OTA 和人工烟雾测试通过，等待推送授权。 |
+| 前端 | READY | [frontend.md](frontend.md) | `codex/ops-002-ota-stack-fix` | 页面与真实 OTA 状态展示验收通过，等待推送授权。 |
+| 固件 | READY | [firmware.md](firmware.md) | `codex/ops-002-ota-stack-fix` | `7e7c55f` OTA 启动和普通交互验收通过，等待推送授权。 |
+| 部署 | READY | [deployment.md](deployment.md) | `codex/ops-002-ota-stack-fix` | 实机稳定运行 `7e7c55f`，等待推送授权。 |
 
 INT-012 已由 PR #14 合入 `master`，合并提交为 `9377b8d`。OPS-002 从该最新基线创建独立分支；候选 `2bd8cdb` 已按 server-first 顺序只替换 LAN server，运行库升至 V27。网页与公开健康接口为 200，server 重启和错误为 0；旧 CoreS3 持续报告 `dd81a7e / motion_disabled / OTA=false`，固件发布和升级任务均为 0，未发送 `install_firmware`。未连接 COM3、未刷写固件、未发起 OTA 或修改 NVS。
 
 用户随后精确授权 `3ebdb65`、CoreS3、`COM3`、LAN HTTP Quad 和保留 NVS。官方 ESP-IDF 5.3.3 从干净提交构建 `0x14e8c0` 应用，配置确认 rollback、16 MB Flash、Quad PSRAM 和 LAN HTTP；bootloader、分区表、应用、OTA data、语音模型五个非 NVS 区域完成写入及独立 `verify_flash`。启动确认 `3ebdb65`、8 MB PSRAM/80 MHz、内存测试、CoreS3 外设、WakeNet、Wi-Fi、WebSocket 和 `motion_disabled`，50 秒无致命错误；服务端跨两个心跳周期收到 `OTA=true`。NVS 未进入擦写范围，原设备身份与网络配置直接复用；未创建固件发布或 OTA 任务。
+
+健康中心人工查看确认 OTA 能力正常后，用户导入从干净 `91a8a28` 构建的应用制品并发起 `3ebdb65 -> 91a8a28`。任务进入 `INSTALLING` 但 ACK 始终为空，设备仍报告 `3ebdb65`；页面刷新不参与设备命令生命周期。服务端一次 15 分钟安全恢复重试仍无 ACK。经用户授权的脱敏 COM3 诊断重试捕获 `A stack overflow in task device_transpor`，随后设备软件复位，bootloader 继续从 factory 分区启动 `3ebdb65`，NVS 身份与配置复用。两条任务已分别以 `device_command_unacknowledged` 和 `device_transport_stack_overflow` 标记失败，活动任务为 0。修复把传输任务栈从 10,240 提升到 32,768 字节，并新增真实 `.su` 报告与夹具回归。
+
+用户随后精确授权 `cf26fd7`、CoreS3、`COM3`、LAN HTTP Quad 完整镜像和保留 NVS。干净提交镜像应用大小 `0x14e8c0`、SHA-256 `E88FC18DB76CA4ABC033E9A0601F469A7B6C1D20D07C80A6057EE0C2D261C031`；bootloader、分区表、应用、OTA data 和语音模型五区写入及五次独立 `verify_flash` 均匹配，擦写范围未覆盖 NVS。设备复用原身份、网络与交互设置，服务端连续收到 `cf26fd7 / motion_disabled / OTA=true` 心跳，时间从 `13:57:59Z` 刷新到 `13:59:15Z`，同期无新 server 错误。实际应用 OTA 仍待不同版本复验。
+
+用户进一步授权只验证成功路径的 `cf26fd7 -> 7e7c55f` LAN HTTP 应用 OTA。健康中心校验目标应用 `0x14e8c0`、SHA-256 `BAEF79323898D8FA6454BD31B68B2B02128F59142AB22ED9C30190DAFF361415` 后创建任务；设备在约 10 秒内下载、校验并写入 `ota_0`，ACK 为 true，串口明确记录 `Firmware verified; restarting into pending OTA partition` 和从 `0x310000` 启动 `7e7c55f`。新应用恢复 8 MB PSRAM、加密 NVS、CoreS3 外设、WakeNet、Wi-Fi、WebSocket、原语音/连续对话配置和 `motion_disabled`；任务为 `INSTALLED`，心跳从 `14:13:05Z` 刷新至 `14:13:55Z`，没有回退、栈溢出或新 server 错误。健康中心最终显示目标版本、在线、OTA 已引导和最近任务 `INSTALLED`；未执行回退演练。
 
 INT-009 已按 server-first 顺序发布：镜像 `sha256:6902bf3e287568bef13d0fa1247676e475f34357fe7d22923687be10d651d332` 只替换 LAN server，运行库从 V22 升至 V23；旧镜像保留为 `stackchan-foundation-server:rollback-a2f723e-pre-v23`。PostgreSQL、Redis、备份容器、卷、端口、凭据和生产 HTTPS-only 边界未改变；旧 CoreS3 `b05d60f / motion_disabled` 在退避后自动重连，并跨两个 25 秒周期持续刷新心跳。连续对话仍默认关闭，未连接 COM3、未刷写或 OTA。
 
@@ -81,6 +87,11 @@ INT-007 本地发布候选完成：默认表情升级为 M5Unified/M5GFX 独立�
 
 ## 验证与边界
 
+- 2026-08-10 用户确认 OTA 后普通唤醒对话、播放中触摸停止和后续再次对话均无问题；OPS-002 实体成功路径人工验收完成。未执行回退演练或推送远端。
+- 2026-08-10 经精确授权，健康中心完成 `cf26fd7 -> 7e7c55f` 应用 OTA：制品项目名/版本/大小/SHA-256 校验通过，任务 `READY -> INSTALLING -> INSTALLED`，ACK=true；设备从 `ota_0` 启动 `7e7c55f`，NVS 加密配置、WakeNet、Wi-Fi、WebSocket、语音/连续对话配置和 `motion_disabled` 恢复。服务端跨两个心跳周期收到目标版本，活动任务为 0，未回退且无新错误。未执行回退演练、未替换 server 或推送远端。
+- 2026-08-10 经精确授权，干净 `cf26fd7` LAN HTTP Quad 五个非 NVS 区域完整刷入 CoreS3 `COM3`，即时哈希与五次独立回读匹配；应用描述符为 `stackchan_firmware / cf26fd7 / ESP-IDF v5.3.3`，16 MB/DIO/80 MHz、rollback 和 Quad PSRAM 配置正确。NVS 未擦除，设备复用原配置并跨两个心跳周期稳定报告 `cf26fd7 / motion_disabled / OTA=true`，活动 OTA 任务为 0。未发起应用 OTA、未替换 server 或推送远端。
+- 2026-08-10 修复工作树收尾通过：服务端 322/322 与 Testcontainers 空库 V1..V27；Node 24.15.0 隔离容器前端 24 个文件 66/66、`vue-tsc -b` 和 production build；ESP-IDF 5.3.3 协议 Quad `0x37880`、LAN HTTP Quad `0x14e8c0`、三项真实/夹具栈预算、唤醒模型包；LAN 与 production Compose 静态检查、`pnpm docs:check` 和 `git diff --check`。未连接 COM3、未刷写修复固件、未改 NVS、未替换运行服务或推送远端。
+- 2026-08-10 实体 OTA 诊断确认 `install_firmware` 到达设备后 `device_transport` 栈溢出并软件复位；设备继续运行 `3ebdb65`，NVS 未变，两条故障任务已安全终止且活动任务为 0。ESP-IDF 5.3.3 `-fstack-usage` 分析构建通过：`transport_task + run_websocket_connection + firmware_ota_install + download_image = 8240` 字节，32,768 字节任务栈余量 24,528 字节；回归夹具确认 10,240 字节被拒绝、32,768 字节通过。未刷写修复固件、未再次发起 OTA、未推送远端。
 - 2026-07-31 最终收尾重跑通过：服务端 282/282 与空库 Flyway V1..V23；Node v24.15.0 前端 24 个文件 65/65、类型检查和 production build；两项固件栈预算、LAN Compose、文档检查、文档测试和差异检查。运行 server 健康 200、重启 0、Flyway V23，CoreS3 `dd81a7e / motion_disabled` 心跳新鲜；未连接 COM3、刷写、改写 NVS 或推送远端。
 - INT-009 `a2f723e` 发布前完成新 V22 逻辑备份和隔离恢复验证；正式 Dockerfile 构建镜像 `sha256:6902bf3e287568bef13d0fa1247676e475f34357fe7d22923687be10d651d332`，只替换 server 容器为 `f3a9651e468b`。健康与网页为 200、Flyway `23|true` 且迁移数 23、未登录交互设置为 401、管理端包含连续对话资源、启动错误数和重启数均为 0；设置记录为关闭/8 秒，旧 `b05d60f / motion_disabled` 心跳跨两个周期刷新。未连接 COM3 或刷写固件。
 - 用户确认 V23 server 与旧 `b05d60f` 的普通单轮语音正常；server-first 兼容人工 smoke test 通过，未读取或记录音频、转写或回复正文。
@@ -188,7 +199,7 @@ INT-007 本地发布候选完成：默认表情升级为 M5Unified/M5GFX 独立�
 
 - INT-007 已由 PR #8 合入 `master`；默认机械眼通过实体验收。自定义八状态资源包的实体测试因没有合适素材暂缓，但不阻塞 `INT-008`。
 - 用户将受控 Agent 调整为当前最高优先级；`codex/int-008-agent-tools-mcp` 已从最新 `master` 合并提交 `8122959` 创建。
-- `INT-008`、`DATA-001`、`INT-009`、`INT-010`、`INT-011` 和 `INT-012` 已依序合并；当前 `OPS-002` 已完成软件实现、server/V27 发布与旧固件自动兼容验证，等待健康中心人工验收。任务范围和验收条件见[下一阶段可执行任务清单](../todo.md)。
+- `INT-008`、`DATA-001`、`INT-009`、`INT-010`、`INT-011` 和 `INT-012` 已依序合并；`OPS-002` 的 server/V27 与健康中心已验收，当前处理实体 OTA 暴露的固件传输任务栈溢出。任务范围和验收条件见[下一阶段可执行任务清单](../todo.md)。
 - 软件链路和设备三槽引导已验证；内置模型文件已随锁定组件存在，不再依赖用户上传或外部生成器。首次实际模型切换会重启设备，必须由管理员主动选择后触发。
 - CoreS3 已具备 `model_a` / `model_b` 分区；后续更换兼容唤醒模型无需再刷整套固件。
 - INT-001 已完成服务端 V14、管理端、固件发布和用户人工验收；现有 1 个 `NO_SPEECH` 与 3 个成功回合作为 INT-002 前的基线。

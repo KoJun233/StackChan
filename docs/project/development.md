@@ -47,6 +47,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-firmware-prov
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-firmware-provisioning-stack-budget.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-firmware-voice-stack-budget.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-firmware-voice-stack-budget.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-firmware-transport-stack-budget.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-firmware-transport-stack-budget.ps1
 ```
 
 运行唤醒模型包和 ESP-SR 内置目录回归检查：

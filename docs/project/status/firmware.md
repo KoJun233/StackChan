@@ -1,15 +1,15 @@
 # 固件工作流
 
-- 状态：IN_PROGRESS
+- 状态：READY
 - 最后更新：2026-08-10
-- 当前分支：`codex/ops-002-firmware-ota-health`
-- 基准提交：`9377b8d`
-- 最后验证提交：`3ebdb65`
-- 当前实机镜像：`3ebdb65`
+- 当前分支：`codex/ops-002-ota-stack-fix`
+- 基准提交：`ce8faaa`
+- 最后验证提交：`7e7c55f`
+- 当前实机镜像：`7e7c55f`
 
 ## 当前目标
 
-应用 OTA 候选已通过真实构建，server-first 旧固件兼容和 CoreS3 一次 USB 引导均已完成。当前设备运行 `3ebdb65 / motion_disabled / OTA=true`；下一步等待健康中心页面确认，实际应用 OTA 与回退演练仍需新的逐次授权。
+OPS-002 `device_transport` 栈修复已通过 `cf26fd7` USB 引导、`cf26fd7 -> 7e7c55f` 真实应用 OTA、跨心跳稳定性和普通交互人工烟雾测试，等待推送授权。
 
 ## 已完成
 
@@ -20,6 +20,10 @@
 - 经用户精确授权，使用官方 ESP-IDF 5.3.3 从干净 `3ebdb65` 新建独立目录构建 LAN HTTP Quad；应用描述符为 `stackchan_firmware / 3ebdb65`，大小 `0x14e8c0`、余量 56%，配置确认 rollback、16 MB Flash、Quad PSRAM 和 LAN HTTP。
 - bootloader `0x0`、分区表 `0x8000`、应用 `0x10000`、OTA data `0x910000` 和语音模型 `0x912000` 完整写入 CoreS3 `COM3`，即时哈希与五次独立 `verify_flash` 全部匹配；擦写范围未覆盖 `0x9000..0xefff` NVS。
 - 启动确认 8 MB PSRAM/80 MHz、内存测试、CoreS3 显示/触摸/麦克风/扬声器、WakeNet“小峰小峰”、Wi-Fi、WebSocket 与 `motion_disabled`；50 秒内致命错误为 0。原 NVS 身份直接联网，服务端跨两个心跳周期收到 `3ebdb65 / OTA=true`。
+- `3ebdb65 -> 91a8a28` OTA 与一次诊断重试均在 `install_firmware` 后触发 `device_transport` 栈溢出和软件复位；bootloader 仍选择 factory，设备版本和 NVS 均未改变。
+- `TRANSPORT_TASK_STACK_SIZE` 从 10,240 提升到 32,768 字节。ESP-IDF 5.3.3 `-fstack-usage` 报告的已知同步路径为 8,240 字节，保留 24,528 字节给 HTTP/TCP、解析、OTA Flash、认证辅助和回调；夹具回归确认旧预算被拒绝、新预算通过。
+- 经用户精确授权，干净 `cf26fd7` LAN HTTP Quad 五区完整刷写和五次独立 `verify_flash` 全部匹配；擦写范围未覆盖 NVS。设备复用原身份、网络、语音检测和连续对话配置，跨两个心跳周期稳定报告 `cf26fd7 / motion_disabled / OTA=true`。
+- 经用户精确授权，健康中心把干净 `7e7c55f` 应用写入 `ota_0`；串口记录完整镜像二次验证、选择 pending OTA 分区、软件重启并从 `0x310000` 启动目标版本。NVS 加密、8 MB PSRAM、CoreS3 外设、WakeNet、Wi-Fi、WebSocket、原语音检测/连续对话配置和 `motion_disabled` 全部恢复，未栈溢出或回退。
 
 - INT-012 不修改 SCV1、WebSocket、`speak_reminder`、连续对话状态机、固件分区或设备配置；固定/生成/回退状态只留在服务端元数据。未连接 COM3、未构建或刷写固件、未修改 NVS；LAN 发布后使用现有 `dd81a7e / motion_disabled` 做旧固件兼容验证。
 - server/V26 发布后，现有 CoreS3 `dd81a7e / motion_disabled` 自动恢复 WebSocket，检查时心跳约 13 秒；无需新固件。
@@ -97,15 +101,15 @@
 
 ## 正在进行
 
-一次 USB 引导已完成；当前实机运行 `3ebdb65 / motion_disabled` 并向 V27 server 显式报告 `OTA=true`。等待用户刷新健康中心确认页面状态。
+实体已通过应用 OTA 运行 `7e7c55f`；任务 `INSTALLED`、跨心跳稳定、NVS 保留、普通唤醒对话、触摸停止和后续对话均通过。
 
 ## 下一步操作
 
-用户确认健康中心不再显示“需 USB 引导”。任何实际应用 OTA 或回退演练必须另外精确授权目标版本、设备和测试范围；当前不创建升级任务。
+压缩为单一中文任务提交并等待推送授权。
 
 ## 阻塞项
 
-当前软件无阻塞；实体 OTA/回退验收受新的逐次硬件授权约束。不得记录 Wi-Fi 密码、Workspace ID、配对码、音频/转写、语音供应商密钥或设备 Token。
+回退演练仍需用户逐次明确授权，本轮不执行。不得记录 Wi-Fi 密码、Workspace ID、配对码、音频/转写、语音供应商密钥或设备 Token。
 
 ## 关键文件
 
@@ -132,6 +136,11 @@
 
 ## 验证命令与最近结果
 
+- 2026-08-10 用户确认 `7e7c55f` 上普通唤醒对话、播放中触摸停止和后续再次对话均正常；未见电流音或交互回归。
+- 2026-08-10 `7e7c55f` 应用制品 `0x14e8c0`、SHA-256 `BAEF79323898D8FA6454BD31B68B2B02128F59142AB22ED9C30190DAFF361415`；OTA 下载、镜像校验、`ota_0` 写入、pending 启动和健康确认通过。任务 `INSTALLED`，目标版本心跳从 `14:13:05Z` 更新到 `14:13:55Z`，NVS/配置保留，未见栈溢出、看门狗、回退或重启循环。
+- 2026-08-10 干净 `cf26fd7` LAN HTTP Quad 应用 `0x14e8c0`、SHA-256 `E88FC18DB76CA4ABC033E9A0601F469A7B6C1D20D07C80A6057EE0C2D261C031`；五区写入及五次独立回读匹配，NVS 未擦除。设备复用原配置并从 `13:57:59Z` 到 `13:59:15Z` 持续报告 `cf26fd7 / motion_disabled / OTA=true`，未见新栈溢出或重启。
+- 2026-08-10 修复工作树用 ESP-IDF 5.3.3 构建协议 Quad `0x37880`（余量 93%）与 LAN HTTP Quad `0x14e8c0`（余量 56%）；配网、语音、传输三项真实预算分别保留 8,736、22,112、24,528 字节外部余量，危险/安全夹具与唤醒模型包回归全部通过。构建版本为工作树 `ce8faaa-dirty`，只能用于本地编译验证，不能刷写；刷写前须从最终干净提交重建。
+- 2026-08-10 COM3 脱敏诊断捕获 `A stack overflow in task device_transpor` 和 `RTC_SW_CPU_RST`；重启后 bootloader 继续选择 factory，应用为 `3ebdb65`，加密 NVS、网络身份和 WebSocket 恢复。ESP-IDF 5.3.3 分析构建通过，已知栈路径 8,240 字节，32,768 字节任务栈外部余量 24,528 字节；10,240/32,768 夹具拒绝/接受通过。未刷写修复、未改 NVS。
 - 2026-07-31 收尾重跑配网任务与语音任务栈预算：分别保留 8,736 字节和 22,112 字节外部调用余量，均通过；固件源码相对已刷写验证基线未改变，未连接 COM3、刷写或改写 NVS。
 - 经用户明确授权，提交 `dd81a7e` 的 LAN HTTP Quad bootloader、分区表、应用、OTA data 和语音模型已完整刷入 CoreS3 `COM3`；五个区域写入即时哈希和独立 `verify_flash` 全部匹配，写入范围未覆盖 `0x9000..0xefff` NVS。
 - `dd81a7e` 启动确认应用版本、8 MB Quad PSRAM/80 MHz、内存测试、加密 NVS、`motion_disabled`、CoreS3 外设、`speaker DMA=512x8 task_priority=4`、LAN HTTP、WakeNet“小峰小峰”、Wi-Fi 和 WebSocket；45 秒观察致命错误为 0。LAN server 健康 200、运行中且重启 0，Flyway `23|true`；数据库在核对时收到 13 秒内的 `dd81a7e / motion_disabled` 心跳。
