@@ -20,7 +20,10 @@ import com.kj.stackchan.firmwareupdate.FirmwareUpdateJobRepository;
 import com.kj.stackchan.firmwareupdate.FirmwareUpdateStatus;
 import com.kj.stackchan.health.ProviderHealthRegistry;
 import com.kj.stackchan.llm.LlmSettingsService;
+import com.kj.stackchan.notification.NotificationIntegrationRepository;
+import com.kj.stackchan.reminder.ReminderEntity;
 import com.kj.stackchan.reminder.ReminderRepository;
+import com.kj.stackchan.reminder.ReminderSource;
 import com.kj.stackchan.reminder.ReminderStatus;
 import com.kj.stackchan.speech.SpeechSettingsService;
 import com.kj.stackchan.speech.VoiceTurnEntity;
@@ -51,6 +54,7 @@ public class SystemHealthController {
     private final WakeWordModelJobRepository wakeJobRepository;
     private final DeviceExpressionPackRepository expressionRepository;
     private final ReminderRepository reminderRepository;
+    private final NotificationIntegrationRepository notificationIntegrationRepository;
     private final BackupStatusService backupStatusService;
     private final LlmSettingsService llmSettingsService;
     private final SpeechSettingsService speechSettingsService;
@@ -68,6 +72,7 @@ public class SystemHealthController {
             WakeWordModelJobRepository wakeJobRepository,
             DeviceExpressionPackRepository expressionRepository,
             ReminderRepository reminderRepository,
+            NotificationIntegrationRepository notificationIntegrationRepository,
             BackupStatusService backupStatusService,
             LlmSettingsService llmSettingsService,
             SpeechSettingsService speechSettingsService,
@@ -84,6 +89,7 @@ public class SystemHealthController {
         this.wakeJobRepository = wakeJobRepository;
         this.expressionRepository = expressionRepository;
         this.reminderRepository = reminderRepository;
+        this.notificationIntegrationRepository = notificationIntegrationRepository;
         this.backupStatusService = backupStatusService;
         this.llmSettingsService = llmSettingsService;
         this.speechSettingsService = speechSettingsService;
@@ -120,6 +126,7 @@ public class SystemHealthController {
                         reminderRepository.countByStatusIn(EnumSet.of(
                                 ReminderStatus.PENDING, ReminderStatus.DISPATCHED))
                 ),
+                notificationHealth(),
                 recentSafeErrors()
         );
     }
@@ -163,7 +170,11 @@ public class SystemHealthController {
                 .findTop10ByStatusInOrderByUpdatedAtDesc(EnumSet.of(
                         FirmwareUpdateStatus.FAILED, FirmwareUpdateStatus.ROLLED_BACK)).stream()
                 .map(this::firmwareError);
-        return Stream.concat(voiceErrors, firmwareErrors)
+        Stream<SafeError> notificationErrors = reminderRepository
+                .findTop10BySourceAndStatusInOrderByUpdatedAtDesc(
+                        ReminderSource.EXTERNAL, EnumSet.of(ReminderStatus.FAILED, ReminderStatus.EXPIRED)
+                ).stream().map(this::notificationError);
+        return Stream.concat(Stream.concat(voiceErrors, firmwareErrors), notificationErrors)
                 .sorted(Comparator.comparing(SafeError::occurredAt).reversed())
                 .limit(10)
                 .toList();
@@ -183,6 +194,29 @@ public class SystemHealthController {
         );
     }
 
+    private SafeError notificationError(ReminderEntity reminder) {
+        return new SafeError(
+                "EXTERNAL_NOTIFICATION", reminder.getDeviceId(), reminder.getStatus().name(),
+                reminder.getFailureCode() == null ? "unknown" : reminder.getFailureCode(), reminder.getUpdatedAt()
+        );
+    }
+
+    private NotificationHealth notificationHealth() {
+        Instant since = clock.instant().minus(Duration.ofHours(24));
+        return new NotificationHealth(
+                notificationIntegrationRepository.countByEnabledTrue(),
+                reminderRepository.countBySourceAndStatusIn(
+                        ReminderSource.EXTERNAL, EnumSet.of(ReminderStatus.PENDING, ReminderStatus.DISPATCHED)
+                ),
+                reminderRepository.countBySourceAndStatusInAndUpdatedAtAfter(
+                        ReminderSource.EXTERNAL, EnumSet.of(ReminderStatus.FAILED), since
+                ),
+                reminderRepository.countBySourceAndStatusInAndUpdatedAtAfter(
+                        ReminderSource.EXTERNAL, EnumSet.of(ReminderStatus.EXPIRED), since
+                )
+        );
+    }
+
     public record SystemHealthResponse(
             String serverVersion,
             String databaseMigration,
@@ -191,6 +225,7 @@ public class SystemHealthController {
             List<ProviderStatus> providers,
             BackupStatusService.BackupStatus backup,
             PendingJobs pendingJobs,
+            NotificationHealth notifications,
             List<SafeError> recentSafeErrors
     ) {
     }
@@ -222,6 +257,13 @@ public class SystemHealthController {
             long reminders
     ) {
     }
+
+    public record NotificationHealth(
+            long enabledIntegrations,
+            long queued,
+            long failedLast24Hours,
+            long expiredLast24Hours
+    ) { }
 
     public record SafeError(
             String category,

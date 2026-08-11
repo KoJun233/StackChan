@@ -1,5 +1,6 @@
 import type { RouteRecordMainRaw } from '@fantastic-admin/types'
 import type { RouteRecordRaw } from 'vue-router'
+import NotificationRoutes from './notifications'
 
 function Layout() {
   return import('@/layouts/index.vue')
@@ -45,7 +46,7 @@ const routes: RouteRecordMainRaw = {
     title: '提醒管理',
     icon: 'i-ri:notification-3-line',
   },
-  children: [reminderRoute],
+  children: [reminderRoute, ...(NotificationRoutes.children ?? [])],
 }
 
 export default routes

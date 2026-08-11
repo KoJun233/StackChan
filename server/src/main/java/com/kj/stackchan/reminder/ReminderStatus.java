@@ -6,5 +6,6 @@ public enum ReminderStatus {
     DELIVERED,
     FAILED,
     CANCELLED,
-    SKIPPED
+    SKIPPED,
+    EXPIRED
 }

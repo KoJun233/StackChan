@@ -10,6 +10,7 @@ import java.util.UUID;
 import com.kj.stackchan.device.DeviceCommandGateway;
 import com.kj.stackchan.device.DeviceCommandResult;
 import com.kj.stackchan.speech.SpeechRuntimeClient;
+import com.kj.stackchan.speech.SpeechProviderUnavailableException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -17,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -70,6 +72,92 @@ class ReminderDeliveryServiceTest {
         service().dispatchDueReminders();
 
         assertThat(reminder.getStatus()).isEqualTo(ReminderStatus.PENDING);
+    }
+
+    @Test
+    void keepsExternalNotificationQueuedWhileDeviceIsOffline() {
+        UUID deviceId = UUID.randomUUID();
+        ReminderEntity reminder = new ReminderEntity(deviceId, "external", NOW.minusSeconds(1), "Asia/Shanghai", NOW);
+        reminder.assignExternalMetadata(UUID.randomUUID(), "agent-run-1", "hash", NOW.plusSeconds(3600), NOW);
+        when(repository.findTop20ByStatusAndScheduledAtLessThanEqualOrderByScheduledAtAscIdAsc(
+                ReminderStatus.PENDING, NOW
+        )).thenReturn(List.of(reminder));
+        when(gateway.isConnected(deviceId)).thenReturn(false);
+
+        service().dispatchDueReminders();
+
+        assertThat(reminder.getStatus()).isEqualTo(ReminderStatus.PENDING);
+        verify(speechRuntimeClient, never()).synthesize(anyString());
+    }
+
+    @Test
+    void defersNotificationWhenAnotherReminderIsAlreadyDispatchedForTheDevice() {
+        UUID deviceId = UUID.randomUUID();
+        ReminderEntity reminder = new ReminderEntity(deviceId, "external", NOW.minusSeconds(1), "Asia/Shanghai", NOW);
+        reminder.assignExternalMetadata(UUID.randomUUID(), "agent-run-2", "hash", NOW.plusSeconds(3600), NOW);
+        when(repository.findTop20ByStatusAndScheduledAtLessThanEqualOrderByScheduledAtAscIdAsc(
+                ReminderStatus.PENDING, NOW
+        )).thenReturn(List.of(reminder));
+        when(gateway.isConnected(deviceId)).thenReturn(true);
+        when(repository.existsByDeviceIdAndStatus(deviceId, ReminderStatus.DISPATCHED)).thenReturn(true);
+
+        service().dispatchDueReminders();
+
+        assertThat(reminder.getStatus()).isEqualTo(ReminderStatus.PENDING);
+        assertThat(reminder.getScheduledAt()).isEqualTo(NOW.plusSeconds(60));
+        verify(repository).save(reminder);
+        verify(speechRuntimeClient, never()).synthesize(anyString());
+    }
+
+    @Test
+    void expiresQueuedExternalNotificationBeforeDispatch() {
+        UUID deviceId = UUID.randomUUID();
+        ReminderEntity reminder = new ReminderEntity(deviceId, "external", NOW.minusSeconds(10), "Asia/Shanghai", NOW);
+        reminder.assignExternalMetadata(UUID.randomUUID(), "agent-run-3", "hash", NOW, NOW);
+        when(repository.findTop100BySourceAndStatusAndExpiresAtLessThanEqualOrderByExpiresAtAscIdAsc(
+                ReminderSource.EXTERNAL, ReminderStatus.PENDING, NOW
+        )).thenReturn(List.of(reminder));
+
+        service().dispatchDueReminders();
+
+        assertThat(reminder.getStatus()).isEqualTo(ReminderStatus.EXPIRED);
+        assertThat(reminder.getFailureCode()).isEqualTo("notification_expired");
+        verify(repository).save(reminder);
+        verify(speechRuntimeClient, never()).synthesize(anyString());
+    }
+
+    @Test
+    void recordsSafeFailureWhenExternalNotificationTtsIsUnavailable() {
+        UUID deviceId = UUID.randomUUID();
+        ReminderEntity reminder = new ReminderEntity(deviceId, "external", NOW.minusSeconds(1), "Asia/Shanghai", NOW);
+        reminder.assignExternalMetadata(UUID.randomUUID(), "agent-run-4", "hash", NOW.plusSeconds(3600), NOW);
+        when(repository.findTop20ByStatusAndScheduledAtLessThanEqualOrderByScheduledAtAscIdAsc(
+                ReminderStatus.PENDING, NOW
+        )).thenReturn(List.of(reminder));
+        when(gateway.isConnected(deviceId)).thenReturn(true);
+        when(speechRuntimeClient.synthesize("external")).thenThrow(new SpeechProviderUnavailableException());
+
+        service().dispatchDueReminders();
+
+        assertThat(reminder.getStatus()).isEqualTo(ReminderStatus.FAILED);
+        assertThat(reminder.getFailureCode()).isEqualTo("speech_provider_unavailable");
+        verify(repository).save(reminder);
+    }
+
+    @Test
+    void ignoresReplayedAcknowledgementAfterNotificationWasDelivered() {
+        UUID deviceId = UUID.randomUUID();
+        ReminderEntity reminder = new ReminderEntity(deviceId, "external", NOW, "Asia/Shanghai", NOW);
+        reminder.assignExternalMetadata(UUID.randomUUID(), "agent-run-5", "hash", NOW.plusSeconds(3600), NOW);
+        reminder.markDispatched("cmd-delivered", new byte[44], NOW);
+        when(repository.findByCommandId("cmd-delivered")).thenReturn(Optional.of(reminder));
+
+        ReminderDeliveryService service = service();
+        service.record(deviceId, "cmd-delivered", true);
+        service.record(deviceId, "cmd-delivered", true);
+
+        assertThat(reminder.getStatus()).isEqualTo(ReminderStatus.DELIVERED);
+        assertThat(reminder.getLastCompletedAt()).isEqualTo(NOW);
     }
 
     @Test

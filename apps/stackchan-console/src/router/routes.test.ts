@@ -41,4 +41,14 @@ describe('stackChan console routes', () => {
       }),
     ]))
   })
+
+  it('groups external notifications under reminder management', () => {
+    const reminderManagement = (asyncRoutes as any[]).find(route => route.meta?.title === '提醒管理')
+
+    expect(reminderManagement?.children).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'reminders', path: '/reminders' }),
+      expect.objectContaining({ name: 'notificationIntegrations', path: '/notifications' }),
+    ]))
+    expect((asyncRoutes as any[]).filter(route => route.meta?.title === '外部通知')).toHaveLength(0)
+  })
 })

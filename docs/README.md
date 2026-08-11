@@ -13,6 +13,7 @@
 | [`project/development.md`](project/development.md) | 开发环境与验证命令 |
 | [`project/roadmap.md`](project/roadmap.md) | 产品路线图 |
 | [`project/todo.md`](project/todo.md) | 下一阶段任务顺序、范围与验收条件 |
+| [`project/milestones.md`](project/milestones.md) | 已合入任务与验证里程碑索引 |
 | [`project/decisions/README.md`](project/decisions/README.md) | 架构决策索引 |
 
 ## 当前状态
@@ -34,4 +35,6 @@
 | [`postgres-volume-migration.md`](runbooks/postgres-volume-migration.md) | PostgreSQL 数据卷迁移 |
 | [`secure-deployment.md`](runbooks/secure-deployment.md) | HTTPS-only 生产部署 |
 | [`agent-tools-mcp.md`](runbooks/agent-tools-mcp.md) | ReactAgent、Skill、Tool 与 MCP 配置和验收 |
+| [`external-notifications.md`](runbooks/external-notifications.md) | 外部通知令牌、REST/MCP 与故障处理 |
 | [`device-v1.md`](protocol/device-v1.md) | 设备协议 |
+| [`external-notifications-v1.md`](protocol/external-notifications-v1.md) | 外部通知 REST 与 Streamable HTTP MCP 协议 |
