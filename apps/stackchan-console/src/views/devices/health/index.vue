@@ -180,7 +180,7 @@ onUnmounted(() => refreshTimer && clearTimeout(refreshTimer))
           description="这里只升级应用分区，不修改 NVS。旧固件不会收到未知命令；首次启用仍需一次逐次授权的 USB 引导。OTA 仅允许在线且已声明能力的设备，并要求手工输入当前版本确认。"
         />
 
-        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <FaCard title="服务版本">
             <div class="text-2xl font-semibold">{{ health?.serverVersion ?? '—' }}</div>
             <p class="mt-2 text-sm text-muted-foreground">Flyway V{{ health?.databaseMigration ?? '—' }}</p>
@@ -196,6 +196,10 @@ onUnmounted(() => refreshTimer && clearTimeout(refreshTimer))
           <FaCard title="恢复验证">
             <div class="text-base font-semibold">{{ health?.backup.lastRestoreVerificationSuccessful === true ? '通过' : health?.backup.lastRestoreVerificationSuccessful === false ? '失败' : '未执行' }}</div>
             <p class="mt-2 text-sm text-muted-foreground">{{ formatTime(health?.backup.lastRestoreVerificationAt) }}</p>
+          </FaCard>
+          <FaCard title="外部通知">
+            <div class="text-2xl font-semibold">{{ health?.notifications.queued ?? 0 }}</div>
+            <p class="mt-2 text-sm text-muted-foreground">排队；启用集成 {{ health?.notifications.enabledIntegrations ?? 0 }} · 24h 失败 {{ health?.notifications.failedLast24Hours ?? 0 }} / 过期 {{ health?.notifications.expiredLast24Hours ?? 0 }}</p>
           </FaCard>
         </div>
 

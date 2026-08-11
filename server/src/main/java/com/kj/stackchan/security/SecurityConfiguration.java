@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kj.stackchan.api.DeviceApiExceptionHandler;
+import com.kj.stackchan.notification.NotificationBearerAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -28,6 +29,7 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import static com.kj.stackchan.api.DeviceApiExceptionHandler.AUTHENTICATION_FAILED;
 
@@ -107,7 +109,8 @@ public class SecurityConfiguration {
             AuthenticationManager authenticationManager,
             SecurityContextRepository securityContextRepository,
             CsrfTokenRepository csrfTokenRepository,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            NotificationBearerAuthenticationFilter notificationBearerAuthenticationFilter
     ) throws Exception {
         return http
                 .csrf(csrf -> csrf
@@ -116,7 +119,9 @@ public class SecurityConfiguration {
                         .ignoringRequestMatchers(
                                 new AntPathRequestMatcher("/api/v1/pairing/claim", HttpMethod.POST.name()),
                                 new AntPathRequestMatcher("/api/v1/devices/token:refresh", HttpMethod.POST.name()),
-                                new AntPathRequestMatcher("/api/v1/device/**")
+                                new AntPathRequestMatcher("/api/v1/device/**"),
+                                new AntPathRequestMatcher("/api/v1/external/**"),
+                                new AntPathRequestMatcher("/mcp/notifications/**")
                         )
                 )
                 .authorizeHttpRequests(authorize -> authorize
@@ -130,8 +135,11 @@ public class SecurityConfiguration {
                         ).permitAll()
                         .requestMatchers("/api/v1/ws/device").permitAll()
                         .requestMatchers("/api/v1/device/**").permitAll()
+                        .requestMatchers("/api/v1/external/**", "/mcp/notifications/**")
+                        .hasAuthority(NotificationBearerAuthenticationFilter.AUTHORITY)
                         .anyRequest().authenticated()
                 )
+                .addFilterBefore(notificationBearerAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .securityContext(context -> context
                         .securityContextRepository(securityContextRepository)

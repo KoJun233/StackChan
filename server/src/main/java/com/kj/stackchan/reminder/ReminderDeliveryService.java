@@ -64,8 +64,14 @@ public class ReminderDeliveryService {
 
     public void dispatchDueReminders() {
         Instant now = clock.instant();
+        expireExternalNotifications(now);
         for (ReminderEntity reminder : reminderRepository
                 .findTop20ByStatusAndScheduledAtLessThanEqualOrderByScheduledAtAscIdAsc(ReminderStatus.PENDING, now)) {
+            if (isExpired(reminder, now)) {
+                reminder.markExpired(now);
+                reminderRepository.save(reminder);
+                continue;
+            }
             var settings = interactionSettingsService == null
                     ? null : interactionSettingsService.resolve(reminder.getDeviceId());
             if (settings != null && interactionSettingsService.isDnd(settings, now)) {
@@ -127,7 +133,13 @@ public class ReminderDeliveryService {
                 ReminderStatus.DISPATCHED,
                 now.minus(STALE_DISPATCH_AGE)
         );
-        reminders.forEach(reminder -> reminder.returnToPending(now));
+        reminders.forEach(reminder -> {
+            if (isExpired(reminder, now)) {
+                reminder.markExpired(now);
+            } else {
+                reminder.returnToPending(now);
+            }
+        });
         return reminders.size();
     }
 
@@ -147,6 +159,9 @@ public class ReminderDeliveryService {
             InteractionSettingsService.InteractionSettingsSnapshot settings,
             Instant now
     ) {
+        if (reminder.getSource() == ReminderSource.EXTERNAL) {
+            return;
+        }
         if (settings == null || settings.missedReminderPolicy() == MissedReminderPolicy.PLAY_NOW) {
             return;
         }
@@ -160,11 +175,29 @@ public class ReminderDeliveryService {
     }
 
     private boolean isBusy(UUID deviceId) {
+        if (reminderRepository.existsByDeviceIdAndStatus(deviceId, ReminderStatus.DISPATCHED)) {
+            return true;
+        }
         return voiceTurnRepository != null && voiceTurnRepository.existsByDeviceIdAndStatusInAndUpdatedAtAfter(
-                deviceId,
-                java.util.List.of(VoiceTurnStatus.IN_PROGRESS, VoiceTurnStatus.RESPONSE_READY),
-                clock.instant().minus(ACTIVE_VOICE_MAX_AGE)
-        );
+                    deviceId,
+                    java.util.List.of(VoiceTurnStatus.IN_PROGRESS, VoiceTurnStatus.RESPONSE_READY),
+                    clock.instant().minus(ACTIVE_VOICE_MAX_AGE)
+            );
+    }
+
+    private void expireExternalNotifications(Instant now) {
+        reminderRepository.findTop100BySourceAndStatusAndExpiresAtLessThanEqualOrderByExpiresAtAscIdAsc(
+                ReminderSource.EXTERNAL, ReminderStatus.PENDING, now
+        ).forEach(reminder -> {
+            reminder.markExpired(now);
+            reminderRepository.save(reminder);
+        });
+    }
+
+    private boolean isExpired(ReminderEntity reminder, Instant now) {
+        return reminder.getSource() == ReminderSource.EXTERNAL
+                && reminder.getExpiresAt() != null
+                && !reminder.getExpiresAt().isAfter(now);
     }
 
     private void completeFailure(ReminderEntity reminder, String failureCode, Instant now) {

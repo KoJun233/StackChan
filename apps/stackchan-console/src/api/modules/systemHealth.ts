@@ -26,7 +26,7 @@ export interface BackupHealth {
 }
 
 export interface SafeError {
-  category: 'VOICE_TURN' | 'FIRMWARE_UPDATE'
+  category: 'VOICE_TURN' | 'FIRMWARE_UPDATE' | 'EXTERNAL_NOTIFICATION'
   deviceId: string
   failureCode: string
   occurredAt: string
@@ -43,6 +43,12 @@ export interface SystemHealth {
     firmwareUpdates: number
     reminders: number
     wakeModels: number
+  }
+  notifications: {
+    enabledIntegrations: number
+    expiredLast24Hours: number
+    failedLast24Hours: number
+    queued: number
   }
   providers: ProviderStatus[]
   recentSafeErrors: SafeError[]

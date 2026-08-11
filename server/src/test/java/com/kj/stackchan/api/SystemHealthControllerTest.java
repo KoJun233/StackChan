@@ -11,6 +11,7 @@ import com.kj.stackchan.expression.DeviceExpressionPackRepository;
 import com.kj.stackchan.firmwareupdate.FirmwareUpdateJobRepository;
 import com.kj.stackchan.health.ProviderHealthRegistry;
 import com.kj.stackchan.llm.LlmSettingsService;
+import com.kj.stackchan.notification.NotificationIntegrationRepository;
 import com.kj.stackchan.reminder.ReminderRepository;
 import com.kj.stackchan.security.AdminUserRepository;
 import com.kj.stackchan.security.SecurityConfiguration;
@@ -48,6 +49,7 @@ class SystemHealthControllerTest {
     @MockitoBean private WakeWordModelJobRepository wakeJobRepository;
     @MockitoBean private DeviceExpressionPackRepository expressionRepository;
     @MockitoBean private ReminderRepository reminderRepository;
+    @MockitoBean private NotificationIntegrationRepository notificationIntegrationRepository;
     @MockitoBean private BackupStatusService backupStatusService;
     @MockitoBean private LlmSettingsService llmSettingsService;
     @MockitoBean private SpeechSettingsService speechSettingsService;

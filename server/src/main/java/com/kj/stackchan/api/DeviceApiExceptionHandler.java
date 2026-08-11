@@ -25,6 +25,7 @@ import com.kj.stackchan.speech.VoiceInputException;
 import com.kj.stackchan.speech.VoiceTurnCancelledException;
 import com.kj.stackchan.reminder.ReminderNotFoundException;
 import com.kj.stackchan.reminder.InvalidReminderException;
+import com.kj.stackchan.notification.NotificationApiException;
 import com.kj.stackchan.wakeword.InvalidWakeWordModelJobException;
 import com.kj.stackchan.wakeword.WakeWordModelCatalogUnavailableException;
 import com.kj.stackchan.wakeword.WakeWordModelNotFoundException;
@@ -277,6 +278,11 @@ public class DeviceApiExceptionHandler {
         return response(HttpStatus.NOT_FOUND, FIRMWARE_UPDATE_NOT_FOUND);
     }
 
+    @ExceptionHandler(NotificationApiException.class)
+    ResponseEntity<ApiError> notificationApiFailure(NotificationApiException exception) {
+        return response(exception.getStatus(), new ApiError(exception.getCode(), exception.getMessage()));
+    }
+
 
 
     @ExceptionHandler({
@@ -309,6 +315,12 @@ public class DeviceApiExceptionHandler {
         }
         if (requestUri.startsWith("/api/v1/personal-data")) {
             return response(HttpStatus.BAD_REQUEST, INVALID_PERSONAL_DATA_REQUEST);
+        }
+        if (requestUri.startsWith("/api/v1/external/notifications")
+                || requestUri.startsWith("/api/v1/notification-integrations")) {
+            return response(HttpStatus.BAD_REQUEST, new ApiError(
+                    "notification_invalid_request", "通知集成或通知请求参数无效。"
+            ));
         }
         if (requestUri.startsWith("/api/v1/auth/")) {
             return response(HttpStatus.UNAUTHORIZED, AUTHENTICATION_FAILED);

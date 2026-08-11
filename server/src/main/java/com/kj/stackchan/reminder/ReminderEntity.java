@@ -77,6 +77,18 @@ public class ReminderEntity {
     @Column(name = "audio_payload")
     private byte[] audioPayload;
 
+    @Column(name = "notification_integration_id")
+    private UUID notificationIntegrationId;
+
+    @Column(name = "idempotency_key", length = 128)
+    private String idempotencyKey;
+
+    @Column(name = "idempotency_content_hash", length = 64)
+    private String idempotencyContentHash;
+
+    @Column(name = "expires_at")
+    private Instant expiresAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -228,6 +240,26 @@ public class ReminderEntity {
         this.updatedAt = now;
     }
 
+    public void assignExternalMetadata(
+            UUID integrationId,
+            String idempotencyKey,
+            String contentHash,
+            Instant expiresAt,
+            Instant now
+    ) {
+        this.source = ReminderSource.EXTERNAL;
+        this.notificationIntegrationId = integrationId;
+        this.idempotencyKey = idempotencyKey;
+        this.idempotencyContentHash = contentHash;
+        this.expiresAt = expiresAt;
+        this.updatedAt = now;
+    }
+
+    public void markExpired(Instant now) {
+        completeOccurrence(ReminderStatus.EXPIRED, null, now);
+        this.failureCode = "notification_expired";
+    }
+
     public UUID getId() {
         return id;
     }
@@ -288,4 +320,9 @@ public class ReminderEntity {
     public Instant getUpdatedAt() {
         return updatedAt;
     }
+
+    public UUID getNotificationIntegrationId() { return notificationIntegrationId; }
+    public String getIdempotencyKey() { return idempotencyKey; }
+    public String getIdempotencyContentHash() { return idempotencyContentHash; }
+    public Instant getExpiresAt() { return expiresAt; }
 }
