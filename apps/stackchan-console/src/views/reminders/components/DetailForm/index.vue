@@ -5,6 +5,7 @@ import * as z from 'zod'
 import type { Device } from '@/api/modules/devices'
 import type { ReminderRecurrence } from '@/api/modules/reminders'
 import { listDevices } from '@/api/modules/devices'
+import { listRoles } from '@/api/modules/roles'
 import {
   createReminder,
   currentTimeZone,
@@ -26,6 +27,7 @@ interface DetailFormModel {
   content: string
   deviceId: string
   id: string
+  roleId: string
   recurrenceInterval: number
   recurrenceType: ReminderRecurrence
   scheduledAtLocal: string
@@ -35,8 +37,10 @@ interface DetailFormModel {
 const formRef = useTemplateRef<FormExpose>('formRef')
 const loading = ref(false)
 const devices = ref<Device[]>([])
+const roleOptions = ref<{ label: string, value: string }[]>([])
 const model = ref<DetailFormModel>({
   id: props.id,
+  roleId: '',
   deviceId: '',
   content: '',
   recurrenceType: 'NONE',
@@ -61,6 +65,7 @@ const recurrenceOptions = [
 
 const validationSchema = toTypedSchema(z.object({
   deviceId: z.string().uuid('请选择目标设备'),
+  roleId: z.string().uuid('请选择角色'),
   content: z.string().trim().min(1, '请输入提醒内容').max(1000, '提醒内容不能超过 1000 个字符'),
   scheduledAtLocal: z.string().min(1, '请选择提醒时间'),
   recurrenceType: z.enum(['NONE', 'DAILY', 'WEEKLY']),
@@ -90,6 +95,7 @@ async function loadReminder(id: string) {
     model.value = {
       id: reminder.id,
       deviceId: reminder.deviceId,
+      roleId: reminder.roleId,
       content: reminder.content,
       recurrenceType: reminder.recurrenceType,
       recurrenceInterval: reminder.recurrenceInterval,
@@ -114,6 +120,7 @@ async function resetForRoute(id: string) {
     model.value = {
       id: '',
       deviceId: devices.value.length === 1 ? devices.value[0].id : '',
+      roleId: roleOptions.value[0]?.value ?? '',
       content: '',
       recurrenceType: 'NONE',
       recurrenceInterval: 1,
@@ -133,6 +140,7 @@ async function submit(): Promise<boolean> {
   try {
     const input = {
       deviceId: model.value.deviceId,
+      roleId: model.value.roleId,
       content: model.value.content.trim(),
       scheduledAt: toReminderInstant(model.value.scheduledAtLocal),
       recurrenceType: model.value.recurrenceType,
@@ -160,6 +168,7 @@ async function submit(): Promise<boolean> {
 
 onMounted(async () => {
   await loadDevices()
+  roleOptions.value = (await listRoles()).filter(role => !role.archivedAt).map(role => ({ label: role.name, value: role.id }))
   await resetForRoute(props.id)
 })
 
@@ -181,6 +190,9 @@ defineExpose({ submit })
     >
       <FaFormItem name="deviceId" label="目标设备" required>
         <FaSelect :options="deviceOptions" placeholder="请选择要播报提醒的机器人" class="w-full" />
+      </FaFormItem>
+      <FaFormItem name="roleId" label="归属角色" required :description="model.id ? '提醒创建后不可改绑角色。' : undefined">
+        <FaSelect :options="roleOptions" :disabled="Boolean(model.id)" class="w-full" />
       </FaFormItem>
       <FaFormItem name="content" label="提醒内容" required>
         <FaTextarea rows="5" align="block" placeholder="例如：去拿外卖" class="w-full" />

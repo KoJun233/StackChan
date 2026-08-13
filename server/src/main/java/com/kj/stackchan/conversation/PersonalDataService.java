@@ -54,7 +54,7 @@ public class PersonalDataService {
                 .addValue("limit", limit)
                 .addValue("offset", from);
         List<ConversationSummary> conversations = jdbcTemplate.query("""
-                select c.id, c.title, c.created_at, c.updated_at,
+                select c.id, c.title, c.role_id, r.name as role_name, c.created_at, c.updated_at,
                        dvc.device_id, d.display_name,
                        (select count(*) from conversation_messages cm where cm.conversation_id = c.id) as message_count
                   from conversations c
@@ -127,7 +127,7 @@ public class PersonalDataService {
                 1,
                 clock.instant(),
                 new ExportFilter(
-                        effectiveFilter.query(), effectiveFilter.deviceId(), effectiveFilter.fromTime(),
+                        effectiveFilter.query(), effectiveFilter.deviceId(), effectiveFilter.roleId(), effectiveFilter.fromTime(),
                         effectiveFilter.toTime(), effectiveFilter.conversationId()
                 ),
                 conversations
@@ -150,6 +150,7 @@ public class PersonalDataService {
 
     private QueryParts queryParts(ConversationFilter filter) {
         StringBuilder joins = new StringBuilder(" left join device_voice_conversations dvc on dvc.conversation_id = c.id")
+                .append(" left join companion_roles r on r.id = c.role_id")
                 .append(" left join devices d on d.id = dvc.device_id ");
         List<String> conditions = new ArrayList<>();
         MapSqlParameterSource parameters = new MapSqlParameterSource();
@@ -160,6 +161,10 @@ public class PersonalDataService {
         if (filter.deviceId() != null) {
             conditions.add("dvc.device_id = :deviceId");
             parameters.addValue("deviceId", filter.deviceId());
+        }
+        if (filter.roleId() != null) {
+            conditions.add("c.role_id = :roleId");
+            parameters.addValue("roleId", filter.roleId());
         }
         if (filter.fromTime() != null) {
             conditions.add("c.updated_at >= :fromTime");
@@ -189,6 +194,8 @@ public class PersonalDataService {
         return new ConversationSummary(
                 resultSet.getObject("id", UUID.class),
                 resultSet.getString("title"),
+                resultSet.getObject("role_id", UUID.class),
+                resultSet.getString("role_name"),
                 resultSet.getObject("device_id", UUID.class),
                 resultSet.getString("display_name"),
                 resultSet.getLong("message_count"),
@@ -200,30 +207,44 @@ public class PersonalDataService {
     public record ConversationFilter(
             String query,
             UUID deviceId,
+            UUID roleId,
             Instant fromTime,
             Instant toTime,
             UUID conversationId
     ) {
+        public ConversationFilter(String query, UUID deviceId, Instant fromTime, Instant toTime, UUID conversationId) {
+            this(query, deviceId, null, fromTime, toTime, conversationId);
+        }
         public ConversationFilter withConversationId(UUID id) {
-            return new ConversationFilter(query, deviceId, fromTime, toTime, id == null ? conversationId : id);
+            return new ConversationFilter(query, deviceId, roleId, fromTime, toTime, id == null ? conversationId : id);
         }
     }
 
     public record ConversationSummary(
             UUID id,
             String title,
+            UUID roleId,
+            String roleName,
             UUID deviceId,
             String deviceName,
             long messageCount,
             Instant createdAt,
             Instant updatedAt
     ) {
+        public ConversationSummary(UUID id, String title, UUID deviceId, String deviceName,
+                                   long messageCount, Instant createdAt, Instant updatedAt) {
+            this(id, title, com.kj.stackchan.role.CompanionRoleEntity.DEFAULT_ROLE_ID, "StackChan",
+                    deviceId, deviceName, messageCount, createdAt, updatedAt);
+        }
     }
 
     public record ConversationPage(List<ConversationSummary> list, long total) {
     }
 
-    public record ExportFilter(String query, UUID deviceId, Instant fromTime, Instant toTime, UUID conversationId) {
+    public record ExportFilter(String query, UUID deviceId, UUID roleId, Instant fromTime, Instant toTime, UUID conversationId) {
+        public ExportFilter(String query, UUID deviceId, Instant fromTime, Instant toTime, UUID conversationId) {
+            this(query, deviceId, null, fromTime, toTime, conversationId);
+        }
     }
 
     public record ExportedConversation(ConversationSummary conversation, List<ConversationMessageSnapshot> messages) {

@@ -2,6 +2,7 @@ import { apiJson, csrfHeaders, notifySessionExpired, responseError } from '../cl
 
 export interface Conversation {
   id: string
+  roleId: string
   title: string
   createdAt: string
   updatedAt: string
@@ -60,12 +61,12 @@ export interface StreamMessageHandlers {
   onMessage?: (event: MessageStartedEvent) => void
 }
 
-export function createConversation(): Promise<Conversation> {
-  return apiJson('/api/v1/conversations', { method: 'POST' })
+export function createConversation(roleId?: string): Promise<Conversation> {
+  return apiJson('/api/v1/conversations', { method: 'POST', ...(roleId ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roleId }) } : {}) })
 }
 
-export function listConversations(): Promise<Conversation[]> {
-  return apiJson('/api/v1/conversations')
+export function listConversations(roleId?: string): Promise<Conversation[]> {
+  return apiJson(roleId ? `/api/v1/conversations?roleId=${encodeURIComponent(roleId)}` : '/api/v1/conversations')
 }
 
 export function getConversationMessages(conversationId: string): Promise<ConversationMessage[]> {

@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.jpa.repository.Modifying;
 
 public interface ReminderRepository extends JpaRepository<ReminderEntity, UUID>, JpaSpecificationExecutor<ReminderEntity> {
 
@@ -53,6 +54,8 @@ public interface ReminderRepository extends JpaRepository<ReminderEntity, UUID>,
             UUID deviceId,
             ReminderStatus status
     );
+    Optional<ReminderEntity> findFirstByDeviceIdAndRoleIdAndStatusOrderByScheduledAtAscIdAsc(
+            UUID deviceId, UUID roleId, ReminderStatus status);
 
     boolean existsByDeviceIdAndStatus(UUID deviceId, ReminderStatus status);
 
@@ -83,4 +86,10 @@ public interface ReminderRepository extends JpaRepository<ReminderEntity, UUID>,
             ReminderSource source,
             java.util.Collection<ReminderStatus> statuses
     );
+
+    @Modifying
+    @Query("update ReminderEntity reminder set reminder.status = com.kj.stackchan.reminder.ReminderStatus.CANCELLED, "
+            + "reminder.updatedAt = :now where reminder.roleId = :roleId "
+            + "and reminder.status = com.kj.stackchan.reminder.ReminderStatus.PENDING")
+    int cancelFutureByRoleId(@Param("roleId") UUID roleId, @Param("now") Instant now);
 }

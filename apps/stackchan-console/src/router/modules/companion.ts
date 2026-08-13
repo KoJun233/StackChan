@@ -29,9 +29,15 @@ const companionRoute: RouteRecordRaw = {
       name: 'companionPersona',
       component: () => import('@/views/companion/persona/index.vue'),
       meta: {
-        title: '人设设置',
+        title: '角色管理',
         icon: 'i-ri:user-heart-line',
       },
+    },
+    {
+      path: 'roles/detail/:id?',
+      name: 'companionRoleDetail',
+      component: () => import('@/views/companion/roles/detail.vue'),
+      meta: { title: '角色详情', menu: false, activeMenu: '/companion/persona', keepAlive: true, noKeepAlive: 'companionPersona' },
     },
     {
       path: 'memories',

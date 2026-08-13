@@ -37,10 +37,12 @@ public class ReminderController {
     public ReminderService.ReminderPage list(
             @RequestParam(defaultValue = "") String content,
             @RequestParam(required = false) ReminderStatus status,
+            @RequestParam(required = false) UUID roleId,
             @RequestParam(defaultValue = "0") int from,
             @RequestParam(defaultValue = "20") int limit
     ) {
-        return reminderService.list(content, status, from, limit);
+        return roleId == null ? reminderService.list(content, status, from, limit)
+                : reminderService.list(roleId, content, status, from, limit);
     }
 
     @GetMapping("/{id}")
@@ -51,7 +53,8 @@ public class ReminderController {
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public ReminderService.ReminderSnapshot create(@Valid @RequestBody ReminderRequest request) {
-        return reminderService.create(request.toCommand());
+        return request.roleId() == null ? reminderService.create(request.toCommand())
+                : reminderService.create(request.roleId(), request.toCommand());
     }
 
     @PutMapping(path = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -77,6 +80,7 @@ public class ReminderController {
 
     public record ReminderRequest(
             @NotNull UUID deviceId,
+            UUID roleId,
             @NotBlank @Size(max = 1000) String content,
             @NotNull Instant scheduledAt,
             @NotBlank @Size(max = 80) String zoneId,

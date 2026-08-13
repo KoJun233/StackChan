@@ -37,6 +37,7 @@ export interface LongTermMemory {
   deviceId: string | null
   enabled: boolean
   id: string
+  roleId: string
   importance: number
   lastUsedAt: string | null
   sourceTurnId: string | null
@@ -60,6 +61,7 @@ export interface MemoryInput {
   title: string
   topicKey: string
   importance: number
+  roleId?: string
   allowProactiveMention: boolean
 }
 
@@ -76,6 +78,7 @@ export interface MemoryListParams {
   from: number
   limit: number
   query?: string
+  roleId?: string
   scopeType?: MemoryScopeType | ''
 }
 
@@ -119,6 +122,7 @@ export function listMemories(params: MemoryListParams): Promise<MemoryPage> {
   if (params.deviceId) {
     query.set('deviceId', params.deviceId)
   }
+  if (params.roleId) query.set('roleId', params.roleId)
   return apiJson(`/api/v1/memories?${query.toString()}`)
 }
 

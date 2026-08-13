@@ -35,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -65,13 +66,15 @@ public class ConversationController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ConversationSnapshot createConversation() {
-        return conversationService.createConversation();
+    public ConversationSnapshot createConversation(@RequestBody(required = false) CreateConversationRequest request) {
+        return request == null || request.roleId() == null
+                ? conversationService.createConversation()
+                : conversationService.createConversation(request.roleId());
     }
 
     @GetMapping
-    public List<ConversationSnapshot> listConversations() {
-        return conversationService.listConversations();
+    public List<ConversationSnapshot> listConversations(@RequestParam(required = false) UUID roleId) {
+        return roleId == null ? conversationService.listConversations() : conversationService.listConversations(roleId);
     }
 
     @GetMapping("/{conversationId}/messages")
@@ -124,6 +127,7 @@ public class ConversationController {
                                     start.assistantMessageId(),
                                     conversationId,
                                     null,
+                                    conversationService.roleId(conversationId),
                                     AgentChannel.WEB
                             ),
                             systemPrompt,
@@ -138,15 +142,14 @@ public class ConversationController {
                 String content = generatedContent.snapshot();
                 conversationService.completeGeneration(start.assistantMessageId(), content);
                 if (completedTurnMemoryCoordinator != null) {
-                    completedTurnMemoryCoordinator.complete(
-                            start.assistantMessageId(),
-                            start.assistantMessageId(),
-                            null,
-                            request.content(),
-                            content,
-                            usedMemoryIds,
-                            true
-                    );
+                    UUID roleId = conversationService.roleId(conversationId);
+                    if (roleId == null || com.kj.stackchan.role.CompanionRoleEntity.DEFAULT_ROLE_ID.equals(roleId)) {
+                        completedTurnMemoryCoordinator.complete(start.assistantMessageId(), start.assistantMessageId(),
+                                null, request.content(), content, usedMemoryIds, true);
+                    } else {
+                        completedTurnMemoryCoordinator.complete(start.assistantMessageId(), start.assistantMessageId(),
+                                null, roleId, request.content(), content, usedMemoryIds, true);
+                    }
                 }
                 return event("completed", new CompletedEvent(start.assistantMessageId(), content));
             });
@@ -223,6 +226,8 @@ public class ConversationController {
             @NotBlank @Size(max = 12000) String content
     ) {
     }
+
+    public record CreateConversationRequest(UUID roleId) {}
 
     public record MessageStartedEvent(UUID conversationId, UUID userMessageId, UUID assistantMessageId) {
     }

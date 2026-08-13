@@ -5,6 +5,7 @@ import type { Reminder, ReminderStatus } from '@/api/modules/reminders'
 import { listDevices } from '@/api/modules/devices'
 import { deleteReminder, listReminders, skipNextReminder, snoozeReminder } from '@/api/modules/reminders'
 import eventBus from '@/utils/eventBus'
+import { listRoles } from '@/api/modules/roles'
 
 defineOptions({ name: 'ReminderList' })
 
@@ -14,10 +15,12 @@ const tableAutoHeight = ref(false)
 const loading = ref(false)
 const dataList = ref<Reminder[]>([])
 const devices = ref<Device[]>([])
+const roles = ref<{ id: string, name: string }[]>([])
 
 const searchDefault = {
   content: '',
   status: '' as ReminderStatus | '',
+  roleId: '',
 }
 const search = ref({ ...searchDefault })
 const batch = ref({
@@ -36,12 +39,15 @@ const statusOptions = [
 ]
 
 const deviceNames = computed(() => new Map(devices.value.map(device => [device.id, device.displayName])))
+const roleNames = computed(() => new Map(roles.value.map(role => [role.id, role.name])))
+const roleOptions = computed(() => [{ label: '全部角色', value: '' }, ...roles.value.map(role => ({ label: role.name, value: role.id }))])
 
 const tableColumns = computed<TableColumn<Reminder>[]>(() => [
   ...(batch.value.enable
     ? [{ type: 'selection', fixed: 'left', width: 48 } satisfies TableColumn<Reminder>]
     : []),
   { accessorKey: 'content', header: '提醒内容', minWidth: 240 },
+  { id: 'role', header: '角色', minWidth: 130 },
   { id: 'device', header: '目标设备', minWidth: 150 },
   { id: 'scheduledAt', header: '提醒时间', minWidth: 180 },
   { id: 'recurrence', header: '重复', width: 110, align: 'center' },
@@ -121,6 +127,7 @@ async function getDataList() {
       limit: params.limit,
       content: search.value.content,
       status: search.value.status,
+      roleId: search.value.roleId || undefined,
     })
     dataList.value = result.list
     pagination.value.total = result.total
@@ -141,6 +148,8 @@ async function loadDevices() {
     useFaToast().error('设备加载失败', { description: error instanceof Error ? error.message : '无法获取设备列表。' })
   }
 }
+
+async function loadRoles() { roles.value = await listRoles() }
 
 function sizeChange(size: number) {
   onSizeChange(size).then(() => getDataList())
@@ -183,6 +192,7 @@ function confirmDelete(rows: Reminder[]) {
 
 onMounted(() => {
   loadDevices()
+  loadRoles()
   getDataList()
   eventBus.on('get-data-list', getDataList)
 })
@@ -211,6 +221,9 @@ onBeforeUnmount(() => {
             </FaLabel>
             <FaLabel v-show="!fold" label="状态" class="col-span-1">
               <FaSelect v-model="search.status" :options="statusOptions" class="w-full" @change="currentChange()" />
+            </FaLabel>
+            <FaLabel v-show="!fold" label="角色" class="col-span-1">
+              <FaSelect v-model="search.roleId" :options="roleOptions" class="w-full" @change="currentChange()" />
             </FaLabel>
             <div class="flex gap-2 col-end--1 justify-end">
               <FaButton variant="outline" @click="searchReset(); currentChange()">
@@ -267,6 +280,7 @@ onBeforeUnmount(() => {
         <template #cell-device="{ row }">
           {{ deviceNames.get(row.original.deviceId) || row.original.deviceId }}
         </template>
+        <template #cell-role="{ row }">{{ roleNames.get(row.original.roleId) || row.original.roleId }}</template>
         <template #cell-scheduledAt="{ row }">
           <div>{{ formatTime(row.original.scheduledAt) }}</div>
           <div class="text-xs text-muted-foreground">

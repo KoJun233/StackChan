@@ -5,6 +5,8 @@ import java.time.Instant;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.kj.stackchan.role.CompanionRoleService;
 
 @Service
 public class PersonaService {
@@ -21,14 +23,24 @@ public class PersonaService {
 
     private final PersonaSettingsRepository repository;
     private final Clock clock;
+    private final CompanionRoleService roleService;
 
     public PersonaService(PersonaSettingsRepository repository, Clock clock) {
         this.repository = repository;
         this.clock = clock;
+        this.roleService = null;
+    }
+
+    @Autowired
+    public PersonaService(CompanionRoleService roleService, Clock clock) {
+        this.repository = null;
+        this.clock = clock;
+        this.roleService = roleService;
     }
 
     @Transactional(readOnly = true)
     public PersonaSnapshot get() {
+        if (roleService != null) return toSnapshot(roleService.getDefault());
         return repository.findById(PersonaSettingsEntity.CURRENT_SETTINGS_ID)
                 .map(this::toSnapshot)
                 .orElse(DEFAULT_PERSONA);
@@ -37,6 +49,12 @@ public class PersonaService {
     @Transactional
     public PersonaSnapshot save(PersonaCommand command) {
         ValidatedPersona validated = validate(command);
+        if (roleService != null) {
+            var current = roleService.getDefault();
+            return toSnapshot(roleService.update(current.id(), new CompanionRoleService.RoleCommand(
+                    validated.displayName(), validated.tone(), validated.replyLength(), validated.proactivity(),
+                    current.backgroundInstructions(), validated.topicBoundaries(), validated.taboos())));
+        }
         Instant now = clock.instant();
         PersonaSettingsEntity entity = repository.findById(PersonaSettingsEntity.CURRENT_SETTINGS_ID)
                 .orElseGet(() -> new PersonaSettingsEntity(
@@ -95,6 +113,11 @@ public class PersonaService {
                 entity.getTaboos(),
                 entity.getUpdatedAt()
         );
+    }
+
+    private PersonaSnapshot toSnapshot(CompanionRoleService.RoleSnapshot role) {
+        return new PersonaSnapshot(role.name(), role.tone(), role.replyLength(), role.proactivity(),
+                role.topicBoundaries(), role.taboos(), role.updatedAt());
     }
 
     public record PersonaCommand(

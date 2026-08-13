@@ -10,6 +10,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import com.kj.stackchan.role.CompanionRoleEntity;
 
 @Entity
 @Table(name = "reminders")
@@ -20,6 +21,9 @@ public class ReminderEntity {
 
     @Column(name = "device_id", nullable = false)
     private UUID deviceId;
+
+    @Column(name = "role_id", nullable = false)
+    private UUID roleId;
 
     @Column(nullable = false, length = 1000)
     private String content;
@@ -99,7 +103,8 @@ public class ReminderEntity {
     }
 
     public ReminderEntity(UUID deviceId, String content, Instant scheduledAt, String zoneId, Instant now) {
-        this(deviceId, content, scheduledAt, zoneId, ReminderRecurrence.NONE, 1, null, ReminderSource.USER, now);
+        this(CompanionRoleEntity.DEFAULT_ROLE_ID, deviceId, content, scheduledAt, zoneId,
+                ReminderRecurrence.NONE, 1, null, ReminderSource.USER, now);
     }
 
     public ReminderEntity(
@@ -113,7 +118,16 @@ public class ReminderEntity {
             ReminderSource source,
             Instant now
     ) {
-        this(deviceId, content, scheduledAt, zoneId, recurrenceType, recurrenceInterval,
+        this(CompanionRoleEntity.DEFAULT_ROLE_ID, deviceId, content, scheduledAt, zoneId, recurrenceType, recurrenceInterval,
+                recurrenceAnchorLocal, source, null, null, now);
+    }
+
+    public ReminderEntity(
+            UUID roleId, UUID deviceId, String content, Instant scheduledAt, String zoneId,
+            ReminderRecurrence recurrenceType, int recurrenceInterval, LocalDateTime recurrenceAnchorLocal,
+            ReminderSource source, Instant now
+    ) {
+        this(roleId, deviceId, content, scheduledAt, zoneId, recurrenceType, recurrenceInterval,
                 recurrenceAnchorLocal, source, null, null, now);
     }
 
@@ -130,7 +144,26 @@ public class ReminderEntity {
             ProactiveGenerationStatus proactiveGenerationStatus,
             Instant now
     ) {
+        this(CompanionRoleEntity.DEFAULT_ROLE_ID, deviceId, content, scheduledAt, zoneId, recurrenceType,
+                recurrenceInterval, recurrenceAnchorLocal, source, proactiveTopicKey, proactiveGenerationStatus, now);
+    }
+
+    public ReminderEntity(
+            UUID roleId,
+            UUID deviceId,
+            String content,
+            Instant scheduledAt,
+            String zoneId,
+            ReminderRecurrence recurrenceType,
+            int recurrenceInterval,
+            LocalDateTime recurrenceAnchorLocal,
+            ReminderSource source,
+            String proactiveTopicKey,
+            ProactiveGenerationStatus proactiveGenerationStatus,
+            Instant now
+    ) {
         this.id = UUID.randomUUID();
+        this.roleId = roleId;
         this.deviceId = deviceId;
         this.content = content;
         this.scheduledAt = scheduledAt;
@@ -267,6 +300,8 @@ public class ReminderEntity {
     public UUID getDeviceId() {
         return deviceId;
     }
+
+    public UUID getRoleId() { return roleId; }
 
     public String getContent() {
         return content;

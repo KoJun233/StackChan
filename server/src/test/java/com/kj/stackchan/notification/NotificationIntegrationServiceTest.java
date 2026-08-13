@@ -13,6 +13,7 @@ import com.kj.stackchan.reminder.ReminderEntity;
 import com.kj.stackchan.reminder.ReminderRecurrence;
 import com.kj.stackchan.reminder.ReminderRepository;
 import com.kj.stackchan.reminder.ReminderSource;
+import com.kj.stackchan.role.CompanionRoleRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -35,6 +36,7 @@ class NotificationIntegrationServiceTest {
     @Mock private DeviceRepository deviceRepository;
     @Mock private ReminderRepository reminderRepository;
     @Mock private NotificationRateLimiter rateLimiter;
+    @Mock private CompanionRoleRepository roleRepository;
 
     @Test
     void issuesHighEntropyTokenStoresOnlyHashAndRevokesIt() {
@@ -151,7 +153,7 @@ class NotificationIntegrationServiceTest {
     private NotificationIntegrationService service() {
         return new NotificationIntegrationService(
                 integrationRepository, tokenRepository, deviceRepository, reminderRepository, rateLimiter,
-                Clock.fixed(NOW, ZoneOffset.UTC)
+                Clock.fixed(NOW, ZoneOffset.UTC), roleRepository
         );
     }
 }

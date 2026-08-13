@@ -17,6 +17,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.kj.stackchan.role.CompanionRoleEntity;
 
 @Service
 public class LongTermMemoryService {
@@ -63,10 +64,18 @@ public class LongTermMemoryService {
             int from,
             int limit
     ) {
+        return list(CompanionRoleEntity.DEFAULT_ROLE_ID, query, category, confirmationStatus,
+                enabled, scopeType, deviceId, from, limit);
+    }
+
+    @Transactional(readOnly = true)
+    public MemoryPage list(UUID roleId, String query, MemoryCategory category,
+                           MemoryConfirmationStatus confirmationStatus, Boolean enabled,
+                           MemoryScopeType scopeType, UUID deviceId, int from, int limit) {
         int safeLimit = Math.min(Math.max(limit, 1), 100);
         int page = Math.max(from, 0) / safeLimit;
         Specification<LongTermMemoryEntity> specification = baseSpecification(
-                query, category, confirmationStatus, enabled, scopeType, deviceId
+                roleId, query, category, confirmationStatus, enabled, scopeType, deviceId
         );
         Page<LongTermMemoryEntity> result = repository.findAll(
                 specification,
@@ -82,6 +91,11 @@ public class LongTermMemoryService {
 
     @Transactional
     public MemorySnapshot create(MemoryCommand command) {
+        return create(CompanionRoleEntity.DEFAULT_ROLE_ID, command);
+    }
+
+    @Transactional
+    public MemorySnapshot create(UUID roleId, MemoryCommand command) {
         ValidatedMemory validated = validate(command);
         Instant now = clock.instant();
         LongTermMemoryEntity memory = new LongTermMemoryEntity(
@@ -100,18 +114,24 @@ public class LongTermMemoryService {
                 validated.allowProactiveMention(),
                 now
         );
+        memory.assignRole(roleId);
         return toSnapshot(repository.save(memory));
     }
 
     @Transactional
     public MemorySnapshot suggest(MemorySuggestionCommand command) {
+        return suggest(CompanionRoleEntity.DEFAULT_ROLE_ID, command);
+    }
+
+    @Transactional
+    public MemorySnapshot suggest(UUID roleId, MemorySuggestionCommand command) {
         ValidatedMemory validated = validate(command.memory());
         String sourceDetail = normalize(command.sourceDetail(), 500, "Memory suggestion reason is invalid", false);
         if (!safetyPolicy.isAllowed(validated.title(), validated.content(), sourceDetail)) {
             throw new InvalidMemoryException("Sensitive memory suggestion is not allowed");
         }
         Instant now = clock.instant();
-        UUID replacesMemoryId = findReplacement(validated).stream().findFirst()
+        UUID replacesMemoryId = findReplacement(roleId, validated).stream().findFirst()
                 .map(LongTermMemoryEntity::getId)
                 .orElse(null);
         LongTermMemoryEntity memory = new LongTermMemoryEntity(
@@ -130,6 +150,7 @@ public class LongTermMemoryService {
                 false,
                 now
         );
+        memory.assignRole(roleId);
         return toSnapshot(repository.save(memory));
     }
 
@@ -154,7 +175,7 @@ public class LongTermMemoryService {
         );
         if (memory.getConfirmationStatus() == MemoryConfirmationStatus.PENDING
                 && memory.getSource() == MemorySource.ASSISTANT_SUGGESTED) {
-            UUID replacementId = findReplacement(validated).stream().findFirst()
+            UUID replacementId = findReplacement(memory.getRoleId(), validated).stream().findFirst()
                     .map(LongTermMemoryEntity::getId)
                     .orElse(null);
             memory.setReplacementCandidate(replacementId, clock.instant());
@@ -205,9 +226,14 @@ public class LongTermMemoryService {
 
     @Transactional
     public long clear(MemoryScopeType scopeType, UUID deviceId) {
+        return clear(CompanionRoleEntity.DEFAULT_ROLE_ID, scopeType, deviceId);
+    }
+
+    @Transactional
+    public long clear(UUID roleId, MemoryScopeType scopeType, UUID deviceId) {
         validateScopeFilter(scopeType, deviceId);
         List<LongTermMemoryEntity> memories = repository.findAll(baseSpecification(
-                "", null, null, null, scopeType, deviceId
+                roleId, "", null, null, null, scopeType, deviceId
         ));
         repository.deleteAll(memories);
         return memories.size();
@@ -215,32 +241,42 @@ public class LongTermMemoryService {
 
     @Transactional(readOnly = true)
     public List<MemorySnapshot> loadContext(UUID deviceId, int limit) {
-        return loadContext(deviceId, "", limit);
+        return loadContext(CompanionRoleEntity.DEFAULT_ROLE_ID, deviceId, "", limit);
     }
 
     @Transactional(readOnly = true)
     public List<MemorySnapshot> loadContext(UUID deviceId, String queryText, int limit) {
+        return loadContext(CompanionRoleEntity.DEFAULT_ROLE_ID, deviceId, queryText, limit);
+    }
+
+    @Transactional(readOnly = true)
+    public List<MemorySnapshot> loadContext(UUID roleId, UUID deviceId, String queryText, int limit) {
         int safeLimit = Math.min(Math.max(limit, 1), 8);
         try {
             List<LongTermMemoryEntity> matches = repository.searchContext(
-                    deviceId, normalizeSearchQuery(queryText), safeLimit
+                    roleId, deviceId, normalizeSearchQuery(queryText), safeLimit
             );
             if (matches == null) {
-                return loadContextFallback(deviceId, safeLimit);
+                return loadContextFallback(roleId, deviceId, safeLimit);
             }
             return matches.stream()
                     .map(this::toSnapshot)
                     .toList();
         } catch (DataAccessException ignored) {
-            return loadContextFallback(deviceId, safeLimit);
+            return loadContextFallback(roleId, deviceId, safeLimit);
         }
     }
 
     @Transactional(readOnly = true)
     public List<MemorySnapshot> loadProactiveCandidates(UUID deviceId, int limit) {
+        return loadProactiveCandidates(CompanionRoleEntity.DEFAULT_ROLE_ID, deviceId, limit);
+    }
+
+    @Transactional(readOnly = true)
+    public List<MemorySnapshot> loadProactiveCandidates(UUID roleId, UUID deviceId, int limit) {
         if (deviceId == null) return List.of();
         int safeLimit = Math.min(Math.max(limit, 1), 8);
-        return repository.findProactiveCandidates(deviceId, PageRequest.of(0, safeLimit)).stream()
+        return repository.findProactiveCandidates(roleId, deviceId, PageRequest.of(0, safeLimit)).stream()
                 .filter(memory -> safetyPolicy.isAllowed(
                         memory.getTitle(), memory.getContent(), memory.getSourceDetail()
                 ))
@@ -248,9 +284,10 @@ public class LongTermMemoryService {
                 .toList();
     }
 
-    private List<MemorySnapshot> loadContextFallback(UUID deviceId, int limit) {
+    private List<MemorySnapshot> loadContextFallback(UUID roleId, UUID deviceId, int limit) {
         Specification<LongTermMemoryEntity> specification = (root, query, builder) -> builder.and(
                 builder.equal(root.get("confirmationStatus"), MemoryConfirmationStatus.CONFIRMED),
+                builder.equal(root.get("roleId"), roleId),
                 builder.isTrue(root.get("enabled")),
                 builder.isNull(root.get("supersededByMemoryId")),
                 deviceId == null
@@ -326,13 +363,19 @@ public class LongTermMemoryService {
 
     @Transactional(readOnly = true)
     public long pendingVisibleCount(UUID deviceId) {
+        return pendingVisibleCount(CompanionRoleEntity.DEFAULT_ROLE_ID, deviceId);
+    }
+
+    @Transactional(readOnly = true)
+    public long pendingVisibleCount(UUID roleId, UUID deviceId) {
         if (deviceId == null || !deviceRepository.existsById(deviceId)) {
             throw new InvalidMemoryException("Memory device scope is invalid");
         }
-        return repository.countVisibleByDeviceAndStatus(deviceId, MemoryConfirmationStatus.PENDING);
+        return repository.countVisibleByRoleAndDeviceAndStatus(roleId, deviceId, MemoryConfirmationStatus.PENDING);
     }
 
     private Specification<LongTermMemoryEntity> baseSpecification(
+            UUID roleId,
             String queryText,
             MemoryCategory category,
             MemoryConfirmationStatus confirmationStatus,
@@ -342,6 +385,7 @@ public class LongTermMemoryService {
     ) {
         validateScopeFilter(scopeType, deviceId);
         Specification<LongTermMemoryEntity> specification = (root, query, builder) -> builder.conjunction();
+        specification = specification.and((root, query, builder) -> builder.equal(root.get("roleId"), roleId));
         if (queryText != null && !queryText.isBlank()) {
             String pattern = "%" + queryText.trim().toLowerCase() + "%";
             specification = specification.and((root, query, builder) -> builder.or(
@@ -385,9 +429,9 @@ public class LongTermMemoryService {
         );
     }
 
-    private List<LongTermMemoryEntity> findReplacement(ValidatedMemory memory) {
+    private List<LongTermMemoryEntity> findReplacement(UUID roleId, ValidatedMemory memory) {
         List<LongTermMemoryEntity> matches = repository.findActiveTopicMatches(
-                memory.topicKey(), memory.scopeType(), memory.deviceId()
+                roleId, memory.topicKey(), memory.scopeType(), memory.deviceId()
         );
         return matches == null ? List.of() : matches;
     }
@@ -445,7 +489,7 @@ public class LongTermMemoryService {
 
     private MemorySnapshot toSnapshot(LongTermMemoryEntity memory) {
         List<LongTermMemoryEntity> duplicateMatches = repository.findPossibleDuplicates(
-                memory.getTopicKey(), memory.getScopeType(), memory.getDeviceId(), memory.getId()
+                memory.getRoleId(), memory.getTopicKey(), memory.getScopeType(), memory.getDeviceId(), memory.getId()
         );
         List<UUID> duplicateIds = duplicateMatches == null ? List.of() : duplicateMatches.stream()
                 .limit(5)
@@ -453,6 +497,7 @@ public class LongTermMemoryService {
                 .toList();
         return new MemorySnapshot(
                 memory.getId(),
+                memory.getRoleId(),
                 memory.getScopeType(),
                 memory.getDeviceId(),
                 memory.getCategory(),
@@ -505,6 +550,7 @@ public class LongTermMemoryService {
 
     public record MemorySnapshot(
             UUID id,
+            UUID roleId,
             MemoryScopeType scopeType,
             UUID deviceId,
             MemoryCategory category,
@@ -541,7 +587,7 @@ public class LongTermMemoryService {
                 Instant createdAt,
                 Instant updatedAt
         ) {
-            this(id, scopeType, deviceId, category, title, content, source, sourceDetail,
+            this(id, CompanionRoleEntity.DEFAULT_ROLE_ID, scopeType, deviceId, category, title, content, source, sourceDetail,
                     confirmationStatus, enabled, confirmedAt, createdAt, updatedAt,
                     title, 3, null, null, null, null, false, List.of());
         }

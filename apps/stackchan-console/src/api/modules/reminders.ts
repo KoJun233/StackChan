@@ -12,6 +12,7 @@ export interface Reminder {
   deviceId: string
   failureCode: string | null
   id: string
+  roleId: string
   lastCompletedAt: string | null
   lastOutcome: ReminderStatus | null
   recurrenceInterval: number
@@ -33,6 +34,7 @@ export interface ReminderPage {
 export interface ReminderInput {
   content: string
   deviceId: string
+  roleId?: string
   recurrenceInterval?: number
   recurrenceType?: ReminderRecurrence
   scheduledAt: string
@@ -44,6 +46,7 @@ export interface ReminderListParams {
   from: number
   limit: number
   status?: ReminderStatus | ''
+  roleId?: string
 }
 
 export function listReminders(params: ReminderListParams): Promise<ReminderPage> {
@@ -57,6 +60,7 @@ export function listReminders(params: ReminderListParams): Promise<ReminderPage>
   if (params.status) {
     query.set('status', params.status)
   }
+  if (params.roleId) query.set('roleId', params.roleId)
   return apiJson(`/api/v1/reminders?${query.toString()}`)
 }
 

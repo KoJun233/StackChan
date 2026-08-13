@@ -26,6 +26,9 @@ import com.kj.stackchan.speech.VoiceTurnCancelledException;
 import com.kj.stackchan.reminder.ReminderNotFoundException;
 import com.kj.stackchan.reminder.InvalidReminderException;
 import com.kj.stackchan.notification.NotificationApiException;
+import com.kj.stackchan.role.InvalidRoleException;
+import com.kj.stackchan.role.RoleConflictException;
+import com.kj.stackchan.role.RoleNotFoundException;
 import com.kj.stackchan.wakeword.InvalidWakeWordModelJobException;
 import com.kj.stackchan.wakeword.WakeWordModelCatalogUnavailableException;
 import com.kj.stackchan.wakeword.WakeWordModelNotFoundException;
@@ -241,6 +244,21 @@ public class DeviceApiExceptionHandler {
     @ExceptionHandler(InvalidPersonaException.class)
     ResponseEntity<ApiError> invalidPersona(InvalidPersonaException exception) {
         return response(HttpStatus.BAD_REQUEST, INVALID_PERSONA);
+    }
+
+    @ExceptionHandler(RoleNotFoundException.class)
+    ResponseEntity<ApiError> roleNotFound(RoleNotFoundException exception) {
+        return response(HttpStatus.NOT_FOUND, new ApiError("role_not_found", "未找到指定角色。"));
+    }
+
+    @ExceptionHandler(InvalidRoleException.class)
+    ResponseEntity<ApiError> invalidRole(InvalidRoleException exception) {
+        return response(HttpStatus.BAD_REQUEST, new ApiError("invalid_role", "角色配置无效。"));
+    }
+
+    @ExceptionHandler(RoleConflictException.class)
+    ResponseEntity<ApiError> roleConflict(RoleConflictException exception) {
+        return response(HttpStatus.CONFLICT, new ApiError("role_conflict", "当前状态不允许执行角色操作。"));
     }
 
     @ExceptionHandler(InvalidWakeWordModelJobException.class)

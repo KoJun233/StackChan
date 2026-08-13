@@ -10,6 +10,11 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.kj.stackchan.role.CompanionRoleEntity;
+import com.kj.stackchan.role.CompanionRoleRepository;
+import com.kj.stackchan.role.RoleConflictException;
+import com.kj.stackchan.role.RoleNotFoundException;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class ConversationService {
@@ -19,20 +24,39 @@ public class ConversationService {
     private final ConversationRepository conversationRepository;
     private final ConversationMessageRepository messageRepository;
     private final Clock clock;
+    private final CompanionRoleRepository roleRepository;
 
+    @Autowired
     public ConversationService(
             ConversationRepository conversationRepository,
             ConversationMessageRepository messageRepository,
-            Clock clock
+            Clock clock,
+            CompanionRoleRepository roleRepository
     ) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.clock = clock;
+        this.roleRepository = roleRepository;
+    }
+
+    public ConversationService(ConversationRepository conversationRepository,
+                               ConversationMessageRepository messageRepository,
+                               Clock clock) {
+        this(conversationRepository, messageRepository, clock, null);
     }
 
     @Transactional
     public ConversationSnapshot createConversation() {
-        ConversationEntity conversation = conversationRepository.save(new ConversationEntity(DEFAULT_TITLE, clock.instant()));
+        return createConversation(CompanionRoleEntity.DEFAULT_ROLE_ID);
+    }
+
+    @Transactional
+    public ConversationSnapshot createConversation(UUID roleId) {
+        if (roleRepository != null) {
+            var role = roleRepository.findById(roleId).orElseThrow(RoleNotFoundException::new);
+            if (role.getArchivedAt() != null) throw new RoleConflictException("Archived role cannot start a conversation");
+        }
+        ConversationEntity conversation = conversationRepository.save(new ConversationEntity(DEFAULT_TITLE, roleId, clock.instant()));
         return toSnapshot(conversation);
     }
 
@@ -41,6 +65,19 @@ public class ConversationService {
         return conversationRepository.findAllByOrderByUpdatedAtDescIdDesc().stream()
                 .map(this::toSnapshot)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<ConversationSnapshot> listConversations(UUID roleId) {
+        if (roleId == null) return listConversations();
+        return conversationRepository.findAllByRoleIdOrderByUpdatedAtDescIdDesc(roleId).stream()
+                .map(this::toSnapshot).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public UUID roleId(UUID conversationId) {
+        return conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new ConversationNotFoundException(conversationId)).getRoleId();
     }
 
     @Transactional(readOnly = true)
@@ -201,6 +238,7 @@ public class ConversationService {
         return new ConversationSnapshot(
                 conversation.getId(),
                 conversation.getTitle(),
+                conversation.getRoleId(),
                 conversation.getCreatedAt(),
                 conversation.getUpdatedAt()
         );

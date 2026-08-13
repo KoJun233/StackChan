@@ -9,16 +9,19 @@ import {
   getNotificationIntegration,
   updateNotificationIntegration,
 } from '@/api/modules/notificationIntegrations'
+import { listRoles } from '@/api/modules/roles'
 
 const props = withDefaults(defineProps<{ id?: string }>(), { id: '' })
 const formRef = useTemplateRef<FormExpose>('formRef')
 const loading = ref(false)
 const devices = ref<Device[]>([])
-const model = ref({ id: props.id, name: '', deviceId: '', enabled: true })
+const roles = ref<{ label: string, value: string }[]>([])
+const model = ref({ id: props.id, name: '', deviceId: '', roleId: '', enabled: true })
 
 const validationSchema = toTypedSchema(z.object({
   name: z.string().trim().min(1, '请输入集成名称').max(120, '名称不能超过 120 个字符'),
   deviceId: z.string().uuid('请选择目标设备'),
+  roleId: z.string().uuid('请选择归属角色'),
   enabled: z.boolean(),
 }))
 
@@ -39,6 +42,7 @@ async function resetForRoute(id: string) {
         id: integration.id,
         name: integration.name,
         deviceId: integration.deviceId,
+        roleId: integration.roleId,
         enabled: integration.enabled,
       }
     }
@@ -47,6 +51,7 @@ async function resetForRoute(id: string) {
         id: '',
         name: '',
         deviceId: devices.value.length === 1 ? devices.value[0].id : '',
+        roleId: roles.value[0]?.value ?? '',
         enabled: true,
       }
     }
@@ -64,7 +69,7 @@ async function submit(): Promise<boolean> {
   if (!result?.valid) return false
   loading.value = true
   try {
-    const input = { name: model.value.name.trim(), deviceId: model.value.deviceId, enabled: model.value.enabled }
+    const input = { name: model.value.name.trim(), deviceId: model.value.deviceId, roleId: model.value.roleId, enabled: model.value.enabled }
     if (model.value.id) {
       await updateNotificationIntegration(model.value.id, input)
       useFaToast().success('集成已更新')
@@ -87,6 +92,7 @@ async function submit(): Promise<boolean> {
 onMounted(async () => {
   try {
     devices.value = await listDevices()
+    roles.value = (await listRoles()).filter(role => !role.archivedAt).map(role => ({ label: role.name, value: role.id }))
     await resetForRoute(props.id)
   }
   catch (error) {
@@ -107,6 +113,9 @@ defineExpose({ submit })
       </FaFormItem>
       <FaFormItem name="deviceId" label="目标设备" required description="令牌签发后仍固定使用这里选择的设备。">
         <FaSelect :options="deviceOptions" class="w-full" />
+      </FaFormItem>
+      <FaFormItem name="roleId" label="归属角色" required :description="model.id ? '集成创建后不可改绑角色；归档角色会停用该集成。' : '外部通知和集成随角色归档而停用。'">
+        <FaSelect :options="roles" :disabled="Boolean(model.id)" class="w-full" />
       </FaFormItem>
       <FaFormItem name="enabled" label="启用状态" description="停用后所有现有令牌立即拒绝新请求，已入队通知继续保留。">
         <FaSwitch v-model="model.enabled" />

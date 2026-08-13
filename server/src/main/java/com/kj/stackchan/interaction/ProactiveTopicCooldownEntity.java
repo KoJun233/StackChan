@@ -8,6 +8,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
+import com.kj.stackchan.role.CompanionRoleEntity;
 
 @Entity
 @IdClass(ProactiveTopicCooldownId.class)
@@ -17,6 +18,10 @@ public class ProactiveTopicCooldownEntity {
     @Id
     @Column(name = "device_id", nullable = false)
     private UUID deviceId;
+
+    @Id
+    @Column(name = "role_id", nullable = false)
+    private UUID roleId;
 
     @Id
     @Column(name = "topic_key", nullable = false, length = 120)
@@ -37,12 +42,19 @@ public class ProactiveTopicCooldownEntity {
     protected ProactiveTopicCooldownEntity() {
     }
 
-    public ProactiveTopicCooldownEntity(UUID deviceId, String topicKey, Instant mentionedAt, Instant cooldownUntil) {
+    public ProactiveTopicCooldownEntity(UUID deviceId, UUID roleId, String topicKey,
+                                        Instant mentionedAt, Instant cooldownUntil) {
         this.deviceId = deviceId;
+        this.roleId = roleId;
         this.topicKey = topicKey;
         this.lastMentionedAt = mentionedAt;
         this.cooldownUntil = cooldownUntil;
         this.updatedAt = mentionedAt;
+    }
+
+    public ProactiveTopicCooldownEntity(UUID deviceId, String topicKey,
+                                        Instant mentionedAt, Instant cooldownUntil) {
+        this(deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID, topicKey, mentionedAt, cooldownUntil);
     }
 
     public void recordMention(Instant mentionedAt, Instant cooldownUntil) {
@@ -63,6 +75,7 @@ public class ProactiveTopicCooldownEntity {
     }
 
     public UUID getDeviceId() { return deviceId; }
+    public UUID getRoleId() { return roleId; }
     public String getTopicKey() { return topicKey; }
     public Instant getLastMentionedAt() { return lastMentionedAt; }
     public Instant getCooldownUntil() { return cooldownUntil; }

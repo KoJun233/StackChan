@@ -1,14 +1,14 @@
 # 服务端工作流
 
-- 状态：READY_FOR_REVIEW
-- 最后更新：2026-08-11
-- 当前分支：`codex/evt-001-external-notifications`
-- 基准提交：`0e92d58`
-- 最后验证提交：`0e92d58`
+- 状态：VALIDATING
+- 最后更新：2026-08-13
+- 当前分支：`codex/role-001-role-containers`
+- 基准提交：`5d18623`
+- 最后验证提交：`9e526f8`
 
 ## 当前目标
 
-交付 `EVT-001` 外部通知平台：复用现有提醒播放链路，增加 REST/MCP、最小权限令牌、幂等、可靠排队和设备级单飞，同时保持管理员、设备和既有提醒权限边界不变。
+交付 `ROLE-001` 角色容器：在认证上下文内解析角色，严格隔离会话、记忆、提醒、主动状态和通知归属，并保持设备、模型、语音与固件配置共享。
 
 ## 已完成
 
@@ -24,17 +24,25 @@
 - 健康中心只提供启用集成、排队、最近失败/过期计数和安全失败码，不返回正文或秘密。
 - 管理员可删除单条通知或整个集成；集成删除同步清理令牌和通知历史，`DISPATCHED` 播报期间统一返回 409，避免破坏设备 ACK 链路。
 
+## 已完成的 ROLE-001
+
+- V29 创建角色容器与设备活动角色映射，将既有人设和陪伴数据迁移到默认 `StackChan` 角色，并为会话、记忆、提醒和通知集成建立非空角色归属。
+- 角色 CRUD、设备活动角色、归档/恢复和兼容 `/persona` 接口完成；默认角色不可归档，归档会切回默认角色、取消未来提醒并停用对应通知集成。
+- 网页会话永久绑定角色，设备语音会话按 `(deviceId, roleId)` 隔离；Agent Tool、记忆建议、主动问候和语音动作均从认证上下文取得角色范围。
+- `SWITCH_ROLE` 复用两分钟、同设备/同会话、确认后幂等执行的语音提案机制；活动语音回合或已派发提醒期间拒绝切换。
+- 角色背景位于基础安全规则之后并作为受限数据段转义；设备凭据、模型、语音和固件配置继续共享。
+
 ## 正在进行
 
-实现和自动化验证已完成，等待人工审核。当前 LAN server 已部署 `50d6269` 删除迭代，运行数据库保持 V28。
+无代码实现项；ROLE-001 已部署到 LAN，等待用户验收。
 
 ## 下一步操作
 
-审核 V28、安全过滤链和公开协议；通过已发布管理页面执行删除复核，以及实体设备免打扰和离线重连验收。
+执行两个角色分别保存事实、页面/语音切换和历史不串用的实体验收。
 
 ## 阻塞项
 
-- 代码审核和部署无阻塞；实体投递验收需要管理员创建测试集成并显式触发播报。
+- 当前无实现或部署阻塞；等待用户执行实体角色切换验收。
 - 公网生产入口必须保持 HTTPS-only；不得复用管理员会话或设备 JWT 作为集成令牌。
 
 ## 关键文件
@@ -45,13 +53,17 @@
 - `server/src/main/java/com/kj/stackchan/api/`
 - `server/src/main/resources/db/migration/`
 - `server/src/main/java/com/kj/stackchan/notification/`
+- `server/src/main/java/com/kj/stackchan/role/`
+- `server/src/main/resources/db/migration/V29__companion_role_containers.sql`
 - `docs/protocol/external-notifications-v1.md`
 - `docs/runbooks/external-notifications.md`
 
 ## 验证命令与最近结果
 
-- `& 'E:\maven-3.9.16\bin\mvn.cmd' -f server\pom.xml test`：346/346 通过；删除功能定向测试 16/16 通过。
-- Testcontainers 从空 PostgreSQL 成功应用 V1..V28。
+- 以下 ROLE-001 结果针对基于 `5d18623` 的当前任务工作树；提交后将重新执行提交级静态检查。
+- `& 'E:\maven-3.9.16\bin\mvn.cmd' -f server\pom.xml test`：348/348 通过。
+- Testcontainers 从空 PostgreSQL 成功应用 V1..V29。
+- `CompanionRoleServiceTest,ConversationServiceTest`：角色生命周期、设备绑定与会话归属定向 13/13 通过。
 - 真实 Java MCP Streamable HTTP 客户端通过 Bearer 鉴权，只发现两个通知 Tool，并成功创建 `EXTERNAL` 队列项。
 - 针对测试覆盖撤销/过期/禁用令牌、越权、限流、队列上限、幂等冲突、离线、过期、设备单飞、TTS 失败和 ACK 重放。
 - LAN 运行库已应用 V28；健康接口为 200，未认证外部 REST 与 `/mcp/notifications` 均返回 401，启动日志无错误。
@@ -67,6 +79,7 @@
 - [0023：受控 ReactAgent、Skill、Tool 与 MCP](../decisions/0023-controlled-react-agent-skills-tools-mcp.md)
 - [0031：安全应用固件 OTA 与健康中心](../decisions/0031-safe-application-firmware-ota-and-health-center.md)
 - [0032：外部通知平台](../decisions/0032-external-notification-platform.md)
+- [0033：角色容器](../decisions/0033-companion-role-containers.md)
 - [Agent/Skill/Tool/MCP runbook](../../runbooks/agent-tools-mcp.md)
 
 ## 安全与兼容性约束

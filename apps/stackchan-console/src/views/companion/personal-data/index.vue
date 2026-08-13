@@ -4,6 +4,7 @@ import type { Device } from '@/api/modules/devices'
 import type { ConversationMessage } from '@/api/modules/companion'
 import type { BackupStatus, PersonalDataConversation } from '@/api/modules/personalData'
 import { listDevices } from '@/api/modules/devices'
+import { listRoles } from '@/api/modules/roles'
 import {
   deletePersonalDataConversation,
   deletePersonalDataMessage,
@@ -24,12 +25,14 @@ const messages = ref<ConversationMessage[]>([])
 const devices = ref<Device[]>([])
 const selectedConversation = ref<PersonalDataConversation | null>(null)
 const backupStatus = ref<BackupStatus | null>(null)
-const searchDefault = { query: '', deviceId: '', fromTime: '', toTime: '' }
+const searchDefault = { query: '', deviceId: '', roleId: '', fromTime: '', toTime: '' }
 const search = ref({ ...searchDefault })
+const roleOptions = ref<{ label: string, value: string }[]>([{ label: '全部角色', value: '' }])
 
 const conversationColumns: TableColumn<PersonalDataConversation>[] = [
   { id: 'title', header: '对话', minWidth: 260 },
   { id: 'device', header: '来源', minWidth: 150 },
+  { accessorKey: 'roleName', header: '角色', minWidth: 130 },
   { accessorKey: 'messageCount', header: '消息数', width: 90, align: 'center' },
   { id: 'updatedAt', header: '最近更新', minWidth: 170 },
   { id: 'operation', header: '操作', width: 210, align: 'center', fixed: 'right' },
@@ -69,6 +72,7 @@ function currentFilter(conversationId?: string) {
     limit: params.limit,
     query: search.value.query,
     deviceId: search.value.deviceId || undefined,
+    roleId: search.value.roleId || undefined,
     fromTime: toInstant(search.value.fromTime),
     toTime: toInstant(search.value.toTime),
     conversationId,
@@ -195,6 +199,7 @@ function confirmDeleteMessage(message: ConversationMessage) {
 onMounted(() => {
   Promise.all([
     listDevices().then(result => devices.value = result),
+    listRoles().then(result => roleOptions.value = [{ label: '全部角色', value: '' }, ...result.map(role => ({ label: role.name, value: role.id }))]),
     loadConversations(),
     loadStatus(),
   ]).catch(() => undefined)
@@ -253,6 +258,7 @@ onMounted(() => {
           <FaLabel label="设备来源">
             <FaSelect v-model="search.deviceId" :options="deviceOptions" class="w-full" />
           </FaLabel>
+          <FaLabel label="角色"><FaSelect v-model="search.roleId" :options="roleOptions" class="w-full" /></FaLabel>
           <FaLabel label="更新时间起点">
             <FaInput v-model="search.fromTime" type="datetime-local" />
           </FaLabel>

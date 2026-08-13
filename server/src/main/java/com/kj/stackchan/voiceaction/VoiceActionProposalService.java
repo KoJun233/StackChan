@@ -13,6 +13,9 @@ import com.kj.stackchan.memory.MemoryCategory;
 import com.kj.stackchan.memory.MemoryScopeType;
 import com.kj.stackchan.reminder.ReminderRecurrence;
 import com.kj.stackchan.reminder.ReminderService;
+import com.kj.stackchan.conversation.ConversationService;
+import com.kj.stackchan.role.CompanionRoleService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,14 +31,18 @@ public class VoiceActionProposalService {
     private final LongTermMemoryService memoryService;
     private final DeviceInteractionSettingsCoordinator settingsCoordinator;
     private final Clock clock;
+    private final ConversationService conversationService;
+    private final CompanionRoleService roleService;
 
+    @Autowired
     public VoiceActionProposalService(VoiceActionProposalRepository proposalRepository,
                                       VoiceActionAuditRepository auditRepository,
                                       ReminderService reminderService,
                                       InteractionSettingsService settingsService,
                                       LongTermMemoryService memoryService,
                                       DeviceInteractionSettingsCoordinator settingsCoordinator,
-                                      Clock clock) {
+                                      Clock clock, ConversationService conversationService,
+                                      CompanionRoleService roleService) {
         this.proposalRepository = proposalRepository;
         this.auditRepository = auditRepository;
         this.reminderService = reminderService;
@@ -43,6 +50,17 @@ public class VoiceActionProposalService {
         this.memoryService = memoryService;
         this.settingsCoordinator = settingsCoordinator;
         this.clock = clock;
+        this.conversationService = conversationService;
+        this.roleService = roleService;
+    }
+
+    public VoiceActionProposalService(VoiceActionProposalRepository proposalRepository,
+                                      VoiceActionAuditRepository auditRepository,
+                                      ReminderService reminderService, InteractionSettingsService settingsService,
+                                      LongTermMemoryService memoryService,
+                                      DeviceInteractionSettingsCoordinator settingsCoordinator, Clock clock) {
+        this(proposalRepository, auditRepository, reminderService, settingsService, memoryService,
+                settingsCoordinator, clock, null, null);
     }
 
     @Transactional
@@ -66,7 +84,8 @@ public class VoiceActionProposalService {
         validateDraft(draft);
         Instant now = clock.instant();
         VoiceActionProposalEntity proposal = proposalRepository.save(
-                new VoiceActionProposalEntity(SINGLE_ADMIN, deviceId, conversationId, turnId, draft, now, now.plus(TTL)));
+                new VoiceActionProposalEntity(SINGLE_ADMIN, deviceId, resolveRoleId(conversationId),
+                        conversationId, turnId, draft, now, now.plus(TTL)));
         auditRepository.save(new VoiceActionAuditEntity(proposal, VoiceActionAuditEvent.PROPOSED, null, now));
         return proposal;
     }
@@ -131,6 +150,7 @@ public class VoiceActionProposalService {
             case SET_TEMPORARY_DND -> "要将免打扰持续到 " + proposal.targetAt() + "。确认执行吗？";
             case SET_VOLUME -> "要将音量调到 " + proposal.volumePercent() + "%。确认执行吗？";
             case CREATE_MEMORY_SUGGESTION -> "已生成一条待确认记忆建议。";
+            case SWITCH_ROLE -> "要切换到角色“" + proposal.content() + "”。确认执行吗？";
         };
     }
 
@@ -140,9 +160,15 @@ public class VoiceActionProposalService {
         }
         try {
             UUID result = switch (proposal.getActionType()) {
-                case CREATE_REMINDER -> reminderService.create(new ReminderService.ReminderCommand(
+                case CREATE_REMINDER -> conversationService == null
+                        ? reminderService.create(new ReminderService.ReminderCommand(
+                        proposal.getDeviceId(), proposal.getContent(), proposal.getScheduledAt(), proposal.getZoneId(),
+                        ReminderRecurrence.valueOf(proposal.getRecurrenceType()), proposal.getRecurrenceInterval())).id()
+                        : reminderService.create(proposal.getRoleId(), new ReminderService.ReminderCommand(
                         proposal.getDeviceId(), proposal.getContent(), proposal.getScheduledAt(), proposal.getZoneId(),
                         ReminderRecurrence.valueOf(proposal.getRecurrenceType()), proposal.getRecurrenceInterval())).id();
+                case SWITCH_ROLE -> roleService.switchActiveFromVoice(
+                        proposal.getDeviceId(), proposal.getContent()).id();
                 case SNOOZE_NEXT_REMINDER -> reminderService.snoozeNext(proposal.getDeviceId(), proposal.getDurationMinutes()).id();
                 case SKIP_NEXT_REMINDER -> reminderService.skipNextPending(proposal.getDeviceId()).id();
                 case SET_TEMPORARY_DND -> settingsService.setTemporaryDndUntil(proposal.getDeviceId(), proposal.getTargetAt()).deviceId();
@@ -151,7 +177,7 @@ public class VoiceActionProposalService {
                     settingsCoordinator.send(settings);
                     yield settings.deviceId();
                 }
-                case CREATE_MEMORY_SUGGESTION -> memoryService.suggest(new LongTermMemoryService.MemorySuggestionCommand(
+                case CREATE_MEMORY_SUGGESTION -> memoryService.suggest(proposal.getRoleId(), new LongTermMemoryService.MemorySuggestionCommand(
                         new LongTermMemoryService.MemoryCommand(MemoryScopeType.DEVICE, proposal.getDeviceId(),
                                 MemoryCategory.valueOf(proposal.getMemoryCategory()), proposal.getTitle(), proposal.getContent()),
                         "voice_action_proposal",
@@ -205,6 +231,16 @@ public class VoiceActionProposalService {
                 || draft.zoneId() == null || draft.recurrenceType() == null || draft.recurrenceInterval() == null)) {
             throw new VoiceActionException("Voice reminder proposal is invalid");
         }
+        if (draft.actionType() == VoiceActionType.SWITCH_ROLE
+                && (draft.content() == null || draft.content().isBlank() || draft.content().length() > 80)) {
+            throw new VoiceActionException("Voice role switch proposal is invalid");
+        }
+    }
+
+    private UUID resolveRoleId(UUID conversationId) {
+        return conversationService == null
+                ? com.kj.stackchan.role.CompanionRoleEntity.DEFAULT_ROLE_ID
+                : conversationService.roleId(conversationId);
     }
 
     private ProposalSnapshot snapshot(VoiceActionProposalEntity proposal) {

@@ -22,6 +22,7 @@ public class VoiceActionCoordinator {
     private static final Pattern DND_MINUTES = Pattern.compile("(?:安静|免打扰)(?:到|持续)\\s*(\\d{1,4})\\s*分钟");
     private static final Pattern REMINDER_MINUTES = Pattern.compile("提醒我\\s*(.+?)\\s*(\\d{1,5})\\s*分钟后");
     private static final Pattern SNOOZE_MINUTES = Pattern.compile("(?:稍后|推迟|延后)\\s*(\\d{1,4})\\s*分钟");
+    private static final Pattern SWITCH_ROLE = Pattern.compile("切换到(?:角色)?[“\"']?([^”\"'，,。！!]+)[”\"']?");
 
     private final VoiceActionProposalService proposalService;
     private final ReminderService reminderService;
@@ -72,6 +73,14 @@ public class VoiceActionCoordinator {
         }
         if (pending != null) {
             return new ActionResult(proposalService.restatement(pending), true);
+        }
+        Matcher switchRole = SWITCH_ROLE.matcher(text);
+        if (switchRole.find()) {
+            VoiceActionProposalService.ProposalSnapshot proposal = proposalService.propose(
+                    deviceId, conversationId, turnId,
+                    new VoiceActionDraft(VoiceActionType.SWITCH_ROLE, true, switchRole.group(1).trim(), null,
+                            null, null, null, null, null, null, null, null));
+            return new ActionResult(proposalService.restatement(proposal), true);
         }
         Matcher snooze = SNOOZE_MINUTES.matcher(text);
         if (snooze.find() && text.contains("提醒")) {
@@ -147,7 +156,7 @@ public class VoiceActionCoordinator {
     private boolean isExplicitAction(String text) {
         return text.contains("提醒我") || text.contains("稍后提醒") || text.contains("跳过下一次")
                 || text.contains("音量调到") || text.contains("安静到") || text.startsWith("记住")
-                || text.startsWith("请记住");
+                || text.startsWith("请记住") || text.contains("切换到角色");
     }
     private boolean isMuteLastTopic(String text) {
         return text.matches("^(?:别再提这个(?:话题)?(?:了)?|不要再提这个(?:话题)?(?:了)?|别提这个了|别再主动提这个(?:话题)?(?:了)?)[。！!,.，]?$");
