@@ -23,11 +23,13 @@
 | `INT-012` 个性化主动关心 | `9377b8d` | 规则门控、单条授权记忆和主题冷却 |
 | `OPS-002` 应用 OTA 与健康中心 | `ce8faaa` | V27、应用制品、A/B OTA、健康中心和启动确认 |
 | `OPS-002` 传输栈修复 | `0e92d58` | 修复真实 OTA 暴露的 `device_transport` 栈溢出 |
+| `EVT-001` 外部通知平台 | `5d18623` | REST/MCP 外部通知、可靠语音投递、令牌与队列管理 |
+| `ROLE-001` 角色容器 | `8de06be` | 多角色 CRUD、设备活动角色与完整陪伴数据隔离 |
 
 ## 当前已验证运行组合
 
-- Git 基线：`master` 合并提交 `0e92d58`。
-- LAN server：OPS-002 server/V27，健康和管理页面已验收。
+- Git 基线：`master` 合并提交 `8de06be`。
+- LAN server：ROLE-001 server/V29，角色管理和隔离已验收。
 - CoreS3：实体验证候选 `7e7c55f`，`motion_disabled`，应用 OTA 能力已启用。
 - 实体路径：`cf26fd7 -> 7e7c55f` 应用 OTA、NVS 保留、普通唤醒对话和触摸停止均通过。
 

@@ -27,6 +27,7 @@ public class CompanionRoleEntity {
     @Column(name = "background_instructions", nullable = false, length = 4000) private String backgroundInstructions;
     @Column(name = "topic_boundaries", nullable = false, length = 2000) private String topicBoundaries;
     @Column(nullable = false, length = 2000) private String taboos;
+    @Column(name = "tts_voice_override", length = 160) private String ttsVoiceOverride;
     @Column(name = "is_default", nullable = false) private boolean defaultRole;
     @Column(name = "archived_at") private Instant archivedAt;
     @Column(name = "created_at", nullable = false) private Instant createdAt;
@@ -36,16 +37,23 @@ public class CompanionRoleEntity {
 
     public CompanionRoleEntity(String name, PersonaTone tone, PersonaReplyLength replyLength,
                                PersonaProactivity proactivity, String backgroundInstructions,
-                               String topicBoundaries, String taboos, Instant now) {
+                               String topicBoundaries, String taboos, String ttsVoiceOverride, Instant now) {
         this.id = UUID.randomUUID();
         this.defaultRole = false;
         this.createdAt = now;
-        update(name, tone, replyLength, proactivity, backgroundInstructions, topicBoundaries, taboos, now);
+        update(name, tone, replyLength, proactivity, backgroundInstructions, topicBoundaries, taboos,
+                ttsVoiceOverride, now);
+    }
+
+    public CompanionRoleEntity(String name, PersonaTone tone, PersonaReplyLength replyLength,
+                               PersonaProactivity proactivity, String backgroundInstructions,
+                               String topicBoundaries, String taboos, Instant now) {
+        this(name, tone, replyLength, proactivity, backgroundInstructions, topicBoundaries, taboos, null, now);
     }
 
     public void update(String name, PersonaTone tone, PersonaReplyLength replyLength,
                        PersonaProactivity proactivity, String backgroundInstructions,
-                       String topicBoundaries, String taboos, Instant now) {
+                       String topicBoundaries, String taboos, String ttsVoiceOverride, Instant now) {
         this.name = name;
         this.tone = tone;
         this.replyLength = replyLength;
@@ -53,6 +61,7 @@ public class CompanionRoleEntity {
         this.backgroundInstructions = backgroundInstructions;
         this.topicBoundaries = topicBoundaries;
         this.taboos = taboos;
+        this.ttsVoiceOverride = ttsVoiceOverride;
         this.updatedAt = now;
     }
 
@@ -66,6 +75,7 @@ public class CompanionRoleEntity {
     public String getBackgroundInstructions() { return backgroundInstructions; }
     public String getTopicBoundaries() { return topicBoundaries; }
     public String getTaboos() { return taboos; }
+    public String getTtsVoiceOverride() { return ttsVoiceOverride; }
     public boolean isDefaultRole() { return defaultRole; }
     public Instant getArchivedAt() { return archivedAt; }
     public Instant getCreatedAt() { return createdAt; }

@@ -53,7 +53,8 @@ public class PersonaService {
             var current = roleService.getDefault();
             return toSnapshot(roleService.update(current.id(), new CompanionRoleService.RoleCommand(
                     validated.displayName(), validated.tone(), validated.replyLength(), validated.proactivity(),
-                    current.backgroundInstructions(), validated.topicBoundaries(), validated.taboos())));
+                    current.backgroundInstructions(), validated.topicBoundaries(), validated.taboos(),
+                    current.ttsVoiceOverride())));
         }
         Instant now = clock.instant();
         PersonaSettingsEntity entity = repository.findById(PersonaSettingsEntity.CURRENT_SETTINGS_ID)

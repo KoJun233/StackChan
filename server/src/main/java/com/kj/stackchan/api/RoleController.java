@@ -45,10 +45,11 @@ public class RoleController {
     public record RoleRequest(@NotBlank @Size(max = 80) String name, @NotNull PersonaTone tone,
                               @NotNull PersonaReplyLength replyLength, @NotNull PersonaProactivity proactivity,
                               @Size(max = 4000) String backgroundInstructions,
-                              @Size(max = 2000) String topicBoundaries, @Size(max = 2000) String taboos) {
+                              @Size(max = 2000) String topicBoundaries, @Size(max = 2000) String taboos,
+                              @Size(max = 160) String ttsVoiceOverride) {
         CompanionRoleService.RoleCommand toCommand() {
             return new CompanionRoleService.RoleCommand(name, tone, replyLength, proactivity,
-                    backgroundInstructions, topicBoundaries, taboos);
+                    backgroundInstructions, topicBoundaries, taboos, ttsVoiceOverride);
         }
     }
 }

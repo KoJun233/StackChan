@@ -2,14 +2,14 @@
 
 - 状态：VALIDATING
 - 最后更新：2026-08-13
-- 当前分支：`codex/role-001-role-containers`
-- 基准提交：`5d18623`
-- 最后验证提交：`9e526f8`
+- 当前分支：`codex/role-002-role-voice`
+- 基准提交：`8de06be`
+- 最后验证提交：`8de06be`
 - 当前模式：LAN HTTP development
 
 ## 当前目标
 
-保持现有数据卷、端口和 LAN/production 安全边界不变，在受信任 LAN 发布并验证 `ROLE-001`。
+在保持数据卷、端口和 LAN/production 安全边界不变的前提下，发布并验证 ROLE-002。
 
 ## 已完成
 
@@ -22,16 +22,16 @@
 
 ## 正在进行
 
-用户已明确授权部署。部署前已生成并隔离恢复校验新备份，只替换 `stackchan-foundation-server-1`；PostgreSQL、Redis、备份容器、数据卷和端口均未变。当前运行态为 ROLE-001 `9e526f8` server/V29 与 CoreS3 `7e7c55f / motion_disabled / OTA=true`。
+用户已明确授权部署。发布前已生成并隔离恢复校验新备份，只替换 `stackchan-foundation-server-1`；PostgreSQL、Redis、备份容器、数据卷和端口均未变。当前运行态为 ROLE-002 `b6cad0b` server/V30 与 CoreS3 `7e7c55f / motion_disabled / OTA=true`。
 
 ## 下一步操作
 
-由用户刷新管理页面，创建第二个角色并完成页面/语音切换、双角色事实记忆和历史不串用验收。公网入口必须使用 HTTPS，令牌不得写入 Compose、镜像或仓库。
+由用户刷新角色管理页面，编辑两个角色的音色并验证覆盖、继承和实体语音。公网入口必须使用 HTTPS。
 
 ## 阻塞项
 
 - 当前没有运行环境阻塞。
-- ROLE-001 无运行阻塞；双角色实体隔离正在等待用户验收。凭据轮换和 OTA 回退仍需各自显式操作或授权。
+- ROLE-002 无运行阻塞；等待用户页面与实体音色验收。凭据轮换和 OTA 回退仍需各自显式授权。
 
 ## 关键文件
 
@@ -44,6 +44,10 @@
 
 ## 验证命令与最近结果
 
+- 2026-08-13 ROLE-002 发布前新备份及最新备份隔离恢复验证成功；未覆盖正式数据库。
+- `stackchan-foundation-server-1` 已替换为 ROLE-002 `b6cad0b` server/V30；旧 ROLE-001 镜像保留为 `pre-role002-b6cad0b`，新镜像保留为 `role002-b6cad0b`。
+- 运行库成功从 V29 迁移到 V30；`/api/v1/health` 和首页为 200，未认证角色/设备 API 为 401，前端资源包含角色音色配置，启动日志无错误。
+- PostgreSQL、Redis、备份容器、原数据卷和端口保持不变；本次未修改或刷写 CoreS3。
 - 2026-08-13 部署前新备份及最新备份隔离恢复验证成功；未覆盖正式数据库。
 - `stackchan-foundation-server-1` 已替换为 ROLE-001 镜像，构建版本 `9e526f8`；旧 EVT-001 镜像保留为 `pre-role001-e1a0a12`，新镜像保留为 `role001-9e526f8`。
 - 运行库成功从 V28 迁移到 V29；默认角色恰好一条，会话、记忆、提醒和通知集成均无空角色归属，设备活动角色映射已生成。

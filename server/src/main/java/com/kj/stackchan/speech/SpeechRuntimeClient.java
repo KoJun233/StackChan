@@ -1,5 +1,9 @@
 package com.kj.stackchan.speech;
 
+import java.util.UUID;
+
+import com.kj.stackchan.role.CompanionRoleService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -12,15 +16,25 @@ public class SpeechRuntimeClient {
     private final SpeechSettingsService settingsService;
     private final OpenAiCompatibleSpeechProviderAdapter openAiCompatible;
     private final DashScopeSpeechProviderAdapter dashScope;
+    private final CompanionRoleService roleService;
 
+    @Autowired
     public SpeechRuntimeClient(
             SpeechSettingsService settingsService,
             OpenAiCompatibleSpeechProviderAdapter openAiCompatible,
-            DashScopeSpeechProviderAdapter dashScope
+            DashScopeSpeechProviderAdapter dashScope,
+            CompanionRoleService roleService
     ) {
         this.settingsService = settingsService;
         this.openAiCompatible = openAiCompatible;
         this.dashScope = dashScope;
+        this.roleService = roleService;
+    }
+
+    SpeechRuntimeClient(SpeechSettingsService settingsService,
+                        OpenAiCompatibleSpeechProviderAdapter openAiCompatible,
+                        DashScopeSpeechProviderAdapter dashScope) {
+        this(settingsService, openAiCompatible, dashScope, null);
     }
 
     public String transcribe(byte[] wavAudio) {
@@ -42,10 +56,24 @@ public class SpeechRuntimeClient {
     }
 
     public byte[] synthesize(String text) {
+        return synthesize(text, null);
+    }
+
+    public byte[] synthesize(String text, UUID roleId) {
         if (text == null || text.isBlank()) {
             throw new IllegalArgumentException("Speech text is required");
         }
         ResolvedSpeechSettings settings = settingsService.resolveForInvocation();
+        String override = roleId == null || roleService == null ? null : roleService.get(roleId).ttsVoiceOverride();
+        if (override != null && !override.equals(settings.ttsVoice())) {
+            try {
+                return adapter(settings).synthesize(settings.withTtsVoice(override), text);
+            } catch (InvalidSpeechSettingsException | SpeechProviderUnavailableException exception) {
+                LOGGER.warn("Role voice override unavailable; retrying the global voice");
+            } catch (RuntimeException exception) {
+                LOGGER.warn("Role voice override failed; retrying the global voice");
+            }
+        }
         try {
             return adapter(settings).synthesize(settings, text);
         } catch (InvalidSpeechSettingsException exception) {
