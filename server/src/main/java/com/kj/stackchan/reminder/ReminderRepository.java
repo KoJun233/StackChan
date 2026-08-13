@@ -20,9 +20,20 @@ public interface ReminderRepository extends JpaRepository<ReminderEntity, UUID>,
             Instant scheduledAt
     );
 
+    List<ReminderEntity> findTop10ByNotificationIntegrationIdAndDeviceIdAndRoleIdAndSourceAndStatusAndScheduledAtLessThanEqualAndDeliveryGroupIdIsNullOrderByCreatedAtAscIdAsc(
+            UUID notificationIntegrationId,
+            UUID deviceId,
+            UUID roleId,
+            ReminderSource source,
+            ReminderStatus status,
+            Instant scheduledAt
+    );
+
     List<ReminderEntity> findAllByStatusAndLastAttemptAtBefore(ReminderStatus status, Instant cutoff);
 
     Optional<ReminderEntity> findByCommandId(String commandId);
+
+    List<ReminderEntity> findAllByDeliveryGroupId(UUID deliveryGroupId);
 
     Optional<ReminderEntity> findByIdAndDeviceId(UUID id, UUID deviceId);
 
@@ -54,7 +65,7 @@ public interface ReminderRepository extends JpaRepository<ReminderEntity, UUID>,
             UUID deviceId,
             ReminderStatus status
     );
-    Optional<ReminderEntity> findFirstByDeviceIdAndRoleIdAndStatusOrderByScheduledAtAscIdAsc(
+    Optional<ReminderEntity> findFirstByDeviceIdAndRoleIdAndStatusAndDeliveryGroupIdIsNullOrderByScheduledAtAscIdAsc(
             UUID deviceId, UUID roleId, ReminderStatus status);
 
     boolean existsByDeviceIdAndStatus(UUID deviceId, ReminderStatus status);
@@ -98,6 +109,7 @@ public interface ReminderRepository extends JpaRepository<ReminderEntity, UUID>,
     @Modifying
     @Query("update ReminderEntity reminder set reminder.status = com.kj.stackchan.reminder.ReminderStatus.CANCELLED, "
             + "reminder.updatedAt = :now where reminder.roleId = :roleId "
-            + "and reminder.status = com.kj.stackchan.reminder.ReminderStatus.PENDING")
+            + "and reminder.status = com.kj.stackchan.reminder.ReminderStatus.PENDING "
+            + "and reminder.deliveryGroupId is null")
     int cancelFutureByRoleId(@Param("roleId") UUID roleId, @Param("now") Instant now);
 }

@@ -99,6 +99,9 @@ public class ReminderEntity {
     @Column(name = "response_actions", length = 64)
     private String responseActions;
 
+    @Column(name = "delivery_group_id")
+    private UUID deliveryGroupId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -228,10 +231,28 @@ public class ReminderEntity {
         this.updatedAt = now;
     }
 
+    public void markDigestLeader(String commandId, byte[] audioPayload, Instant now) {
+        this.deliveryGroupId = id;
+        markDispatched(commandId, audioPayload, now);
+    }
+
+    public void joinDeliveryGroup(UUID leaderId, Instant now) {
+        this.deliveryGroupId = leaderId;
+        this.attemptCount++;
+        this.lastAttemptAt = now;
+        this.updatedAt = now;
+    }
+
+    public void failGroupedOccurrence(String failureCode, Instant now) {
+        this.failureCode = failureCode;
+        completeOccurrence(ReminderStatus.FAILED, null, now);
+    }
+
     public void returnToPending(Instant now) {
         this.status = ReminderStatus.PENDING;
         this.commandId = null;
         this.audioPayload = null;
+        this.deliveryGroupId = null;
         this.updatedAt = now;
     }
 
@@ -247,6 +268,7 @@ public class ReminderEntity {
         this.lastCompletedAt = now;
         this.commandId = null;
         this.audioPayload = null;
+        this.deliveryGroupId = null;
         this.failureCode = outcome == ReminderStatus.FAILED ? this.failureCode : null;
         if (nextScheduledAt == null) {
             this.status = outcome;
@@ -268,6 +290,7 @@ public class ReminderEntity {
     public void markFailed(String failureCode, Instant now) {
         this.status = ReminderStatus.FAILED;
         this.audioPayload = null;
+        this.deliveryGroupId = null;
         this.failureCode = failureCode;
         this.updatedAt = now;
     }
@@ -276,6 +299,7 @@ public class ReminderEntity {
         this.status = ReminderStatus.CANCELLED;
         this.audioPayload = null;
         this.failureCode = null;
+        this.deliveryGroupId = null;
         this.updatedAt = now;
     }
 
@@ -383,6 +407,7 @@ public class ReminderEntity {
     public String getIdempotencyKey() { return idempotencyKey; }
     public String getIdempotencyContentHash() { return idempotencyContentHash; }
     public Instant getExpiresAt() { return expiresAt; }
+    public UUID getDeliveryGroupId() { return deliveryGroupId; }
     public Set<NotificationResponseAction> getResponseActions() {
         if (responseActions == null || responseActions.isBlank()) return Set.of();
         EnumSet<NotificationResponseAction> actions = EnumSet.noneOf(NotificationResponseAction.class);

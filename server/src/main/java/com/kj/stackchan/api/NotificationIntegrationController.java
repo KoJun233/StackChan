@@ -11,6 +11,8 @@ import com.kj.stackchan.notification.NotificationResponseAction;
 import com.kj.stackchan.reminder.ReminderStatus;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
@@ -114,10 +116,13 @@ public class NotificationIntegrationController {
             @NotBlank @Size(max = 120) String name,
             @NotNull UUID deviceId,
             UUID roleId,
-            boolean enabled
+            boolean enabled,
+            @Min(0) @Max(300) Integer digestWindowSeconds
     ) {
         NotificationIntegrationService.IntegrationCommand toCommand() {
-            return new NotificationIntegrationService.IntegrationCommand(name, deviceId, roleId, enabled);
+            return new NotificationIntegrationService.IntegrationCommand(
+                    name, deviceId, roleId, enabled, digestWindowSeconds
+            );
         }
     }
 

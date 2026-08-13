@@ -16,6 +16,7 @@ describe('notification integrations API', () => {
     const input = {
       name: 'Codex',
       deviceId: 'a88e4a94-8536-4fa1-91ed-8681b597429d',
+      digestWindowSeconds: 0,
       enabled: true,
     }
     const fetchMock = vi.fn()

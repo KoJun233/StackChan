@@ -170,7 +170,24 @@ public class ExternalNotificationService {
                     builder.equal(root.get("notificationIntegrationId"), integrationId));
         }
         if (status != null) {
-            specification = specification.and((root, query, builder) -> builder.equal(root.get("status"), status));
+            specification = specification.and((root, query, builder) -> {
+                if (status == ReminderStatus.DISPATCHED) {
+                    return builder.or(
+                            builder.equal(root.get("status"), ReminderStatus.DISPATCHED),
+                            builder.and(
+                                    builder.equal(root.get("status"), ReminderStatus.PENDING),
+                                    builder.isNotNull(root.get("deliveryGroupId"))
+                            )
+                    );
+                }
+                if (status == ReminderStatus.PENDING) {
+                    return builder.and(
+                            builder.equal(root.get("status"), ReminderStatus.PENDING),
+                            builder.isNull(root.get("deliveryGroupId"))
+                    );
+                }
+                return builder.equal(root.get("status"), status);
+            });
         }
         Page<ReminderEntity> page = reminderRepository.findAll(
                 specification,
@@ -185,7 +202,7 @@ public class ExternalNotificationService {
         ReminderEntity notification = reminderRepository.findByIdAndSourceForUpdate(
                 notificationId, ReminderSource.EXTERNAL
         ).orElseThrow(this::notFound);
-        if (notification.getStatus() == ReminderStatus.DISPATCHED) {
+        if (notification.getStatus() == ReminderStatus.DISPATCHED || notification.getDeliveryGroupId() != null) {
             throw new NotificationApiException(
                     HttpStatus.CONFLICT,
                     "notification_delivery_in_progress",
@@ -224,9 +241,9 @@ public class ExternalNotificationService {
 
     private PublicNotificationSnapshot publicSnapshot(ReminderEntity reminder) {
         return new PublicNotificationSnapshot(
-                reminder.getId(), reminder.getStatus(), reminder.getAttemptCount(), reminder.getFailureCode(),
+                reminder.getId(), publicStatus(reminder), reminder.getAttemptCount(), reminder.getFailureCode(),
                 reminder.getCreatedAt(), reminder.getUpdatedAt(), reminder.getExpiresAt(),
-                reminder.getStatus() == ReminderStatus.DELIVERED ? reminder.getLastCompletedAt() : null,
+                publicStatus(reminder) == ReminderStatus.DELIVERED ? reminder.getLastCompletedAt() : null,
                 reminder.getResponseActions(), latestResponse(reminder.getId())
         );
     }
@@ -234,9 +251,9 @@ public class ExternalNotificationService {
     private AdminNotificationSnapshot adminSnapshot(ReminderEntity reminder) {
         return new AdminNotificationSnapshot(
                 reminder.getId(), reminder.getNotificationIntegrationId(), reminder.getDeviceId(), reminder.getRoleId(),
-                reminder.getContent(), reminder.getStatus(), reminder.getAttemptCount(), reminder.getFailureCode(),
+                reminder.getContent(), publicStatus(reminder), reminder.getAttemptCount(), reminder.getFailureCode(),
                 reminder.getCreatedAt(), reminder.getUpdatedAt(), reminder.getExpiresAt(),
-                reminder.getStatus() == ReminderStatus.DELIVERED ? reminder.getLastCompletedAt() : null,
+                publicStatus(reminder) == ReminderStatus.DELIVERED ? reminder.getLastCompletedAt() : null,
                 reminder.getResponseActions(), latestResponse(reminder.getId())
         );
     }
@@ -247,6 +264,11 @@ public class ExternalNotificationService {
                 .map(response -> new InteractiveNotificationService.ResponseSnapshot(
                         response.getAction(), response.getSnoozeMinutes(), response.getCreatedAt()))
                 .orElse(null);
+    }
+
+    private ReminderStatus publicStatus(ReminderEntity reminder) {
+        return reminder.getStatus() == ReminderStatus.PENDING && reminder.getDeliveryGroupId() != null
+                ? ReminderStatus.DISPATCHED : reminder.getStatus();
     }
 
     private NotificationApiException invalid(String message) {
