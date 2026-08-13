@@ -15,6 +15,8 @@ import com.kj.stackchan.reminder.ReminderRecurrence;
 import com.kj.stackchan.reminder.ReminderService;
 import com.kj.stackchan.conversation.ConversationService;
 import com.kj.stackchan.role.CompanionRoleService;
+import com.kj.stackchan.notification.InteractiveNotificationService;
+import com.kj.stackchan.notification.NotificationResponseAction;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +35,7 @@ public class VoiceActionProposalService {
     private final Clock clock;
     private final ConversationService conversationService;
     private final CompanionRoleService roleService;
+    private final InteractiveNotificationService notificationService;
 
     @Autowired
     public VoiceActionProposalService(VoiceActionProposalRepository proposalRepository,
@@ -42,7 +45,8 @@ public class VoiceActionProposalService {
                                       LongTermMemoryService memoryService,
                                       DeviceInteractionSettingsCoordinator settingsCoordinator,
                                       Clock clock, ConversationService conversationService,
-                                      CompanionRoleService roleService) {
+                                      CompanionRoleService roleService,
+                                      InteractiveNotificationService notificationService) {
         this.proposalRepository = proposalRepository;
         this.auditRepository = auditRepository;
         this.reminderService = reminderService;
@@ -52,6 +56,7 @@ public class VoiceActionProposalService {
         this.clock = clock;
         this.conversationService = conversationService;
         this.roleService = roleService;
+        this.notificationService = notificationService;
     }
 
     public VoiceActionProposalService(VoiceActionProposalRepository proposalRepository,
@@ -60,7 +65,20 @@ public class VoiceActionProposalService {
                                       LongTermMemoryService memoryService,
                                       DeviceInteractionSettingsCoordinator settingsCoordinator, Clock clock) {
         this(proposalRepository, auditRepository, reminderService, settingsService, memoryService,
-                settingsCoordinator, clock, null, null);
+                settingsCoordinator, clock, null, null, null);
+    }
+
+    public VoiceActionProposalService(VoiceActionProposalRepository proposalRepository,
+                                      VoiceActionAuditRepository auditRepository,
+                                      ReminderService reminderService,
+                                      InteractionSettingsService settingsService,
+                                      LongTermMemoryService memoryService,
+                                      DeviceInteractionSettingsCoordinator settingsCoordinator,
+                                      Clock clock,
+                                      ConversationService conversationService,
+                                      CompanionRoleService roleService) {
+        this(proposalRepository, auditRepository, reminderService, settingsService, memoryService,
+                settingsCoordinator, clock, conversationService, roleService, null);
     }
 
     @Transactional
@@ -151,6 +169,9 @@ public class VoiceActionProposalService {
             case SET_VOLUME -> "要将音量调到 " + proposal.volumePercent() + "%。确认执行吗？";
             case CREATE_MEMORY_SUGGESTION -> "已生成一条待确认记忆建议。";
             case SWITCH_ROLE -> "要切换到角色“" + proposal.content() + "”。确认执行吗？";
+            case ACKNOWLEDGE_NOTIFICATION -> "要将最近通知标记为已知晓。确认执行吗？";
+            case SNOOZE_NOTIFICATION -> "要将最近通知推迟 " + proposal.durationMinutes() + " 分钟再次播报。确认执行吗？";
+            case COMPLETE_NOTIFICATION -> "要将最近通知标记为已完成。确认执行吗？";
         };
     }
 
@@ -182,6 +203,12 @@ public class VoiceActionProposalService {
                                 MemoryCategory.valueOf(proposal.getMemoryCategory()), proposal.getTitle(), proposal.getContent()),
                         "voice_action_proposal",
                         proposal.getSourceTurnId())).id();
+                case ACKNOWLEDGE_NOTIFICATION -> executeNotificationResponse(
+                        proposal, NotificationResponseAction.ACKNOWLEDGE, null);
+                case SNOOZE_NOTIFICATION -> executeNotificationResponse(
+                        proposal, NotificationResponseAction.SNOOZE, proposal.getDurationMinutes());
+                case COMPLETE_NOTIFICATION -> executeNotificationResponse(
+                        proposal, NotificationResponseAction.COMPLETE, null);
             };
             Instant completed = clock.instant();
             proposal.markExecuted(result, completed);
@@ -235,12 +262,33 @@ public class VoiceActionProposalService {
                 && (draft.content() == null || draft.content().isBlank() || draft.content().length() > 80)) {
             throw new VoiceActionException("Voice role switch proposal is invalid");
         }
+        if ((draft.actionType() == VoiceActionType.ACKNOWLEDGE_NOTIFICATION
+                || draft.actionType() == VoiceActionType.COMPLETE_NOTIFICATION)
+                && (draft.targetReference() == null || draft.durationMinutes() != null)) {
+            throw new VoiceActionException("Voice notification response proposal is invalid");
+        }
+        if (draft.actionType() == VoiceActionType.SNOOZE_NOTIFICATION
+                && (draft.targetReference() == null || draft.durationMinutes() == null
+                || draft.durationMinutes() < 1 || draft.durationMinutes() > 1440)) {
+            throw new VoiceActionException("Voice notification snooze proposal is invalid");
+        }
     }
 
     private UUID resolveRoleId(UUID conversationId) {
         return conversationService == null
                 ? com.kj.stackchan.role.CompanionRoleEntity.DEFAULT_ROLE_ID
                 : conversationService.roleId(conversationId);
+    }
+
+    private UUID executeNotificationResponse(
+            VoiceActionProposalEntity proposal,
+            NotificationResponseAction action,
+            Integer snoozeMinutes
+    ) {
+        if (notificationService == null) throw new VoiceActionException("Interactive notifications are unavailable");
+        notificationService.respond(proposal.getTargetReference(), proposal.getDeviceId(), proposal.getRoleId(),
+                action, snoozeMinutes);
+        return proposal.getTargetReference();
     }
 
     private ProposalSnapshot snapshot(VoiceActionProposalEntity proposal) {

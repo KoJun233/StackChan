@@ -9,8 +9,12 @@ import com.kj.stackchan.device.DeviceInteractionSettingsCoordinator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kj.stackchan.interaction.InteractionSettingsService;
 import com.kj.stackchan.memory.LongTermMemoryService;
+import com.kj.stackchan.notification.InteractiveNotificationService;
+import com.kj.stackchan.notification.NotificationResponseAction;
 import com.kj.stackchan.reminder.ReminderService;
 import com.kj.stackchan.reminder.ReminderStatus;
+import com.kj.stackchan.conversation.ConversationService;
+import com.kj.stackchan.role.CompanionRoleService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -120,6 +124,35 @@ class VoiceActionProposalServiceTest {
         assertThat(result).contains("CREATE_MEMORY_SUGGESTION").contains("PENDING");
         assertThat(tool.submittedProposal().status()).isEqualTo(VoiceActionStatus.PENDING);
         verifyNoInteractions(memoryService);
+    }
+
+    @Test
+    void confirmedNotificationResponseUsesPersistedTrustedScopeExactlyOnce() {
+        ConversationService conversationService = mock(ConversationService.class);
+        CompanionRoleService roleService = mock(CompanionRoleService.class);
+        InteractiveNotificationService notificationService = mock(InteractiveNotificationService.class);
+        VoiceActionProposalService interactiveService = new VoiceActionProposalService(
+                proposalRepository, auditRepository, reminderService, settingsService, memoryService,
+                settingsCoordinator, Clock.fixed(NOW, ZoneOffset.UTC), conversationService, roleService,
+                notificationService);
+        UUID deviceId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        UUID notificationId = UUID.randomUUID();
+        when(conversationService.roleId(conversationId)).thenReturn(roleId);
+
+        var proposal = interactiveService.propose(deviceId, conversationId, UUID.randomUUID(),
+                VoiceActionDraft.notificationResponse(
+                        VoiceActionType.SNOOZE_NOTIFICATION, notificationId, 15));
+        VoiceActionProposalEntity entity = capturedProposal();
+        when(proposalRepository.findByIdForUpdate(proposal.id())).thenReturn(java.util.Optional.of(entity));
+
+        assertThat(interactiveService.confirm(proposal.id(), deviceId, conversationId).status())
+                .isEqualTo(VoiceActionStatus.EXECUTED);
+        assertThat(interactiveService.confirm(proposal.id(), deviceId, conversationId).resultReference())
+                .isEqualTo(notificationId);
+        verify(notificationService, times(1)).respond(
+                notificationId, deviceId, roleId, NotificationResponseAction.SNOOZE, 15);
     }
 
     private VoiceActionDraft reminderDraft() {

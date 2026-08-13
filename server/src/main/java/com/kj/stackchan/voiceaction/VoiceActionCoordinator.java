@@ -13,6 +13,9 @@ import com.kj.stackchan.memory.LongTermMemoryService;
 import com.kj.stackchan.memory.MemoryCategory;
 import com.kj.stackchan.reminder.ReminderRecurrence;
 import com.kj.stackchan.reminder.ReminderService;
+import com.kj.stackchan.notification.InteractiveNotificationService;
+import com.kj.stackchan.notification.NotificationResponseAction;
+import com.kj.stackchan.conversation.ConversationService;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -31,12 +34,16 @@ public class VoiceActionCoordinator {
     private final Clock clock;
     private final VoiceActionProposalOrchestrator proposalOrchestrator;
     private final ProactiveTopicCooldownService topicCooldownService;
+    private final InteractiveNotificationService notificationService;
+    private final ConversationService conversationService;
 
     @Autowired
     public VoiceActionCoordinator(VoiceActionProposalService proposalService, ReminderService reminderService,
                                   LongTermMemoryService memoryService, InteractionSettingsService settingsService,
                                   Clock clock, VoiceActionProposalOrchestrator proposalOrchestrator,
-                                  ProactiveTopicCooldownService topicCooldownService) {
+                                  ProactiveTopicCooldownService topicCooldownService,
+                                  InteractiveNotificationService notificationService,
+                                  ConversationService conversationService) {
         this.proposalService = proposalService;
         this.reminderService = reminderService;
         this.memoryService = memoryService;
@@ -44,12 +51,23 @@ public class VoiceActionCoordinator {
         this.clock = clock;
         this.proposalOrchestrator = proposalOrchestrator;
         this.topicCooldownService = topicCooldownService;
+        this.notificationService = notificationService;
+        this.conversationService = conversationService;
     }
 
     public VoiceActionCoordinator(VoiceActionProposalService proposalService, ReminderService reminderService,
                                   LongTermMemoryService memoryService, InteractionSettingsService settingsService,
                                   Clock clock, VoiceActionProposalOrchestrator proposalOrchestrator) {
-        this(proposalService, reminderService, memoryService, settingsService, clock, proposalOrchestrator, null);
+        this(proposalService, reminderService, memoryService, settingsService, clock, proposalOrchestrator,
+                null, null, null);
+    }
+
+    public VoiceActionCoordinator(VoiceActionProposalService proposalService, ReminderService reminderService,
+                                  LongTermMemoryService memoryService, InteractionSettingsService settingsService,
+                                  Clock clock, VoiceActionProposalOrchestrator proposalOrchestrator,
+                                  ProactiveTopicCooldownService topicCooldownService) {
+        this(proposalService, reminderService, memoryService, settingsService, clock, proposalOrchestrator,
+                topicCooldownService, null, null);
     }
 
     public ActionResult handle(UUID deviceId, UUID conversationId, UUID turnId, String transcript) {
@@ -74,12 +92,14 @@ public class VoiceActionCoordinator {
         if (pending != null) {
             return new ActionResult(proposalService.restatement(pending), true);
         }
+        ActionResult notificationResponse = proposeNotificationResponse(deviceId, conversationId, turnId, text);
+        if (notificationResponse != null) return notificationResponse;
         Matcher switchRole = SWITCH_ROLE.matcher(text);
         if (switchRole.find()) {
             VoiceActionProposalService.ProposalSnapshot proposal = proposalService.propose(
                     deviceId, conversationId, turnId,
                     new VoiceActionDraft(VoiceActionType.SWITCH_ROLE, true, switchRole.group(1).trim(), null,
-                            null, null, null, null, null, null, null, null));
+                            null, null, null, null, null, null, null, null, null));
             return new ActionResult(proposalService.restatement(proposal), true);
         }
         Matcher snooze = SNOOZE_MINUTES.matcher(text);
@@ -87,13 +107,13 @@ public class VoiceActionCoordinator {
             int minutes = Integer.parseInt(snooze.group(1));
             VoiceActionProposalService.ProposalSnapshot proposal = proposalService.propose(deviceId, conversationId, turnId,
                     new VoiceActionDraft(VoiceActionType.SNOOZE_NEXT_REMINDER, true, null, null, null, null, null,
-                            null, minutes, null, null, null));
+                            null, minutes, null, null, null, null));
             return new ActionResult(proposalService.restatement(proposal), true);
         }
         if ((text.contains("跳过") || text.contains("略过")) && text.contains("提醒")) {
             VoiceActionProposalService.ProposalSnapshot proposal = proposalService.propose(deviceId, conversationId, turnId,
                     new VoiceActionDraft(VoiceActionType.SKIP_NEXT_REMINDER, true, null, null, null, null, null,
-                            null, null, null, null, null));
+                            null, null, null, null, null, null));
             return new ActionResult(proposalService.restatement(proposal), true);
         }
 
@@ -101,7 +121,8 @@ public class VoiceActionCoordinator {
         if (volume.find()) {
             int value = Integer.parseInt(volume.group(1));
             VoiceActionProposalService.ProposalSnapshot proposal = proposalService.propose(deviceId, conversationId, turnId,
-                    new VoiceActionDraft(VoiceActionType.SET_VOLUME, true, null, null, null, null, null, null, null, null, value, null));
+                    new VoiceActionDraft(VoiceActionType.SET_VOLUME, true, null, null, null, null, null, null,
+                            null, null, value, null, null));
             return new ActionResult(proposalService.restatement(proposal), true);
         }
         Matcher dnd = DND_MINUTES.matcher(text);
@@ -110,7 +131,7 @@ public class VoiceActionCoordinator {
             Instant until = clock.instant().plus(Duration.ofMinutes(minutes));
             VoiceActionProposalService.ProposalSnapshot proposal = proposalService.propose(deviceId, conversationId, turnId,
                     new VoiceActionDraft(VoiceActionType.SET_TEMPORARY_DND, true, null, null, null, null, null, null,
-                            minutes, until, null, null));
+                            minutes, until, null, null, null));
             return new ActionResult(proposalService.restatement(proposal), true);
         }
         Matcher reminder = REMINDER_MINUTES.matcher(text);
@@ -127,7 +148,7 @@ public class VoiceActionCoordinator {
             String content = text.replaceFirst("^(请)?记住[：:，,]?\\s*", "").trim();
             VoiceActionProposalService.ProposalSnapshot proposal = proposalService.propose(deviceId, conversationId, turnId,
                     new VoiceActionDraft(VoiceActionType.CREATE_MEMORY_SUGGESTION, false, content, "语音记忆建议",
-                            null, null, null, null, null, null, null, MemoryCategory.USER_PROFILE.name()));
+                            null, null, null, null, null, null, null, MemoryCategory.USER_PROFILE.name(), null));
             return new ActionResult(proposalService.restatement(proposal), true);
         }
         if (text.contains("下一条提醒") || text.contains("下一个提醒")) {
@@ -157,6 +178,33 @@ public class VoiceActionCoordinator {
         return text.contains("提醒我") || text.contains("稍后提醒") || text.contains("跳过下一次")
                 || text.contains("音量调到") || text.contains("安静到") || text.startsWith("记住")
                 || text.startsWith("请记住") || text.contains("切换到角色");
+    }
+    private ActionResult proposeNotificationResponse(UUID deviceId, UUID conversationId, UUID turnId, String text) {
+        if (notificationService == null || conversationService == null) return null;
+        NotificationResponseAction action = null;
+        Integer minutes = null;
+        Matcher snooze = SNOOZE_MINUTES.matcher(text);
+        if (snooze.find() && (text.contains("通知") || text.contains("这个"))) {
+            action = NotificationResponseAction.SNOOZE;
+            minutes = Integer.parseInt(snooze.group(1));
+        } else if (text.matches("^(?:知道了|已知晓|我知道了)[。！!,.，]?$")) {
+            action = NotificationResponseAction.ACKNOWLEDGE;
+        } else if (text.matches("^(?:完成了|已完成|标记完成|办完了)[。！!,.，]?$")) {
+            action = NotificationResponseAction.COMPLETE;
+        }
+        if (action == null) return null;
+        UUID roleId = conversationService.roleId(conversationId);
+        UUID notificationId = notificationService.latestActionable(deviceId, roleId, action);
+        if (notificationId == null) return null;
+        VoiceActionType type = switch (action) {
+            case ACKNOWLEDGE -> VoiceActionType.ACKNOWLEDGE_NOTIFICATION;
+            case SNOOZE -> VoiceActionType.SNOOZE_NOTIFICATION;
+            case COMPLETE -> VoiceActionType.COMPLETE_NOTIFICATION;
+        };
+        VoiceActionProposalService.ProposalSnapshot proposal = proposalService.propose(
+                deviceId, conversationId, turnId,
+                VoiceActionDraft.notificationResponse(type, notificationId, minutes));
+        return new ActionResult(proposalService.restatement(proposal), true);
     }
     private boolean isMuteLastTopic(String text) {
         return text.matches("^(?:别再提这个(?:话题)?(?:了)?|不要再提这个(?:话题)?(?:了)?|别提这个了|别再主动提这个(?:话题)?(?:了)?)[。！!,.，]?$");

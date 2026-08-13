@@ -35,6 +35,14 @@ Invoke-RestMethod -Method Post -Uri "$env:STACKCHAN_BASE_URL/api/v1/external/not
 
 将 Streamable HTTP 地址设置为 `<baseUrl>/mcp/notifications`，认证使用同一 Bearer 令牌。发现结果必须只有 `push_notification` 与 `get_notification_status`。若出现其他 Tool，停止接入并检查服务端配置。
 
+需要用户回执时，创建通知时显式传入 `responseActions`。单纯完成播报的通知继续省略该字段。调用方轮询 `get_notification_status` 中的 `response`，不要配置或要求 StackChan 调用任意回调 URL。
+
+- `ACKNOWLEDGE`：用户表示已知晓。
+- `SNOOZE`：用户确认延期 1–1440 分钟，通知重新入队。
+- `COMPLETE`：用户表示事项已经完成。
+
+管理页面的测试播报可勾选动作，并可手动记录回执用于页面验收。实体语音会先复述并要求确认；没有匹配互动通知时，“知道了”等普通对话不会产生回执。
+
 ## 故障处理
 
 - 401：令牌无效、过期或已撤销；不要重试旧令牌，联系管理员轮换。
@@ -43,6 +51,8 @@ Invoke-RestMethod -Method Post -Uri "$env:STACKCHAN_BASE_URL/api/v1/external/not
 - 429：超过每分钟 30 次或 100 条未完成上限；等待现有通知完成/过期后重试。
 - 长时间 `PENDING`：检查免打扰、设备在线、活动语音和过期时间。外部通知离线时不会采用普通提醒的跳过策略。
 - `FAILED/EXPIRED`：只依据安全失败码处理；不得采集供应商完整异常、音频或播报正文。
+- `notification_response_unavailable`：通知尚未完成播报、已重新排队或已不在回应阶段。
+- `notification_response_expired`：播报后 24 小时回应窗口已结束；不要伪造用户回执。
 
 ## 生产边界
 

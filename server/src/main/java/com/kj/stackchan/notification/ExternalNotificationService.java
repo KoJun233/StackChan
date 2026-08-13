@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.EnumSet;
 import java.util.UUID;
+import java.util.Set;
 
 import com.kj.stackchan.reminder.ReminderEntity;
 import com.kj.stackchan.reminder.ReminderRecurrence;
@@ -16,6 +17,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +37,22 @@ public class ExternalNotificationService {
     private final ReminderRepository reminderRepository;
     private final NotificationRateLimiter rateLimiter;
     private final Clock clock;
+    private final NotificationResponseRepository responseRepository;
+
+    @Autowired
+    public ExternalNotificationService(
+            NotificationIntegrationRepository integrationRepository,
+            ReminderRepository reminderRepository,
+            NotificationRateLimiter rateLimiter,
+            Clock clock,
+            NotificationResponseRepository responseRepository
+    ) {
+        this.integrationRepository = integrationRepository;
+        this.reminderRepository = reminderRepository;
+        this.rateLimiter = rateLimiter;
+        this.clock = clock;
+        this.responseRepository = responseRepository;
+    }
 
     public ExternalNotificationService(
             NotificationIntegrationRepository integrationRepository,
@@ -42,10 +60,7 @@ public class ExternalNotificationService {
             NotificationRateLimiter rateLimiter,
             Clock clock
     ) {
-        this.integrationRepository = integrationRepository;
-        this.reminderRepository = reminderRepository;
-        this.rateLimiter = rateLimiter;
-        this.clock = clock;
+        this(integrationRepository, reminderRepository, rateLimiter, clock, null);
     }
 
     @Transactional
@@ -55,7 +70,18 @@ public class ExternalNotificationService {
             String content,
             Integer expiresInSeconds
     ) {
-        ValidatedNotification validated = validate(idempotencyKey, content, expiresInSeconds);
+        return create(principal, idempotencyKey, content, expiresInSeconds, Set.of());
+    }
+
+    @Transactional
+    public CreateResult create(
+            NotificationIntegrationPrincipal principal,
+            String idempotencyKey,
+            String content,
+            Integer expiresInSeconds,
+            Set<NotificationResponseAction> responseActions
+    ) {
+        ValidatedNotification validated = validate(idempotencyKey, content, expiresInSeconds, responseActions);
         NotificationIntegrationEntity integration = integrationRepository.findByIdForUpdate(principal.integrationId())
                 .orElseThrow(this::notFound);
         if (!integration.isEnabled() || !integration.getDeviceId().equals(principal.deviceId())) {
@@ -74,7 +100,8 @@ public class ExternalNotificationService {
                 integration.getId(), validated.idempotencyKey()
         );
         if (existing.isPresent()) {
-            if (!contentHash.equals(existing.get().getIdempotencyContentHash())) {
+            if (!contentHash.equals(existing.get().getIdempotencyContentHash())
+                    || !validated.responseActions().equals(existing.get().getResponseActions())) {
                 throw new NotificationApiException(
                         HttpStatus.CONFLICT, "notification_idempotency_conflict", "幂等键已用于其他通知正文。"
                 );
@@ -96,18 +123,27 @@ public class ExternalNotificationService {
         );
         reminder.assignExternalMetadata(
                 integration.getId(), validated.idempotencyKey(), contentHash,
-                now.plusSeconds(validated.expiresInSeconds()), now
+                now.plusSeconds(validated.expiresInSeconds()), validated.responseActions(), now
         );
         return new CreateResult(publicSnapshot(reminderRepository.save(reminder)), false);
     }
 
     @Transactional
     public CreateResult createAdminTest(UUID integrationId, String content) {
+        return createAdminTest(integrationId, content, Set.of());
+    }
+
+    @Transactional
+    public CreateResult createAdminTest(
+            UUID integrationId,
+            String content,
+            Set<NotificationResponseAction> responseActions
+    ) {
         NotificationIntegrationEntity integration = integrationRepository.findById(integrationId)
                 .orElseThrow(this::notFound);
         return create(
                 new NotificationIntegrationPrincipal(integration.getId(), integration.getDeviceId(), integration.getName()),
-                "admin-test-" + UUID.randomUUID(), content, DEFAULT_EXPIRES_SECONDS
+                "admin-test-" + UUID.randomUUID(), content, DEFAULT_EXPIRES_SECONDS, responseActions
         );
     }
 
@@ -159,7 +195,12 @@ public class ExternalNotificationService {
         reminderRepository.delete(notification);
     }
 
-    private ValidatedNotification validate(String idempotencyKey, String content, Integer expiresInSeconds) {
+    private ValidatedNotification validate(
+            String idempotencyKey,
+            String content,
+            Integer expiresInSeconds,
+            Set<NotificationResponseAction> responseActions
+    ) {
         String safeKey = idempotencyKey == null ? "" : idempotencyKey.trim();
         if (safeKey.isBlank() || safeKey.length() > 128 || safeKey.chars().anyMatch(Character::isISOControl)) {
             throw invalid("Idempotency-Key 无效。");
@@ -172,14 +213,21 @@ public class ExternalNotificationService {
         if (safeExpires < MIN_EXPIRES_SECONDS || safeExpires > MAX_EXPIRES_SECONDS) {
             throw invalid("通知过期时间必须为 60–86400 秒。");
         }
-        return new ValidatedNotification(safeKey, safeContent, safeExpires);
+        if (responseActions != null && responseActions.stream().anyMatch(java.util.Objects::isNull)) {
+            throw invalid("通知回执动作无效。");
+        }
+        Set<NotificationResponseAction> safeActions = responseActions == null || responseActions.isEmpty()
+                ? Set.of() : Set.copyOf(responseActions);
+        if (safeActions.size() > 3) throw invalid("通知回执动作无效。");
+        return new ValidatedNotification(safeKey, safeContent, safeExpires, safeActions);
     }
 
     private PublicNotificationSnapshot publicSnapshot(ReminderEntity reminder) {
         return new PublicNotificationSnapshot(
                 reminder.getId(), reminder.getStatus(), reminder.getAttemptCount(), reminder.getFailureCode(),
                 reminder.getCreatedAt(), reminder.getUpdatedAt(), reminder.getExpiresAt(),
-                reminder.getStatus() == ReminderStatus.DELIVERED ? reminder.getLastCompletedAt() : null
+                reminder.getStatus() == ReminderStatus.DELIVERED ? reminder.getLastCompletedAt() : null,
+                reminder.getResponseActions(), latestResponse(reminder.getId())
         );
     }
 
@@ -188,8 +236,17 @@ public class ExternalNotificationService {
                 reminder.getId(), reminder.getNotificationIntegrationId(), reminder.getDeviceId(), reminder.getRoleId(),
                 reminder.getContent(), reminder.getStatus(), reminder.getAttemptCount(), reminder.getFailureCode(),
                 reminder.getCreatedAt(), reminder.getUpdatedAt(), reminder.getExpiresAt(),
-                reminder.getStatus() == ReminderStatus.DELIVERED ? reminder.getLastCompletedAt() : null
+                reminder.getStatus() == ReminderStatus.DELIVERED ? reminder.getLastCompletedAt() : null,
+                reminder.getResponseActions(), latestResponse(reminder.getId())
         );
+    }
+
+    private InteractiveNotificationService.ResponseSnapshot latestResponse(UUID notificationId) {
+        if (responseRepository == null) return null;
+        return responseRepository.findFirstByNotificationIdOrderByCreatedAtDescIdDesc(notificationId)
+                .map(response -> new InteractiveNotificationService.ResponseSnapshot(
+                        response.getAction(), response.getSnoozeMinutes(), response.getCreatedAt()))
+                .orElse(null);
     }
 
     private NotificationApiException invalid(String message) {
@@ -202,7 +259,12 @@ public class ExternalNotificationService {
         );
     }
 
-    private record ValidatedNotification(String idempotencyKey, String content, int expiresInSeconds) { }
+    private record ValidatedNotification(
+            String idempotencyKey,
+            String content,
+            int expiresInSeconds,
+            Set<NotificationResponseAction> responseActions
+    ) { }
 
     public record CreateResult(PublicNotificationSnapshot notification, boolean replayed) { }
 
@@ -214,8 +276,17 @@ public class ExternalNotificationService {
             Instant createdAt,
             Instant updatedAt,
             Instant expiresAt,
-            Instant deliveredAt
-    ) { }
+            Instant deliveredAt,
+            Set<NotificationResponseAction> responseActions,
+            InteractiveNotificationService.ResponseSnapshot response
+    ) {
+        public PublicNotificationSnapshot(
+                UUID id, ReminderStatus status, int attemptCount, String failureCode,
+                Instant createdAt, Instant updatedAt, Instant expiresAt, Instant deliveredAt
+        ) {
+            this(id, status, attemptCount, failureCode, createdAt, updatedAt, expiresAt, deliveredAt, Set.of(), null);
+        }
+    }
 
     public record AdminNotificationSnapshot(
             UUID id,
@@ -229,7 +300,9 @@ public class ExternalNotificationService {
             Instant createdAt,
             Instant updatedAt,
             Instant expiresAt,
-            Instant deliveredAt
+            Instant deliveredAt,
+            Set<NotificationResponseAction> responseActions,
+            InteractiveNotificationService.ResponseSnapshot response
     ) { }
 
     public record AdminNotificationPage(java.util.List<AdminNotificationSnapshot> list, long total) { }

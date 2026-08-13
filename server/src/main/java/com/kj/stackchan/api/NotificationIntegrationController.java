@@ -3,9 +3,11 @@ package com.kj.stackchan.api;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.Set;
 
 import com.kj.stackchan.notification.ExternalNotificationService;
 import com.kj.stackchan.notification.NotificationIntegrationService;
+import com.kj.stackchan.notification.NotificationResponseAction;
 import com.kj.stackchan.reminder.ReminderStatus;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -99,14 +101,13 @@ public class NotificationIntegrationController {
     public void deleteNotification(@PathVariable UUID notificationId) {
         notificationService.deleteAdmin(notificationId);
     }
-
     @PostMapping(path = "/{id}:test", consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public ExternalNotificationService.PublicNotificationSnapshot test(
             @PathVariable UUID id,
             @Valid @RequestBody TestNotificationRequest request
     ) {
-        return notificationService.createAdminTest(id, request.content()).notification();
+        return notificationService.createAdminTest(id, request.content(), request.responseActions()).notification();
     }
 
     public record IntegrationRequest(
@@ -122,5 +123,9 @@ public class NotificationIntegrationController {
 
     public record TokenRequest(Instant expiresAt) { }
 
-    public record TestNotificationRequest(@NotBlank @Size(max = 500) String content) { }
+    public record TestNotificationRequest(
+            @NotBlank @Size(max = 500) String content,
+            @Size(max = 3) Set<NotificationResponseAction> responseActions
+    ) { }
+
 }

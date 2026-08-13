@@ -30,7 +30,7 @@ public class VoiceActionProposalTool {
             draft = new VoiceActionDraft(type, type != VoiceActionType.CREATE_MEMORY_SUGGESTION,
                     input.content(), input.title(), parseInstant(input.scheduledAt()), input.zoneId(),
                     input.recurrenceType(), input.recurrenceInterval(), input.durationMinutes(),
-                    parseInstant(input.targetAt()), input.volumePercent(), input.memoryCategory());
+                    parseInstant(input.targetAt()), input.volumePercent(), input.memoryCategory(), null);
         } catch (RuntimeException exception) {
             throw new VoiceActionException("Voice action tool input is invalid");
         }

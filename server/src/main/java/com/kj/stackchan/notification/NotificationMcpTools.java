@@ -1,6 +1,7 @@
 package com.kj.stackchan.notification;
 
 import java.util.UUID;
+import java.util.Set;
 
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
@@ -23,7 +24,17 @@ public class NotificationMcpTools {
     public ExternalNotificationService.PublicNotificationSnapshot pushNotification(
             @ToolParam(description = "需要由机器人原文播报的 1–500 字正文") String content,
             @ToolParam(description = "调用方生成的 1–128 字幂等键") String idempotencyKey,
-            @ToolParam(description = "60–86400 秒；省略时为 24 小时", required = false) Integer expiresInSeconds
+            @ToolParam(description = "60–86400 秒；省略时为 24 小时", required = false) Integer expiresInSeconds,
+            @ToolParam(description = "可选回执动作：ACKNOWLEDGE、SNOOZE、COMPLETE", required = false)
+            Set<NotificationResponseAction> responseActions
+    ) {
+        return notificationService.create(
+                principal(), idempotencyKey, content, expiresInSeconds, responseActions
+        ).notification();
+    }
+
+    ExternalNotificationService.PublicNotificationSnapshot pushNotification(
+            String content, String idempotencyKey, Integer expiresInSeconds
     ) {
         return notificationService.create(principal(), idempotencyKey, content, expiresInSeconds).notification();
     }

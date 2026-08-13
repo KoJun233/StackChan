@@ -8,7 +8,10 @@ import java.util.UUID;
 import com.kj.stackchan.interaction.InteractionSettingsService;
 import com.kj.stackchan.interaction.ProactiveTopicCooldownService;
 import com.kj.stackchan.memory.LongTermMemoryService;
+import com.kj.stackchan.notification.InteractiveNotificationService;
+import com.kj.stackchan.notification.NotificationResponseAction;
 import com.kj.stackchan.reminder.ReminderService;
+import com.kj.stackchan.conversation.ConversationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,12 +30,15 @@ class VoiceActionCoordinatorTest {
     @Mock private LongTermMemoryService memoryService;
     @Mock private InteractionSettingsService settingsService;
     @Mock private ProactiveTopicCooldownService topicCooldownService;
+    @Mock private InteractiveNotificationService notificationService;
+    @Mock private ConversationService conversationService;
     private VoiceActionCoordinator coordinator;
 
     @BeforeEach
     void setUp() {
         coordinator = new VoiceActionCoordinator(proposalService, reminderService, memoryService, settingsService,
-                Clock.fixed(Instant.parse("2026-08-02T08:00:00Z"), ZoneOffset.UTC), null, topicCooldownService);
+                Clock.fixed(Instant.parse("2026-08-02T08:00:00Z"), ZoneOffset.UTC), null, topicCooldownService,
+                notificationService, conversationService);
     }
 
     @Test
@@ -81,5 +87,43 @@ class VoiceActionCoordinatorTest {
 
         assertThat(result).isNull();
         verifyNoInteractions(topicCooldownService);
+    }
+
+    @Test
+    void actionableNotificationCreatesTrustedConfirmationProposal() {
+        UUID deviceId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        UUID notificationId = UUID.randomUUID();
+        UUID proposalId = UUID.randomUUID();
+        when(conversationService.roleId(conversationId)).thenReturn(roleId);
+        when(notificationService.latestActionable(deviceId, roleId, NotificationResponseAction.ACKNOWLEDGE))
+                .thenReturn(notificationId);
+        when(proposalService.propose(any(), any(), any(), any())).thenReturn(
+                new VoiceActionProposalService.ProposalSnapshot(proposalId, VoiceActionType.ACKNOWLEDGE_NOTIFICATION,
+                        VoiceActionStatus.PENDING, true, null, null, null, null, null, null,
+                        null, null, Instant.parse("2026-08-02T08:02:00Z")));
+        when(proposalService.restatement(any())).thenReturn("要将最近通知标记为已知晓。确认执行吗？");
+
+        var result = coordinator.handle(deviceId, conversationId, UUID.randomUUID(), "知道了");
+
+        assertThat(result.reply()).contains("确认执行");
+        ArgumentCaptor<VoiceActionDraft> draft = ArgumentCaptor.forClass(VoiceActionDraft.class);
+        verify(proposalService).propose(eq(deviceId), eq(conversationId), any(), draft.capture());
+        assertThat(draft.getValue().actionType()).isEqualTo(VoiceActionType.ACKNOWLEDGE_NOTIFICATION);
+        assertThat(draft.getValue().targetReference()).isEqualTo(notificationId);
+    }
+
+    @Test
+    void ordinaryAcknowledgementFallsThroughWithoutMatchingInteractiveNotification() {
+        UUID deviceId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        when(conversationService.roleId(conversationId)).thenReturn(roleId);
+
+        assertThat(coordinator.handle(deviceId, conversationId, UUID.randomUUID(), "知道了")).isNull();
+
+        verify(notificationService).latestActionable(deviceId, roleId, NotificationResponseAction.ACKNOWLEDGE);
+        verify(proposalService, never()).propose(any(), any(), any(), any());
     }
 }

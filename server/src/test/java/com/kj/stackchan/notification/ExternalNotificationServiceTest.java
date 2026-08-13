@@ -64,6 +64,22 @@ class ExternalNotificationServiceTest {
     }
 
     @Test
+    void createsInteractiveNotificationAndTreatsChangedActionsAsIdempotencyConflict() {
+        var result = service.create(principal, "interactive-1", "请处理", null,
+                java.util.Set.of(NotificationResponseAction.ACKNOWLEDGE, NotificationResponseAction.COMPLETE));
+        assertThat(result.notification().responseActions())
+                .containsExactlyInAnyOrder(NotificationResponseAction.ACKNOWLEDGE, NotificationResponseAction.COMPLETE);
+
+        ReminderEntity existing = externalReminder("interactive-2", "请处理");
+        when(reminderRepository.findByNotificationIntegrationIdAndIdempotencyKey(
+                integration.getId(), "interactive-2")).thenReturn(Optional.of(existing));
+        assertThatThrownBy(() -> service.create(principal, "interactive-2", "请处理", null,
+                java.util.Set.of(NotificationResponseAction.COMPLETE)))
+                .isInstanceOfSatisfying(NotificationApiException.class,
+                        exception -> assertThat(exception.getCode()).isEqualTo("notification_idempotency_conflict"));
+    }
+
+    @Test
     void replaysSameIdempotencyKeyAndRejectsDifferentContent() {
         ReminderEntity existing = externalReminder("task-1", "原正文");
         when(reminderRepository.findByNotificationIntegrationIdAndIdempotencyKey(

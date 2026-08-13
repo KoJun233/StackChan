@@ -3,6 +3,8 @@ package com.kj.stackchan.reminder;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.EnumSet;
+import java.util.Set;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -11,6 +13,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import com.kj.stackchan.role.CompanionRoleEntity;
+import com.kj.stackchan.notification.NotificationResponseAction;
 
 @Entity
 @Table(name = "reminders")
@@ -92,6 +95,9 @@ public class ReminderEntity {
 
     @Column(name = "expires_at")
     private Instant expiresAt;
+
+    @Column(name = "response_actions", length = 64)
+    private String responseActions;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -278,6 +284,7 @@ public class ReminderEntity {
             String idempotencyKey,
             String contentHash,
             Instant expiresAt,
+            Set<NotificationResponseAction> responseActions,
             Instant now
     ) {
         this.source = ReminderSource.EXTERNAL;
@@ -285,7 +292,23 @@ public class ReminderEntity {
         this.idempotencyKey = idempotencyKey;
         this.idempotencyContentHash = contentHash;
         this.expiresAt = expiresAt;
+        this.responseActions = serializeResponseActions(responseActions);
         this.updatedAt = now;
+    }
+
+    public void snoozeExternalUntil(Instant scheduledAt, Instant expiresAt, Instant now) {
+        deferUntil(scheduledAt, now);
+        this.expiresAt = expiresAt;
+    }
+
+    public void assignExternalMetadata(
+            UUID integrationId,
+            String idempotencyKey,
+            String contentHash,
+            Instant expiresAt,
+            Instant now
+    ) {
+        assignExternalMetadata(integrationId, idempotencyKey, contentHash, expiresAt, Set.of(), now);
     }
 
     public void markExpired(Instant now) {
@@ -360,4 +383,15 @@ public class ReminderEntity {
     public String getIdempotencyKey() { return idempotencyKey; }
     public String getIdempotencyContentHash() { return idempotencyContentHash; }
     public Instant getExpiresAt() { return expiresAt; }
+    public Set<NotificationResponseAction> getResponseActions() {
+        if (responseActions == null || responseActions.isBlank()) return Set.of();
+        EnumSet<NotificationResponseAction> actions = EnumSet.noneOf(NotificationResponseAction.class);
+        for (String value : responseActions.split(",")) actions.add(NotificationResponseAction.valueOf(value));
+        return Set.copyOf(actions);
+    }
+
+    private String serializeResponseActions(Set<NotificationResponseAction> actions) {
+        if (actions == null || actions.isEmpty()) return null;
+        return actions.stream().sorted().map(Enum::name).collect(java.util.stream.Collectors.joining(","));
+    }
 }
