@@ -13,6 +13,7 @@ import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.llm.ResolvedLlmSettings;
 import com.kj.stackchan.memory.CompanionPromptService;
 import com.kj.stackchan.memory.CompletedTurnMemoryCoordinator;
+import com.kj.stackchan.role.CompanionRoleEntity;
 import com.kj.stackchan.voiceaction.VoiceActionCoordinator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -59,6 +60,7 @@ class VoiceTurnServiceTest {
     void runsAsrLlmPersistenceAndTtsForOneDeviceConversation() {
         UUID deviceId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
         UUID userMessageId = UUID.randomUUID();
         UUID assistantMessageId = UUID.randomUUID();
         byte[] input = new byte[64];
@@ -75,9 +77,12 @@ class VoiceTurnServiceTest {
         ));
         when(agentOrchestrator.stream(any(AgentOrchestrator.AgentRequest.class)))
                 .thenReturn(Flux.just("好的，", "记得去拿外卖。"));
-        when(speechRuntimeClient.synthesize("好的，记得去拿外卖。")).thenReturn(replyAudio);
+        when(speechRuntimeClient.synthesize("好的，记得去拿外卖。", roleId))
+                .thenReturn(replyAudio);
 
-        VoiceTurnService.VoiceTurnResult result = service().handle(deviceId, input);
+        VoiceTurnService service = service();
+        when(conversationService.roleId(conversationId)).thenReturn(roleId);
+        VoiceTurnService.VoiceTurnResult result = service.handle(deviceId, input);
 
         assertThat(result.transcript()).isEqualTo("提醒我拿外卖");
         assertThat(result.reply()).isEqualTo("好的，记得去拿外卖。");
@@ -90,7 +95,7 @@ class VoiceTurnServiceTest {
                 eq(deviceId), any(UUID.class), eq(VoiceTurnStage.TTS_COMPLETED), eq(null)
         );
         verify(completedTurnMemoryCoordinator).complete(
-                any(UUID.class), any(UUID.class), eq(deviceId), eq("提醒我拿外卖"),
+                any(UUID.class), any(UUID.class), eq(deviceId), eq(roleId), eq("提醒我拿外卖"),
                 eq("好的，记得去拿外卖。"), eq(List.of()), eq(true)
         );
     }
@@ -123,7 +128,10 @@ class VoiceTurnServiceTest {
                         "然后检查剩余安排，",
                         "最后留出休息时间。"
                 ));
-        when(speechRuntimeClient.synthesize("先完成最重要的一件事。然后检查剩余安排，最后留出休息时间。"))
+        when(speechRuntimeClient.synthesize(
+                "先完成最重要的一件事。然后检查剩余安排，最后留出休息时间。",
+                CompanionRoleEntity.DEFAULT_ROLE_ID
+        ))
                 .thenReturn(replyAudio);
 
         VoiceTurnService.VoiceTurnResult result = service().handle(deviceId, input);
@@ -185,7 +193,7 @@ class VoiceTurnServiceTest {
         verify(conversationService).interruptGeneration(assistantMessageId, "部分回答");
         verify(conversationService, never()).completeGeneration(eq(assistantMessageId), anyString());
         verify(conversationService, never()).failGeneration(eq(assistantMessageId), anyString(), anyString());
-        verify(speechRuntimeClient, never()).synthesize(anyString());
+        verify(speechRuntimeClient, never()).synthesize(anyString(), any(UUID.class));
         verify(diagnosticsService).recordServerStage(deviceId, turnId, VoiceTurnStage.CANCELLED, null);
     }
 
@@ -213,7 +221,7 @@ class VoiceTurnServiceTest {
         ));
         when(agentOrchestrator.stream(any(AgentOrchestrator.AgentRequest.class)))
                 .thenReturn(Flux.just("已生成回答"));
-        when(speechRuntimeClient.synthesize("已生成回答")).thenAnswer(ignored -> {
+        when(speechRuntimeClient.synthesize("已生成回答", CompanionRoleEntity.DEFAULT_ROLE_ID)).thenAnswer(ignored -> {
             cancellationService.cancel(deviceId, turnId);
             return new byte[44];
         });
@@ -228,6 +236,8 @@ class VoiceTurnServiceTest {
     }
 
     private VoiceTurnService service() {
+        lenient().when(conversationService.roleId(any(UUID.class)))
+                .thenReturn(CompanionRoleEntity.DEFAULT_ROLE_ID);
         lenient().when(companionPromptService.assemble(any(UUID.class), anyString(), anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(1, String.class)
                         + invocation.getArgument(2, String.class));

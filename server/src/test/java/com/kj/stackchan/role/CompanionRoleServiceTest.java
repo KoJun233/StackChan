@@ -24,6 +24,27 @@ class CompanionRoleServiceTest {
     private static final Instant NOW = Instant.parse("2026-08-13T10:00:00Z");
 
     @Test
+    void trimsAndPersistsAnOptionalRoleVoiceOverride() {
+        var roles = mock(CompanionRoleRepository.class);
+        var active = mock(DeviceActiveRoleRepository.class);
+        var devices = mock(DeviceRepository.class);
+        var turns = mock(VoiceTurnRepository.class);
+        var reminders = mock(ReminderRepository.class);
+        var integrations = mock(NotificationIntegrationRepository.class);
+        when(roles.save(any(CompanionRoleEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        CompanionRoleService service = new CompanionRoleService(roles, active, devices, turns, reminders,
+                Clock.fixed(NOW, ZoneOffset.UTC), integrations);
+
+        var created = service.create(new CompanionRoleService.RoleCommand(
+                " 助理 ", PersonaTone.PROFESSIONAL, PersonaReplyLength.SHORT,
+                PersonaProactivity.RESERVED, "", "", "", " role-voice "
+        ));
+
+        assertThat(created.name()).isEqualTo("助理");
+        assertThat(created.ttsVoiceOverride()).isEqualTo("role-voice");
+    }
+
+    @Test
     void refusesDefaultArchiveAndBlocksSwitchDuringVoiceTurn() {
         var roles = mock(CompanionRoleRepository.class);
         var active = mock(DeviceActiveRoleRepository.class);

@@ -44,3 +44,4 @@
 | [0031](0031-safe-application-firmware-ota-and-health-center.md) | ACCEPTED | 应用固件由管理员手工导入，经同源认证下载、A/B 写入、启动健康确认和 bootloader 自动回退；健康中心只展示安全元数据。 |
 | [0032](0032-external-notification-platform.md) | ACCEPTED | 外部通知使用独立最小权限令牌，复用可靠提醒投递并提供 REST 与 Streamable HTTP MCP。 |
 | [0033](0033-companion-role-containers.md) | ACCEPTED | 角色容器隔离人设、会话、记忆、提醒、主动状态和通知归属，设备独立保存活动角色。 |
+| [0034](0034-role-tts-voice-overrides.md) | ACCEPTED | 角色可覆盖全局 TTS 音色，角色音色失败时仅回退全局音色一次且不修改固件协议。 |

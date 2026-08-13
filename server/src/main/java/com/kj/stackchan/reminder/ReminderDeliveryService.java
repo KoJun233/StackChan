@@ -89,7 +89,7 @@ public class ReminderDeliveryService {
                 continue;
             }
             try {
-                byte[] audio = speechRuntimeClient.synthesize(reminder.getContent());
+                byte[] audio = speechRuntimeClient.synthesize(reminder.getContent(), reminder.getRoleId());
                 String commandId = UUID.randomUUID().toString();
                 reminder.markDispatched(commandId, audio, now);
                 reminderRepository.saveAndFlush(reminder);

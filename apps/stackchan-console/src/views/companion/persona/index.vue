@@ -15,6 +15,7 @@ const activeRoles = ref<Record<string, string>>({})
 const columns: TableColumn<CompanionRole>[] = [
   { accessorKey: 'name', header: '角色名称', minWidth: 180 },
   { id: 'style', header: '交流风格', minWidth: 190 },
+  { id: 'voice', header: '角色音色', minWidth: 160 },
   { id: 'status', header: '状态', width: 110, align: 'center' },
   { id: 'updatedAt', header: '更新时间', minWidth: 180 },
   { id: 'operation', header: '操作', width: 200, align: 'center', fixed: 'right' },
@@ -85,6 +86,7 @@ onMounted(load)
         <FaLoading :loading="loading">
           <FaTable :data="roles" :columns="columns">
             <template #cell-style="{ row }">{{ toneLabel(row.original) }}</template>
+            <template #cell-voice="{ row }">{{ row.original.ttsVoiceOverride || '继承全局音色' }}</template>
             <template #cell-status="{ row }"><FaTag :variant="row.original.archivedAt ? 'secondary' : 'default'">{{ row.original.defaultRole ? '默认' : row.original.archivedAt ? '已归档' : '可用' }}</FaTag></template>
             <template #cell-updatedAt="{ row }">{{ formatTime(row.original.updatedAt) }}</template>
             <template #cell-operation="{ row }">

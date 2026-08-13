@@ -167,7 +167,7 @@ public class VoiceTurnService {
                 recordStage(deviceId, turnId, VoiceTurnStage.LLM_COMPLETED, null);
                 lastCompletedStage = VoiceTurnStage.LLM_COMPLETED;
                 cancellation.throwIfCancelled();
-                byte[] audio = speechRuntimeClient.synthesize(reply);
+                byte[] audio = speechRuntimeClient.synthesize(reply, roleId);
                 cancellation.throwIfCancelled();
                 conversationService.completeGeneration(start.assistantMessageId(), reply);
                 if (completedTurnMemoryCoordinator != null && extractMemorySuggestion) {

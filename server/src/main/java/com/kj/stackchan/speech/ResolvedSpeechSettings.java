@@ -11,4 +11,8 @@ public record ResolvedSpeechSettings(
         String ttsVoice,
         String apiKey
 ) {
+    public ResolvedSpeechSettings withTtsVoice(String voice) {
+        return new ResolvedSpeechSettings(providerType, baseUrl, workspaceId, asrModel, asrMode,
+                ttsModel, ttsMode, voice, apiKey);
+    }
 }

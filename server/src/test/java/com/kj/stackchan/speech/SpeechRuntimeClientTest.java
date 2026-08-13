@@ -1,5 +1,12 @@
 package com.kj.stackchan.speech;
 
+import java.time.Instant;
+import java.util.UUID;
+
+import com.kj.stackchan.persona.PersonaProactivity;
+import com.kj.stackchan.persona.PersonaReplyLength;
+import com.kj.stackchan.persona.PersonaTone;
+import com.kj.stackchan.role.CompanionRoleService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -21,6 +28,42 @@ class SpeechRuntimeClientTest {
 
     @Mock
     private DashScopeSpeechProviderAdapter dashScope;
+
+    @Mock
+    private CompanionRoleService roleService;
+
+    @Test
+    void usesTheRoleVoiceOverrideForSynthesis() {
+        UUID roleId = UUID.randomUUID();
+        ResolvedSpeechSettings settings = settings("global-voice");
+        ResolvedSpeechSettings overridden = settings.withTtsVoice("role-voice");
+        byte[] audio = new byte[] {1, 2, 3};
+        when(settingsService.resolveForInvocation()).thenReturn(settings);
+        when(roleService.get(roleId)).thenReturn(role(roleId, "role-voice"));
+        when(openAiCompatible.synthesize(overridden, "你好")).thenReturn(audio);
+
+        assertThat(clientWithRoles().synthesize("你好", roleId)).isSameAs(audio);
+
+        verify(openAiCompatible).synthesize(overridden, "你好");
+    }
+
+    @Test
+    void retriesTheGlobalVoiceOnceWhenTheRoleVoiceFails() {
+        UUID roleId = UUID.randomUUID();
+        ResolvedSpeechSettings settings = settings("global-voice");
+        ResolvedSpeechSettings overridden = settings.withTtsVoice("role-voice");
+        byte[] audio = new byte[] {4, 5, 6};
+        when(settingsService.resolveForInvocation()).thenReturn(settings);
+        when(roleService.get(roleId)).thenReturn(role(roleId, "role-voice"));
+        when(openAiCompatible.synthesize(overridden, "你好"))
+                .thenThrow(new SpeechProviderUnavailableException());
+        when(openAiCompatible.synthesize(settings, "你好")).thenReturn(audio);
+
+        assertThat(clientWithRoles().synthesize("你好", roleId)).isSameAs(audio);
+
+        verify(openAiCompatible).synthesize(overridden, "你好");
+        verify(openAiCompatible).synthesize(settings, "你好");
+    }
 
     @Test
     void routesDashScopeCallsThroughTheNativeAdapter() {
@@ -93,5 +136,31 @@ class SpeechRuntimeClientTest {
 
     private SpeechRuntimeClient client() {
         return new SpeechRuntimeClient(settingsService, openAiCompatible, dashScope);
+    }
+
+    private SpeechRuntimeClient clientWithRoles() {
+        return new SpeechRuntimeClient(settingsService, openAiCompatible, dashScope, roleService);
+    }
+
+    private ResolvedSpeechSettings settings(String voice) {
+        return new ResolvedSpeechSettings(
+                SpeechProviderType.OPENAI_COMPATIBLE,
+                "https://speech.example.com/v1",
+                "",
+                "asr",
+                SpeechAccessMode.NON_REALTIME,
+                "tts",
+                SpeechAccessMode.NON_REALTIME,
+                voice,
+                "secret"
+        );
+    }
+
+    private CompanionRoleService.RoleSnapshot role(UUID roleId, String voice) {
+        Instant now = Instant.parse("2026-08-13T10:00:00Z");
+        return new CompanionRoleService.RoleSnapshot(
+                roleId, "测试角色", PersonaTone.WARM, PersonaReplyLength.BALANCED,
+                PersonaProactivity.BALANCED, "", "", "", false, voice, null, now, now
+        );
     }
 }

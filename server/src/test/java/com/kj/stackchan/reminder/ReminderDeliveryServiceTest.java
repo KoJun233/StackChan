@@ -9,6 +9,7 @@ import java.util.UUID;
 
 import com.kj.stackchan.device.DeviceCommandGateway;
 import com.kj.stackchan.device.DeviceCommandResult;
+import com.kj.stackchan.role.CompanionRoleEntity;
 import com.kj.stackchan.speech.SpeechRuntimeClient;
 import com.kj.stackchan.speech.SpeechProviderUnavailableException;
 import org.junit.jupiter.api.Test;
@@ -37,13 +38,17 @@ class ReminderDeliveryServiceTest {
     @Test
     void synthesizesAndDispatchesADueReminderThenCompletesOnAck() {
         UUID deviceId = UUID.randomUUID();
-        ReminderEntity reminder = new ReminderEntity(deviceId, "去拿外卖", NOW.minusSeconds(1), "Asia/Shanghai", NOW);
+        UUID roleId = UUID.randomUUID();
+        ReminderEntity reminder = new ReminderEntity(
+                roleId, deviceId, "去拿外卖", NOW.minusSeconds(1), "Asia/Shanghai",
+                ReminderRecurrence.NONE, 1, null, ReminderSource.USER, NOW
+        );
         byte[] audio = new byte[44];
         when(repository.findTop20ByStatusAndScheduledAtLessThanEqualOrderByScheduledAtAscIdAsc(
                 ReminderStatus.PENDING, NOW
         )).thenReturn(List.of(reminder));
         when(gateway.isConnected(deviceId)).thenReturn(true);
-        when(speechRuntimeClient.synthesize("去拿外卖")).thenReturn(audio);
+        when(speechRuntimeClient.synthesize("去拿外卖", roleId)).thenReturn(audio);
         when(repository.saveAndFlush(reminder)).thenReturn(reminder);
         when(gateway.speakReminder(org.mockito.ArgumentMatchers.eq(deviceId),
                 org.mockito.ArgumentMatchers.eq(reminder.getId()), anyString())).thenReturn(true);
@@ -87,7 +92,7 @@ class ReminderDeliveryServiceTest {
         service().dispatchDueReminders();
 
         assertThat(reminder.getStatus()).isEqualTo(ReminderStatus.PENDING);
-        verify(speechRuntimeClient, never()).synthesize(anyString());
+        verify(speechRuntimeClient, never()).synthesize(anyString(), org.mockito.ArgumentMatchers.any(UUID.class));
     }
 
     @Test
@@ -106,7 +111,7 @@ class ReminderDeliveryServiceTest {
         assertThat(reminder.getStatus()).isEqualTo(ReminderStatus.PENDING);
         assertThat(reminder.getScheduledAt()).isEqualTo(NOW.plusSeconds(60));
         verify(repository).save(reminder);
-        verify(speechRuntimeClient, never()).synthesize(anyString());
+        verify(speechRuntimeClient, never()).synthesize(anyString(), org.mockito.ArgumentMatchers.any(UUID.class));
     }
 
     @Test
@@ -123,7 +128,7 @@ class ReminderDeliveryServiceTest {
         assertThat(reminder.getStatus()).isEqualTo(ReminderStatus.EXPIRED);
         assertThat(reminder.getFailureCode()).isEqualTo("notification_expired");
         verify(repository).save(reminder);
-        verify(speechRuntimeClient, never()).synthesize(anyString());
+        verify(speechRuntimeClient, never()).synthesize(anyString(), org.mockito.ArgumentMatchers.any(UUID.class));
     }
 
     @Test
@@ -135,7 +140,8 @@ class ReminderDeliveryServiceTest {
                 ReminderStatus.PENDING, NOW
         )).thenReturn(List.of(reminder));
         when(gateway.isConnected(deviceId)).thenReturn(true);
-        when(speechRuntimeClient.synthesize("external")).thenThrow(new SpeechProviderUnavailableException());
+        when(speechRuntimeClient.synthesize("external", CompanionRoleEntity.DEFAULT_ROLE_ID))
+                .thenThrow(new SpeechProviderUnavailableException());
 
         service().dispatchDueReminders();
 

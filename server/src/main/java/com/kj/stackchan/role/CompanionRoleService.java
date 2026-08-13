@@ -72,7 +72,7 @@ public class CompanionRoleService {
         Instant now = clock.instant();
         return toSnapshot(roleRepository.save(new CompanionRoleEntity(
                 role.name(), role.tone(), role.replyLength(), role.proactivity(), role.backgroundInstructions(),
-                role.topicBoundaries(), role.taboos(), now
+                role.topicBoundaries(), role.taboos(), role.ttsVoiceOverride(), now
         )));
     }
 
@@ -81,7 +81,7 @@ public class CompanionRoleService {
         ValidatedRole role = validate(command);
         CompanionRoleEntity entity = roleRepository.findByIdForUpdate(id).orElseThrow(RoleNotFoundException::new);
         entity.update(role.name(), role.tone(), role.replyLength(), role.proactivity(), role.backgroundInstructions(),
-                role.topicBoundaries(), role.taboos(), clock.instant());
+                role.topicBoundaries(), role.taboos(), role.ttsVoiceOverride(), clock.instant());
         return toSnapshot(entity);
     }
 
@@ -145,7 +145,8 @@ public class CompanionRoleService {
         }
         return new ValidatedRole(normalize(command.name(), 80, false), command.tone(), command.replyLength(),
                 command.proactivity(), normalize(command.backgroundInstructions(), 4000, true),
-                normalize(command.topicBoundaries(), 2000, true), normalize(command.taboos(), 2000, true));
+                normalize(command.topicBoundaries(), 2000, true), normalize(command.taboos(), 2000, true),
+                optional(command.ttsVoiceOverride(), 160));
     }
     private String normalize(String value, int maxLength, boolean allowBlank) {
         String normalized = value == null ? "" : value.trim();
@@ -154,20 +155,39 @@ public class CompanionRoleService {
         }
         return normalized;
     }
+    private String optional(String value, int maxLength) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.length() > maxLength) throw new InvalidRoleException("Role voice is invalid");
+        return normalized.isBlank() ? null : normalized;
+    }
     private RoleSnapshot toSnapshot(CompanionRoleEntity role) {
         return new RoleSnapshot(role.getId(), role.getName(), role.getTone(), role.getReplyLength(), role.getProactivity(),
                 role.getBackgroundInstructions(), role.getTopicBoundaries(), role.getTaboos(), role.isDefaultRole(),
-                role.getArchivedAt(), role.getCreatedAt(), role.getUpdatedAt());
+                role.getTtsVoiceOverride(), role.getArchivedAt(), role.getCreatedAt(), role.getUpdatedAt());
     }
 
     public record RoleCommand(String name, PersonaTone tone, PersonaReplyLength replyLength,
                               PersonaProactivity proactivity, String backgroundInstructions,
-                              String topicBoundaries, String taboos) {}
+                              String topicBoundaries, String taboos, String ttsVoiceOverride) {
+        public RoleCommand(String name, PersonaTone tone, PersonaReplyLength replyLength,
+                           PersonaProactivity proactivity, String backgroundInstructions,
+                           String topicBoundaries, String taboos) {
+            this(name, tone, replyLength, proactivity, backgroundInstructions, topicBoundaries, taboos, null);
+        }
+    }
     public record RoleSnapshot(UUID id, String name, PersonaTone tone, PersonaReplyLength replyLength,
                                PersonaProactivity proactivity, String backgroundInstructions,
-                               String topicBoundaries, String taboos, boolean defaultRole,
-                               Instant archivedAt, Instant createdAt, Instant updatedAt) {}
+                               String topicBoundaries, String taboos, boolean defaultRole, String ttsVoiceOverride,
+                               Instant archivedAt, Instant createdAt, Instant updatedAt) {
+        public RoleSnapshot(UUID id, String name, PersonaTone tone, PersonaReplyLength replyLength,
+                            PersonaProactivity proactivity, String backgroundInstructions,
+                            String topicBoundaries, String taboos, boolean defaultRole,
+                            Instant archivedAt, Instant createdAt, Instant updatedAt) {
+            this(id, name, tone, replyLength, proactivity, backgroundInstructions, topicBoundaries, taboos,
+                    defaultRole, null, archivedAt, createdAt, updatedAt);
+        }
+    }
     private record ValidatedRole(String name, PersonaTone tone, PersonaReplyLength replyLength,
                                  PersonaProactivity proactivity, String backgroundInstructions,
-                                 String topicBoundaries, String taboos) {}
+                                 String topicBoundaries, String taboos, String ttsVoiceOverride) {}
 }

@@ -1,14 +1,14 @@
 # 服务端工作流
 
-- 状态：VALIDATING
+- 状态：READY_FOR_REVIEW
 - 最后更新：2026-08-13
-- 当前分支：`codex/role-001-role-containers`
-- 基准提交：`5d18623`
-- 最后验证提交：`9e526f8`
+- 当前分支：`codex/role-002-role-voice`
+- 基准提交：`8de06be`
+- 最后验证提交：`8de06be`
 
 ## 当前目标
 
-交付 `ROLE-001` 角色容器：在认证上下文内解析角色，严格隔离会话、记忆、提醒、主动状态和通知归属，并保持设备、模型、语音与固件配置共享。
+交付 `ROLE-002` 角色音色：角色可选覆盖全局 TTS 音色，语音与提醒按可信角色归属合成，覆盖失败时安全回退全局音色。
 
 ## 已完成
 
@@ -34,15 +34,18 @@
 
 ## 正在进行
 
-无代码实现项；ROLE-001 已部署到 LAN，等待用户验收。
+- V30 为角色增加可空 TTS 音色覆盖，空值继续继承全局配置。
+- 设备语音使用会话角色，提醒与外部通知使用持久提醒所属角色；模型不能提供或覆盖角色 ID。
+- 角色音色失败后仅用全局音色重试一次；供应商、模型、访问模式与密钥仍为全局共享。
+- 全局连接测试与设备播放/ACK 协议保持不变，日志不记录音色值、正文、音频或供应商载荷。
 
 ## 下一步操作
 
-执行两个角色分别保存事实、页面/语音切换和历史不串用的实体验收。
+等待用户在 LAN 验证覆盖音色、空值继承和实体语音；确认后再获取推送授权。
 
 ## 阻塞项
 
-- 当前无实现或部署阻塞；等待用户执行实体角色切换验收。
+- 当前无实现或部署阻塞；等待用户执行 ROLE-002 实体验收。
 - 公网生产入口必须保持 HTTPS-only；不得复用管理员会话或设备 JWT 作为集成令牌。
 
 ## 关键文件
@@ -55,14 +58,17 @@
 - `server/src/main/java/com/kj/stackchan/notification/`
 - `server/src/main/java/com/kj/stackchan/role/`
 - `server/src/main/resources/db/migration/V29__companion_role_containers.sql`
+- `server/src/main/resources/db/migration/V30__role_tts_voice_override.sql`
 - `docs/protocol/external-notifications-v1.md`
 - `docs/runbooks/external-notifications.md`
 
 ## 验证命令与最近结果
 
-- 以下 ROLE-001 结果针对基于 `5d18623` 的当前任务工作树；提交后将重新执行提交级静态检查。
-- `& 'E:\maven-3.9.16\bin\mvn.cmd' -f server\pom.xml test`：348/348 通过。
-- Testcontainers 从空 PostgreSQL 成功应用 V1..V29。
+- ROLE-002 当前工作树基于 `8de06be`；提交后将重新执行提交级静态检查。
+- `& 'E:\maven-3.9.16\bin\mvn.cmd' -f server\pom.xml test`：351/351 通过。
+- Testcontainers 从空 PostgreSQL 成功应用 V1..V30。
+- 角色服务、音色运行时、语音回合和提醒投递定向 24/24 通过，覆盖角色音色生效、失败后单次全局回退和角色 ID 路由。
+- LAN 运行库已应用 V30，`/api/v1/health` 为 200，首页为 200，未认证角色/设备 API 为 401，构建版本为 `b6cad0b`，启动日志无错误。
 - `CompanionRoleServiceTest,ConversationServiceTest`：角色生命周期、设备绑定与会话归属定向 13/13 通过。
 - 真实 Java MCP Streamable HTTP 客户端通过 Bearer 鉴权，只发现两个通知 Tool，并成功创建 `EXTERNAL` 队列项。
 - 针对测试覆盖撤销/过期/禁用令牌、越权、限流、队列上限、幂等冲突、离线、过期、设备单飞、TTS 失败和 ACK 重放。
@@ -80,6 +86,7 @@
 - [0031：安全应用固件 OTA 与健康中心](../decisions/0031-safe-application-firmware-ota-and-health-center.md)
 - [0032：外部通知平台](../decisions/0032-external-notification-platform.md)
 - [0033：角色容器](../decisions/0033-companion-role-containers.md)
+- [0034：角色 TTS 音色覆盖](../decisions/0034-role-tts-voice-overrides.md)
 - [Agent/Skill/Tool/MCP runbook](../../runbooks/agent-tools-mcp.md)
 
 ## 安全与兼容性约束
@@ -87,4 +94,4 @@
 - 不记录通知令牌、API Key、JWT、音频、转写、回复正文、Tool 参数/结果或完整供应商响应。
 - 新外部权限只能创建和查询自身通知，不能访问管理员、设备、聊天或提醒管理 API。
 - 现有提醒、旧固件、Agent MCP Client 和管理员 CSRF 行为必须兼容。
-- 后续部署、运行迁移和外部推送仍需明确授权；本次已授权部署未推送分支。
+- 后续再次部署、外部推送或凭据变更仍需明确授权；当前任务已部署但尚未推送。

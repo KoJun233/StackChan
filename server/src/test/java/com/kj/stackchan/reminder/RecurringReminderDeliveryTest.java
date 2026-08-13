@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.kj.stackchan.device.DeviceCommandGateway;
+import com.kj.stackchan.role.CompanionRoleEntity;
 import com.kj.stackchan.interaction.InteractionSettingsService;
 import com.kj.stackchan.speech.SpeechRuntimeClient;
 import com.kj.stackchan.speech.VoiceTurnRepository;
@@ -47,7 +48,7 @@ class RecurringReminderDeliveryTest {
                 ReminderStatus.PENDING, NOW
         )).thenReturn(List.of(reminder));
         when(gateway.isConnected(deviceId)).thenReturn(true);
-        when(speechRuntimeClient.synthesize("喝水")).thenReturn(new byte[44]);
+        when(speechRuntimeClient.synthesize("喝水", CompanionRoleEntity.DEFAULT_ROLE_ID)).thenReturn(new byte[44]);
         when(gateway.speakReminder(org.mockito.ArgumentMatchers.eq(deviceId),
                 org.mockito.ArgumentMatchers.eq(reminder.getId()), anyString())).thenReturn(true);
 
@@ -70,7 +71,7 @@ class RecurringReminderDeliveryTest {
                 ReminderStatus.PENDING, NOW
         )).thenReturn(List.of(reminder));
         when(gateway.isConnected(deviceId)).thenReturn(true);
-        when(speechRuntimeClient.synthesize("reminder")).thenReturn(new byte[44]);
+        when(speechRuntimeClient.synthesize("reminder", CompanionRoleEntity.DEFAULT_ROLE_ID)).thenReturn(new byte[44]);
         when(gateway.speakReminder(eq(deviceId), eq(reminder.getId()), anyString())).thenReturn(true);
 
         service().dispatchDueReminders();
