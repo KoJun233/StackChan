@@ -87,6 +87,14 @@ public interface ReminderRepository extends JpaRepository<ReminderEntity, UUID>,
             java.util.Collection<ReminderStatus> statuses
     );
 
+    List<ReminderEntity> findTop20ByDeviceIdAndRoleIdAndSourceAndStatusAndLastCompletedAtAfterOrderByLastCompletedAtDescIdDesc(
+            UUID deviceId,
+            UUID roleId,
+            ReminderSource source,
+            ReminderStatus status,
+            Instant lastCompletedAt
+    );
+
     @Modifying
     @Query("update ReminderEntity reminder set reminder.status = com.kj.stackchan.reminder.ReminderStatus.CANCELLED, "
             + "reminder.updatedAt = :now where reminder.roleId = :roleId "

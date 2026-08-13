@@ -32,6 +32,7 @@ public class VoiceActionProposalEntity {
     @Column(name = "target_at") private Instant targetAt;
     @Column(name = "volume_percent") private Integer volumePercent;
     @Column(name = "memory_category", length = 24) private String memoryCategory;
+    @Column(name = "target_reference") private UUID targetReference;
     @Column(name = "result_reference") private UUID resultReference;
     @Column(name = "failure_code", length = 64) private String failureCode;
     @Column(name = "expires_at", nullable = false) private Instant expiresAt;
@@ -68,6 +69,7 @@ public class VoiceActionProposalEntity {
         this.targetAt = draft.targetAt();
         this.volumePercent = draft.volumePercent();
         this.memoryCategory = draft.memoryCategory();
+        this.targetReference = draft.targetReference();
         this.expiresAt = expiresAt;
         this.createdAt = now;
         this.updatedAt = now;
@@ -97,6 +99,7 @@ public class VoiceActionProposalEntity {
     public Instant getTargetAt() { return targetAt; }
     public Integer getVolumePercent() { return volumePercent; }
     public String getMemoryCategory() { return memoryCategory; }
+    public UUID getTargetReference() { return targetReference; }
     public UUID getResultReference() { return resultReference; }
     public String getFailureCode() { return failureCode; }
     public Instant getExpiresAt() { return expiresAt; }

@@ -45,3 +45,4 @@
 | [0032](0032-external-notification-platform.md) | ACCEPTED | 外部通知使用独立最小权限令牌，复用可靠提醒投递并提供 REST 与 Streamable HTTP MCP。 |
 | [0033](0033-companion-role-containers.md) | ACCEPTED | 角色容器隔离人设、会话、记忆、提醒、主动状态和通知归属，设备独立保存活动角色。 |
 | [0034](0034-role-tts-voice-overrides.md) | ACCEPTED | 角色可覆盖全局 TTS 音色，角色音色失败时仅回退全局音色一次且不修改固件协议。 |
+| [0035](0035-interactive-notification-responses.md) | ACCEPTED | 互动通知显式声明可用回执，用户经确认回应并由外部来源安全轮询结果。 |

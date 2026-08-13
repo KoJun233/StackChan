@@ -1,6 +1,7 @@
 package com.kj.stackchan.api;
 
 import java.util.UUID;
+import java.util.Set;
 
 import com.kj.stackchan.notification.ExternalNotificationService;
 import com.kj.stackchan.notification.NotificationIntegrationPrincipal;
@@ -37,9 +38,12 @@ public class ExternalNotificationController {
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody ExternalNotificationRequest request
     ) {
-        var result = notificationService.create(
-                principal(authentication), idempotencyKey, request.content(), request.expiresInSeconds()
-        );
+        var result = request.responseActions() == null || request.responseActions().isEmpty()
+                ? notificationService.create(
+                        principal(authentication), idempotencyKey, request.content(), request.expiresInSeconds())
+                : notificationService.create(
+                        principal(authentication), idempotencyKey, request.content(), request.expiresInSeconds(),
+                        request.responseActions());
         return ResponseEntity.status(result.replayed() ? HttpStatus.OK : HttpStatus.CREATED)
                 .header("Idempotency-Replayed", Boolean.toString(result.replayed()))
                 .body(result.notification());
@@ -59,6 +63,7 @@ public class ExternalNotificationController {
 
     public record ExternalNotificationRequest(
             @NotBlank @Size(max = 500) String content,
-            @Min(60) @Max(86400) Integer expiresInSeconds
+            @Min(60) @Max(86400) Integer expiresInSeconds,
+            @Size(max = 3) Set<com.kj.stackchan.notification.NotificationResponseAction> responseActions
     ) { }
 }

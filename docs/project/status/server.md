@@ -2,13 +2,13 @@
 
 - 状态：READY_FOR_REVIEW
 - 最后更新：2026-08-13
-- 当前分支：`codex/role-002-role-voice`
-- 基准提交：`8de06be`
-- 最后验证提交：`8de06be`
+- 当前分支：`codex/evt-002-interactive-notifications`
+- 基准提交：`82fdde3`
+- 最后验证提交：`82fdde3`
 
 ## 当前目标
 
-交付 `ROLE-002` 角色音色：角色可选覆盖全局 TTS 音色，语音与提醒按可信角色归属合成，覆盖失败时安全回退全局音色。
+交付 `EVT-002` 互动通知回执：来源显式声明可用动作，用户通过页面或确认式语音回应，外部 Agent 通过既有 REST/MCP 状态查询获得结果。
 
 ## 已完成
 
@@ -32,20 +32,28 @@
 - `SWITCH_ROLE` 复用两分钟、同设备/同会话、确认后幂等执行的语音提案机制；活动语音回合或已派发提醒期间拒绝切换。
 - 角色背景位于基础安全规则之后并作为受限数据段转义；设备凭据、模型、语音和固件配置继续共享。
 
-## 正在进行
+## 已完成的 ROLE-002
 
 - V30 为角色增加可空 TTS 音色覆盖，空值继续继承全局配置。
 - 设备语音使用会话角色，提醒与外部通知使用持久提醒所属角色；模型不能提供或覆盖角色 ID。
 - 角色音色失败后仅用全局音色重试一次；供应商、模型、访问模式与密钥仍为全局共享。
 - 全局连接测试与设备播放/ACK 协议保持不变，日志不记录音色值、正文、音频或供应商载荷。
 
+## 正在进行
+
+- Flyway V31 为外部通知增加回执动作白名单和独立回执事件，并扩展受约束的语音动作类型。
+- 外部 REST 与两个既有 MCP Tool 复用同一业务服务；旧调用省略动作时保持单向通知，新状态只增加 `responseActions` 和最新 `response`。
+- `SNOOZE` 重新排入同一可靠队列并把过期时间延长到再次播报后 24 小时；已知晓和完成是幂等终态回执。
+- 语音只选择同设备、同角色最近 24 小时内可回应的通知，目标通知 ID 由服务端固定写入提案，仍需两分钟内确认后执行。
+- 不增加回调 URL，不扩大 MCP Tool 数量，不修改固件、设备播放协议或确定性通知正文。
+
 ## 下一步操作
 
-等待用户在 LAN 验证覆盖音色、空值继承和实体语音；确认后再获取推送授权。
+整理单一中文任务提交；提交后复核静态检查，再等待用户决定是否部署人工验收。
 
 ## 阻塞项
 
-- 当前无实现或部署阻塞；等待用户执行 ROLE-002 实体验收。
+- 当前无实现阻塞；用户要求暂缓日历，不影响 EVT-002。
 - 公网生产入口必须保持 HTTPS-only；不得复用管理员会话或设备 JWT 作为集成令牌。
 
 ## 关键文件
@@ -59,12 +67,14 @@
 - `server/src/main/java/com/kj/stackchan/role/`
 - `server/src/main/resources/db/migration/V29__companion_role_containers.sql`
 - `server/src/main/resources/db/migration/V30__role_tts_voice_override.sql`
+- `server/src/main/resources/db/migration/V31__interactive_notification_responses.sql`
 - `docs/protocol/external-notifications-v1.md`
 - `docs/runbooks/external-notifications.md`
 
 ## 验证命令与最近结果
 
-- ROLE-002 当前工作树基于 `8de06be`；提交后将重新执行提交级静态检查。
+- EVT-002 当前工作树基于 `82fdde3`；提交后将重新执行提交级静态检查。
+- 当前工作树服务端 360/360 及空 PostgreSQL Flyway V1..V31 通过；语音动作定向 12/12、互动通知服务定向 4/4 通过。
 - `& 'E:\maven-3.9.16\bin\mvn.cmd' -f server\pom.xml test`：351/351 通过。
 - Testcontainers 从空 PostgreSQL 成功应用 V1..V30。
 - 角色服务、音色运行时、语音回合和提醒投递定向 24/24 通过，覆盖角色音色生效、失败后单次全局回退和角色 ID 路由。
@@ -87,6 +97,7 @@
 - [0032：外部通知平台](../decisions/0032-external-notification-platform.md)
 - [0033：角色容器](../decisions/0033-companion-role-containers.md)
 - [0034：角色 TTS 音色覆盖](../decisions/0034-role-tts-voice-overrides.md)
+- [0035：互动通知回执](../decisions/0035-interactive-notification-responses.md)
 - [Agent/Skill/Tool/MCP runbook](../../runbooks/agent-tools-mcp.md)
 
 ## 安全与兼容性约束
@@ -94,4 +105,4 @@
 - 不记录通知令牌、API Key、JWT、音频、转写、回复正文、Tool 参数/结果或完整供应商响应。
 - 新外部权限只能创建和查询自身通知，不能访问管理员、设备、聊天或提醒管理 API。
 - 现有提醒、旧固件、Agent MCP Client 和管理员 CSRF 行为必须兼容。
-- 后续再次部署、外部推送或凭据变更仍需明确授权；当前任务已部署但尚未推送。
+- 后续部署、外部推送或凭据变更仍需明确授权；当前 EVT-002 尚未部署或推送。

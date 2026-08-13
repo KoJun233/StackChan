@@ -1,6 +1,13 @@
 import { apiJson } from '../client'
 
 export type ExternalNotificationStatus = 'PENDING' | 'DISPATCHED' | 'DELIVERED' | 'FAILED' | 'EXPIRED' | 'CANCELLED'
+export type NotificationResponseAction = 'ACKNOWLEDGE' | 'SNOOZE' | 'COMPLETE'
+
+export interface NotificationResponse {
+  action: NotificationResponseAction
+  respondedAt: string
+  snoozeMinutes: number | null
+}
 
 export interface NotificationTokenMetadata {
   createdAt: string
@@ -44,6 +51,8 @@ export interface ExternalNotification {
   id: string
   integrationId: string
   roleId: string
+  response: NotificationResponse | null
+  responseActions: NotificationResponseAction[]
   status: ExternalNotificationStatus
   updatedAt: string
 }
@@ -115,10 +124,27 @@ export function deleteExternalNotification(id: string): Promise<void> {
   })
 }
 
-export function testNotificationIntegration(integrationId: string, content: string): Promise<ExternalNotification> {
+export function respondExternalNotification(
+  id: string,
+  action: NotificationResponseAction,
+  snoozeMinutes?: number,
+): Promise<NotificationResponse> {
+  return apiJson(`/api/v1/notification-integrations/notifications/${encodeURIComponent(id)}:respond`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, snoozeMinutes }),
+  })
+}
+
+export function testNotificationIntegration(
+  integrationId: string,
+  content: string,
+  responseActions: NotificationResponseAction[] = [],
+): Promise<ExternalNotification> {
+  const body = responseActions.length ? { content, responseActions } : { content }
   return apiJson(`/api/v1/notification-integrations/${encodeURIComponent(integrationId)}:test`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify(body),
   })
 }

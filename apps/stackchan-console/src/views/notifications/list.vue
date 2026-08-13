@@ -7,6 +7,7 @@ import type {
   IssuedNotificationToken,
   NotificationIntegration,
   NotificationTokenMetadata,
+  NotificationResponseAction,
 } from '@/api/modules/notificationIntegrations'
 import { listDevices } from '@/api/modules/devices'
 import {
@@ -16,6 +17,7 @@ import {
   listExternalNotifications,
   listNotificationIntegrations,
   revokeNotificationToken,
+  respondExternalNotification,
   testNotificationIntegration,
 } from '@/api/modules/notificationIntegrations'
 import eventBus from '@/utils/eventBus'
@@ -37,6 +39,7 @@ const tokenExpiresAtLocal = ref('')
 const issuedToken = ref<IssuedNotificationToken | null>(null)
 const testIntegrationId = ref('')
 const testContent = ref('任务已完成，可以查看结果。')
+const testResponseActions = ref<NotificationResponseAction[]>([])
 const search = ref({ integrationId: '', status: '' as ExternalNotificationStatus | '' })
 
 const statusOptions = [
@@ -75,7 +78,8 @@ const notificationColumns = computed<TableColumn<ExternalNotification>[]>(() => 
   { accessorKey: 'attemptCount', header: '尝试', width: 80, align: 'center' },
   { id: 'createdAt', header: '创建时间', minWidth: 180 },
   { id: 'expiresAt', header: '过期时间', minWidth: 180 },
-  { id: 'operation', header: '操作', width: 80, align: 'center', fixed: 'right' },
+  { id: 'response', header: '用户回执', minWidth: 150, align: 'center' },
+  { id: 'operation', header: '操作', width: 130, align: 'center', fixed: 'right' },
 ])
 
 function formatTime(value: string | null) {
@@ -106,6 +110,27 @@ function statusVariant(status: ExternalNotificationStatus): 'default' | 'destruc
   if (status === 'DISPATCHED') return 'default'
   if (status === 'PENDING') return 'secondary'
   return 'outline'
+}
+
+function responseLabel(action: NotificationResponseAction) {
+  return { ACKNOWLEDGE: '已知晓', SNOOZE: '稍后提醒', COMPLETE: '已完成' }[action]
+}
+
+async function respond(notification: ExternalNotification, action: NotificationResponseAction) {
+  let snoozeMinutes: number | undefined
+  if (action === 'SNOOZE') snoozeMinutes = 10
+  actionId.value = `response:${notification.id}`
+  try {
+    await respondExternalNotification(notification.id, action, snoozeMinutes)
+    await loadNotifications()
+    useFaToast().success(action === 'SNOOZE' ? '通知将在 10 分钟后重新播报' : '通知回执已记录')
+  }
+  catch (error) {
+    useFaToast().error('回执失败', { description: error instanceof Error ? error.message : '无法记录通知回执。' })
+  }
+  finally {
+    actionId.value = ''
+  }
 }
 
 async function loadIntegrations() {
@@ -272,7 +297,7 @@ async function sendTest() {
   }
   actionId.value = testIntegrationId.value
   try {
-    await testNotificationIntegration(testIntegrationId.value, content)
+    await testNotificationIntegration(testIntegrationId.value, content, testResponseActions.value)
     await loadNotifications()
     useFaToast().success('测试通知已入队', { description: '将遵守免打扰、忙碌、离线和过期规则。' })
   }
@@ -361,6 +386,17 @@ onBeforeUnmount(() => eventBus.off('get-notification-integrations'))
         <FaLabel label="测试正文"><FaInput v-model="testContent" maxlength="500" /></FaLabel>
         <FaButton :loading="actionId === testIntegrationId" :disabled="!testIntegrationId" @click="sendTest"><FaIcon name="i-ri:volume-up-line" />加入播报队列</FaButton>
       </div>
+      <div class="mt-4 flex flex-wrap items-center gap-5">
+        <span class="text-sm text-muted-foreground">允许的用户回执（可选）：</span>
+        <label v-for="option in [
+          { label: '已知晓', value: 'ACKNOWLEDGE' as const },
+          { label: '稍后提醒', value: 'SNOOZE' as const },
+          { label: '标记完成', value: 'COMPLETE' as const },
+        ]" :key="option.value" class="flex items-center gap-2 text-sm">
+          <input v-model="testResponseActions" type="checkbox" :value="option.value" class="size-4 accent-primary">
+          {{ option.label }}
+        </label>
+      </div>
     </FaPageMain>
 
     <FaPageMain title="通知队列">
@@ -382,15 +418,28 @@ onBeforeUnmount(() => eventBus.off('get-notification-integrations'))
         </template>
         <template #cell-createdAt="{ row }">{{ formatTime(row.original.createdAt) }}</template>
         <template #cell-expiresAt="{ row }">{{ formatTime(row.original.expiresAt) }}</template>
+        <template #cell-response="{ row }">
+          <div v-if="row.original.response" class="flex flex-col items-center gap-1">
+            <FaTag variant="outline">{{ responseLabel(row.original.response.action) }}</FaTag>
+            <span v-if="row.original.response.snoozeMinutes" class="text-xs text-muted-foreground">{{ row.original.response.snoozeMinutes }} 分钟</span>
+          </div>
+          <span v-else-if="row.original.responseActions.length" class="text-xs text-muted-foreground">等待回应</span>
+          <span v-else>—</span>
+        </template>
         <template #cell-operation="{ row }">
-          <FaButton
-            variant="destructive"
-            size="icon-sm"
-            :disabled="row.original.status === 'DISPATCHED'"
-            :loading="actionId === `notification:${row.original.id}`"
-            :title="row.original.status === 'DISPATCHED' ? '正在播报，暂时不能删除' : '删除通知记录'"
-            @click="confirmDeleteNotification(row.original)"
-          ><FaIcon name="i-ri:delete-bin-line" /></FaButton>
+          <div class="flex-center gap-2">
+            <FaDropdown v-if="row.original.status === 'DELIVERED' && row.original.responseActions.length && (!row.original.response || row.original.response.action === 'SNOOZE')" :items="[row.original.responseActions.map(action => ({ label: action === 'SNOOZE' ? '10 分钟后提醒' : responseLabel(action), handle: () => respond(row.original, action) }))]">
+              <FaButton variant="outline" size="icon-sm" title="记录用户回执" :loading="actionId === `response:${row.original.id}`"><FaIcon name="i-ri:chat-check-line" /></FaButton>
+            </FaDropdown>
+            <FaButton
+              variant="destructive"
+              size="icon-sm"
+              :disabled="row.original.status === 'DISPATCHED'"
+              :loading="actionId === `notification:${row.original.id}`"
+              :title="row.original.status === 'DISPATCHED' ? '正在播报，暂时不能删除' : '删除通知记录'"
+              @click="confirmDeleteNotification(row.original)"
+            ><FaIcon name="i-ri:delete-bin-line" /></FaButton>
+          </div>
         </template>
       </FaTable>
       <FaPagination :page="pagination.page" :size="pagination.size" :total="pagination.total" class="mt-2" @page-change="currentChange" @size-change="sizeChange" />

@@ -86,4 +86,20 @@ describe('notification integrations API', () => {
       method: 'DELETE',
     }))
   })
+
+  it('sends response actions only for an explicitly interactive test notification', async () => {
+    const fetchMock = vi.fn()
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ id: 'notification-id' }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await testNotificationIntegration('integration-id', '需要处理', ['ACKNOWLEDGE', 'COMPLETE'])
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/notification-integrations/integration-id:test', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ content: '需要处理', responseActions: ['ACKNOWLEDGE', 'COMPLETE'] }),
+    }))
+  })
 })

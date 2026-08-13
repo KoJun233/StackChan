@@ -1,15 +1,15 @@
 # 部署工作流
 
-- 状态：VALIDATING
+- 状态：STABLE
 - 最后更新：2026-08-13
-- 当前分支：`codex/role-002-role-voice`
-- 基准提交：`8de06be`
-- 最后验证提交：`8de06be`
+- 当前分支：`codex/evt-002-interactive-notifications`
+- 基准提交：`82fdde3`
+- 最后验证提交：`82fdde3`
 - 当前模式：LAN HTTP development
 
 ## 当前目标
 
-在保持数据卷、端口和 LAN/production 安全边界不变的前提下，发布并验证 ROLE-002。
+保持已验收的 ROLE-002 LAN 运行态；EVT-002 完成代码验证前不替换容器，之后仍需用户逐次授权。
 
 ## 已完成
 
@@ -22,16 +22,16 @@
 
 ## 正在进行
 
-用户已明确授权部署。发布前已生成并隔离恢复校验新备份，只替换 `stackchan-foundation-server-1`；PostgreSQL、Redis、备份容器、数据卷和端口均未变。当前运行态为 ROLE-002 `b6cad0b` server/V30 与 CoreS3 `7e7c55f / motion_disabled / OTA=true`。
+当前运行态为 ROLE-002 `b6cad0b` server/V30 与 CoreS3 `7e7c55f / motion_disabled / OTA=true`。EVT-002 工作树包含 Flyway V31 与控制台变化，尚未获得本轮部署授权、未替换任何运行资源。
 
 ## 下一步操作
 
-由用户刷新角色管理页面，编辑两个角色的音色并验证覆盖、继承和实体语音。公网入口必须使用 HTTPS。
+等待 EVT-002 代码验证和任务提交完成；如用户授权部署，先做新备份与隔离恢复，再只替换 server 并验证 V31、管理员页面和未认证边界。公网入口必须使用 HTTPS。
 
 ## 阻塞项
 
 - 当前没有运行环境阻塞。
-- ROLE-002 无运行阻塞；等待用户页面与实体音色验收。凭据轮换和 OTA 回退仍需各自显式授权。
+- EVT-002 无运行环境阻塞，但部署尚未授权。凭据轮换和 OTA 回退仍需各自显式授权。
 
 ## 关键文件
 
@@ -75,4 +75,4 @@
 
 - 不组合 LAN 与 production Compose，不允许公网明文 HTTP/WS。
 - 不把管理员密码、通知令牌、API Key、JWT、Wi-Fi 凭据或加密主密钥写入仓库、镜像或日志。
-- 后续再次替换容器、修改卷/端口、轮换凭据或推送分支仍需明确授权；本次授权仅覆盖 ROLE-001 LAN 部署。
+- 后续再次替换容器、修改卷/端口、轮换凭据或推送分支仍需明确授权；既有部署授权不自动延伸到 EVT-002。

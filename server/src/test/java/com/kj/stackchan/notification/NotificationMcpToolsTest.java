@@ -48,4 +48,27 @@ class NotificationMcpToolsTest {
         verify(service).create(principal, "task-1", "完成", null);
         verify(service).get(principal, snapshot.id());
     }
+
+    @Test
+    void forwardsOptionalInteractiveResponseActionsWithoutAddingAnotherTool() {
+        ExternalNotificationService service = mock(ExternalNotificationService.class);
+        NotificationMcpTools tools = new NotificationMcpTools(service);
+        NotificationIntegrationPrincipal principal = new NotificationIntegrationPrincipal(
+                UUID.randomUUID(), UUID.randomUUID(), "Codex");
+        Instant now = Instant.parse("2026-08-13T12:00:00Z");
+        var snapshot = new ExternalNotificationService.PublicNotificationSnapshot(
+                UUID.randomUUID(), ReminderStatus.PENDING, 0, null, now, now,
+                now.plusSeconds(3600), null,
+                java.util.Set.of(NotificationResponseAction.ACKNOWLEDGE, NotificationResponseAction.COMPLETE), null);
+        when(service.create(principal, "task-2", "需要审批", null,
+                java.util.Set.of(NotificationResponseAction.ACKNOWLEDGE, NotificationResponseAction.COMPLETE)))
+                .thenReturn(new ExternalNotificationService.CreateResult(snapshot, false));
+        SecurityContextHolder.getContext().setAuthentication(
+                UsernamePasswordAuthenticationToken.authenticated(principal, null, java.util.List.of()));
+
+        assertThat(tools.pushNotification("需要审批", "task-2", null,
+                java.util.Set.of(NotificationResponseAction.ACKNOWLEDGE, NotificationResponseAction.COMPLETE)))
+                .isEqualTo(snapshot);
+        assertThat(ToolCallbacks.from(tools)).hasSize(2);
+    }
 }
