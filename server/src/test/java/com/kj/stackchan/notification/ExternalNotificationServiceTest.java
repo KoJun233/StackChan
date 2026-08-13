@@ -142,6 +142,23 @@ class ExternalNotificationServiceTest {
         verify(reminderRepository, never()).delete(any(ReminderEntity.class));
     }
 
+    @Test
+    void digestMemberIsPubliclyDispatchedAndCannotBeDeleted() {
+        ReminderEntity leader = externalReminder("digest-1", "第一项");
+        ReminderEntity member = externalReminder("digest-2", "第二项");
+        leader.markDigestLeader("digest-command", new byte[44], NOW);
+        member.joinDeliveryGroup(leader.getId(), NOW);
+        when(reminderRepository.findByIdAndNotificationIntegrationId(member.getId(), integration.getId()))
+                .thenReturn(Optional.of(member));
+        when(reminderRepository.findByIdAndSourceForUpdate(member.getId(), ReminderSource.EXTERNAL))
+                .thenReturn(Optional.of(member));
+
+        assertThat(service.get(principal, member.getId()).status()).isEqualTo(ReminderStatus.DISPATCHED);
+        assertThatThrownBy(() -> service.deleteAdmin(member.getId()))
+                .isInstanceOfSatisfying(NotificationApiException.class,
+                        exception -> assertThat(exception.getCode()).isEqualTo("notification_delivery_in_progress"));
+    }
+
     private ReminderEntity externalReminder(String key, String content) {
         ReminderEntity reminder = new ReminderEntity(
                 integration.getDeviceId(), content, NOW, "UTC",

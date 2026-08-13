@@ -3,12 +3,16 @@ package com.kj.stackchan.reminder;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import com.kj.stackchan.device.DeviceCommandGateway;
 import com.kj.stackchan.device.DeviceCommandResult;
 import com.kj.stackchan.interaction.InteractionSettingsService;
 import com.kj.stackchan.interaction.MissedReminderPolicy;
+import com.kj.stackchan.notification.NotificationIntegrationRepository;
 import com.kj.stackchan.speech.SpeechProviderUnavailableException;
 import com.kj.stackchan.speech.InvalidSpeechSettingsException;
 import com.kj.stackchan.speech.SpeechRuntimeClient;
@@ -33,6 +37,7 @@ public class ReminderDeliveryService {
     private final InteractionSettingsService interactionSettingsService;
     private final VoiceTurnRepository voiceTurnRepository;
     private final ReminderScheduleCalculator scheduleCalculator;
+    private final NotificationIntegrationRepository notificationIntegrationRepository;
 
     @Autowired
     public ReminderDeliveryService(
@@ -42,7 +47,8 @@ public class ReminderDeliveryService {
             Clock clock,
             InteractionSettingsService interactionSettingsService,
             VoiceTurnRepository voiceTurnRepository,
-            ReminderScheduleCalculator scheduleCalculator
+            ReminderScheduleCalculator scheduleCalculator,
+            NotificationIntegrationRepository notificationIntegrationRepository
     ) {
         this.reminderRepository = reminderRepository;
         this.deviceCommandGateway = deviceCommandGateway;
@@ -51,6 +57,7 @@ public class ReminderDeliveryService {
         this.interactionSettingsService = interactionSettingsService;
         this.voiceTurnRepository = voiceTurnRepository;
         this.scheduleCalculator = scheduleCalculator;
+        this.notificationIntegrationRepository = notificationIntegrationRepository;
     }
 
     ReminderDeliveryService(
@@ -59,14 +66,31 @@ public class ReminderDeliveryService {
             SpeechRuntimeClient speechRuntimeClient,
             Clock clock
     ) {
-        this(reminderRepository, deviceCommandGateway, speechRuntimeClient, clock, null, null, null);
+        this(reminderRepository, deviceCommandGateway, speechRuntimeClient, clock, null, null, null, null);
+    }
+
+    ReminderDeliveryService(
+            ReminderRepository reminderRepository,
+            DeviceCommandGateway deviceCommandGateway,
+            SpeechRuntimeClient speechRuntimeClient,
+            Clock clock,
+            InteractionSettingsService interactionSettingsService,
+            VoiceTurnRepository voiceTurnRepository,
+            ReminderScheduleCalculator scheduleCalculator
+    ) {
+        this(reminderRepository, deviceCommandGateway, speechRuntimeClient, clock,
+                interactionSettingsService, voiceTurnRepository, scheduleCalculator, null);
     }
 
     public void dispatchDueReminders() {
         Instant now = clock.instant();
+        Set<UUID> handledNotificationIds = new HashSet<>();
         expireExternalNotifications(now);
         for (ReminderEntity reminder : reminderRepository
-                .findTop20ByStatusAndScheduledAtLessThanEqualOrderByScheduledAtAscIdAsc(ReminderStatus.PENDING, now)) {
+                .findTop20ByStatusAndScheduledAtLessThanEqualOrderByScheduledAtAscIdAsc(
+                        ReminderStatus.PENDING, now)) {
+            if (handledNotificationIds.contains(reminder.getId())
+                    || reminder.getStatus() != ReminderStatus.PENDING || reminder.getDeliveryGroupId() != null) continue;
             if (isExpired(reminder, now)) {
                 reminder.markExpired(now);
                 reminderRepository.save(reminder);
@@ -88,19 +112,35 @@ public class ReminderDeliveryService {
                 reminderRepository.save(reminder);
                 continue;
             }
+            ReminderEntity deliveryLeader = reminder;
             try {
-                byte[] audio = speechRuntimeClient.synthesize(reminder.getContent(), reminder.getRoleId());
+                List<ReminderEntity> deliveryItems = digestCandidates(reminder, now);
+                if (deliveryItems.isEmpty()) continue;
+                ReminderEntity selectedLeader = deliveryItems.getFirst();
+                deliveryLeader = selectedLeader;
+                String deliveryText = digestText(deliveryItems);
+                byte[] audio = speechRuntimeClient.synthesize(deliveryText, selectedLeader.getRoleId());
                 String commandId = UUID.randomUUID().toString();
-                reminder.markDispatched(commandId, audio, now);
-                reminderRepository.saveAndFlush(reminder);
-                if (!deviceCommandGateway.speakReminder(reminder.getDeviceId(), reminder.getId(), commandId)) {
-                    reminder.returnToPending(clock.instant());
-                    reminderRepository.save(reminder);
+                if (deliveryItems.size() == 1) {
+                    selectedLeader.markDispatched(commandId, audio, now);
+                    reminderRepository.saveAndFlush(selectedLeader);
+                } else {
+                    selectedLeader.markDigestLeader(commandId, audio, now);
+                    deliveryItems.stream()
+                            .filter(item -> !item.getId().equals(selectedLeader.getId()))
+                            .forEach(item -> item.joinDeliveryGroup(selectedLeader.getId(), now));
+                    reminderRepository.saveAllAndFlush(deliveryItems);
+                }
+                handledNotificationIds.addAll(deliveryItems.stream().map(ReminderEntity::getId).toList());
+                if (!deviceCommandGateway.speakReminder(
+                        selectedLeader.getDeviceId(), selectedLeader.getId(), commandId)) {
+                    deliveryItems.forEach(item -> item.returnToPending(clock.instant()));
+                    reminderRepository.saveAll(deliveryItems);
                 }
             } catch (SpeechProviderUnavailableException exception) {
-                completeFailure(reminder, "speech_provider_unavailable", clock.instant());
+                completeFailure(deliveryLeader, "speech_provider_unavailable", clock.instant());
             } catch (InvalidSpeechSettingsException exception) {
-                completeFailure(reminder, "invalid_speech_settings", clock.instant());
+                completeFailure(deliveryLeader, "invalid_speech_settings", clock.instant());
             }
         }
     }
@@ -116,12 +156,14 @@ public class ReminderDeliveryService {
                 .filter(reminder -> reminder.getDeviceId().equals(deviceId))
                 .filter(reminder -> reminder.getStatus() == ReminderStatus.DISPATCHED)
                 .ifPresent(reminder -> {
+                    List<ReminderEntity> deliveryItems = deliveryItems(reminder);
                     if (accepted) {
-                        complete(reminder, ReminderStatus.DELIVERED, clock.instant());
+                        deliveryItems.forEach(item -> complete(item, ReminderStatus.DELIVERED, clock.instant()));
                     } else if (result == DeviceCommandResult.CANCELLED) {
-                        complete(reminder, ReminderStatus.CANCELLED, clock.instant());
+                        deliveryItems.forEach(item -> complete(item, ReminderStatus.CANCELLED, clock.instant()));
                     } else {
-                        completeFailure(reminder, "device_playback_failed", clock.instant());
+                        Instant failedAt = clock.instant();
+                        deliveryItems.forEach(item -> item.failGroupedOccurrence("device_playback_failed", failedAt));
                     }
                 });
     }
@@ -134,11 +176,16 @@ public class ReminderDeliveryService {
                 now.minus(STALE_DISPATCH_AGE)
         );
         reminders.forEach(reminder -> {
+            List<ReminderEntity> items = deliveryItems(reminder);
             if (isExpired(reminder, now)) {
-                reminder.markExpired(now);
+                items.forEach(item -> {
+                    if (isExpired(item, now)) item.markExpired(now);
+                    else item.returnToPending(now);
+                });
             } else {
-                reminder.returnToPending(now);
+                items.forEach(item -> item.returnToPending(now));
             }
+            reminderRepository.saveAll(items);
         });
         return reminders.size();
     }
@@ -189,6 +236,7 @@ public class ReminderDeliveryService {
         reminderRepository.findTop100BySourceAndStatusAndExpiresAtLessThanEqualOrderByExpiresAtAscIdAsc(
                 ReminderSource.EXTERNAL, ReminderStatus.PENDING, now
         ).forEach(reminder -> {
+            if (reminder.getDeliveryGroupId() != null) return;
             reminder.markExpired(now);
             reminderRepository.save(reminder);
         });
@@ -209,5 +257,58 @@ public class ReminderDeliveryService {
     private void complete(ReminderEntity reminder, ReminderStatus outcome, Instant now) {
         Instant next = scheduleCalculator == null ? null : scheduleCalculator.nextAfter(reminder, now);
         reminder.completeOccurrence(outcome, next, now);
+    }
+
+    private List<ReminderEntity> digestCandidates(ReminderEntity reminder, Instant now) {
+        if (notificationIntegrationRepository == null || reminder.getSource() != ReminderSource.EXTERNAL
+                || !reminder.getResponseActions().isEmpty() || reminder.getNotificationIntegrationId() == null) {
+            return List.of(reminder);
+        }
+        int window = notificationIntegrationRepository.findById(reminder.getNotificationIntegrationId())
+                .map(integration -> integration.getDigestWindowSeconds()).orElse(0);
+        if (window == 0) return List.of(reminder);
+        List<ReminderEntity> candidates = reminderRepository
+                .findTop10ByNotificationIntegrationIdAndDeviceIdAndRoleIdAndSourceAndStatusAndScheduledAtLessThanEqualAndDeliveryGroupIdIsNullOrderByCreatedAtAscIdAsc(
+                        reminder.getNotificationIntegrationId(), reminder.getDeviceId(), reminder.getRoleId(),
+                        ReminderSource.EXTERNAL, ReminderStatus.PENDING, now);
+        List<ReminderEntity> safeCandidates = candidates.stream()
+                .filter(item -> item.getResponseActions().isEmpty())
+                .filter(item -> !item.getCreatedAt().isAfter(now))
+                .filter(item -> !isExpired(item, now))
+                .toList();
+        if (safeCandidates.isEmpty()) return List.of(reminder);
+        ReminderEntity oldest = safeCandidates.getFirst();
+        if (oldest.getCreatedAt().plusSeconds(window).isAfter(now)) return List.of();
+        java.util.ArrayList<ReminderEntity> selected = new java.util.ArrayList<>();
+        selected.add(oldest);
+        for (ReminderEntity item : safeCandidates) {
+            if (item.getId().equals(oldest.getId()) || selected.size() == 10) continue;
+            selected.add(item);
+            if (formatDigest(selected).length() > 1000) {
+                selected.removeLast();
+                break;
+            }
+        }
+        return selected.size() > 1 ? List.copyOf(selected) : List.of(reminder);
+    }
+
+    private String digestText(List<ReminderEntity> items) {
+        if (items.size() == 1) return items.getFirst().getContent();
+        return formatDigest(items);
+    }
+
+    private String formatDigest(List<ReminderEntity> items) {
+        StringBuilder text = new StringBuilder("收到 " + items.size() + " 条通知：");
+        for (int i = 0; i < items.size(); i++) {
+            String next = (i + 1) + "，" + items.get(i).getContent() + (i + 1 == items.size() ? "。" : "；");
+            text.append(next);
+        }
+        return text.toString();
+    }
+
+    private List<ReminderEntity> deliveryItems(ReminderEntity reminder) {
+        if (reminder.getDeliveryGroupId() == null) return List.of(reminder);
+        List<ReminderEntity> items = reminderRepository.findAllByDeliveryGroupId(reminder.getDeliveryGroupId());
+        return items.isEmpty() ? List.of(reminder) : items;
     }
 }

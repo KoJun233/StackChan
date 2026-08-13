@@ -46,3 +46,4 @@
 | [0033](0033-companion-role-containers.md) | ACCEPTED | 角色容器隔离人设、会话、记忆、提醒、主动状态和通知归属，设备独立保存活动角色。 |
 | [0034](0034-role-tts-voice-overrides.md) | ACCEPTED | 角色可覆盖全局 TTS 音色，角色音色失败时仅回退全局音色一次且不修改固件协议。 |
 | [0035](0035-interactive-notification-responses.md) | ACCEPTED | 互动通知显式声明可用回执，用户经确认回应并由外部来源安全轮询结果。 |
+| [0036](0036-deterministic-notification-digests.md) | ACCEPTED | 同集成单向通知在可选窗口内按原文确定性聚合，并共享可靠设备 ACK。 |

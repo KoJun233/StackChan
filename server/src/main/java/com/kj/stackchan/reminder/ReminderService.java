@@ -116,6 +116,9 @@ public class ReminderService {
     @Transactional
     public void delete(UUID id) {
         ReminderEntity reminder = reminderRepository.findById(id).orElseThrow(ReminderNotFoundException::new);
+        if (reminder.getDeliveryGroupId() != null) {
+            throw new InvalidReminderException("A reminder being delivered cannot be deleted");
+        }
         reminderRepository.delete(reminder);
     }
 
@@ -125,7 +128,7 @@ public class ReminderService {
             throw new InvalidReminderException("Reminder snooze duration is invalid");
         }
         ReminderEntity reminder = reminderRepository.findById(id).orElseThrow(ReminderNotFoundException::new);
-        if (reminder.getStatus() != ReminderStatus.PENDING) {
+        if (reminder.getStatus() != ReminderStatus.PENDING || reminder.getDeliveryGroupId() != null) {
             throw new InvalidReminderException("Only pending reminders can be snoozed");
         }
         Instant now = clock.instant();
@@ -143,7 +146,7 @@ public class ReminderService {
         if (deviceId == null || !deviceRepository.existsById(deviceId)) {
             throw new InvalidReminderException("Reminder device is invalid");
         }
-        return reminderRepository.findFirstByDeviceIdAndRoleIdAndStatusOrderByScheduledAtAscIdAsc(
+        return reminderRepository.findFirstByDeviceIdAndRoleIdAndStatusAndDeliveryGroupIdIsNullOrderByScheduledAtAscIdAsc(
                         deviceId, roleId, ReminderStatus.PENDING)
                 .map(this::toSnapshot)
                 .orElse(null);
@@ -170,7 +173,7 @@ public class ReminderService {
     @Transactional
     public ReminderSnapshot skipNext(UUID id) {
         ReminderEntity reminder = reminderRepository.findById(id).orElseThrow(ReminderNotFoundException::new);
-        if (reminder.getStatus() != ReminderStatus.PENDING) {
+        if (reminder.getStatus() != ReminderStatus.PENDING || reminder.getDeliveryGroupId() != null) {
             throw new InvalidReminderException("Only pending reminders can be skipped");
         }
         Instant now = clock.instant();

@@ -66,6 +66,7 @@ const integrationColumns = computed<TableColumn<NotificationIntegration>[]>(() =
   { accessorKey: 'name', header: '集成名称', minWidth: 180 },
   { id: 'device', header: '固定目标设备', minWidth: 180 },
   { id: 'enabled', header: '状态', width: 100, align: 'center' },
+  { id: 'digest', header: '摘要聚合', width: 110, align: 'center' },
   { id: 'tokens', header: '有效令牌', width: 110, align: 'center' },
   { id: 'updatedAt', header: '更新时间', minWidth: 180 },
   { id: 'operation', header: '操作', width: 220, align: 'center', fixed: 'right' },
@@ -354,6 +355,9 @@ onBeforeUnmount(() => eventBus.off('get-notification-integrations'))
         </template>
         <template #cell-enabled="{ row }">
           <FaTag :variant="row.original.enabled ? 'default' : 'outline'">{{ row.original.enabled ? '启用' : '停用' }}</FaTag>
+        </template>
+        <template #cell-digest="{ row }">
+          <FaTag :variant="row.original.digestWindowSeconds ? 'secondary' : 'outline'">{{ row.original.digestWindowSeconds ? `${row.original.digestWindowSeconds} 秒` : '关闭' }}</FaTag>
         </template>
         <template #cell-tokens="{ row }">
           {{ activeTokens(row.original).length }} / {{ row.original.tokens.length }}

@@ -67,7 +67,8 @@ public class NotificationIntegrationService {
     public IntegrationSnapshot create(IntegrationCommand command) {
         ValidatedIntegration validated = validate(command);
         return snapshot(integrationRepository.save(new NotificationIntegrationEntity(
-                validated.name(), validated.deviceId(), validated.roleId(), validated.enabled(), clock.instant()
+                validated.name(), validated.deviceId(), validated.roleId(), validated.enabled(),
+                validated.digestWindowSeconds() == null ? 0 : validated.digestWindowSeconds(), clock.instant()
         )));
     }
 
@@ -75,7 +76,9 @@ public class NotificationIntegrationService {
     public IntegrationSnapshot update(UUID id, IntegrationCommand command) {
         ValidatedIntegration validated = validate(command);
         NotificationIntegrationEntity integration = findIntegration(id);
-        integration.update(validated.name(), validated.deviceId(), validated.enabled(), clock.instant());
+        int digestWindowSeconds = validated.digestWindowSeconds() == null
+                ? integration.getDigestWindowSeconds() : validated.digestWindowSeconds();
+        integration.update(validated.name(), validated.deviceId(), validated.enabled(), digestWindowSeconds, clock.instant());
         return snapshot(integration);
     }
 
@@ -108,7 +111,8 @@ public class NotificationIntegrationService {
         NotificationIntegrationEntity integration = integrationRepository.findByIdForUpdate(integrationId)
                 .orElseThrow(() -> notFound("未找到通知集成。"));
         var notifications = reminderRepository.findAllByNotificationIntegrationIdForUpdate(integrationId);
-        if (notifications.stream().anyMatch(notification -> notification.getStatus() == ReminderStatus.DISPATCHED)) {
+        if (notifications.stream().anyMatch(notification -> notification.getStatus() == ReminderStatus.DISPATCHED
+                || notification.getDeliveryGroupId() != null)) {
             throw new NotificationApiException(
                     HttpStatus.CONFLICT,
                     "notification_delivery_in_progress",
@@ -155,7 +159,12 @@ public class NotificationIntegrationService {
         }
         UUID roleId = command.roleId() == null ? CompanionRoleEntity.DEFAULT_ROLE_ID : command.roleId();
         if (!roleRepository.existsById(roleId)) throw invalid("目标角色无效。");
-        return new ValidatedIntegration(name, command.deviceId(), roleId, command.enabled());
+        Integer digestWindowSeconds = command.digestWindowSeconds();
+        if (digestWindowSeconds != null && digestWindowSeconds != 0
+                && (digestWindowSeconds < 5 || digestWindowSeconds > 300)) {
+            throw invalid("摘要聚合窗口必须关闭或设置为 5–300 秒。");
+        }
+        return new ValidatedIntegration(name, command.deviceId(), roleId, command.enabled(), digestWindowSeconds);
     }
 
     private NotificationIntegrationEntity findIntegration(UUID id) {
@@ -170,7 +179,7 @@ public class NotificationIntegrationService {
                 .toList();
         return new IntegrationSnapshot(
                 integration.getId(), integration.getName(), integration.getDeviceId(), integration.getRoleId(), integration.isEnabled(),
-                tokens, integration.getCreatedAt(), integration.getUpdatedAt()
+                integration.getDigestWindowSeconds(), tokens, integration.getCreatedAt(), integration.getUpdatedAt()
         );
     }
 
@@ -203,11 +212,19 @@ public class NotificationIntegrationService {
         return new NotificationApiException(HttpStatus.NOT_FOUND, "notification_not_found", message);
     }
 
-    private record ValidatedIntegration(String name, UUID deviceId, UUID roleId, boolean enabled) { }
+    private record ValidatedIntegration(
+            String name, UUID deviceId, UUID roleId, boolean enabled, Integer digestWindowSeconds
+    ) { }
 
-    public record IntegrationCommand(String name, UUID deviceId, UUID roleId, boolean enabled) {
+    public record IntegrationCommand(
+            String name, UUID deviceId, UUID roleId, boolean enabled, Integer digestWindowSeconds
+    ) {
+        public IntegrationCommand(String name, UUID deviceId, UUID roleId, boolean enabled) {
+            this(name, deviceId, roleId, enabled, null);
+        }
+
         public IntegrationCommand(String name, UUID deviceId, boolean enabled) {
-            this(name, deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID, enabled);
+            this(name, deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID, enabled, null);
         }
     }
 
@@ -217,13 +234,21 @@ public class NotificationIntegrationService {
             UUID deviceId,
             UUID roleId,
             boolean enabled,
+            int digestWindowSeconds,
             List<TokenSnapshot> tokens,
             Instant createdAt,
             Instant updatedAt
     ) {
+        public IntegrationSnapshot(
+                UUID id, String name, UUID deviceId, UUID roleId, boolean enabled,
+                List<TokenSnapshot> tokens, Instant createdAt, Instant updatedAt
+        ) {
+            this(id, name, deviceId, roleId, enabled, 0, tokens, createdAt, updatedAt);
+        }
+
         public IntegrationSnapshot(UUID id, String name, UUID deviceId, boolean enabled,
                                    List<TokenSnapshot> tokens, Instant createdAt, Instant updatedAt) {
-            this(id, name, deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID, enabled, tokens, createdAt, updatedAt);
+            this(id, name, deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID, enabled, 0, tokens, createdAt, updatedAt);
         }
     }
 

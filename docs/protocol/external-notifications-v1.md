@@ -20,7 +20,7 @@
 - `DELETE /api/v1/notification-integrations/notifications/{notificationId}`
 - `POST /api/v1/notification-integrations/{id}:test`
 
-创建与更新集成正文为 `{name, deviceId, roleId?, enabled}`。签发令牌可提交 `{expiresAt?}`，响应中的 `token` 只出现一次。测试播报正文为 `{content, responseActions?}`，由管理员显式触发并进入同一可靠队列。
+创建与更新集成正文为 `{name, deviceId, roleId?, enabled, digestWindowSeconds?}`。`digestWindowSeconds` 为 `0`（关闭）或 5–300 秒；旧客户端更新时省略该字段会保留已有配置。签发令牌可提交 `{expiresAt?}`，响应中的 `token` 只出现一次。测试播报正文为 `{content, responseActions?}`，由管理员显式触发并进入同一可靠队列。
 
 删除集成会永久删除其令牌和全部通知队列/历史。管理员也可单独删除外部通知记录。若目标集成包含 `DISPATCHED` 通知，或目标通知本身处于 `DISPATCHED`，服务端返回 409；必须等待设备 ACK、失败或过期恢复后再删除，不能中断正在播放的设备命令。
 
@@ -59,6 +59,8 @@
 ```
 
 互动通知产生回执后，`response` 为 `{action, snoozeMinutes?, respondedAt}`。`SNOOZE` 会让通知重新进入 `PENDING`，后续再次送达；外部调用方只通过本接口或 MCP 轮询，不配置回调地址。
+
+启用摘要后，同一集成、设备和角色的单向通知会等待配置窗口并按创建顺序最多聚合 10 条。每条仍按自己的 ID 查询：摘要播放期间均返回 `DISPATCHED`，设备 ACK 后均返回 `DELIVERED`；带 `responseActions` 的通知不参与聚合。
 
 公开状态为 `PENDING/DISPATCHED/DELIVERED/FAILED/EXPIRED/CANCELLED`。不存在或不属于当前集成均返回 404，避免泄露其他集成标识。
 

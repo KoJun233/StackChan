@@ -138,6 +138,32 @@ class NotificationIntegrationServiceTest {
         verify(integrationRepository, never()).delete(any());
     }
 
+    @Test
+    void validatesDigestWindowAndPreservesItWhenOldClientUpdatesIntegration() {
+        UUID deviceId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        when(deviceRepository.existsById(deviceId)).thenReturn(true);
+        when(roleRepository.existsById(roleId)).thenReturn(true);
+        when(integrationRepository.save(any(NotificationIntegrationEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var created = service().create(new NotificationIntegrationService.IntegrationCommand(
+                "Codex", deviceId, roleId, true, 30));
+        assertThat(created.digestWindowSeconds()).isEqualTo(30);
+
+        NotificationIntegrationEntity integration = new NotificationIntegrationEntity(
+                "Codex", deviceId, roleId, true, 30, NOW);
+        when(integrationRepository.findById(integration.getId())).thenReturn(Optional.of(integration));
+        var updated = service().update(integration.getId(),
+                new NotificationIntegrationService.IntegrationCommand("Codex 2", deviceId, roleId, true));
+        assertThat(updated.digestWindowSeconds()).isEqualTo(30);
+
+        assertThatThrownBy(() -> service().create(new NotificationIntegrationService.IntegrationCommand(
+                "Bad", deviceId, roleId, true, 4)))
+                .isInstanceOfSatisfying(NotificationApiException.class,
+                        exception -> assertThat(exception.getCode()).isEqualTo("notification_invalid_request"));
+    }
+
     private ReminderEntity externalReminder(NotificationIntegrationEntity integration) {
         ReminderEntity reminder = new ReminderEntity(
                 integration.getDeviceId(), "完成", NOW, "UTC",

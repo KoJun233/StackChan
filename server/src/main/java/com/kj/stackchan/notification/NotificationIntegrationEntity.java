@@ -28,6 +28,9 @@ public class NotificationIntegrationEntity {
     @Column(nullable = false)
     private boolean enabled;
 
+    @Column(name = "digest_window_seconds", nullable = false)
+    private int digestWindowSeconds;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -42,19 +45,31 @@ public class NotificationIntegrationEntity {
     }
 
     public NotificationIntegrationEntity(String name, UUID deviceId, UUID roleId, boolean enabled, Instant now) {
+        this(name, deviceId, roleId, enabled, 0, now);
+    }
+
+    public NotificationIntegrationEntity(
+            String name, UUID deviceId, UUID roleId, boolean enabled, int digestWindowSeconds, Instant now
+    ) {
         this.id = UUID.randomUUID();
         this.name = name;
         this.deviceId = deviceId;
         this.roleId = roleId;
         this.enabled = enabled;
+        this.digestWindowSeconds = digestWindowSeconds;
         this.createdAt = now;
         this.updatedAt = now;
     }
 
     public void update(String name, UUID deviceId, boolean enabled, Instant now) {
+        update(name, deviceId, enabled, digestWindowSeconds, now);
+    }
+
+    public void update(String name, UUID deviceId, boolean enabled, int digestWindowSeconds, Instant now) {
         this.name = name;
         this.deviceId = deviceId;
         this.enabled = enabled;
+        this.digestWindowSeconds = digestWindowSeconds;
         this.updatedAt = now;
     }
 
@@ -65,6 +80,7 @@ public class NotificationIntegrationEntity {
     public UUID getDeviceId() { return deviceId; }
     public UUID getRoleId() { return roleId; }
     public boolean isEnabled() { return enabled; }
+    public int getDigestWindowSeconds() { return digestWindowSeconds; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

@@ -20,6 +20,7 @@ export interface NotificationTokenMetadata {
 export interface NotificationIntegration {
   createdAt: string
   deviceId: string
+  digestWindowSeconds: number
   enabled: boolean
   id: string
   name: string
@@ -30,6 +31,7 @@ export interface NotificationIntegration {
 
 export interface NotificationIntegrationInput {
   deviceId: string
+  digestWindowSeconds: number
   enabled: boolean
   name: string
   roleId?: string
