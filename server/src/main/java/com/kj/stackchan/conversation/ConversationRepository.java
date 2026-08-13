@@ -13,6 +13,7 @@ import org.springframework.data.repository.query.Param;
 public interface ConversationRepository extends JpaRepository<ConversationEntity, UUID> {
 
     List<ConversationEntity> findAllByOrderByUpdatedAtDescIdDesc();
+    List<ConversationEntity> findAllByRoleIdOrderByUpdatedAtDescIdDesc(UUID roleId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select conversation from ConversationEntity conversation where conversation.id = :conversationId")

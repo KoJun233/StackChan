@@ -28,6 +28,12 @@ public interface LongTermMemoryRepository
             @Param("status") MemoryConfirmationStatus status
     );
 
+    @Query("select count(memory) from LongTermMemoryEntity memory where memory.roleId = :roleId "
+            + "and memory.confirmationStatus = :status and (memory.scopeType = com.kj.stackchan.memory.MemoryScopeType.GLOBAL "
+            + "or memory.deviceId = :deviceId)")
+    long countVisibleByRoleAndDeviceAndStatus(@Param("roleId") UUID roleId,
+            @Param("deviceId") UUID deviceId, @Param("status") MemoryConfirmationStatus status);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select memory from LongTermMemoryEntity memory where memory.id = :id")
     Optional<LongTermMemoryEntity> findByIdForUpdate(@Param("id") UUID id);
@@ -35,6 +41,7 @@ public interface LongTermMemoryRepository
     @Query("""
             select memory from LongTermMemoryEntity memory
             where memory.topicKey = :topicKey
+              and memory.roleId = :roleId
               and memory.scopeType = :scopeType
               and ((:deviceId is null and memory.deviceId is null) or memory.deviceId = :deviceId)
               and memory.confirmationStatus = com.kj.stackchan.memory.MemoryConfirmationStatus.CONFIRMED
@@ -43,6 +50,7 @@ public interface LongTermMemoryRepository
             order by memory.updatedAt desc, memory.id desc
             """)
     List<LongTermMemoryEntity> findActiveTopicMatches(
+            @Param("roleId") UUID roleId,
             @Param("topicKey") String topicKey,
             @Param("scopeType") MemoryScopeType scopeType,
             @Param("deviceId") UUID deviceId
@@ -51,6 +59,7 @@ public interface LongTermMemoryRepository
     @Query("""
             select memory from LongTermMemoryEntity memory
             where memory.topicKey = :topicKey
+              and memory.roleId = :roleId
               and memory.scopeType = :scopeType
               and ((:deviceId is null and memory.deviceId is null) or memory.deviceId = :deviceId)
               and memory.id <> :excludedId
@@ -58,6 +67,7 @@ public interface LongTermMemoryRepository
             order by memory.updatedAt desc, memory.id desc
             """)
     List<LongTermMemoryEntity> findPossibleDuplicates(
+            @Param("roleId") UUID roleId,
             @Param("topicKey") String topicKey,
             @Param("scopeType") MemoryScopeType scopeType,
             @Param("deviceId") UUID deviceId,
@@ -68,6 +78,7 @@ public interface LongTermMemoryRepository
             select memory.*
             from long_term_memories memory
             where memory.confirmation_status = 'CONFIRMED'
+              and memory.role_id = :roleId
               and memory.enabled = true
               and memory.superseded_by_memory_id is null
               and (
@@ -90,6 +101,7 @@ public interface LongTermMemoryRepository
             limit :limit
             """, nativeQuery = true)
     List<LongTermMemoryEntity> searchContext(
+            @Param("roleId") UUID roleId,
             @Param("deviceId") UUID deviceId,
             @Param("queryText") String queryText,
             @Param("limit") int limit
@@ -98,6 +110,7 @@ public interface LongTermMemoryRepository
     @Query("""
             select memory from LongTermMemoryEntity memory
             where memory.confirmationStatus = com.kj.stackchan.memory.MemoryConfirmationStatus.CONFIRMED
+              and memory.roleId = :roleId
               and memory.enabled = true
               and memory.allowProactiveMention = true
               and memory.supersededByMemoryId is null
@@ -110,6 +123,7 @@ public interface LongTermMemoryRepository
                      memory.id desc
             """)
     List<LongTermMemoryEntity> findProactiveCandidates(
+            @Param("roleId") UUID roleId,
             @Param("deviceId") UUID deviceId,
             Pageable pageable
     );

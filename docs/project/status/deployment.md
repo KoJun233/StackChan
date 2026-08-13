@@ -1,37 +1,37 @@
 # 部署工作流
 
-- 状态：STABLE
-- 最后更新：2026-08-11
-- 当前分支：`codex/evt-001-external-notifications`
-- 基准提交：`0e92d58`
-- 最后验证提交：`0e92d58`
+- 状态：VALIDATING
+- 最后更新：2026-08-13
+- 当前分支：`codex/role-001-role-containers`
+- 基准提交：`5d18623`
+- 最后验证提交：`9e526f8`
 - 当前模式：LAN HTTP development
 
 ## 当前目标
 
-保持 OPS-002 运行态和现有数据卷不变。`EVT-001` 已按受信任 LAN HTTP 与反向代理后 production HTTPS-only 的边界实现，未扩大当前部署权限。
+保持现有数据卷、端口和 LAN/production 安全边界不变，在受信任 LAN 发布并验证 `ROLE-001`。
 
 ## 已完成
 
 - Docker Compose 运行 PostgreSQL、Redis、server 和独立备份容器；数据卷和备份卷分离。
 - LAN development 绑定局域网地址；production 配置只接受可信代理后的 HTTPS/WSS。
 - PostgreSQL 日/周轮转、原子备份、清单、只读状态和一次性临时库恢复验证。
-- EVT-001 server/V28、健康中心和应用 OTA 已发布验证；CoreS3 保持原固件且 OTA 能力启用。
+- ROLE-001 server/V29 和角色管理前端已发布；CoreS3 保持原固件且 OTA 能力启用。
 - Docker Desktop 数据位于 E 盘，现有卷、镜像和容器已保留。
 - 完整合并历史见[里程碑索引](../milestones.md)。
 
 ## 正在进行
 
-用户已明确授权部署。部署前生成并恢复校验新备份，只替换 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器、数据卷和端口均未变；当前运行态为 EVT-001 `50d6269` server/V28 与 CoreS3 `7e7c55f / motion_disabled / OTA=true`。
+用户已明确授权部署。部署前已生成并隔离恢复校验新备份，只替换 `stackchan-foundation-server-1`；PostgreSQL、Redis、备份容器、数据卷和端口均未变。当前运行态为 ROLE-001 `9e526f8` server/V29 与 CoreS3 `7e7c55f / motion_disabled / OTA=true`。
 
 ## 下一步操作
 
-刷新管理页面，确认“提醒管理”下的外部通知菜单、集成删除和通知记录删除；随后按外部通知 runbook 补验免打扰和离线重连。公网入口必须使用 HTTPS，令牌不得写入 Compose、镜像或仓库。
+由用户刷新管理页面，创建第二个角色并完成页面/语音切换、双角色事实记忆和历史不串用验收。公网入口必须使用 HTTPS，令牌不得写入 Compose、镜像或仓库。
 
 ## 阻塞项
 
 - 当前没有运行环境阻塞。
-- EVT-001 已部署且无运行阻塞；实体投递验收、凭据轮换和 OTA 回退仍需各自显式操作或授权。
+- ROLE-001 无运行阻塞；双角色实体隔离正在等待用户验收。凭据轮换和 OTA 回退仍需各自显式操作或授权。
 
 ## 关键文件
 
@@ -44,6 +44,10 @@
 
 ## 验证命令与最近结果
 
+- 2026-08-13 部署前新备份及最新备份隔离恢复验证成功；未覆盖正式数据库。
+- `stackchan-foundation-server-1` 已替换为 ROLE-001 镜像，构建版本 `9e526f8`；旧 EVT-001 镜像保留为 `pre-role001-e1a0a12`，新镜像保留为 `role001-9e526f8`。
+- 运行库成功从 V28 迁移到 V29；默认角色恰好一条，会话、记忆、提醒和通知集成均无空角色归属，设备活动角色映射已生成。
+- 首页返回 200，未认证 `/api/v1/roles` 与 `/api/v1/devices` 均返回 401，启动日志无应用错误。
 - 运行 server 健康与首页为 200，Flyway V28；未认证集成删除、队列删除、外部 REST/MCP 均为 401，启动日志无 `ERROR`/`Exception`。
 - 用户确认基础外部通知测试正常；菜单归属及集成/队列删除已随 `50d6269` 镜像发布，等待管理员页面复核。
 - 2026-08-11T13:54:04Z 新备份已完成 SHA-256 校验并恢复到一次性 PostgreSQL，关键数据计数一致，临时资源已清理。
@@ -67,4 +71,4 @@
 
 - 不组合 LAN 与 production Compose，不允许公网明文 HTTP/WS。
 - 不把管理员密码、通知令牌、API Key、JWT、Wi-Fi 凭据或加密主密钥写入仓库、镜像或日志。
-- 后续替换容器、运行迁移、修改卷/端口、轮换凭据或推送分支仍需明确授权；本次授权仅覆盖 EVT-001 LAN server 部署。
+- 后续再次替换容器、修改卷/端口、轮换凭据或推送分支仍需明确授权；本次授权仅覆盖 ROLE-001 LAN 部署。

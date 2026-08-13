@@ -18,6 +18,7 @@ import com.kj.stackchan.llm.LlmProviderUnavailableException;
 import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.memory.CompanionPromptService;
 import com.kj.stackchan.memory.CompletedTurnMemoryCoordinator;
+import com.kj.stackchan.role.CompanionRoleEntity;
 import com.kj.stackchan.voiceaction.VoiceActionCoordinator;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -111,6 +112,7 @@ public class VoiceTurnService {
                 lastCompletedStage = VoiceTurnStage.ASR_COMPLETED;
 
                 UUID conversationId = deviceVoiceConversationService.getOrCreateConversationId(deviceId);
+                UUID roleId = conversationService.roleId(conversationId);
                 List<ConversationMessageSnapshot> history = conversationService.loadHistory(conversationId);
                 start = conversationService.startGeneration(conversationId, UUID.randomUUID(), transcript);
                 cancellation.throwIfCancelled();
@@ -144,6 +146,7 @@ public class VoiceTurnService {
                                             turnId,
                                             conversationId,
                                             deviceId,
+                                            roleId,
                                             AgentChannel.VOICE
                                     ),
                                     systemPrompt,
@@ -168,15 +171,11 @@ public class VoiceTurnService {
                 cancellation.throwIfCancelled();
                 conversationService.completeGeneration(start.assistantMessageId(), reply);
                 if (completedTurnMemoryCoordinator != null && extractMemorySuggestion) {
-                    completedTurnMemoryCoordinator.complete(
-                            turnId,
-                            turnId,
-                            deviceId,
-                            transcript,
-                            reply,
-                            usedMemoryIds,
-                            true
-                    );
+                    if (roleId == null || CompanionRoleEntity.DEFAULT_ROLE_ID.equals(roleId)) {
+                        completedTurnMemoryCoordinator.complete(turnId, turnId, deviceId, transcript, reply, usedMemoryIds, true);
+                    } else {
+                        completedTurnMemoryCoordinator.complete(turnId, turnId, deviceId, roleId, transcript, reply, usedMemoryIds, true);
+                    }
                 }
                 recordStage(deviceId, turnId, VoiceTurnStage.TTS_COMPLETED, null);
                 return new VoiceTurnResult(transcript, reply, audio);

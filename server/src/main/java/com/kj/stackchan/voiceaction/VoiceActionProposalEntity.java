@@ -16,6 +16,7 @@ public class VoiceActionProposalEntity {
     @Id private UUID id;
     @Column(name = "actor_id", nullable = false, length = 64) private String actorId;
     @Column(name = "device_id", nullable = false) private UUID deviceId;
+    @Column(name = "role_id", nullable = false) private UUID roleId;
     @Column(name = "conversation_id", nullable = false) private UUID conversationId;
     @Column(name = "source_turn_id", nullable = false) private UUID sourceTurnId;
     @Enumerated(EnumType.STRING) @Column(name = "action_type", nullable = false, length = 40) private VoiceActionType actionType;
@@ -42,9 +43,16 @@ public class VoiceActionProposalEntity {
 
     public VoiceActionProposalEntity(String actorId, UUID deviceId, UUID conversationId, UUID sourceTurnId,
                                      VoiceActionDraft draft, Instant now, Instant expiresAt) {
+        this(actorId, deviceId, com.kj.stackchan.role.CompanionRoleEntity.DEFAULT_ROLE_ID,
+                conversationId, sourceTurnId, draft, now, expiresAt);
+    }
+
+    public VoiceActionProposalEntity(String actorId, UUID deviceId, UUID roleId, UUID conversationId, UUID sourceTurnId,
+                                     VoiceActionDraft draft, Instant now, Instant expiresAt) {
         this.id = UUID.randomUUID();
         this.actorId = actorId;
         this.deviceId = deviceId;
+        this.roleId = roleId;
         this.conversationId = conversationId;
         this.sourceTurnId = sourceTurnId;
         this.actionType = draft.actionType();
@@ -73,6 +81,7 @@ public class VoiceActionProposalEntity {
     public UUID getId() { return id; }
     public String getActorId() { return actorId; }
     public UUID getDeviceId() { return deviceId; }
+    public UUID getRoleId() { return roleId; }
     public UUID getConversationId() { return conversationId; }
     public UUID getSourceTurnId() { return sourceTurnId; }
     public VoiceActionType getActionType() { return actionType; }

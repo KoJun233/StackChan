@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.kj.stackchan.device.DeviceRepository;
+import com.kj.stackchan.role.CompanionRoleEntity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -88,7 +89,8 @@ class LongTermMemoryServiceTest {
                 "称呼偏好", "称呼用户为阿俊", MemorySource.USER_ENTERED, LongTermMemoryService.USER_ENTERED_DETAIL,
                 MemoryConfirmationStatus.CONFIRMED, "称呼偏好", 4, null, null, false, NOW
         );
-        when(repository.findActiveTopicMatches("称呼偏好", MemoryScopeType.GLOBAL, null))
+        when(repository.findActiveTopicMatches(
+                CompanionRoleEntity.DEFAULT_ROLE_ID, "称呼偏好", MemoryScopeType.GLOBAL, null))
                 .thenReturn(List.of(oldMemory));
         when(repository.save(any(LongTermMemoryEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         LongTermMemoryService service = service();
@@ -129,7 +131,7 @@ class LongTermMemoryServiceTest {
                 "项目进度", "完成联调", MemorySource.USER_ENTERED, LongTermMemoryService.USER_ENTERED_DETAIL,
                 MemoryConfirmationStatus.CONFIRMED, "项目进度", 5, null, null, false, NOW
         );
-        when(repository.searchContext(null, "项目", 8))
+        when(repository.searchContext(CompanionRoleEntity.DEFAULT_ROLE_ID, null, "项目", 8))
                 .thenThrow(new DataAccessResourceFailureException("pg_trgm unavailable"));
         when(repository.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(memory)));

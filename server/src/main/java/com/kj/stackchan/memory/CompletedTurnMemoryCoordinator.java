@@ -23,6 +23,7 @@ public class CompletedTurnMemoryCoordinator {
             UUID usageTurnId,
             UUID sourceTurnId,
             UUID deviceId,
+            UUID roleId,
             String userText,
             String assistantText,
             List<UUID> usedMemoryIds,
@@ -32,7 +33,15 @@ public class CompletedTurnMemoryCoordinator {
         if (extractSuggestion) {
             suggestionExtractionService.schedule(new MemorySuggestionExtractionService.SuggestionTurn(
                     sourceTurnId, deviceId, userText, assistantText
+                    , roleId
             ));
         }
+    }
+
+    public void complete(UUID usageTurnId, UUID sourceTurnId, UUID deviceId, String userText,
+                         String assistantText, List<UUID> usedMemoryIds, boolean extractSuggestion) {
+        complete(usageTurnId, sourceTurnId, deviceId,
+                com.kj.stackchan.role.CompanionRoleEntity.DEFAULT_ROLE_ID,
+                userText, assistantText, usedMemoryIds, extractSuggestion);
     }
 }

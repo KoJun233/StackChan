@@ -7,6 +7,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import com.kj.stackchan.role.CompanionRoleEntity;
 
 @Entity
 @Table(name = "notification_integrations")
@@ -21,6 +22,9 @@ public class NotificationIntegrationEntity {
     @Column(name = "device_id", nullable = false)
     private UUID deviceId;
 
+    @Column(name = "role_id", nullable = false)
+    private UUID roleId;
+
     @Column(nullable = false)
     private boolean enabled;
 
@@ -34,9 +38,14 @@ public class NotificationIntegrationEntity {
     }
 
     public NotificationIntegrationEntity(String name, UUID deviceId, boolean enabled, Instant now) {
+        this(name, deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID, enabled, now);
+    }
+
+    public NotificationIntegrationEntity(String name, UUID deviceId, UUID roleId, boolean enabled, Instant now) {
         this.id = UUID.randomUUID();
         this.name = name;
         this.deviceId = deviceId;
+        this.roleId = roleId;
         this.enabled = enabled;
         this.createdAt = now;
         this.updatedAt = now;
@@ -49,9 +58,12 @@ public class NotificationIntegrationEntity {
         this.updatedAt = now;
     }
 
+    public void disable(Instant now) { this.enabled = false; this.updatedAt = now; }
+
     public UUID getId() { return id; }
     public String getName() { return name; }
     public UUID getDeviceId() { return deviceId; }
+    public UUID getRoleId() { return roleId; }
     public boolean isEnabled() { return enabled; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

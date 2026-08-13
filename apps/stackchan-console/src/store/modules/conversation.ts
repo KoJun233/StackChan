@@ -34,6 +34,7 @@ export const useConversationStore = defineStore('conversation', () => {
   const failedRequest = ref<FailedRequest>()
   const lastFailedInput = computed(() => failedRequest.value?.content || '')
   const abortController = ref<AbortController>()
+  const activeRoleId = ref<string>()
 
   function addConversation(conversation: Conversation) {
     const existingIndex = conversations.value.findIndex(item => item.id === conversation.id)
@@ -86,7 +87,7 @@ export const useConversationStore = defineStore('conversation', () => {
   async function loadConversations() {
     isLoading.value = true
     try {
-      conversations.value = await listConversations()
+      conversations.value = await listConversations(activeRoleId.value)
       if (activeConversationId.value && conversations.value.some(item => item.id === activeConversationId.value)) {
         await selectConversation(activeConversationId.value)
       }
@@ -111,14 +112,22 @@ export const useConversationStore = defineStore('conversation', () => {
     messages.value = await getConversationMessages(conversationId)
   }
 
-  async function startNewConversation() {
-    const conversation = await createConversation()
+  async function startNewConversation(roleId = activeRoleId.value) {
+    const conversation = await createConversation(roleId)
     addConversation(conversation)
     activeConversationId.value = conversation.id
     messages.value = []
     errorMessage.value = ''
     failedRequest.value = undefined
     return conversation
+  }
+
+  async function selectRole(roleId: string) {
+    if (isSending.value) return
+    activeRoleId.value = roleId
+    activeConversationId.value = undefined
+    messages.value = []
+    await loadConversations()
   }
 
   async function ensureActiveConversation() {
@@ -224,13 +233,13 @@ export const useConversationStore = defineStore('conversation', () => {
   return {
     conversations,
     messages,
-    activeConversationId,
+    activeConversationId, activeRoleId,
     isLoading,
     isSending,
     errorMessage,
     lastFailedInput,
     loadConversations,
-    selectConversation,
+    selectConversation, selectRole,
     startNewConversation,
     send,
     retryFailed,
@@ -238,6 +247,6 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 }, {
   persist: {
-    pick: ['activeConversationId'],
+    pick: ['activeConversationId', 'activeRoleId'],
   },
 })

@@ -17,6 +17,8 @@ import {
   setMemoryEnabled,
 } from '@/api/modules/personaMemory'
 import eventBus from '@/utils/eventBus'
+import type { CompanionRole } from '@/api/modules/roles'
+import { listRoles } from '@/api/modules/roles'
 
 defineOptions({ name: 'CompanionMemoryList' })
 
@@ -26,6 +28,7 @@ const tableAutoHeight = ref(false)
 const loading = ref(false)
 const dataList = ref<LongTermMemory[]>([])
 const devices = ref<Device[]>([])
+const roles = ref<CompanionRole[]>([])
 const batch = ref({
   enable: true,
   selectionDataList: [] as LongTermMemory[],
@@ -36,6 +39,7 @@ const searchDefault = {
   category: '' as MemoryCategory | '',
   confirmationStatus: '' as MemoryConfirmationStatus | '',
   scopeType: '' as MemoryScopeType | '',
+  roleId: '',
 }
 const search = ref({ ...searchDefault })
 
@@ -57,12 +61,15 @@ const scopeOptions = [
 ]
 
 const deviceNames = computed(() => new Map(devices.value.map(device => [device.id, device.displayName])))
+const roleNames = computed(() => new Map(roles.value.map(role => [role.id, role.name])))
+const roleOptions = computed(() => [{ label: '全部角色', value: '' }, ...roles.value.map(role => ({ label: role.name, value: role.id }))])
 
 const tableColumns = computed<TableColumn<LongTermMemory>[]>(() => [
   ...(batch.value.enable
     ? [{ type: 'selection', fixed: 'left', width: 48 } satisfies TableColumn<LongTermMemory>]
     : []),
   { accessorKey: 'title', header: '记忆', minWidth: 260 },
+  { id: 'role', header: '角色', minWidth: 130 },
   { id: 'category', header: '类型', width: 110, align: 'center' },
   { id: 'scope', header: '作用范围', minWidth: 150 },
   { id: 'status', header: '确认状态', width: 110, align: 'center' },
@@ -113,6 +120,7 @@ async function getDataList() {
       category: search.value.category,
       confirmationStatus: search.value.confirmationStatus,
       scopeType: search.value.scopeType,
+      roleId: search.value.roleId || undefined,
     })
     dataList.value = result.list
     pagination.value.total = result.total
@@ -133,6 +141,8 @@ async function loadDevices() {
     useFaToast().error('设备加载失败', { description: error instanceof Error ? error.message : '无法获取设备列表。' })
   }
 }
+
+async function loadRoles() { roles.value = await listRoles() }
 
 function sizeChange(size: number) {
   onSizeChange(size).then(() => getDataList())
@@ -205,6 +215,7 @@ function confirmClearAll() {
 
 onMounted(() => {
   loadDevices()
+  loadRoles()
   getDataList()
   eventBus.on('get-memory-list', getDataList)
 })
@@ -242,6 +253,9 @@ onBeforeUnmount(() => eventBus.off('get-memory-list'))
             </FaLabel>
             <FaLabel v-show="!fold" label="作用范围" class="col-span-1">
               <FaSelect v-model="search.scopeType" :options="scopeOptions" class="w-full" @change="currentChange()" />
+            </FaLabel>
+            <FaLabel v-show="!fold" label="角色" class="col-span-1">
+              <FaSelect v-model="search.roleId" :options="roleOptions" class="w-full" @change="currentChange()" />
             </FaLabel>
             <div class="flex gap-2 col-end--1 justify-end">
               <FaButton variant="outline" @click="searchReset(); currentChange()">
@@ -315,6 +329,7 @@ onBeforeUnmount(() => eventBus.off('get-memory-list'))
         <template #cell-category="{ row }">
           {{ categoryLabel(row.original.category) }}
         </template>
+        <template #cell-role="{ row }">{{ roleNames.get(row.original.roleId) || row.original.roleId }}</template>
         <template #cell-scope="{ row }">
           <span v-if="row.original.scopeType === 'GLOBAL'">全局共享</span>
           <span v-else>{{ deviceNames.get(row.original.deviceId || '') || '指定设备' }}</span>

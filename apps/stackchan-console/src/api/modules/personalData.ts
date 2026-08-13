@@ -7,6 +7,8 @@ export interface PersonalDataConversation {
   deviceName: string | null
   id: string
   messageCount: number
+  roleId: string
+  roleName: string
   title: string
   updatedAt: string
 }
@@ -23,6 +25,7 @@ export interface PersonalDataFilter {
   fromTime?: string
   limit: number
   query?: string
+  roleId?: string
   toTime?: string
 }
 
@@ -54,6 +57,7 @@ function filterQuery(filter: PersonalDataFilter, includePagination = true) {
   if (filter.deviceId) {
     query.set('deviceId', filter.deviceId)
   }
+  if (filter.roleId) query.set('roleId', filter.roleId)
   if (filter.fromTime) {
     query.set('fromTime', filter.fromTime)
   }

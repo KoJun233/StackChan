@@ -43,12 +43,13 @@ public class LongTermMemoryController {
             @RequestParam(required = false) Boolean enabled,
             @RequestParam(required = false) MemoryScopeType scopeType,
             @RequestParam(required = false) UUID deviceId,
+            @RequestParam(required = false) UUID roleId,
             @RequestParam(defaultValue = "0") int from,
             @RequestParam(defaultValue = "20") int limit
     ) {
-        return memoryService.list(
-                query, category, confirmationStatus, enabled, scopeType, deviceId, from, limit
-        );
+        return roleId == null
+                ? memoryService.list(query, category, confirmationStatus, enabled, scopeType, deviceId, from, limit)
+                : memoryService.list(roleId, query, category, confirmationStatus, enabled, scopeType, deviceId, from, limit);
     }
 
     @GetMapping("/{id}")
@@ -64,15 +65,16 @@ public class LongTermMemoryController {
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public LongTermMemoryService.MemorySnapshot create(@Valid @RequestBody MemoryRequest request) {
-        return memoryService.create(request.toCommand());
+        return request.roleId() == null ? memoryService.create(request.toCommand())
+                : memoryService.create(request.roleId(), request.toCommand());
     }
 
     @PostMapping(path = "/suggestions", consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public LongTermMemoryService.MemorySnapshot suggest(@Valid @RequestBody MemorySuggestionRequest request) {
-        return memoryService.suggest(new LongTermMemoryService.MemorySuggestionCommand(
-                request.memory().toCommand(), request.sourceDetail()
-        ));
+        var command = new LongTermMemoryService.MemorySuggestionCommand(request.memory().toCommand(), request.sourceDetail());
+        return request.memory().roleId() == null ? memoryService.suggest(command)
+                : memoryService.suggest(request.memory().roleId(), command);
     }
 
     @PutMapping(path = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -109,11 +111,14 @@ public class LongTermMemoryController {
 
     @PostMapping(path = ":clear", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ClearMemoryResponse clear(@Valid @RequestBody ClearMemoryRequest request) {
-        return new ClearMemoryResponse(memoryService.clear(request.scopeType(), request.deviceId()));
+        return new ClearMemoryResponse(request.roleId() == null
+                ? memoryService.clear(request.scopeType(), request.deviceId())
+                : memoryService.clear(request.roleId(), request.scopeType(), request.deviceId()));
     }
 
     public record MemoryRequest(
             @NotNull MemoryScopeType scopeType,
+            UUID roleId,
             UUID deviceId,
             @NotNull MemoryCategory category,
             @NotBlank @Size(max = 120) String title,
@@ -145,7 +150,7 @@ public class LongTermMemoryController {
     public record MemoryEnabledRequest(@NotNull Boolean enabled) {
     }
 
-    public record ClearMemoryRequest(MemoryScopeType scopeType, UUID deviceId) {
+    public record ClearMemoryRequest(UUID roleId, MemoryScopeType scopeType, UUID deviceId) {
     }
 
     public record ClearMemoryResponse(long deletedCount) {

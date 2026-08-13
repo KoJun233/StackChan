@@ -10,16 +10,21 @@ import org.springframework.ai.tool.annotation.Tool;
 public class NextReminderTool {
     public static final String ID = "next_device_reminder";
     private final UUID deviceId;
+    private final UUID roleId;
     private final ReminderService reminderService;
     private final ObjectMapper objectMapper;
 
     public NextReminderTool(UUID deviceId, ReminderService reminderService, ObjectMapper objectMapper) {
+        this(deviceId, com.kj.stackchan.role.CompanionRoleEntity.DEFAULT_ROLE_ID, reminderService, objectMapper);
+    }
+    public NextReminderTool(UUID deviceId, UUID roleId, ReminderService reminderService, ObjectMapper objectMapper) {
         this.deviceId = deviceId; this.reminderService = reminderService; this.objectMapper = objectMapper;
+        this.roleId = roleId;
     }
 
     @Tool(name = ID, description = "返回当前认证设备的下一条待处理提醒；不接受模型指定的设备。")
     public String nextReminder() {
-        ReminderService.ReminderSnapshot next = reminderService.nextPending(deviceId);
+        ReminderService.ReminderSnapshot next = reminderService.nextPending(deviceId, roleId);
         return json(next == null ? new Result(false, null, null, null) :
                 new Result(true, next.content(), next.scheduledAt().toString(), next.zoneId()));
     }

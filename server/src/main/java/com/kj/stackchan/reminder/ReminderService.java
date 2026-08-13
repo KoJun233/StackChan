@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.UUID;
 
 import com.kj.stackchan.device.DeviceRepository;
+import com.kj.stackchan.role.CompanionRoleEntity;
+import com.kj.stackchan.role.CompanionRoleRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -23,24 +25,34 @@ public class ReminderService {
     private final DeviceRepository deviceRepository;
     private final Clock clock;
     private final ReminderScheduleCalculator scheduleCalculator;
+    private final CompanionRoleRepository roleRepository;
 
     public ReminderService(
             ReminderRepository reminderRepository,
             DeviceRepository deviceRepository,
             Clock clock,
-            ReminderScheduleCalculator scheduleCalculator
+            ReminderScheduleCalculator scheduleCalculator,
+            CompanionRoleRepository roleRepository
     ) {
         this.reminderRepository = reminderRepository;
         this.deviceRepository = deviceRepository;
         this.clock = clock;
         this.scheduleCalculator = scheduleCalculator;
+        this.roleRepository = roleRepository;
     }
 
     @Transactional(readOnly = true)
     public ReminderPage list(String content, ReminderStatus status, int from, int limit) {
+        return list(CompanionRoleEntity.DEFAULT_ROLE_ID, content, status, from, limit);
+    }
+
+    @Transactional(readOnly = true)
+    public ReminderPage list(UUID roleId, String content, ReminderStatus status, int from, int limit) {
         int safeLimit = Math.min(Math.max(limit, 1), 100);
         int page = Math.max(from, 0) / safeLimit;
-        Specification<ReminderEntity> specification = (root, query, builder) -> builder.conjunction();
+        UUID resolvedRoleId = requireRole(roleId);
+        Specification<ReminderEntity> specification = (root, query, builder) ->
+                builder.equal(root.get("roleId"), resolvedRoleId);
         if (content != null && !content.isBlank()) {
             String pattern = "%" + content.trim().toLowerCase() + "%";
             specification = specification.and((root, query, builder) ->
@@ -63,8 +75,14 @@ public class ReminderService {
 
     @Transactional
     public ReminderSnapshot create(ReminderCommand command) {
+        return create(CompanionRoleEntity.DEFAULT_ROLE_ID, command);
+    }
+
+    @Transactional
+    public ReminderSnapshot create(UUID roleId, ReminderCommand command) {
         ValidatedCommand validated = validate(command);
         ReminderEntity reminder = new ReminderEntity(
+                requireRole(roleId),
                 validated.deviceId(),
                 validated.content(),
                 validated.scheduledAt(),
@@ -117,11 +135,16 @@ public class ReminderService {
 
     @Transactional(readOnly = true)
     public ReminderSnapshot nextPending(UUID deviceId) {
+        return nextPending(deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID);
+    }
+
+    @Transactional(readOnly = true)
+    public ReminderSnapshot nextPending(UUID deviceId, UUID roleId) {
         if (deviceId == null || !deviceRepository.existsById(deviceId)) {
             throw new InvalidReminderException("Reminder device is invalid");
         }
-        return reminderRepository.findFirstByDeviceIdAndStatusOrderByScheduledAtAscIdAsc(
-                        deviceId, ReminderStatus.PENDING)
+        return reminderRepository.findFirstByDeviceIdAndRoleIdAndStatusOrderByScheduledAtAscIdAsc(
+                        deviceId, roleId, ReminderStatus.PENDING)
                 .map(this::toSnapshot)
                 .orElse(null);
     }
@@ -182,10 +205,17 @@ public class ReminderService {
         return new ValidatedCommand(command.deviceId(), content, command.scheduledAt(), zoneId, recurrence, interval, anchor);
     }
 
+    private UUID requireRole(UUID roleId) {
+        UUID resolved = roleId == null ? CompanionRoleEntity.DEFAULT_ROLE_ID : roleId;
+        if (!roleRepository.existsById(resolved)) throw new InvalidReminderException("Reminder role is invalid");
+        return resolved;
+    }
+
     private ReminderSnapshot toSnapshot(ReminderEntity reminder) {
         return new ReminderSnapshot(
                 reminder.getId(),
                 reminder.getDeviceId(),
+                reminder.getRoleId(),
                 reminder.getContent(),
                 reminder.getScheduledAt(),
                 reminder.getZoneId(),
@@ -231,6 +261,7 @@ public class ReminderService {
     public record ReminderSnapshot(
             UUID id,
             UUID deviceId,
+            UUID roleId,
             String content,
             Instant scheduledAt,
             String zoneId,
@@ -260,7 +291,7 @@ public class ReminderService {
                 Instant updatedAt
         ) {
             this(
-                    id, deviceId, content, scheduledAt, zoneId, status,
+                    id, deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID, content, scheduledAt, zoneId, status,
                     ReminderRecurrence.NONE, 1, ReminderSource.USER, null, null, null, null,
                     attemptCount, failureCode, createdAt, updatedAt
             );
@@ -272,7 +303,7 @@ public class ReminderService {
                 ReminderSource source, ReminderStatus lastOutcome, Instant lastCompletedAt,
                 int attemptCount, String failureCode, Instant createdAt, Instant updatedAt
         ) {
-            this(id, deviceId, content, scheduledAt, zoneId, status, recurrenceType,
+            this(id, deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID, content, scheduledAt, zoneId, status, recurrenceType,
                     recurrenceInterval, source, null, null, lastOutcome, lastCompletedAt,
                     attemptCount, failureCode, createdAt, updatedAt);
         }

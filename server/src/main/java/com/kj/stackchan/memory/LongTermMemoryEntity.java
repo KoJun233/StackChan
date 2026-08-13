@@ -17,6 +17,9 @@ public class LongTermMemoryEntity {
     @Id
     private UUID id;
 
+    @Column(name = "role_id", nullable = false)
+    private UUID roleId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "scope_type", nullable = false, length = 24)
     private MemoryScopeType scopeType;
@@ -80,6 +83,8 @@ public class LongTermMemoryEntity {
 
     protected LongTermMemoryEntity() {
     }
+
+    public void assignRole(UUID roleId) { this.roleId = roleId; }
 
     public LongTermMemoryEntity(
             MemoryScopeType scopeType,
@@ -206,6 +211,8 @@ public class LongTermMemoryEntity {
     public UUID getId() {
         return id;
     }
+
+    public UUID getRoleId() { return roleId; }
 
     public MemoryScopeType getScopeType() {
         return scopeType;

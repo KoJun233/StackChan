@@ -15,6 +15,8 @@ import java.util.UUID;
 import com.kj.stackchan.device.DeviceRepository;
 import com.kj.stackchan.reminder.ReminderRepository;
 import com.kj.stackchan.reminder.ReminderStatus;
+import com.kj.stackchan.role.CompanionRoleEntity;
+import com.kj.stackchan.role.CompanionRoleRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +33,7 @@ public class NotificationIntegrationService {
     private final ReminderRepository reminderRepository;
     private final NotificationRateLimiter rateLimiter;
     private final Clock clock;
+    private final CompanionRoleRepository roleRepository;
 
     public NotificationIntegrationService(
             NotificationIntegrationRepository integrationRepository,
@@ -38,7 +41,8 @@ public class NotificationIntegrationService {
             DeviceRepository deviceRepository,
             ReminderRepository reminderRepository,
             NotificationRateLimiter rateLimiter,
-            Clock clock
+            Clock clock,
+            CompanionRoleRepository roleRepository
     ) {
         this.integrationRepository = integrationRepository;
         this.tokenRepository = tokenRepository;
@@ -46,6 +50,7 @@ public class NotificationIntegrationService {
         this.reminderRepository = reminderRepository;
         this.rateLimiter = rateLimiter;
         this.clock = clock;
+        this.roleRepository = roleRepository;
     }
 
     @Transactional(readOnly = true)
@@ -62,7 +67,7 @@ public class NotificationIntegrationService {
     public IntegrationSnapshot create(IntegrationCommand command) {
         ValidatedIntegration validated = validate(command);
         return snapshot(integrationRepository.save(new NotificationIntegrationEntity(
-                validated.name(), validated.deviceId(), validated.enabled(), clock.instant()
+                validated.name(), validated.deviceId(), validated.roleId(), validated.enabled(), clock.instant()
         )));
     }
 
@@ -148,7 +153,9 @@ public class NotificationIntegrationService {
         if (name.isBlank() || name.length() > 120) {
             throw invalid("集成名称无效。");
         }
-        return new ValidatedIntegration(name, command.deviceId(), command.enabled());
+        UUID roleId = command.roleId() == null ? CompanionRoleEntity.DEFAULT_ROLE_ID : command.roleId();
+        if (!roleRepository.existsById(roleId)) throw invalid("目标角色无效。");
+        return new ValidatedIntegration(name, command.deviceId(), roleId, command.enabled());
     }
 
     private NotificationIntegrationEntity findIntegration(UUID id) {
@@ -162,7 +169,7 @@ public class NotificationIntegrationService {
                 .map(this::tokenSnapshot)
                 .toList();
         return new IntegrationSnapshot(
-                integration.getId(), integration.getName(), integration.getDeviceId(), integration.isEnabled(),
+                integration.getId(), integration.getName(), integration.getDeviceId(), integration.getRoleId(), integration.isEnabled(),
                 tokens, integration.getCreatedAt(), integration.getUpdatedAt()
         );
     }
@@ -196,19 +203,29 @@ public class NotificationIntegrationService {
         return new NotificationApiException(HttpStatus.NOT_FOUND, "notification_not_found", message);
     }
 
-    private record ValidatedIntegration(String name, UUID deviceId, boolean enabled) { }
+    private record ValidatedIntegration(String name, UUID deviceId, UUID roleId, boolean enabled) { }
 
-    public record IntegrationCommand(String name, UUID deviceId, boolean enabled) { }
+    public record IntegrationCommand(String name, UUID deviceId, UUID roleId, boolean enabled) {
+        public IntegrationCommand(String name, UUID deviceId, boolean enabled) {
+            this(name, deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID, enabled);
+        }
+    }
 
     public record IntegrationSnapshot(
             UUID id,
             String name,
             UUID deviceId,
+            UUID roleId,
             boolean enabled,
             List<TokenSnapshot> tokens,
             Instant createdAt,
             Instant updatedAt
-    ) { }
+    ) {
+        public IntegrationSnapshot(UUID id, String name, UUID deviceId, boolean enabled,
+                                   List<TokenSnapshot> tokens, Instant createdAt, Instant updatedAt) {
+            this(id, name, deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID, enabled, tokens, createdAt, updatedAt);
+        }
+    }
 
     public record TokenSnapshot(
             UUID id,

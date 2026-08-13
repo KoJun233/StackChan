@@ -80,14 +80,14 @@ public class AgentToolAssemblyService {
         }
 
         if (context.deviceId() != null && settingsService.isEnabled(AgentCapabilityType.BUILTIN_TOOL, NextReminderTool.ID)) {
-            ToolCallback callback = callback(new NextReminderTool(context.deviceId(), reminderService, objectMapper));
+            ToolCallback callback = callback(new NextReminderTool(context.deviceId(), context.roleId(), reminderService, objectMapper));
             directTools.add(callback);
             auditMetadata.put(callback.getToolDefinition().name(), new AgentToolPolicyInterceptor.ToolAuditMetadata(
                     AgentToolSource.BUILTIN, null, null));
         }
         if (context.deviceId() != null && settingsService.isEnabled(
                 AgentCapabilityType.BUILTIN_TOOL, PendingMemoryCountTool.ID)) {
-            ToolCallback callback = callback(new PendingMemoryCountTool(context.deviceId(), memoryService, objectMapper));
+            ToolCallback callback = callback(new PendingMemoryCountTool(context.deviceId(), context.roleId(), memoryService, objectMapper));
             directTools.add(callback);
             auditMetadata.put(callback.getToolDefinition().name(), new AgentToolPolicyInterceptor.ToolAuditMetadata(
                     AgentToolSource.BUILTIN, null, null));

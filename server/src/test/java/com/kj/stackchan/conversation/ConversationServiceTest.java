@@ -212,8 +212,8 @@ class ConversationServiceTest {
                 """, deviceId, "personal-data-device", "test", "书桌 StackChan", "motion_disabled", 0);
         ConversationSnapshot conversation = conversationService.createConversation();
         jdbcTemplate.update(
-                "insert into device_voice_conversations(device_id, conversation_id) values (?, ?)",
-                deviceId, conversation.id()
+                "insert into device_voice_conversations(device_id, role_id, conversation_id) values (?, ?, ?)",
+                deviceId, com.kj.stackchan.role.CompanionRoleEntity.DEFAULT_ROLE_ID, conversation.id()
         );
         GenerationStart generation = conversationService.startGeneration(
                 conversation.id(), UUID.randomUUID(), "跨年旅行安排"

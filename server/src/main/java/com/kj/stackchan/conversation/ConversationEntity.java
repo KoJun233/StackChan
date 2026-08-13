@@ -18,6 +18,9 @@ public class ConversationEntity {
     @Column(nullable = false)
     private String title;
 
+    @Column(name = "role_id", nullable = false)
+    private UUID roleId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -27,8 +30,9 @@ public class ConversationEntity {
     protected ConversationEntity() {
     }
 
-    public ConversationEntity(String title, Instant createdAt) {
+    public ConversationEntity(String title, UUID roleId, Instant createdAt) {
         this.title = title;
+        this.roleId = roleId;
         this.createdAt = createdAt;
         this.updatedAt = createdAt;
     }
@@ -40,6 +44,8 @@ public class ConversationEntity {
     public String getTitle() {
         return title;
     }
+
+    public UUID getRoleId() { return roleId; }
 
     public Instant getCreatedAt() {
         return createdAt;

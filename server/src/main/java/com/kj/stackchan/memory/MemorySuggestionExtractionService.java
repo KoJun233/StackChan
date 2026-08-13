@@ -66,7 +66,7 @@ public class MemorySuggestionExtractionService {
                 return;
             }
             MemoryScopeType scopeType = turn.deviceId() == null ? MemoryScopeType.GLOBAL : MemoryScopeType.DEVICE;
-            memoryService.suggest(new LongTermMemoryService.MemorySuggestionCommand(
+            LongTermMemoryService.MemorySuggestionCommand command = new LongTermMemoryService.MemorySuggestionCommand(
                     new LongTermMemoryService.MemoryCommand(
                             scopeType,
                             turn.deviceId(),
@@ -79,7 +79,12 @@ public class MemorySuggestionExtractionService {
                     ),
                     draft.reason(),
                     turn.sourceTurnId()
-            ));
+            );
+            if (com.kj.stackchan.role.CompanionRoleEntity.DEFAULT_ROLE_ID.equals(turn.roleId())) {
+                memoryService.suggest(command);
+            } else {
+                memoryService.suggest(turn.roleId(), command);
+            }
         } catch (RuntimeException exception) {
             logger.warn("Memory suggestion extraction failed for turn={}", turn.sourceTurnId());
         }
@@ -130,7 +135,11 @@ public class MemorySuggestionExtractionService {
         return value.substring(firstLineEnd + 1, value.length() - 3).trim();
     }
 
-    public record SuggestionTurn(UUID sourceTurnId, UUID deviceId, String userText, String assistantText) {
+    public record SuggestionTurn(UUID sourceTurnId, UUID deviceId, String userText, String assistantText, UUID roleId) {
+        public SuggestionTurn(UUID sourceTurnId, UUID deviceId, String userText, String assistantText) {
+            this(sourceTurnId, deviceId, userText, assistantText,
+                    com.kj.stackchan.role.CompanionRoleEntity.DEFAULT_ROLE_ID);
+        }
     }
 
     private record SuggestionDraft(

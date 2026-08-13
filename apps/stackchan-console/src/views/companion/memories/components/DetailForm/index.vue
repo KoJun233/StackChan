@@ -6,6 +6,7 @@ import { toTypedSchema } from '@vee-validate/zod'
 import * as z from 'zod'
 import { listDevices } from '@/api/modules/devices'
 import { createMemory, getMemory, updateMemory } from '@/api/modules/personaMemory'
+import { listRoles } from '@/api/modules/roles'
 
 export interface Props {
   id?: string
@@ -15,6 +16,7 @@ const props = withDefaults(defineProps<Props>(), { id: '' })
 const formRef = useTemplateRef<FormExpose>('formRef')
 const loading = ref(false)
 const devices = ref<Device[]>([])
+const roleOptions = ref<{ label: string, value: string }[]>([])
 const metadata = ref<{ confirmationStatus: string, sourceDetail: string } | null>(null)
 const model = ref<MemoryInput>({
   scopeType: 'GLOBAL',
@@ -25,6 +27,7 @@ const model = ref<MemoryInput>({
   topicKey: '',
   importance: 3,
   allowProactiveMention: false,
+  roleId: '',
 })
 
 const scopeOptions = [
@@ -83,6 +86,7 @@ async function loadMemory(id: string) {
       topicKey: memory.topicKey,
       importance: memory.importance,
       allowProactiveMention: memory.allowProactiveMention,
+      roleId: memory.roleId,
     }
     metadata.value = {
       confirmationStatus: memory.confirmationStatus,
@@ -112,6 +116,7 @@ async function resetForRoute(id: string) {
     topicKey: '',
     importance: 3,
     allowProactiveMention: false,
+    roleId: roleOptions.value[0]?.value ?? '',
   }
 }
 
@@ -150,6 +155,7 @@ async function submit(): Promise<boolean> {
 
 onMounted(async () => {
   await loadDevices()
+  roleOptions.value = (await listRoles()).filter(role => !role.archivedAt).map(role => ({ label: role.name, value: role.id }))
   await resetForRoute(props.id)
 })
 
@@ -180,6 +186,9 @@ defineExpose({ submit })
     >
       <FaFormItem name="scopeType" label="作用范围" required>
         <FaSelect v-model="model.scopeType" :options="scopeOptions" class="w-full" />
+      </FaFormItem>
+      <FaFormItem name="roleId" label="归属角色" required :description="props.id ? '记忆创建后不可改绑角色。' : undefined">
+        <FaSelect v-model="model.roleId" :options="roleOptions" :disabled="Boolean(props.id)" class="w-full" />
       </FaFormItem>
       <FaFormItem v-if="model.scopeType === 'DEVICE'" name="deviceId" label="目标设备" required>
         <FaSelect v-model="model.deviceId" :options="deviceOptions" class="w-full" />

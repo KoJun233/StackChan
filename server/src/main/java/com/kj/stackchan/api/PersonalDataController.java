@@ -44,12 +44,13 @@ public class PersonalDataController {
     public PersonalDataService.ConversationPage list(
             @RequestParam(defaultValue = "") String query,
             @RequestParam(required = false) UUID deviceId,
+            @RequestParam(required = false) UUID roleId,
             @RequestParam(required = false) Instant fromTime,
             @RequestParam(required = false) Instant toTime,
             @RequestParam(defaultValue = "0") int from,
             @RequestParam(defaultValue = "20") int limit
     ) {
-        return personalDataService.list(filter(query, deviceId, fromTime, toTime), from, limit);
+        return personalDataService.list(filter(query, deviceId, roleId, fromTime, toTime), from, limit);
     }
 
     @GetMapping("/conversations/{conversationId}/messages")
@@ -73,12 +74,13 @@ public class PersonalDataController {
     public ResponseEntity<byte[]> export(
             @RequestParam(defaultValue = "") String query,
             @RequestParam(required = false) UUID deviceId,
+            @RequestParam(required = false) UUID roleId,
             @RequestParam(required = false) Instant fromTime,
             @RequestParam(required = false) Instant toTime,
             @RequestParam(required = false) UUID conversationId
     ) throws JsonProcessingException {
         PersonalDataService.ConversationExport export = personalDataService.export(
-                filter(query, deviceId, fromTime, toTime), conversationId
+                filter(query, deviceId, roleId, fromTime, toTime), conversationId
         );
         byte[] body = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(export);
         String fileName = "stackchan-conversations-" + EXPORT_FILE_TIME.format(export.exportedAt()) + ".json";
@@ -94,9 +96,10 @@ public class PersonalDataController {
     private PersonalDataService.ConversationFilter filter(
             String query,
             UUID deviceId,
+            UUID roleId,
             Instant fromTime,
             Instant toTime
     ) {
-        return new PersonalDataService.ConversationFilter(query, deviceId, fromTime, toTime, null);
+        return new PersonalDataService.ConversationFilter(query, deviceId, roleId, fromTime, toTime, null);
     }
 }

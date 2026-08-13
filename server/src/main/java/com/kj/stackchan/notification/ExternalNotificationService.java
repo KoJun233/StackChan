@@ -91,7 +91,7 @@ public class ExternalNotificationService {
 
         Instant now = clock.instant();
         ReminderEntity reminder = new ReminderEntity(
-                integration.getDeviceId(), validated.content(), now, "UTC",
+                integration.getRoleId(), integration.getDeviceId(), validated.content(), now, "UTC",
                 ReminderRecurrence.NONE, 1, null, ReminderSource.EXTERNAL, now
         );
         reminder.assignExternalMetadata(
@@ -185,7 +185,7 @@ public class ExternalNotificationService {
 
     private AdminNotificationSnapshot adminSnapshot(ReminderEntity reminder) {
         return new AdminNotificationSnapshot(
-                reminder.getId(), reminder.getNotificationIntegrationId(), reminder.getDeviceId(),
+                reminder.getId(), reminder.getNotificationIntegrationId(), reminder.getDeviceId(), reminder.getRoleId(),
                 reminder.getContent(), reminder.getStatus(), reminder.getAttemptCount(), reminder.getFailureCode(),
                 reminder.getCreatedAt(), reminder.getUpdatedAt(), reminder.getExpiresAt(),
                 reminder.getStatus() == ReminderStatus.DELIVERED ? reminder.getLastCompletedAt() : null
@@ -221,6 +221,7 @@ public class ExternalNotificationService {
             UUID id,
             UUID integrationId,
             UUID deviceId,
+            UUID roleId,
             String content,
             ReminderStatus status,
             int attemptCount,

@@ -112,10 +112,11 @@ public class NotificationIntegrationController {
     public record IntegrationRequest(
             @NotBlank @Size(max = 120) String name,
             @NotNull UUID deviceId,
+            UUID roleId,
             boolean enabled
     ) {
         NotificationIntegrationService.IntegrationCommand toCommand() {
-            return new NotificationIntegrationService.IntegrationCommand(name, deviceId, enabled);
+            return new NotificationIntegrationService.IntegrationCommand(name, deviceId, roleId, enabled);
         }
     }
 

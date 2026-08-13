@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import com.kj.stackchan.role.CompanionRoleEntity;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,8 +26,12 @@ public class ProactiveTopicCooldownService {
 
     @Transactional(readOnly = true)
     public boolean isEligible(UUID deviceId, String topicKey, Instant now) {
+        return isEligible(deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID, topicKey, now);
+    }
+    @Transactional(readOnly = true)
+    public boolean isEligible(UUID deviceId, UUID roleId, String topicKey, Instant now) {
         String normalized = normalize(topicKey);
-        return repository.findById(new ProactiveTopicCooldownId(deviceId, normalized))
+        return repository.findById(new ProactiveTopicCooldownId(deviceId, roleId, normalized))
                 .map(cooldown -> !cooldown.isUserMuted() && !cooldown.getCooldownUntil().isAfter(now))
                 .orElse(true);
     }
@@ -35,8 +40,16 @@ public class ProactiveTopicCooldownService {
     public void recordMention(UUID deviceId, String topicKey, Instant now) {
         String normalized = normalize(topicKey);
         ProactiveTopicCooldownEntity entity = repository.findLocked(deviceId, normalized)
+                .orElseGet(() -> new ProactiveTopicCooldownEntity(deviceId, normalized, now, now.plus(TOPIC_COOLDOWN)));
+        entity.recordMention(now, now.plus(TOPIC_COOLDOWN));
+        repository.save(entity);
+    }
+    @Transactional
+    public void recordMention(UUID deviceId, UUID roleId, String topicKey, Instant now) {
+        String normalized = normalize(topicKey);
+        ProactiveTopicCooldownEntity entity = repository.findLocked(deviceId, roleId, normalized)
                 .orElseGet(() -> new ProactiveTopicCooldownEntity(
-                        deviceId, normalized, now, now.plus(TOPIC_COOLDOWN)
+                        deviceId, roleId, normalized, now, now.plus(TOPIC_COOLDOWN)
                 ));
         entity.recordMention(now, now.plus(TOPIC_COOLDOWN));
         repository.save(entity);
@@ -44,8 +57,12 @@ public class ProactiveTopicCooldownService {
 
     @Transactional
     public boolean muteLastTopic(UUID deviceId) {
+        return muteLastTopic(deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID);
+    }
+    @Transactional
+    public boolean muteLastTopic(UUID deviceId, UUID roleId) {
         ProactiveTopicCooldownEntity entity = repository
-                .findFirstByDeviceIdOrderByLastMentionedAtDescTopicKeyAsc(deviceId)
+                .findFirstByDeviceIdAndRoleIdOrderByLastMentionedAtDescTopicKeyAsc(deviceId, roleId)
                 .orElse(null);
         if (entity == null) return false;
         entity.mute(clock.instant());
@@ -63,7 +80,8 @@ public class ProactiveTopicCooldownService {
 
     @Transactional(readOnly = true)
     public List<TopicCooldownSnapshot> list(UUID deviceId) {
-        return repository.findAllByDeviceIdOrderByLastMentionedAtDescTopicKeyAsc(deviceId).stream()
+        return repository.findAllByDeviceIdAndRoleIdOrderByLastMentionedAtDescTopicKeyAsc(
+                        deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID).stream()
                 .map(this::snapshot)
                 .toList();
     }

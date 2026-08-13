@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import { listRoles } from '@/api/modules/roles'
 defineOptions({ name: 'CompanionChat' })
 
 const conversationStore = useConversationStore()
-const { activeConversationId, conversations, errorMessage, isLoading, isSending, lastFailedInput, messages } = storeToRefs(conversationStore)
+const { activeConversationId, activeRoleId, conversations, errorMessage, isLoading, isSending, lastFailedInput, messages } = storeToRefs(conversationStore)
 const draft = ref('')
+const roleOptions = ref<{ label: string, value: string }[]>([])
 
 async function send() {
   const content = draft.value
@@ -32,6 +34,9 @@ async function retry() {
 
 onMounted(async () => {
   try {
+    const roles = await listRoles()
+    roleOptions.value = roles.filter(role => !role.archivedAt).map(role => ({ label: role.name, value: role.id }))
+    if (!activeRoleId.value) activeRoleId.value = roles.find(role => role.defaultRole)?.id ?? roleOptions.value[0]?.value
     await conversationStore.loadConversations()
   }
   catch (error) {
@@ -44,6 +49,7 @@ onMounted(async () => {
   <FaPageMain title="陪伴聊天" description="你的对话会保存到服务器，便于之后建立长期记忆。">
     <div class="gap-4 grid min-h-[620px] lg:grid-cols-[260px_minmax(0,1fr)]">
       <FaCard class="min-h-0">
+        <FaSelect :model-value="activeRoleId" :options="roleOptions" class="mb-3 w-full" :disabled="isSending" @update:model-value="conversationStore.selectRole(String($event))" />
         <template #action>
           <FaButton size="sm" :disabled="isSending" @click="conversationStore.startNewConversation">新对话</FaButton>
         </template>

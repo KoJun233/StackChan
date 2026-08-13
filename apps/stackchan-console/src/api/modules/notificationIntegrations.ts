@@ -16,6 +16,7 @@ export interface NotificationIntegration {
   enabled: boolean
   id: string
   name: string
+  roleId: string
   tokens: NotificationTokenMetadata[]
   updatedAt: string
 }
@@ -24,6 +25,7 @@ export interface NotificationIntegrationInput {
   deviceId: string
   enabled: boolean
   name: string
+  roleId?: string
 }
 
 export interface IssuedNotificationToken {
@@ -41,6 +43,7 @@ export interface ExternalNotification {
   failureCode: string | null
   id: string
   integrationId: string
+  roleId: string
   status: ExternalNotificationStatus
   updatedAt: string
 }
