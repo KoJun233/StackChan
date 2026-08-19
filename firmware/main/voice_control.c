@@ -207,11 +207,13 @@ static void request_turn_cancellation(void)
     }
     taskEXIT_CRITICAL(&s_interaction_lock);
 
+    /* Stop local audio before cancelling the HTTP client: the streaming callback may be
+       blocked in playback, so cancelling the client first can defer this stop request. */
+    companion_hardware_request_playback_stop();
     if (report) {
         report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_CANCELLED);
     }
     (void)voice_service_cancel_active_turn();
-    companion_hardware_request_playback_stop();
 }
 
 void voice_control_cancel_active_turn(void)
@@ -242,6 +244,10 @@ static void voice_touch_task(void *argument)
             press_to_talk_started = false;
             long_press_evaluated = false;
             pressed_us = event.occurred_us;
+            if (touch_interaction_press_action(current_interaction_phase()) ==
+                TOUCH_INTERACTION_ACTION_CANCEL) {
+                request_turn_cancellation();
+            }
         } else if (received && event.type == COMPANION_TOUCH_RELEASED && pressed) {
             uint32_t held_ms = (uint32_t)((event.occurred_us - pressed_us) / 1000);
             taskENTER_CRITICAL(&s_interaction_lock);
@@ -352,6 +358,85 @@ static voice_detection_settings_t current_detection_settings(void)
     settings = s_detection_settings;
     taskEXIT_CRITICAL(&s_settings_lock);
     return settings;
+}
+
+typedef struct {
+    const char *turn_id;
+    int64_t started_us;
+    bool detect_end_phrase;
+    bool started;
+    bool completed;
+    bool playback_started;
+    bool playback_cancelled;
+    bool explicit_end;
+    uint32_t expected_sequence;
+    voice_stream_error_t error;
+    esp_err_t playback_error;
+    voice_turn_response_t response;
+} streaming_turn_context_t;
+
+static esp_err_t handle_streaming_turn_frame(uint8_t frame_type,
+                                             const uint8_t *payload,
+                                             size_t payload_size,
+                                             void *context_value)
+{
+    streaming_turn_context_t *context = context_value;
+    if (context == NULL || context->completed || context->error != VOICE_STREAM_ERROR_NONE) {
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    if (frame_type == VOICE_STREAM_FRAME_ERROR) {
+        return voice_protocol_parse_stream_error(payload, payload_size, &context->error)
+                   ? ESP_OK
+                   : ESP_ERR_INVALID_RESPONSE;
+    }
+    if (frame_type == VOICE_STREAM_FRAME_START) {
+        if (context->started || !voice_protocol_parse_stream_start(
+                                    payload, payload_size, &context->response)) {
+            return ESP_ERR_INVALID_RESPONSE;
+        }
+        context->started = true;
+        context->explicit_end = context->detect_end_phrase &&
+                                continuous_conversation_transcript_requests_end(
+                                    context->response.transcript);
+        return ESP_OK;
+    }
+    if (!context->started) return ESP_ERR_INVALID_RESPONSE;
+    if (frame_type == VOICE_STREAM_FRAME_AUDIO) {
+        const uint8_t *wav = NULL;
+        size_t wav_size = 0;
+        if (!voice_protocol_parse_stream_audio(
+                payload, payload_size, context->expected_sequence, &wav, &wav_size)) {
+            return ESP_ERR_INVALID_RESPONSE;
+        }
+        context->expected_sequence++;
+        if (context->expected_sequence > VOICE_PROTOCOL_STREAM_MAX_SEGMENTS) {
+            return ESP_ERR_INVALID_RESPONSE;
+        }
+        if (context->explicit_end) return ESP_OK;
+        if (cancellation_requested()) return ESP_ERR_NOT_FINISHED;
+        if (!context->playback_started) {
+            set_interaction_phase(TOUCH_INTERACTION_PLAYING);
+            companion_hardware_set_state(COMPANION_FACE_SPEAKING);
+            report_turn_stage(
+                context->turn_id, context->started_us, DEVICE_VOICE_STAGE_PLAYBACK_STARTED);
+            context->playback_started = true;
+        }
+        bool cancelled = false;
+        esp_err_t err = companion_hardware_play_wav_interruptible(wav, wav_size, &cancelled);
+        if (cancelled || cancellation_requested()) {
+            context->playback_cancelled = true;
+            return ESP_ERR_NOT_FINISHED;
+        }
+        if (err != ESP_OK) context->playback_error = err;
+        return err;
+    }
+    if (frame_type == VOICE_STREAM_FRAME_COMPLETE && context->expected_sequence > 0 &&
+        voice_protocol_parse_stream_complete(
+            payload, payload_size, context->expected_sequence)) {
+        context->completed = true;
+        return ESP_OK;
+    }
+    return ESP_ERR_INVALID_RESPONSE;
 }
 
 static esp_err_t capture_user_speech(int16_t *samples,
@@ -529,12 +614,57 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
     companion_hardware_set_state(COMPANION_FACE_PROCESSING);
     report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_UPLOAD_STARTED);
     voice_service_buffer_t response_buffer = {0};
-    err = voice_service_send_turn(&identity, turn_id, wav, wav_size, &response_buffer);
+    streaming_turn_context_t stream_context = {
+        .turn_id = turn_id,
+        .started_us = started_us,
+        .detect_end_phrase = detect_end_phrase,
+    };
+    bool streamed = false;
+    err = voice_service_send_turn_streaming(
+        &identity, turn_id, wav, wav_size, handle_streaming_turn_frame,
+        &stream_context, &response_buffer, &streamed);
     heap_caps_free(wav);
     memset(&identity, 0, sizeof(identity));
     if (cancellation_requested()) {
         voice_service_release(&response_buffer);
         return ESP_ERR_NOT_FINISHED;
+    }
+    if (streamed) {
+        voice_service_release(&response_buffer);
+        if (stream_context.playback_cancelled) return ESP_ERR_NOT_FINISHED;
+        if (stream_context.playback_error != ESP_OK) {
+            report_turn_failure(
+                turn_id,
+                started_us,
+                stream_context.playback_error == ESP_ERR_INVALID_STATE
+                    ? DEVICE_VOICE_FAILURE_MICROPHONE_RECOVERY_FAILED
+                    : DEVICE_VOICE_FAILURE_PLAYBACK_FAILED);
+            return stream_context.playback_error;
+        }
+        if (err != ESP_OK) {
+            report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_INVALID_RESPONSE);
+            return err;
+        }
+        if (stream_context.error != VOICE_STREAM_ERROR_NONE) {
+            if (stream_context.error == VOICE_STREAM_ERROR_CANCELLED) return ESP_ERR_NOT_FINISHED;
+            if (stream_context.error == VOICE_STREAM_ERROR_NO_SPEECH) {
+                *failure_face = COMPANION_FACE_NO_SPEECH;
+                report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_NO_SPEECH);
+                return ESP_ERR_NOT_FOUND;
+            }
+            report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_UPLOAD_FAILED);
+            return ESP_FAIL;
+        }
+        if (!stream_context.started || !stream_context.completed ||
+            stream_context.expected_sequence == 0) {
+            report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_INVALID_RESPONSE);
+            return ESP_ERR_INVALID_RESPONSE;
+        }
+        *explicit_end = stream_context.explicit_end;
+        if (stream_context.playback_started) {
+            report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_PLAYBACK_COMPLETED);
+        }
+        return ESP_OK;
     }
     if (err != ESP_OK) {
         report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_UPLOAD_FAILED);

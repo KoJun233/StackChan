@@ -48,6 +48,7 @@ public class VoiceTurnService {
     private final VoiceTurnCancellationService cancellationService;
     private final VoiceActionCoordinator voiceActionCoordinator;
     private final CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator;
+    private final VoiceReplySegmenter replySegmenter;
 
     @Autowired
     public VoiceTurnService(
@@ -60,7 +61,8 @@ public class VoiceTurnService {
             VoiceTurnDiagnosticsService diagnosticsService,
             VoiceTurnCancellationService cancellationService,
             VoiceActionCoordinator voiceActionCoordinator,
-            CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator
+            CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator,
+            VoiceReplySegmenter replySegmenter
     ) {
         this.speechRuntimeClient = speechRuntimeClient;
         this.deviceVoiceConversationService = deviceVoiceConversationService;
@@ -72,6 +74,7 @@ public class VoiceTurnService {
         this.cancellationService = cancellationService;
         this.voiceActionCoordinator = voiceActionCoordinator;
         this.completedTurnMemoryCoordinator = completedTurnMemoryCoordinator;
+        this.replySegmenter = replySegmenter;
     }
 
     public VoiceTurnService(
@@ -85,7 +88,25 @@ public class VoiceTurnService {
             VoiceTurnCancellationService cancellationService
     ) {
         this(speechRuntimeClient, deviceVoiceConversationService, conversationService, agentOrchestrator,
-                llmSettingsService, companionPromptService, diagnosticsService, cancellationService, null, null);
+                llmSettingsService, companionPromptService, diagnosticsService, cancellationService,
+                null, null, new VoiceReplySegmenter());
+    }
+
+    public VoiceTurnService(
+            SpeechRuntimeClient speechRuntimeClient,
+            DeviceVoiceConversationService deviceVoiceConversationService,
+            ConversationService conversationService,
+            AgentOrchestrator agentOrchestrator,
+            LlmSettingsService llmSettingsService,
+            CompanionPromptService companionPromptService,
+            VoiceTurnDiagnosticsService diagnosticsService,
+            VoiceTurnCancellationService cancellationService,
+            VoiceActionCoordinator voiceActionCoordinator,
+            CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator
+    ) {
+        this(speechRuntimeClient, deviceVoiceConversationService, conversationService, agentOrchestrator,
+                llmSettingsService, companionPromptService, diagnosticsService, cancellationService,
+                voiceActionCoordinator, completedTurnMemoryCoordinator, new VoiceReplySegmenter());
     }
 
     public VoiceTurnResult handle(UUID deviceId, byte[] wavAudio) {
@@ -93,6 +114,25 @@ public class VoiceTurnService {
     }
 
     public VoiceTurnResult handle(UUID deviceId, UUID turnId, byte[] wavAudio) {
+        return handle(deviceId, turnId, wavAudio, null);
+    }
+
+    public void handleStreaming(
+            UUID deviceId,
+            UUID turnId,
+            byte[] wavAudio,
+            VoiceTurnSegmentSink segmentSink
+    ) {
+        if (segmentSink == null) throw new IllegalArgumentException("Voice turn segment sink is required");
+        handle(deviceId, turnId, wavAudio, segmentSink);
+    }
+
+    private VoiceTurnResult handle(
+            UUID deviceId,
+            UUID turnId,
+            byte[] wavAudio,
+            VoiceTurnSegmentSink segmentSink
+    ) {
         try (VoiceTurnCancellationService.CancellationHandle cancellation =
                      cancellationService.register(deviceId, turnId)) {
             cancellation.throwIfCancelled();
@@ -102,6 +142,7 @@ public class VoiceTurnService {
             String reply = "";
             List<UUID> usedMemoryIds = List.of();
             boolean extractMemorySuggestion = false;
+            boolean generationCompleted = false;
             try {
                 String transcript = speechRuntimeClient.transcribe(wavAudio).trim();
                 cancellation.throwIfCancelled();
@@ -110,6 +151,10 @@ public class VoiceTurnService {
                 }
                 recordStage(deviceId, turnId, VoiceTurnStage.ASR_COMPLETED, null);
                 lastCompletedStage = VoiceTurnStage.ASR_COMPLETED;
+                if (segmentSink != null) {
+                    segmentSink.start(transcript);
+                    cancellation.throwIfCancelled();
+                }
 
                 UUID conversationId = deviceVoiceConversationService.getOrCreateConversationId(deviceId);
                 UUID roleId = conversationService.roleId(conversationId);
@@ -167,9 +212,25 @@ public class VoiceTurnService {
                 recordStage(deviceId, turnId, VoiceTurnStage.LLM_COMPLETED, null);
                 lastCompletedStage = VoiceTurnStage.LLM_COMPLETED;
                 cancellation.throwIfCancelled();
-                byte[] audio = speechRuntimeClient.synthesize(reply, roleId);
-                cancellation.throwIfCancelled();
+                byte[] audio = null;
+                int segmentCount = 0;
+                if (segmentSink == null) {
+                    audio = speechRuntimeClient.synthesize(reply, roleId);
+                    cancellation.throwIfCancelled();
+                } else {
+                    List<String> segments = replySegmenter.segment(reply);
+                    if (segments.isEmpty()) throw new LlmProviderUnavailableException();
+                    for (int index = 0; index < segments.size(); index++) {
+                        cancellation.throwIfCancelled();
+                        byte[] segmentAudio = speechRuntimeClient.synthesize(segments.get(index), roleId);
+                        cancellation.throwIfCancelled();
+                        segmentSink.audio(index, segmentAudio);
+                        segmentCount++;
+                        cancellation.throwIfCancelled();
+                    }
+                }
                 conversationService.completeGeneration(start.assistantMessageId(), reply);
+                generationCompleted = true;
                 if (completedTurnMemoryCoordinator != null && extractMemorySuggestion) {
                     if (roleId == null || CompanionRoleEntity.DEFAULT_ROLE_ID.equals(roleId)) {
                         completedTurnMemoryCoordinator.complete(turnId, turnId, deviceId, transcript, reply, usedMemoryIds, true);
@@ -177,16 +238,17 @@ public class VoiceTurnService {
                         completedTurnMemoryCoordinator.complete(turnId, turnId, deviceId, roleId, transcript, reply, usedMemoryIds, true);
                     }
                 }
+                if (segmentSink != null) segmentSink.complete(segmentCount);
                 recordStage(deviceId, turnId, VoiceTurnStage.TTS_COMPLETED, null);
                 return new VoiceTurnResult(transcript, reply, audio);
-            } catch (VoiceTurnCancelledException exception) {
-                if (start != null) {
+            } catch (VoiceTurnCancelledException | VoiceTurnClientDisconnectedException exception) {
+                if (start != null && !generationCompleted) {
                     conversationService.interruptGeneration(start.assistantMessageId(), reply);
                 }
                 recordStage(deviceId, turnId, VoiceTurnStage.CANCELLED, null);
                 throw exception;
             } catch (RuntimeException exception) {
-                if (start != null) {
+                if (start != null && !generationCompleted) {
                     conversationService.failGeneration(
                             start.assistantMessageId(),
                             exception instanceof LlmProviderUnavailableException ? "provider_unavailable" : "voice_turn_failed",

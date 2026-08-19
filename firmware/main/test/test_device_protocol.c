@@ -118,6 +118,26 @@ TEST_CASE("touch interaction separates short cancel taps from online press to ta
         TOUCH_INTERACTION_IDLE, 600, false, false));
     TEST_ASSERT_FALSE(touch_interaction_should_start_press_to_talk(
         TOUCH_INTERACTION_PROCESSING, 600, true, false));
+
+    TEST_ASSERT_EQUAL(
+        TOUCH_INTERACTION_ACTION_NONE,
+        touch_interaction_press_action(TOUCH_INTERACTION_IDLE));
+    TEST_ASSERT_EQUAL(
+        TOUCH_INTERACTION_ACTION_CANCEL,
+        touch_interaction_press_action(TOUCH_INTERACTION_LISTENING));
+    TEST_ASSERT_EQUAL(
+        TOUCH_INTERACTION_ACTION_CANCEL,
+        touch_interaction_press_action(TOUCH_INTERACTION_PROCESSING));
+    TEST_ASSERT_EQUAL(
+        TOUCH_INTERACTION_ACTION_CANCEL,
+        touch_interaction_press_action(TOUCH_INTERACTION_PLAYING));
+    TEST_ASSERT_EQUAL(
+        TOUCH_INTERACTION_ACTION_NONE,
+        touch_interaction_press_action(TOUCH_INTERACTION_FEEDBACK));
+    TEST_ASSERT_EQUAL(
+        TOUCH_INTERACTION_ACTION_NONE,
+        touch_interaction_press_action(TOUCH_INTERACTION_BUSY));
+
     TEST_ASSERT_EQUAL(
         TOUCH_INTERACTION_ACTION_CANCEL,
         touch_interaction_release_action(TOUCH_INTERACTION_LISTENING, 120));
@@ -1168,6 +1188,50 @@ TEST_CASE("SCV1 frame exposes strict metadata and validated WAV audio", "[voice_
     frame[0] = 'X';
     TEST_ASSERT_FALSE(voice_protocol_parse_turn_response(
         frame, 8 + metadata_size + wav_size, &response));
+}
+
+TEST_CASE("SCV2 frames require strict metadata and ordered validated WAV segments", "[voice_protocol]")
+{
+    voice_turn_response_t response = {0};
+    const char *start = "{\"transcript\":\"hello\"}";
+    TEST_ASSERT_TRUE(voice_protocol_parse_stream_start(
+        (const uint8_t *)start, strlen(start), &response));
+    TEST_ASSERT_EQUAL_STRING("hello", response.transcript);
+    const char *start_extra = "{\"transcript\":\"hello\",\"extra\":true}";
+    TEST_ASSERT_FALSE(voice_protocol_parse_stream_start(
+        (const uint8_t *)start_extra, strlen(start_extra), &response));
+
+    int16_t samples[] = {0, 100, -100, 0};
+    uint8_t wav[AUDIO_WAV_HEADER_SIZE + sizeof(samples)] = {0};
+    size_t wav_size = 0;
+    TEST_ASSERT_EQUAL(ESP_OK, audio_wav_build_pcm16_mono(
+                                  wav, sizeof(wav), samples, 4, 16000, &wav_size));
+    uint8_t audio_frame[sizeof(uint32_t) + sizeof(wav)] = {0};
+    audio_frame[3] = 0;
+    memcpy(audio_frame + sizeof(uint32_t), wav, wav_size);
+    const uint8_t *parsed_wav = NULL;
+    size_t parsed_wav_size = 0;
+    TEST_ASSERT_TRUE(voice_protocol_parse_stream_audio(
+        audio_frame, sizeof(uint32_t) + wav_size, 0, &parsed_wav, &parsed_wav_size));
+    TEST_ASSERT_EQUAL_PTR(audio_frame + sizeof(uint32_t), parsed_wav);
+    TEST_ASSERT_EQUAL_UINT(wav_size, parsed_wav_size);
+    TEST_ASSERT_FALSE(voice_protocol_parse_stream_audio(
+        audio_frame, sizeof(uint32_t) + wav_size, 1, &parsed_wav, &parsed_wav_size));
+
+    const char *complete = "{\"segmentCount\":1}";
+    TEST_ASSERT_TRUE(voice_protocol_parse_stream_complete(
+        (const uint8_t *)complete, strlen(complete), 1));
+    TEST_ASSERT_FALSE(voice_protocol_parse_stream_complete(
+        (const uint8_t *)complete, strlen(complete), 2));
+
+    voice_stream_error_t error = VOICE_STREAM_ERROR_NONE;
+    const char *failure = "{\"code\":\"speech_unavailable\"}";
+    TEST_ASSERT_TRUE(voice_protocol_parse_stream_error(
+        (const uint8_t *)failure, strlen(failure), &error));
+    TEST_ASSERT_EQUAL(VOICE_STREAM_ERROR_SPEECH_UNAVAILABLE, error);
+    const char *unknown = "{\"code\":\"provider_payload\"}";
+    TEST_ASSERT_FALSE(voice_protocol_parse_stream_error(
+        (const uint8_t *)unknown, strlen(unknown), &error));
 }
 
 TEST_CASE("WAV parsing rejects a RIFF size beyond the supplied buffer", "[audio_wav]")

@@ -1,14 +1,14 @@
 # 服务端工作流
 
 - 状态：READY_FOR_REVIEW
-- 最后更新：2026-08-13
-- 当前分支：`codex/evt-003-notification-digests`
-- 基准提交：`6ed3b5d`
-- 最后验证提交：`6ed3b5d`
+- 最后更新：2026-08-19
+- 当前分支：`codex/int-013-streaming-tts`
+- 基准提交：`13987b0`
+- 最后验证提交：`13987b0`
 
 ## 当前目标
 
-交付 `EVT-003` 确定性通知摘要：短时间密集单向通知可按集成聚合播报，同时保留逐条 ID、可靠 ACK、状态查询和互动回执边界。
+交付 `INT-013` 服务端语音流：保留 SCV1，按内容协商 SCV2，并把完整 LLM 回复确定性分段后逐段 TTS 和刷新，缩短等待全部 TTS 的首播延迟。
 
 ## 已完成
 
@@ -49,18 +49,18 @@
 
 ## 正在进行
 
-- Flyway V32 增加集成级 0 或 5–300 秒摘要窗口和内部投递组字段，已有集成默认关闭。
-- 同集成、同设备、同角色的单向通知按创建顺序最多 10 条、1,000 字固定编号拼接；不调用 LLM，互动通知始终逐条播报。
-- 摘要内部只让领导项进入真实 `DISPATCHED`，成员仍受组状态保护；REST/MCP 和管理页对成员一致显示 `DISPATCHED`。
-- ACK、取消、失败和五分钟超时恢复按整组推进；每条通知继续保留独立 ID、幂等、尝试次数、过期和终态。
+- 同一 `/api/v1/device/voice/turn` 根据 `Accept` 返回 SCV2 StreamingResponseBody 或兼容 SCV1；设备 Bearer、回合 ID 和 WAV 上传限制不变。
+- SCV2 严格发送 START、从 0 连续的 AUDIO 及 COMPLETE/ERROR，元数据和安全错误码有界；完整回复不重复下发到设备。
+- 服务端等待完整 LLM 回复后按自然标点和硬边界最多分为八段，逐段使用会话角色音色合成；每次合成和写出前后检查取消。
+- 客户端断开按取消处理，若完整会话回复已经持久化则不反向破坏其状态；异步响应超时为 90 秒。
 
 ## 下一步操作
 
-更新项目交接并整理单一中文任务提交；提交后复核静态检查，再等待部署授权。
+INT-013 server 已部署，配套固件 `29e8c36` 的分段播放、触摸取消和后续回合实机验收通过；等待任务分支人工审核与合并。
 
 ## 阻塞项
 
-- 当前无实现阻塞；用户要求暂缓连接器，不影响 EVT-003。
+- 当前无实现阻塞；用户要求暂缓连接器，不影响 INT-013。
 - 公网生产入口必须保持 HTTPS-only；不得复用管理员会话或设备 JWT 作为集成令牌。
 
 ## 关键文件
@@ -72,6 +72,10 @@
 - `server/src/main/resources/db/migration/`
 - `server/src/main/java/com/kj/stackchan/notification/`
 - `server/src/main/java/com/kj/stackchan/role/`
+- `server/src/main/java/com/kj/stackchan/speech/VoiceReplySegmenter.java`
+- `server/src/main/java/com/kj/stackchan/speech/VoiceTurnStreamEnvelope.java`
+- `server/src/main/java/com/kj/stackchan/speech/VoiceTurnService.java`
+- `server/src/main/java/com/kj/stackchan/api/DeviceVoiceController.java`
 - `server/src/main/resources/db/migration/V29__companion_role_containers.sql`
 - `server/src/main/resources/db/migration/V30__role_tts_voice_override.sql`
 - `server/src/main/resources/db/migration/V31__interactive_notification_responses.sql`
@@ -81,8 +85,8 @@
 
 ## 验证命令与最近结果
 
-- EVT-003 当前工作树基于 `6ed3b5d`；实现、交接与提交前静态检查已完成。
-- 当前工作树服务端 367/367 及空 PostgreSQL Flyway V1..V32 通过；摘要、可靠组 ACK、恢复、互动排除和配置兼容定向 28/28 通过。
+- INT-013 工作树基于 `13987b0`；SCV2 严格帧、确定性分段、服务编排、内容协商和取消定向测试通过。
+- 最终全量 Maven 377/377 通过，并由 Testcontainers 从空 PostgreSQL 成功应用 Flyway V1..V32；INT-013 不增加数据库迁移。
 - `& 'E:\maven-3.9.16\bin\mvn.cmd' -f server\pom.xml test`：351/351 通过。
 - Testcontainers 从空 PostgreSQL 成功应用 V1..V30。
 - 角色服务、音色运行时、语音回合和提醒投递定向 24/24 通过，覆盖角色音色生效、失败后单次全局回退和角色 ID 路由。
@@ -107,11 +111,12 @@
 - [0034：角色 TTS 音色覆盖](../decisions/0034-role-tts-voice-overrides.md)
 - [0035：互动通知回执](../decisions/0035-interactive-notification-responses.md)
 - [0036：确定性通知摘要](../decisions/0036-deterministic-notification-digests.md)
+- [0037：有序分段语音播放](../decisions/0037-ordered-streaming-voice-playback.md)
 - [Agent/Skill/Tool/MCP runbook](../../runbooks/agent-tools-mcp.md)
 
 ## 安全与兼容性约束
 
 - 不记录通知令牌、API Key、JWT、音频、转写、回复正文、Tool 参数/结果或完整供应商响应。
 - 新外部权限只能创建和查询自身通知，不能访问管理员、设备、聊天或提醒管理 API。
-- 现有提醒、旧固件、Agent MCP Client 和管理员 CSRF 行为必须兼容。
-- 后续部署、外部推送或凭据变更仍需明确授权；当前 EVT-003 尚未部署或推送。
+- 现有提醒、旧固件、Agent MCP Client 和管理员 CSRF 行为必须兼容；SCV1 不得移除。
+- INT-013 server 已部署到 LAN；外部推送、固件刷写或凭据变更仍需分别明确授权。

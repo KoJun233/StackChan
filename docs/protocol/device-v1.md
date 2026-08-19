@@ -75,6 +75,25 @@ The body must be between 44 bytes and 512 KiB. The server authenticates the devi
 
 Error responses use safe JSON and do not include provider responses, provider keys, device credentials, or authorization payloads.
 
+New firmware prefers ordered streaming while retaining the same URL, authentication, turn ID and upload limits:
+
+```http
+Accept: application/vnd.stackchan.voice-turn-stream, application/vnd.stackchan.voice-turn;q=0.5
+```
+
+If the server selects `application/vnd.stackchan.voice-turn-stream`, the response starts with ASCII `SCV2`, followed by frames. Every frame has a one-byte type, an unsigned 32-bit big-endian payload length, then the payload:
+
+| Type | Name | Strict payload |
+| --- | --- | --- |
+| `1` | START | UTF-8 JSON object with exactly `transcript` |
+| `2` | AUDIO | unsigned 32-bit big-endian sequence followed by one validated PCM WAV |
+| `3` | COMPLETE | UTF-8 JSON object with exactly `segmentCount` |
+| `4` | ERROR | UTF-8 JSON object with exactly allowlisted `code` |
+
+A successful stream is exactly START, one through eight AUDIO frames numbered continuously from zero, then COMPLETE whose count matches the audio frames. ERROR is terminal and may use only `no_speech`, `cancelled`, `llm_unavailable`, `speech_unavailable`, or `internal_error`. Metadata is at most 8 KiB and each WAV is at most 2 MiB. The device rejects unknown, duplicate, missing, out-of-order, oversized or post-terminal frames. It begins playback only after validating a complete WAV frame and never carries a frame into another turn.
+
+The server waits for the complete assistant reply, splits the unchanged text deterministically, and synthesizes and flushes each segment in order. SCV2 removes the wait for all TTS segments but does not promise token-level LLM/TTS pipelining. On cancellation, the device stops playback and aborts the active HTTP request; the server checks cancellation before and after each synthesis and write so a late result cannot play. A server that does not support SCV2 may select SCV1 from the same `Accept` header, and old firmware continues to request SCV1 directly.
+
 Diagnostic persistence is separate from conversation content. It stores only device and turn IDs, strict stages, stage source, server receive time, bounded device elapsed time, status, and allowlisted failure codes for seven days. It never stores the uploaded WAV, transcript, reply, provider response, API key, JWT, or refresh token.
 
 ## Local interaction presentation

@@ -1,15 +1,15 @@
 # 部署工作流
 
 - 状态：STABLE
-- 最后更新：2026-08-13
-- 当前分支：`codex/evt-003-notification-digests`
-- 基准提交：`6ed3b5d`
-- 最后验证提交：`6ed3b5d`
+- 最后更新：2026-08-19
+- 当前分支：`codex/int-013-streaming-tts`
+- 基准提交：`13987b0`
+- 最后验证提交：`29e8c36`
 - 当前模式：LAN HTTP development
 
 ## 当前目标
 
-保持 ROLE-002 LAN 运行态；EVT-003 未获本轮授权前不替换容器。
+维持已部署的 INT-013 LAN server/V32 和已通过实机验收的 CoreS3 `29e8c36` 运行态。
 
 ## 已完成
 
@@ -22,16 +22,16 @@
 
 ## 正在进行
 
-当前运行态为 ROLE-002 `b6cad0b` server/V30 与 CoreS3 `7e7c55f / motion_disabled / OTA=true`。EVT-002/EVT-003 分别包含 V31/V32，均未发布到当前 LAN。
+当前运行态为 INT-013 `a04ae0b` server/V32 与 CoreS3 `29e8c36 / motion_disabled / OTA=true`。设备使用 SCV2，分段顺序、播放中触摸停止、晚到分段丢弃和后续回合均通过实机验收。
 
 ## 下一步操作
 
-如用户授权部署 EVT-003，先做新备份与隔离恢复，再只替换 server，并验证 V31/V32、摘要页面、REST/MCP 和未认证边界。
+保持当前 LAN 运行态，等待任务分支人工审核与合并；不再替换容器或更新设备。
 
 ## 阻塞项
 
 - 当前没有运行环境阻塞。
-- EVT-003 无运行环境阻塞，但部署尚未授权。凭据轮换和 OTA 回退仍需各自显式授权。
+- INT-013 server 与固件运行态无阻塞。凭据轮换仍需显式授权，本轮按用户要求未做 OTA 回退演练。
 
 ## 关键文件
 
@@ -44,6 +44,12 @@
 
 ## 验证命令与最近结果
 
+- 2026-08-19 INT-013 发布前新备份及最新备份隔离恢复成功；正式数据库未被覆盖。
+- 旧 server 镜像保留为 `pre-int013-a04ae0b`，新镜像保留为 `int013-a04ae0b`；只重建 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器和卷保持不变。
+- 运行库成功从 V30 迁移到 V32，共 32 条迁移成功；`/api/v1/health` 和首页为 200，SCV1/SCV2 未认证语音入口均为 401，启动日志无错误。
+- 本次未连接或刷写 CoreS3；现有固件继续通过 SCV1 与新 server 兼容。
+- 用户随后以应用 OTA 将 CoreS3 从 `7e7c55f` 更新到 `bd818f0`；任务为 `INSTALLED`，设备连续心跳、NVS 设备身份、OTA 能力和 `motion_disabled` 保留。
+- SCV2 分段顺序和后续回合在 `bd818f0` 已正常；`29e8c36` 修复镜像随后从 `bd818f0` 应用 OTA 安装，任务为 `INSTALLED`、无失败码，用户确认播放中触摸停止和后续回合正常。
 - 2026-08-13 ROLE-002 发布前新备份及最新备份隔离恢复验证成功；未覆盖正式数据库。
 - `stackchan-foundation-server-1` 已替换为 ROLE-002 `b6cad0b` server/V30；旧 ROLE-001 镜像保留为 `pre-role002-b6cad0b`，新镜像保留为 `role002-b6cad0b`。
 - 运行库成功从 V29 迁移到 V30；`/api/v1/health` 和首页为 200，未认证角色/设备 API 为 401，前端资源包含角色音色配置，启动日志无错误。
@@ -75,4 +81,4 @@
 
 - 不组合 LAN 与 production Compose，不允许公网明文 HTTP/WS。
 - 不把管理员密码、通知令牌、API Key、JWT、Wi-Fi 凭据或加密主密钥写入仓库、镜像或日志。
-- 后续再次替换容器、修改卷/端口、轮换凭据或推送分支仍需明确授权；既有部署授权不自动延伸到 EVT-003。
+- 后续再次替换容器、修改卷/端口、轮换凭据、刷写固件或推送分支仍需明确授权；既有部署授权不自动延伸到 INT-013。
