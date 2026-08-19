@@ -9,6 +9,15 @@ bool touch_interaction_should_start_press_to_talk(touch_interaction_phase_t phas
            held_ms >= TOUCH_INTERACTION_LONG_PRESS_MS;
 }
 
+touch_interaction_action_t touch_interaction_press_action(touch_interaction_phase_t phase)
+{
+    if (phase == TOUCH_INTERACTION_LISTENING || phase == TOUCH_INTERACTION_PROCESSING ||
+        phase == TOUCH_INTERACTION_PLAYING) {
+        return TOUCH_INTERACTION_ACTION_CANCEL;
+    }
+    return TOUCH_INTERACTION_ACTION_NONE;
+}
+
 touch_interaction_action_t touch_interaction_release_action(touch_interaction_phase_t phase,
                                                             uint32_t held_ms)
 {

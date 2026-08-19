@@ -10,6 +10,7 @@ const device = {
   displayName: 'Studio StackChan',
   firmwareVersion: '1.4.2',
   safetyState: 'motion_enabled',
+  lastSeenAt: null,
   online: true,
 }
 

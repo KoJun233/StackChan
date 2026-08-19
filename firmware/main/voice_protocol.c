@@ -69,3 +69,96 @@ bool voice_protocol_parse_turn_response(const uint8_t *payload,
     }
     return true;
 }
+
+static cJSON *parse_strict_object(const uint8_t *payload, size_t payload_size, size_t field_count)
+{
+    if (payload == NULL || payload_size == 0 || payload_size > VOICE_PROTOCOL_METADATA_MAX_LEN ||
+        strict_json_contains_decoded_nul_escape((const char *)payload, payload_size)) {
+        return NULL;
+    }
+    const char *parse_end = NULL;
+    cJSON *root = cJSON_ParseWithLengthOpts((const char *)payload, payload_size, &parse_end, false);
+    if (root == NULL || !cJSON_IsObject(root) || cJSON_GetArraySize(root) != field_count ||
+        !strict_json_has_only_trailing_whitespace((const char *)payload, payload_size, parse_end)) {
+        cJSON_Delete(root);
+        return NULL;
+    }
+    return root;
+}
+
+bool voice_protocol_parse_stream_start(const uint8_t *payload,
+                                       size_t payload_size,
+                                       voice_turn_response_t *response)
+{
+    if (response == NULL) return false;
+    memset(response, 0, sizeof(*response));
+    cJSON *root = parse_strict_object(payload, payload_size, 1);
+    bool valid = root != NULL && copy_bounded_json_string(
+        root, "transcript", response->transcript, sizeof(response->transcript));
+    cJSON_Delete(root);
+    if (!valid) memset(response, 0, sizeof(*response));
+    return valid;
+}
+
+bool voice_protocol_parse_stream_audio(const uint8_t *payload,
+                                       size_t payload_size,
+                                       uint32_t expected_sequence,
+                                       const uint8_t **wav,
+                                       size_t *wav_size)
+{
+    if (payload == NULL || wav == NULL || wav_size == NULL ||
+        payload_size < sizeof(uint32_t) + AUDIO_WAV_HEADER_SIZE ||
+        payload_size > sizeof(uint32_t) + VOICE_PROTOCOL_STREAM_MAX_AUDIO_LEN ||
+        read_be32(payload) != expected_sequence) {
+        return false;
+    }
+    const uint8_t *audio = payload + sizeof(uint32_t);
+    size_t audio_size = payload_size - sizeof(uint32_t);
+    audio_wav_view_t view = {0};
+    if (!audio_wav_parse(audio, audio_size, &view)) return false;
+    *wav = audio;
+    *wav_size = audio_size;
+    return true;
+}
+
+bool voice_protocol_parse_stream_complete(const uint8_t *payload,
+                                          size_t payload_size,
+                                          uint32_t expected_segment_count)
+{
+    if (expected_segment_count == 0 || expected_segment_count > VOICE_PROTOCOL_STREAM_MAX_SEGMENTS) {
+        return false;
+    }
+    cJSON *root = parse_strict_object(payload, payload_size, 1);
+    cJSON *count = root == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(root, "segmentCount");
+    bool valid = root != NULL && cJSON_IsNumber(count) && count->valuedouble == count->valueint &&
+                 count->valueint == (int)expected_segment_count;
+    cJSON_Delete(root);
+    return valid;
+}
+
+bool voice_protocol_parse_stream_error(const uint8_t *payload,
+                                       size_t payload_size,
+                                       voice_stream_error_t *error)
+{
+    if (error == NULL) return false;
+    *error = VOICE_STREAM_ERROR_NONE;
+    cJSON *root = parse_strict_object(payload, payload_size, 1);
+    cJSON *code = root == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(root, "code");
+    if (!cJSON_IsString(code) || code->valuestring == NULL) {
+        cJSON_Delete(root);
+        return false;
+    }
+    if (strcmp(code->valuestring, "no_speech") == 0) {
+        *error = VOICE_STREAM_ERROR_NO_SPEECH;
+    } else if (strcmp(code->valuestring, "cancelled") == 0) {
+        *error = VOICE_STREAM_ERROR_CANCELLED;
+    } else if (strcmp(code->valuestring, "llm_unavailable") == 0) {
+        *error = VOICE_STREAM_ERROR_LLM_UNAVAILABLE;
+    } else if (strcmp(code->valuestring, "speech_unavailable") == 0) {
+        *error = VOICE_STREAM_ERROR_SPEECH_UNAVAILABLE;
+    } else if (strcmp(code->valuestring, "internal_error") == 0) {
+        *error = VOICE_STREAM_ERROR_INTERNAL;
+    }
+    cJSON_Delete(root);
+    return *error != VOICE_STREAM_ERROR_NONE;
+}

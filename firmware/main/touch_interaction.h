@@ -25,5 +25,8 @@ bool touch_interaction_should_start_press_to_talk(touch_interaction_phase_t phas
                                                   bool online,
                                                   bool already_started);
 
+/** Returns the immediate action for a touch press in the current interaction phase. */
+touch_interaction_action_t touch_interaction_press_action(touch_interaction_phase_t phase);
+
 touch_interaction_action_t touch_interaction_release_action(touch_interaction_phase_t phase,
                                                             uint32_t held_ms);
