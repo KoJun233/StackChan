@@ -36,6 +36,28 @@ public class DeviceEntity {
     @Column(name = "application_ota_supported", nullable = false)
     private boolean applicationOtaSupported;
 
+    @Column(name = "dynamic_expression_supported", nullable = false)
+    private boolean dynamicExpressionSupported;
+    @Column(name = "expression_fps_mode", nullable = false, length = 16)
+    private String expressionFpsMode = "ADAPTIVE";
+    @Column(name = "expression_min_fps", nullable = false)
+    private int expressionMinFps = 30;
+    @Column(name = "expression_max_fps", nullable = false)
+    private int expressionMaxFps = 60;
+    @Column(name = "expression_target_fps") private Integer expressionTargetFps;
+    @Column(name = "expression_actual_fps") private Integer expressionActualFps;
+    @Column(name = "expression_draw_time_us") private Integer expressionDrawTimeUs;
+    @Column(name = "expression_transfer_time_us") private Integer expressionTransferTimeUs;
+    @Column(name = "expression_display_lock_wait_us") private Integer expressionDisplayLockWaitUs;
+    @Column(name = "expression_dropped_frames") private Long expressionDroppedFrames;
+    @Column(name = "expression_audio_underruns") private Long expressionAudioUnderruns;
+    @Column(name = "expression_minimum_free_heap") private Long expressionMinimumFreeHeap;
+    @Column(name = "expression_active_layer", length = 16) private String expressionActiveLayer;
+    @Column(name = "expression_degrade_reason", length = 32) private String expressionDegradeReason;
+    @Column(name = "expression_dynamic_renderer", nullable = false) private boolean expressionDynamicRenderer;
+    @Column(name = "expression_imu_supported", nullable = false) private boolean expressionImuSupported;
+    @Column(name = "expression_proximity_supported", nullable = false) private boolean expressionProximitySupported;
+
     @Column(name = "refresh_token_hash")
     private String refreshTokenHash;
 
@@ -84,6 +106,23 @@ public class DeviceEntity {
     public boolean isApplicationOtaSupported() {
         return applicationOtaSupported;
     }
+    public boolean isDynamicExpressionSupported() { return dynamicExpressionSupported; }
+    public String getExpressionFpsMode() { return expressionFpsMode; }
+    public int getExpressionMinFps() { return expressionMinFps; }
+    public int getExpressionMaxFps() { return expressionMaxFps; }
+    public void configureExpressionFrameRate(String mode, int minFps, int maxFps) {
+        this.expressionFpsMode = mode;
+        this.expressionMinFps = minFps;
+        this.expressionMaxFps = maxFps;
+    }
+    public DeviceExpressionDiagnostics getExpressionDiagnostics() {
+        if (!dynamicExpressionSupported || expressionTargetFps == null) return null;
+        return new DeviceExpressionDiagnostics(
+                expressionTargetFps, expressionActualFps, expressionDrawTimeUs, expressionTransferTimeUs,
+                expressionDisplayLockWaitUs, expressionDroppedFrames, expressionAudioUnderruns,
+                expressionMinimumFreeHeap, expressionActiveLayer, expressionDegradeReason,
+                expressionDynamicRenderer, expressionImuSupported, expressionProximitySupported);
+    }
 
     public String getRefreshTokenHash() {
         return refreshTokenHash;
@@ -101,6 +140,7 @@ public class DeviceEntity {
         this.firmwareVersion = firmwareVersion;
         this.safetyState = "motion_disabled";
         this.applicationOtaSupported = false;
+        this.dynamicExpressionSupported = false;
     }
 
     void rotateCredentials(String refreshTokenHash, Instant issuedAt) {
@@ -116,10 +156,32 @@ public class DeviceEntity {
             Integer rssi,
             boolean applicationOtaSupported
     ) {
+        recordHeartbeat(lastSeenAt, safetyState, firmwareVersion, rssi, applicationOtaSupported, null);
+    }
+
+    void recordHeartbeat(Instant lastSeenAt, String safetyState, String firmwareVersion,
+                         Integer rssi, boolean applicationOtaSupported,
+                         DeviceExpressionDiagnostics expression) {
         this.lastSeenAt = lastSeenAt;
         this.safetyState = safetyState;
         this.rssi = rssi;
         this.applicationOtaSupported = applicationOtaSupported;
+        this.dynamicExpressionSupported = expression != null;
+        if (expression != null) {
+            this.expressionTargetFps = expression.targetFps();
+            this.expressionActualFps = expression.actualFps();
+            this.expressionDrawTimeUs = expression.drawTimeUs();
+            this.expressionTransferTimeUs = expression.transferTimeUs();
+            this.expressionDisplayLockWaitUs = expression.displayLockWaitUs();
+            this.expressionDroppedFrames = expression.droppedFrames();
+            this.expressionAudioUnderruns = expression.audioUnderruns();
+            this.expressionMinimumFreeHeap = expression.minimumFreeHeap();
+            this.expressionActiveLayer = expression.activeLayer();
+            this.expressionDegradeReason = expression.degradeReason();
+            this.expressionDynamicRenderer = expression.dynamicRenderer();
+            this.expressionImuSupported = expression.imuSupported();
+            this.expressionProximitySupported = expression.proximitySupported();
+        }
         if (firmwareVersion != null) {
             this.firmwareVersion = firmwareVersion;
         }

@@ -1,4 +1,5 @@
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -20,6 +21,14 @@
 
 static const char *TAG = "stackchan";
 
+static void log_startup_headroom(const char *stage)
+{
+    ESP_LOGI(TAG, "Startup headroom after %s: main_stack_free=%u internal_heap_free=%u",
+             stage,
+             (unsigned)uxTaskGetStackHighWaterMark(NULL),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+}
+
 #if CONFIG_STACKCHAN_PROTOCOL_TESTS
 static void protocol_test_task(void *argument)
 {
@@ -40,6 +49,8 @@ void app_main(void)
     esp_err_t hardware_err = companion_hardware_init();
     if (hardware_err != ESP_OK) {
         ESP_LOGE(TAG, "CoreS3 hardware did not initialize: %s", esp_err_to_name(hardware_err));
+    } else {
+        log_startup_headroom("hardware");
     }
     esp_err_t nvs_err = device_identity_init_encrypted_nvs();
 #if CONFIG_STACKCHAN_LAN_HTTP_MODE
@@ -79,6 +90,7 @@ void app_main(void)
             ESP_LOGE(TAG, "Voice control task did not start: %s", esp_err_to_name(voice_err));
         }
     }
+    log_startup_headroom("voice");
     esp_err_t transport_err = device_transport_start();
     if (transport_err != ESP_OK) {
         ESP_LOGE(TAG, "Transport task did not start: %s", esp_err_to_name(transport_err));

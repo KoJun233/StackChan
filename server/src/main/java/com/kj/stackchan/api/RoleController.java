@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.Pattern;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -46,10 +47,11 @@ public class RoleController {
                               @NotNull PersonaReplyLength replyLength, @NotNull PersonaProactivity proactivity,
                               @Size(max = 4000) String backgroundInstructions,
                               @Size(max = 2000) String topicBoundaries, @Size(max = 2000) String taboos,
-                              @Size(max = 160) String ttsVoiceOverride) {
+                              @Size(max = 160) String ttsVoiceOverride,
+                              @Pattern(regexp = "^#[0-9A-Fa-f]{6}$") String expressionThemeColor) {
         CompanionRoleService.RoleCommand toCommand() {
             return new CompanionRoleService.RoleCommand(name, tone, replyLength, proactivity,
-                    backgroundInstructions, topicBoundaries, taboos, ttsVoiceOverride);
+                    backgroundInstructions, topicBoundaries, taboos, ttsVoiceOverride, expressionThemeColor);
         }
     }
 }

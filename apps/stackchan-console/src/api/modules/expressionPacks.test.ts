@@ -6,7 +6,10 @@ import {
   deleteExpressionPack,
   expressionStates,
   getDeviceExpressionPack,
+  getExpressionFrameRate,
   listExpressionPacks,
+  previewExpression,
+  updateExpressionFrameRate,
 } from './expressionPacks'
 
 describe('expression resource pack API', () => {
@@ -56,5 +59,31 @@ describe('expression resource pack API', () => {
       body: JSON.stringify({ deviceId: 'device/id' }),
     }))
     expect(fetchMock).toHaveBeenNthCalledWith(5, '/api/v1/expression-packs/pack%2Fid', expect.objectContaining({ method: 'DELETE' }))
+  })
+
+  it('persists frame-rate policy and sends bounded semantic previews', async () => {
+    const settings = { mode: 'ADAPTIVE', minFps: 24, maxFps: 57, applied: true } as const
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(settings), { headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(settings), { headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ accepted: true }), { status: 202, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(getExpressionFrameRate('device/id')).resolves.toEqual(settings)
+    await expect(updateExpressionFrameRate('device/id', {
+      mode: 'ADAPTIVE', minFps: 24, maxFps: 57,
+    })).resolves.toEqual(settings)
+    await expect(previewExpression('device/id', {
+      category: 'EMOTION', value: 'HAPPY', durationSeconds: 5,
+    })).resolves.toBeUndefined()
+
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/devices/device%2Fid/expression/frame-rate', expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ mode: 'ADAPTIVE', minFps: 24, maxFps: 57 }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/v1/devices/device%2Fid/expression/preview', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ category: 'EMOTION', value: 'HAPPY', durationSeconds: 5 }),
+    }))
   })
 })

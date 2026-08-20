@@ -7,6 +7,7 @@
 #include "esp_check.h"
 #include "esp_app_desc.h"
 #include "esp_event.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_system.h"
@@ -32,6 +33,7 @@
 #include "wake_model_ota.h"
 
 #define WIFI_CONNECTED_BIT BIT0
+#define WIFI_MONITOR_READY_BIT BIT1
 #define TRANSPORT_TASK_STACK_SIZE 32768
 #define TRANSPORT_TASK_PRIORITY 5
 #define WEBSOCKET_TASK_STACK_SIZE 8192
@@ -92,6 +94,7 @@ typedef struct {
 static const char *TAG = "device_transport";
 static EventGroupHandle_t s_transport_events;
 static QueueHandle_t s_voice_turn_event_queue;
+static TaskHandle_t s_transport_task_handle;
 static esp_netif_t *s_wifi_sta_netif;
 static bool s_netif_initialized_by_transport;
 static bool s_event_loop_created_by_transport;
@@ -404,6 +407,35 @@ static void websocket_event_handler(void *handler_args,
                          accepted ? DEVICE_COMMAND_RESULT_NONE : DEVICE_COMMAND_RESULT_FAILED);
         return;
     }
+    if (command.type == DEVICE_COMMAND_CONFIGURE_EXPRESSION) {
+        bool accepted = companion_hardware_configure_expression(
+                            command.expression_theme_rgb,
+                            command.expression_emotion,
+                            command.expression_intensity,
+                            (uint32_t)command.expression_duration_seconds * 1000U) == ESP_OK;
+        send_command_ack(connection, command.command_id, accepted,
+                         accepted ? DEVICE_COMMAND_RESULT_NONE : DEVICE_COMMAND_RESULT_FAILED);
+        return;
+    }
+    if (command.type == DEVICE_COMMAND_CONFIGURE_EXPRESSION_FRAME_RATE) {
+        companion_expression_fps_mode_t mode =
+            command.expression_fps_mode == DEVICE_EXPRESSION_FPS_FIXED
+                ? COMPANION_EXPRESSION_FPS_FIXED : COMPANION_EXPRESSION_FPS_ADAPTIVE;
+        bool accepted = companion_hardware_configure_expression_frame_rate(
+                            mode, (uint8_t)command.expression_min_fps,
+                            (uint8_t)command.expression_max_fps) == ESP_OK;
+        send_command_ack(connection, command.command_id, accepted,
+                         accepted ? DEVICE_COMMAND_RESULT_NONE : DEVICE_COMMAND_RESULT_FAILED);
+        return;
+    }
+    if (command.type == DEVICE_COMMAND_PREVIEW_EXPRESSION) {
+        bool accepted = companion_hardware_preview_expression(
+                            command.expression_preview, command.expression_preview_value,
+                            (uint32_t)command.expression_duration_seconds * 1000U) == ESP_OK;
+        send_command_ack(connection, command.command_id, accepted,
+                         accepted ? DEVICE_COMMAND_RESULT_NONE : DEVICE_COMMAND_RESULT_FAILED);
+        return;
+    }
     if (command.type == DEVICE_COMMAND_INSTALL_WAKE_MODEL) {
         wake_model_command_t install = {0};
         memcpy(install.command_id, command.command_id, sizeof(install.command_id));
@@ -661,11 +693,19 @@ static bool run_websocket_connection(const device_identity_t *identity)
             char heartbeat[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
             uint32_t sequence = connection_next_sequence(&connection);
             const esp_app_desc_t *app_description = esp_app_get_description();
+            companion_expression_diagnostics_t expression = {0};
+            companion_hardware_get_expression_diagnostics(&expression);
             if (sequence == 0 ||
                 app_description == NULL ||
-                device_protocol_encode_heartbeat_with_ota(
+                device_protocol_encode_heartbeat_with_expression(
                     heartbeat, sizeof(heartbeat), sequence, 0, transport_rssi(),
-                    app_description->version) != ESP_OK ||
+                    app_description->version, expression.target_fps, expression.actual_fps,
+                    expression.draw_time_us, expression.transfer_time_us,
+                    expression.display_lock_wait_us, expression.dropped_frames,
+                    expression.audio_underruns, expression.minimum_free_heap,
+                    companion_expression_layer_name(expression.active_layer),
+                    expression.degrade_reason, expression.dynamic_renderer,
+                    expression.imu_supported) != ESP_OK ||
                 !connection_send_text(&connection, heartbeat)) {
                 connection.failed = true;
                 safety_state_stop_motion();
@@ -716,7 +756,9 @@ static bool run_websocket_connection(const device_identity_t *identity)
         firmware_command_t firmware_install = {0};
         if (connection.connected &&
             xQueueReceive(connection.firmware_queue, &firmware_install, 0) == pdTRUE) {
+            companion_hardware_set_expression_updating(true);
             bool accepted = firmware_ota_install(identity, &firmware_install.request) == ESP_OK;
+            if (!accepted) companion_hardware_set_expression_updating(false);
             send_command_ack(&connection, firmware_install.command_id, accepted,
                              accepted ? DEVICE_COMMAND_RESULT_NONE : DEVICE_COMMAND_RESULT_FAILED);
             if (accepted) {
@@ -806,6 +848,11 @@ static bool run_websocket_connection(const device_identity_t *identity)
 static void transport_task(void *argument)
 {
     (void)argument;
+    (void)xEventGroupWaitBits(s_transport_events,
+                              WIFI_MONITOR_READY_BIT,
+                              pdFALSE,
+                              pdTRUE,
+                              portMAX_DELAY);
     uint32_t retry_seconds = 1;
     bool logged_waiting_for_identity = false;
     bool logged_waiting_for_wifi = false;
@@ -886,8 +933,33 @@ esp_err_t device_transport_start(void)
         return ESP_ERR_NO_MEM;
     }
 
+    ESP_LOGI(TAG,
+             "Transport task reservation: stack=%u internal_free=%u internal_largest=%u",
+             (unsigned)TRANSPORT_TASK_STACK_SIZE,
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    BaseType_t created = xTaskCreate(transport_task, "device_transport", TRANSPORT_TASK_STACK_SIZE, NULL,
+                                     TRANSPORT_TASK_PRIORITY, &s_transport_task_handle);
+    if (created != pdPASS) {
+        vEventGroupDelete(s_transport_events);
+        s_transport_events = NULL;
+        vQueueDelete(s_voice_turn_event_queue);
+        s_voice_turn_event_queue = NULL;
+        ESP_LOGE(TAG,
+                 "Transport task reservation failed: internal_free=%u internal_largest=%u",
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        return ESP_ERR_NO_MEM;
+    }
+    ESP_LOGI(TAG,
+             "Transport task reserved before Wi-Fi: internal_free=%u internal_largest=%u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+
     esp_err_t wifi_err = initialize_wifi_monitor();
     if (wifi_err != ESP_OK) {
+        vTaskDelete(s_transport_task_handle);
+        s_transport_task_handle = NULL;
         cleanup_wifi_monitor();
         vEventGroupDelete(s_transport_events);
         s_transport_events = NULL;
@@ -895,15 +967,10 @@ esp_err_t device_transport_start(void)
         s_voice_turn_event_queue = NULL;
         return wifi_err;
     }
-    BaseType_t created = xTaskCreate(transport_task, "device_transport", TRANSPORT_TASK_STACK_SIZE, NULL,
-                                     TRANSPORT_TASK_PRIORITY, NULL);
-    if (created == pdPASS) {
-        return ESP_OK;
-    }
-    cleanup_wifi_monitor();
-    vEventGroupDelete(s_transport_events);
-    s_transport_events = NULL;
-    vQueueDelete(s_voice_turn_event_queue);
-    s_voice_turn_event_queue = NULL;
-    return ESP_ERR_NO_MEM;
+    ESP_LOGI(TAG,
+             "Wi-Fi initialized after transport reservation: internal_free=%u internal_largest=%u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    xEventGroupSetBits(s_transport_events, WIFI_MONITOR_READY_BIT);
+    return ESP_OK;
 }

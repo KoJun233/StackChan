@@ -260,6 +260,13 @@ onUnmounted(() => refreshTimer && clearTimeout(refreshTimer))
                   <div class="mt-1 text-xs" :class="device.applicationOtaSupported ? 'text-emerald-600' : 'text-amber-600'">
                     {{ device.applicationOtaSupported ? '应用 OTA 已引导' : '旧固件：需一次 USB 引导，当前不会下发 OTA 命令' }}
                   </div>
+                  <div v-if="device.expression" class="mt-3 rounded-md border bg-muted/30 p-3 text-xs">
+                    <div class="font-medium">{{ device.expression.dynamicRenderer ? '动态球体' : '静态 PNG' }} {{ device.expression.actualFps }} / {{ device.expression.targetFps }} FPS · {{ device.expression.activeLayer }}</div>
+                    <div class="mt-1 text-muted-foreground">场景更新 {{ device.expression.drawTimeUs }} μs · LVGL 刷新 {{ device.expression.transferTimeUs }} μs · 锁等待 {{ device.expression.displayLockWaitUs }} μs</div>
+                    <div class="mt-1 text-muted-foreground">累计丢帧 {{ device.expression.droppedFrames }} · 音频 underrun {{ device.expression.audioUnderruns }} · 最低堆 {{ Math.round(device.expression.minimumFreeHeap / 1024) }} KiB</div>
+                    <div class="mt-1" :class="device.expression.degradeReason === 'NONE' ? 'text-emerald-600' : 'text-amber-600'">降帧原因：{{ device.expression.degradeReason }} · IMU {{ device.expression.imuSupported ? '可用' : '不可用' }} · 接近传感器 {{ device.expression.proximitySupported ? '可用' : '未安装' }}</div>
+                  </div>
+                  <div v-else class="mt-2 text-xs text-muted-foreground">当前固件未上报动态表情诊断</div>
                   <div v-if="latestJob(device.id)" class="mt-2 text-xs text-muted-foreground">
                     最近任务：{{ latestJob(device.id)?.fromVersion }} → {{ latestJob(device.id)?.targetVersion }} · {{ latestJob(device.id)?.status }}<span v-if="latestJob(device.id)?.failureCode"> · {{ latestJob(device.id)?.failureCode }}</span>
                   </div>

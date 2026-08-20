@@ -13,6 +13,7 @@ import com.kj.stackchan.speech.VoiceTurnDiagnosticsService;
 import com.kj.stackchan.speech.VoiceTurnCancellationService;
 import com.kj.stackchan.speech.VoiceTurnFailureCode;
 import com.kj.stackchan.speech.VoiceTurnStage;
+import com.kj.stackchan.expression.DeviceExpressionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +30,10 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(DeviceWebSocketHandler.class);
     private static final String LAST_SEQUENCE_ATTRIBUTE = DeviceWebSocketHandler.class.getName() + ".lastSequence";
+    private static final String EXPRESSION_THEME_SYNCED_ATTRIBUTE =
+            DeviceWebSocketHandler.class.getName() + ".expressionThemeSynced";
+    private static final String EXPRESSION_FRAME_RATE_SYNCED_ATTRIBUTE =
+            DeviceWebSocketHandler.class.getName() + ".expressionFrameRateSynced";
     private static final String INVALID_EVENT = "{\"type\":\"error\",\"code\":\"invalid_event\",\"message\":\"event rejected\"}";
     private static final Set<String> HEARTBEAT_FIELDS = Set.of(
             "type", "sequence", "battery_percent", "rssi", "safety_state"
@@ -40,6 +45,22 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             "type", "sequence", "battery_percent", "rssi", "safety_state", "firmware_version",
             "application_ota_supported"
     );
+    private static final Set<String> HEARTBEAT_WITH_EXPRESSION_FIELDS = Set.of(
+            "type", "sequence", "battery_percent", "rssi", "safety_state", "firmware_version",
+            "application_ota_supported", "dynamic_expression_supported", "expression"
+    );
+    private static final Set<String> EXPRESSION_DIAGNOSTIC_FIELDS = Set.of(
+            "target_fps", "actual_fps", "draw_time_us", "transfer_time_us",
+            "display_lock_wait_us", "dropped_frames", "audio_underruns", "minimum_free_heap",
+            "active_layer", "degrade_reason", "dynamic_renderer", "imu_supported",
+            "proximity_supported"
+    );
+    private static final Set<String> EXPRESSION_LAYERS = Set.of(
+            "IDLE", "EMOTION", "INTERACTION", "PHYSICAL", "SYSTEM"
+    );
+    private static final String[] EXPRESSION_DEGRADE_REASONS = {
+            "NONE", "DRAW_BUDGET", "DISPLAY_LOCK", "AUDIO_BUSY", "AUDIO_UNDERRUN", "IDLE_SLEEP"
+    };
     private static final Pattern FIRMWARE_VERSION_PATTERN = Pattern.compile("[A-Za-z0-9._-]{1,80}");
     private static final Set<String> COMMAND_ACK_FIELDS = Set.of(
             "type", "sequence", "command_id", "accepted"
@@ -76,6 +97,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     private final VoiceTurnCancellationService voiceTurnCancellationService;
     private DeviceExpressionPackCoordinator expressionPackCoordinator;
     private DeviceFirmwareUpdateStatusService firmwareUpdateStatusService;
+    private DeviceExpressionService deviceExpressionService;
 
     @Autowired(required = false)
     void setExpressionPackCoordinator(DeviceExpressionPackCoordinator expressionPackCoordinator) {
@@ -85,6 +107,11 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     @Autowired(required = false)
     void setFirmwareUpdateStatusService(DeviceFirmwareUpdateStatusService firmwareUpdateStatusService) {
         this.firmwareUpdateStatusService = firmwareUpdateStatusService;
+    }
+
+    @Autowired(required = false)
+    void setDeviceExpressionService(DeviceExpressionService deviceExpressionService) {
+        this.deviceExpressionService = deviceExpressionService;
     }
 
     @Autowired
@@ -270,20 +297,32 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             if (event.sequence() <= lastSequence.get()) {
                 return;
             }
-            processEvent(deviceId, event);
+            processEvent(deviceId, session, event);
             lastSequence.set(event.sequence());
         }
     }
 
-    private void processEvent(UUID deviceId, DeviceInboundEvent event) {
+    private void processEvent(UUID deviceId, WebSocketSession session, DeviceInboundEvent event) {
         if (event instanceof HeartbeatEvent heartbeat) {
-            deviceEventService.recordHeartbeat(
-                    deviceId,
-                    heartbeat.safetyState(),
-                    heartbeat.firmwareVersion(),
-                    heartbeat.rssi(),
-                    heartbeat.applicationOtaSupported()
-            );
+            if (heartbeat.expression() == null) {
+                deviceEventService.recordHeartbeat(
+                        deviceId, heartbeat.safetyState(), heartbeat.firmwareVersion(),
+                        heartbeat.rssi(), heartbeat.applicationOtaSupported());
+            } else {
+                deviceEventService.recordHeartbeat(
+                        deviceId, heartbeat.safetyState(), heartbeat.firmwareVersion(),
+                        heartbeat.rssi(), heartbeat.applicationOtaSupported(), heartbeat.expression());
+                if (deviceExpressionService != null) {
+                    if (!Boolean.TRUE.equals(session.getAttributes().get(EXPRESSION_THEME_SYNCED_ATTRIBUTE)) &&
+                            deviceExpressionService.synchronizeActiveRoleTheme(deviceId)) {
+                        session.getAttributes().put(EXPRESSION_THEME_SYNCED_ATTRIBUTE, true);
+                    }
+                    if (!Boolean.TRUE.equals(session.getAttributes().get(EXPRESSION_FRAME_RATE_SYNCED_ATTRIBUTE)) &&
+                            deviceExpressionService.synchronizeFrameRate(deviceId)) {
+                        session.getAttributes().put(EXPRESSION_FRAME_RATE_SYNCED_ATTRIBUTE, true);
+                    }
+                }
+            }
             return;
         }
         if (event instanceof WakeModelStatusEvent modelStatus) {
@@ -400,9 +439,45 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             }
             applicationOtaSupported = true;
         }
+        DeviceExpressionDiagnostics expression = null;
+        if (root.has("dynamic_expression_supported")) {
+            JsonNode supported = root.get("dynamic_expression_supported");
+            if (!supported.isBoolean() || !supported.booleanValue()) throw new InvalidDeviceEventException();
+            expression = parseExpressionDiagnostics(root.get("expression"));
+        }
         return new HeartbeatEvent(
-                sequence, batteryPercent, rssi, safetyState, firmwareVersion, applicationOtaSupported
+                sequence, batteryPercent, rssi, safetyState, firmwareVersion, applicationOtaSupported,
+                expression
         );
+    }
+
+    private DeviceExpressionDiagnostics parseExpressionDiagnostics(JsonNode value) {
+        if (value == null || !value.isObject()) throw new InvalidDeviceEventException();
+        requireOnlyFields(value, EXPRESSION_DIAGNOSTIC_FIELDS);
+        int targetFps = requiredInteger(value, "target_fps");
+        int actualFps = requiredInteger(value, "actual_fps");
+        int drawTime = requiredInteger(value, "draw_time_us");
+        int transferTime = requiredInteger(value, "transfer_time_us");
+        int lockWait = requiredInteger(value, "display_lock_wait_us");
+        long dropped = requiredNonnegativeLong(value, "dropped_frames");
+        long underruns = requiredNonnegativeLong(value, "audio_underruns");
+        long minimumHeap = requiredNonnegativeLong(value, "minimum_free_heap");
+        String layer = requiredText(value, "active_layer");
+        int reasonCode = requiredInteger(value, "degrade_reason");
+        JsonNode dynamicRenderer = value.get("dynamic_renderer");
+        JsonNode imu = value.get("imu_supported");
+        JsonNode proximity = value.get("proximity_supported");
+        if (targetFps < 1 || targetFps > 60 || actualFps < 0 ||
+                actualFps > 120 || drawTime < 0 || transferTime < 0 || lockWait < 0 ||
+                !EXPRESSION_LAYERS.contains(layer) || reasonCode < 0 ||
+                reasonCode >= EXPRESSION_DEGRADE_REASONS.length || dynamicRenderer == null ||
+                !dynamicRenderer.isBoolean() || imu == null || !imu.isBoolean() ||
+                proximity == null || !proximity.isBoolean()) {
+            throw new InvalidDeviceEventException();
+        }
+        return new DeviceExpressionDiagnostics(targetFps, actualFps, drawTime, transferTime, lockWait,
+                dropped, underruns, minimumHeap, layer, EXPRESSION_DEGRADE_REASONS[reasonCode],
+                dynamicRenderer.booleanValue(), imu.booleanValue(), proximity.booleanValue());
     }
 
     private CommandAcknowledgementEvent parseCommandAcknowledgement(JsonNode root) {
@@ -517,6 +592,14 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         return field.intValue();
     }
 
+    private long requiredNonnegativeLong(JsonNode root, String fieldName) {
+        JsonNode field = root.get(fieldName);
+        if (field == null || !field.isIntegralNumber() || !field.canConvertToLong() || field.longValue() < 0) {
+            throw new InvalidDeviceEventException();
+        }
+        return field.longValue();
+    }
+
     private String requiredText(JsonNode root, String fieldName) {
         JsonNode field = root.get(fieldName);
         if (field == null || !field.isTextual() || field.textValue().isBlank()) {
@@ -550,7 +633,9 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
                 || (root.size() == HEARTBEAT_WITH_FIRMWARE_FIELDS.size() && root.properties().stream()
                 .allMatch(entry -> HEARTBEAT_WITH_FIRMWARE_FIELDS.contains(entry.getKey())))
                 || (root.size() == HEARTBEAT_WITH_OTA_FIELDS.size() && root.properties().stream()
-                .allMatch(entry -> HEARTBEAT_WITH_OTA_FIELDS.contains(entry.getKey())));
+                .allMatch(entry -> HEARTBEAT_WITH_OTA_FIELDS.contains(entry.getKey())))
+                || (root.size() == HEARTBEAT_WITH_EXPRESSION_FIELDS.size() && root.properties().stream()
+                .allMatch(entry -> HEARTBEAT_WITH_EXPRESSION_FIELDS.contains(entry.getKey())));
     }
 
     private AtomicLong lastSequence(WebSocketSession session) {
@@ -584,7 +669,8 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             int rssi,
             String safetyState,
             String firmwareVersion,
-            boolean applicationOtaSupported
+            boolean applicationOtaSupported,
+            DeviceExpressionDiagnostics expression
     )
             implements DeviceInboundEvent {
     }

@@ -39,13 +39,21 @@ public class DeviceEventService {
             Integer rssi,
             boolean applicationOtaSupported
     ) {
+        recordHeartbeat(deviceId, safetyState, firmwareVersion, rssi, applicationOtaSupported, null);
+    }
+
+    @Transactional
+    public void recordHeartbeat(UUID deviceId, String safetyState, String firmwareVersion,
+                                Integer rssi, boolean applicationOtaSupported,
+                                DeviceExpressionDiagnostics expression) {
         if (!MOTION_DISABLED.equals(safetyState)) {
             throw new IllegalArgumentException("Heartbeats cannot enable motion");
         }
 
         deviceRepository.findById(deviceId).ifPresent(device ->
                 device.recordHeartbeat(
-                        clock.instant(), MOTION_DISABLED, firmwareVersion, rssi, applicationOtaSupported
+                        clock.instant(), MOTION_DISABLED, firmwareVersion, rssi, applicationOtaSupported,
+                        expression
                 )
         );
     }

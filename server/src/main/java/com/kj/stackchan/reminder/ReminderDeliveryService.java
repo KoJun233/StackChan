@@ -13,6 +13,7 @@ import com.kj.stackchan.device.DeviceCommandResult;
 import com.kj.stackchan.interaction.InteractionSettingsService;
 import com.kj.stackchan.interaction.MissedReminderPolicy;
 import com.kj.stackchan.notification.NotificationIntegrationRepository;
+import com.kj.stackchan.role.CompanionRoleService;
 import com.kj.stackchan.speech.SpeechProviderUnavailableException;
 import com.kj.stackchan.speech.InvalidSpeechSettingsException;
 import com.kj.stackchan.speech.SpeechRuntimeClient;
@@ -38,6 +39,12 @@ public class ReminderDeliveryService {
     private final VoiceTurnRepository voiceTurnRepository;
     private final ReminderScheduleCalculator scheduleCalculator;
     private final NotificationIntegrationRepository notificationIntegrationRepository;
+    private CompanionRoleService roleService;
+
+    @Autowired(required = false)
+    public void setRoleService(CompanionRoleService roleService) {
+        this.roleService = roleService;
+    }
 
     @Autowired
     public ReminderDeliveryService(
@@ -132,6 +139,12 @@ public class ReminderDeliveryService {
                     reminderRepository.saveAllAndFlush(deliveryItems);
                 }
                 handledNotificationIds.addAll(deliveryItems.stream().map(ReminderEntity::getId).toList());
+                if (roleService != null) {
+                    CompanionRoleService.RoleSnapshot role = roleService.get(selectedLeader.getRoleId());
+                    deviceCommandGateway.configureExpression(
+                            selectedLeader.getDeviceId(), role.expressionThemeColor(),
+                            "CONTENT", "WEAK", 5);
+                }
                 if (!deviceCommandGateway.speakReminder(
                         selectedLeader.getDeviceId(), selectedLeader.getId(), commandId)) {
                     deliveryItems.forEach(item -> item.returnToPending(clock.instant()));

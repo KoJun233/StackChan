@@ -10,6 +10,7 @@ set(stackchan_sources
     "device_protocol.c"
     "device_transport.c"
     "expression_pack.c"
+    "expression_engine.c"
     "firmware_ota.c"
     "face_animation.c"
     "interaction_state.c"
@@ -34,7 +35,7 @@ endif()
 idf_component_register(
     SRCS ${stackchan_sources}
     INCLUDE_DIRS "."
-    REQUIRES app_update esp-sr esp_app_format esp_driver_usb_serial_jtag esp_event esp_http_client esp_hw_support esp_netif esp_partition esp_timer esp_wifi esp_websocket_client freertos json m5unified mbedtls nvs_flash unity)
+    REQUIRES app_update esp-sr esp_app_format esp_codec_dev esp_driver_usb_serial_jtag esp_event esp_http_client esp_hw_support esp_netif esp_partition esp_timer esp_wifi esp_websocket_client freertos json lvgl m5stack_core_s3 mbedtls nvs_flash sensor_hub unity)
 
 if(CONFIG_STACKCHAN_LAN_TEST_CERT)
     target_add_binary_data(${COMPONENT_LIB} "lan-test-server.pem" TEXT)

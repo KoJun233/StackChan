@@ -10,6 +10,7 @@ import com.kj.stackchan.speech.VoiceTurnDiagnosticsService;
 import com.kj.stackchan.speech.VoiceTurnCancellationService;
 import com.kj.stackchan.speech.VoiceTurnFailureCode;
 import com.kj.stackchan.speech.VoiceTurnStage;
+import com.kj.stackchan.expression.DeviceExpressionService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.web.socket.TextMessage;
@@ -19,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -41,6 +43,7 @@ class DeviceWebSocketHandlerTest {
             mock(VoiceTurnDiagnosticsService.class);
     private final VoiceTurnCancellationService voiceTurnCancellationService =
             mock(VoiceTurnCancellationService.class);
+    private final DeviceExpressionService deviceExpressionService = mock(DeviceExpressionService.class);
     private final DeviceWebSocketHandler handler = new DeviceWebSocketHandler(
             connectionRegistry,
             deviceEventService,
@@ -54,6 +57,7 @@ class DeviceWebSocketHandlerTest {
 
     private DeviceWebSocketHandler handler() {
         handler.setFirmwareUpdateStatusService(firmwareUpdateStatusService);
+        handler.setDeviceExpressionService(deviceExpressionService);
         return handler;
     }
 
@@ -118,6 +122,48 @@ class DeviceWebSocketHandlerTest {
                 "ops-002",
                 "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         );
+    }
+
+    @Test
+    void recordsStrictDynamicExpressionDiagnostics() throws Exception {
+        WebSocketSession session = authenticatedSession();
+        handler().afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"heartbeat","sequence":9,"battery_percent":80,"rssi":-54,"safety_state":"motion_disabled","firmware_version":"media002","application_ota_supported":true,"dynamic_expression_supported":true,"expression":{"target_fps":20,"actual_fps":20,"draw_time_us":6200,"transfer_time_us":4100,"display_lock_wait_us":300,"dropped_frames":2,"audio_underruns":0,"minimum_free_heap":7340032,"active_layer":"PHYSICAL","degrade_reason":5,"dynamic_renderer":true,"imu_supported":true,"proximity_supported":false}}
+                """));
+
+        ArgumentCaptor<DeviceExpressionDiagnostics> diagnostics =
+                ArgumentCaptor.forClass(DeviceExpressionDiagnostics.class);
+        verify(deviceEventService).recordHeartbeat(
+                org.mockito.ArgumentMatchers.eq(DEVICE_ID),
+                org.mockito.ArgumentMatchers.eq("motion_disabled"),
+                org.mockito.ArgumentMatchers.eq("media002"),
+                org.mockito.ArgumentMatchers.eq(-54),
+                org.mockito.ArgumentMatchers.eq(true),
+                diagnostics.capture());
+        assertThat(diagnostics.getValue().targetFps()).isEqualTo(20);
+        assertThat(diagnostics.getValue().activeLayer()).isEqualTo("PHYSICAL");
+        assertThat(diagnostics.getValue().degradeReason()).isEqualTo("IDLE_SLEEP");
+        assertThat(diagnostics.getValue().dynamicRenderer()).isTrue();
+        assertThat(diagnostics.getValue().proximitySupported()).isFalse();
+    }
+
+    @Test
+    void synchronizesFrameRateIndependentlyWhenThemeSynchronizationFails() throws Exception {
+        WebSocketSession session = authenticatedSession();
+        when(deviceExpressionService.synchronizeActiveRoleTheme(DEVICE_ID)).thenReturn(false);
+        when(deviceExpressionService.synchronizeFrameRate(DEVICE_ID)).thenReturn(true);
+        handler().afterConnectionEstablished(session);
+
+        String heartbeat = """
+                {"type":"heartbeat","sequence":%d,"battery_percent":80,"rssi":-54,"safety_state":"motion_disabled","firmware_version":"media002","application_ota_supported":true,"dynamic_expression_supported":true,"expression":{"target_fps":60,"actual_fps":38,"draw_time_us":8537,"transfer_time_us":6269,"display_lock_wait_us":3,"dropped_frames":1116,"audio_underruns":0,"minimum_free_heap":8064000,"active_layer":"IDLE","degrade_reason":0,"dynamic_renderer":true,"imu_supported":true,"proximity_supported":false}}
+                """;
+        handler.handleTextMessage(session, new TextMessage(heartbeat.formatted(9)));
+        handler.handleTextMessage(session, new TextMessage(heartbeat.formatted(10)));
+
+        verify(deviceExpressionService, times(2)).synchronizeActiveRoleTheme(DEVICE_ID);
+        verify(deviceExpressionService).synchronizeFrameRate(DEVICE_ID);
     }
 
     @Test

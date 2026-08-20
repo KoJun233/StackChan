@@ -5,8 +5,9 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "expression_engine.h"
 
-#define DEVICE_PROTOCOL_MAX_MESSAGE_LEN 512
+#define DEVICE_PROTOCOL_MAX_MESSAGE_LEN 1024
 #define DEVICE_PROTOCOL_COMMAND_ID_MAX_LEN 96
 #define DEVICE_PROTOCOL_REMINDER_ID_MAX_LEN 37
 #define DEVICE_PROTOCOL_WAKE_MODEL_JOB_ID_MAX_LEN 37
@@ -33,12 +34,20 @@ typedef enum {
 } device_wake_sensitivity_t;
 
 typedef enum {
+    DEVICE_EXPRESSION_FPS_FIXED = 0,
+    DEVICE_EXPRESSION_FPS_ADAPTIVE,
+} device_expression_fps_mode_t;
+
+typedef enum {
     DEVICE_COMMAND_NONE = 0,
     DEVICE_COMMAND_STOP_MOTION,
     DEVICE_COMMAND_STOP_AUDIO,
     DEVICE_COMMAND_SPEAK_REMINDER,
     DEVICE_COMMAND_CONFIGURE_VOICE_DETECTION,
     DEVICE_COMMAND_CONFIGURE_INTERACTION,
+    DEVICE_COMMAND_CONFIGURE_EXPRESSION,
+    DEVICE_COMMAND_CONFIGURE_EXPRESSION_FRAME_RATE,
+    DEVICE_COMMAND_PREVIEW_EXPRESSION,
     DEVICE_COMMAND_INSTALL_WAKE_MODEL,
     DEVICE_COMMAND_INSTALL_EXPRESSION_PACK,
     DEVICE_COMMAND_CLEAR_EXPRESSION_PACK,
@@ -90,6 +99,15 @@ typedef struct {
     bool night_mode;
     bool continuous_conversation_enabled;
     int follow_up_window_seconds;
+    uint32_t expression_theme_rgb;
+    companion_emotion_t expression_emotion;
+    companion_emotion_intensity_t expression_intensity;
+    int expression_duration_seconds;
+    device_expression_fps_mode_t expression_fps_mode;
+    int expression_min_fps;
+    int expression_max_fps;
+    companion_expression_preview_t expression_preview;
+    uint8_t expression_preview_value;
     char wake_model_job_id[DEVICE_PROTOCOL_WAKE_MODEL_JOB_ID_MAX_LEN];
     char wake_model_name[DEVICE_PROTOCOL_WAKE_MODEL_NAME_MAX_LEN];
     char wake_model_sha256[DEVICE_PROTOCOL_SHA256_MAX_LEN];
@@ -103,62 +121,42 @@ typedef struct {
     int firmware_artifact_size;
 } device_command_t;
 
-esp_err_t device_protocol_encode_heartbeat(char *output,
-                                           size_t output_size,
-                                           uint32_t sequence,
-                                           int battery_percent,
-                                           int rssi,
-                                           const char *firmware_version);
+esp_err_t device_protocol_encode_heartbeat(char *output, size_t output_size,
+                                           uint32_t sequence, int battery_percent,
+                                           int rssi, const char *firmware_version);
+esp_err_t device_protocol_encode_heartbeat_with_ota(char *output, size_t output_size,
+                                                    uint32_t sequence, int battery_percent,
+                                                    int rssi, const char *firmware_version);
+esp_err_t device_protocol_encode_heartbeat_with_expression(
+    char *output, size_t output_size, uint32_t sequence, int battery_percent, int rssi,
+    const char *firmware_version, uint8_t target_fps, uint8_t actual_fps,
+    uint32_t draw_time_us, uint32_t transfer_time_us, uint32_t display_lock_wait_us,
+    uint32_t dropped_frames, uint32_t audio_underruns, uint32_t minimum_free_heap,
+    const char *active_layer, uint8_t degrade_reason, bool dynamic_renderer,
+    bool imu_supported);
 
-esp_err_t device_protocol_encode_heartbeat_with_ota(char *output,
-                                                    size_t output_size,
-                                                    uint32_t sequence,
-                                                    int battery_percent,
-                                                    int rssi,
-                                                    const char *firmware_version);
-
-bool device_protocol_parse_stop_motion(const char *payload,
-                                       size_t payload_size,
-                                       char *command_id,
-                                       size_t command_id_size);
-
-bool device_protocol_parse_command(const char *payload,
-                                   size_t payload_size,
+bool device_protocol_parse_stop_motion(const char *payload, size_t payload_size,
+                                       char *command_id, size_t command_id_size);
+bool device_protocol_parse_command(const char *payload, size_t payload_size,
                                    device_command_t *command);
-
-esp_err_t device_protocol_encode_command_ack(char *output,
-                                             size_t output_size,
-                                             uint32_t sequence,
-                                             const char *command_id,
+esp_err_t device_protocol_encode_command_ack(char *output, size_t output_size,
+                                             uint32_t sequence, const char *command_id,
                                              bool accepted);
-
-esp_err_t device_protocol_encode_command_ack_with_result(char *output,
-                                                         size_t output_size,
+esp_err_t device_protocol_encode_command_ack_with_result(char *output, size_t output_size,
                                                          uint32_t sequence,
                                                          const char *command_id,
                                                          bool accepted,
                                                          device_command_result_t result);
-
-esp_err_t device_protocol_encode_wake_model_status(char *output,
-                                                   size_t output_size,
-                                                   uint32_t sequence,
-                                                   const char *job_id,
-                                                   const char *status,
-                                                   const char *model_name,
+esp_err_t device_protocol_encode_wake_model_status(char *output, size_t output_size,
+                                                   uint32_t sequence, const char *job_id,
+                                                   const char *status, const char *model_name,
                                                    const char *sha256);
-
-esp_err_t device_protocol_encode_firmware_update_status(char *output,
-                                                        size_t output_size,
-                                                        uint32_t sequence,
-                                                        const char *job_id,
-                                                        const char *status,
-                                                        const char *version,
+esp_err_t device_protocol_encode_firmware_update_status(char *output, size_t output_size,
+                                                        uint32_t sequence, const char *job_id,
+                                                        const char *status, const char *version,
                                                         const char *sha256);
-
-esp_err_t device_protocol_encode_voice_turn_stage(char *output,
-                                                  size_t output_size,
-                                                  uint32_t sequence,
-                                                  const char *turn_id,
+esp_err_t device_protocol_encode_voice_turn_stage(char *output, size_t output_size,
+                                                  uint32_t sequence, const char *turn_id,
                                                   device_voice_turn_stage_t stage,
                                                   uint32_t elapsed_ms,
                                                   device_voice_turn_failure_t failure);

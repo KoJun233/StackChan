@@ -77,9 +77,9 @@ class DeviceControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().json("""
                         {"devices":[
-                          {"id":"00000000-0000-0000-0000-000000000001","displayName":"Alpha","firmwareVersion":"1.0.0","safetyState":"motion_disabled","rssi":null,"applicationOtaSupported":false,"lastSeenAt":"2026-07-17T14:59:30Z","online":true,"commandAvailable":false},
-                          {"id":"00000000-0000-0000-0000-000000000003","displayName":"Alpha","firmwareVersion":"1.0.1","safetyState":"motion_disabled","rssi":null,"applicationOtaSupported":false,"lastSeenAt":"2026-07-17T14:58:29Z","online":false,"commandAvailable":false},
-                          {"id":"00000000-0000-0000-0000-000000000002","displayName":"Zulu","firmwareVersion":"2.0.0","safetyState":"motion_enabled","rssi":null,"applicationOtaSupported":false,"lastSeenAt":null,"online":false,"commandAvailable":false}
+                          {"id":"00000000-0000-0000-0000-000000000001","displayName":"Alpha","firmwareVersion":"1.0.0","safetyState":"motion_disabled","rssi":null,"applicationOtaSupported":false,"dynamicExpressionSupported":false,"lastSeenAt":"2026-07-17T14:59:30Z","online":true,"commandAvailable":false},
+                          {"id":"00000000-0000-0000-0000-000000000003","displayName":"Alpha","firmwareVersion":"1.0.1","safetyState":"motion_disabled","rssi":null,"applicationOtaSupported":false,"dynamicExpressionSupported":false,"lastSeenAt":"2026-07-17T14:58:29Z","online":false,"commandAvailable":false},
+                          {"id":"00000000-0000-0000-0000-000000000002","displayName":"Zulu","firmwareVersion":"2.0.0","safetyState":"motion_enabled","rssi":null,"applicationOtaSupported":false,"dynamicExpressionSupported":false,"lastSeenAt":null,"online":false,"commandAvailable":false}
                         ]}
                         """, STRICT));
     }

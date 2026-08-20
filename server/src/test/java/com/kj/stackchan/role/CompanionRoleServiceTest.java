@@ -37,11 +37,12 @@ class CompanionRoleServiceTest {
 
         var created = service.create(new CompanionRoleService.RoleCommand(
                 " 助理 ", PersonaTone.PROFESSIONAL, PersonaReplyLength.SHORT,
-                PersonaProactivity.RESERVED, "", "", "", " role-voice "
+                PersonaProactivity.RESERVED, "", "", "", " role-voice ", "#3a7bff"
         ));
 
         assertThat(created.name()).isEqualTo("助理");
         assertThat(created.ttsVoiceOverride()).isEqualTo("role-voice");
+        assertThat(created.expressionThemeColor()).isEqualTo("#3A7BFF");
     }
 
     @Test

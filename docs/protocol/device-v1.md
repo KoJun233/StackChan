@@ -30,6 +30,8 @@ OTA-capable firmware adds an explicit capability bit:
 
 For a rolling server-first upgrade, the server still accepts the original five-field heartbeat and the six-field heartbeat with `firmware_version`. Those legacy forms always record `application_ota_supported=false`; a missing field never implies support. New OTA-capable firmware must send all seven fields.
 
+Dynamic-expression firmware adds `dynamic_expression_supported=true` and one strict `expression` object. The object contains only privacy-safe rendering measurements: `target_fps` (1..60), `actual_fps` (0..120), `draw_time_us` (scene/pose and LVGL object update time), `transfer_time_us` (LVGL render-and-flush time), `display_lock_wait_us`, monotonic `dropped_frames` and `audio_underruns`, `minimum_free_heap`, `active_layer` (`IDLE/EMOTION/INTERACTION/PHYSICAL/SYSTEM`), numeric `degrade_reason` (0 none, 1 draw budget, 2 display lock, 3 audio busy, 4 audio underrun, 5 low-power idle sleep), `dynamic_renderer` (native ball versus active static PNG), and the `imu_supported` / `proximity_supported` capability booleans. Total frame cost is approximately `draw_time_us + transfer_time_us`; neither field alone proves that a requested FPS is achievable. The server rejects partial objects, extra fields and out-of-range values. These diagnostics never contain text, audio, credentials or raw sensor samples.
+
 Devices may acknowledge a received command with:
 
 ```json
@@ -197,6 +199,31 @@ When continuous conversation is enabled, the strict command has exactly two addi
 ```
 
 `follow_up_window_seconds` is an integer from 3 through 8 so the existing 8-second and 512 KiB voice-upload limits remain unchanged. New firmware accepts exactly the legacy four-field form or the extended six-field form; receiving the legacy form disables continuous conversation and restores the 8-second default. After a successful reply, enabled firmware may open a local-VAD follow-up window without WakeNet. Silence does not upload audio. The local conversation ends after at most three successful follow-ups or two minutes from the first trigger, and also ends on touch cancellation, the exact normalized phrase `结束聊天`, connectivity loss, or any turn failure. Existing SCV1 framing is unchanged.
+
+The bounded dynamic-expression command is:
+
+```json
+{"type":"configure_expression","command_id":"cmd-expression","theme_color":"#3A7BFF","emotion":"HAPPY","intensity":"MEDIUM","duration_seconds":10}
+```
+
+`theme_color` is exactly one uppercase `#RRGGBB` role color. `emotion` is one of `NEUTRAL`, `HAPPY`, `LOVING`, `SAD`, `ANGRY`, `SURPRISED`, `CONFUSED`, `SHY`, `TIRED`, `FOCUSED`, `NERVOUS`, or `CONTENT`; `intensity` is `WEAK`, `MEDIUM`, or `STRONG`; duration is 5..15 seconds. The authenticated server fixes the device and role context. The model can only suggest these semantic values through a server-parsed trailing marker; the marker is stripped before persistence, TTS and device delivery. A model cannot set system state, color, geometry, animation timing or priority. Old firmware safely ignores this unknown command.
+
+The administrator can persist either a fixed target or a bounded adaptive range. Both commands contain exactly five fields:
+
+```json
+{"type":"configure_expression_frame_rate","command_id":"cmd-fps","mode":"FIXED","min_fps":60,"max_fps":60}
+{"type":"configure_expression_frame_rate","command_id":"cmd-fps","mode":"ADAPTIVE","min_fps":30,"max_fps":60}
+```
+
+`min_fps` and `max_fps` must be integer values from `1` through `60`; fixed mode requires equal values. Adaptive mode moves in five-FPS steps while remaining within the exact saved range, including non-step endpoints. The low-brightness screensaver remains 20 FPS regardless of the normal policy. Fixed 60 locks the idle scheduling target, not a physical guarantee: frame diagnostics continue to report actual FPS and dropped frames when drawing exceeds the 16.7 ms budget. Audible playback may temporarily cap visual submission at 20 FPS with `AUDIO_BUSY`; the server resends the saved normal policy after a capable device reconnects.
+
+The authenticated management preview command contains exactly five fields:
+
+```json
+{"type":"preview_expression","command_id":"cmd-preview","category":"EMOTION","value":"HAPPY","duration_seconds":5}
+```
+
+`category` is `EMOTION`, `SYSTEM`, or `BEHAVIOR`; `value` must be one of the firmware's enumerated 12 emotions, 9 system/interaction presentations, or 6 lifecycle/physical behaviors. Duration is 1..15 seconds. Preview is a temporary renderer layer: it does not mutate the real connection, OTA, conversation, or error state, cannot cover a real active interaction or high-priority system state, and is rejected while a static PNG pack is active.
 
 The immediate playback stop command is:
 

@@ -15,6 +15,8 @@ import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.retry.RetryUtils;
+import org.springframework.ai.retry.NonTransientAiException;
+import org.springframework.ai.retry.TransientAiException;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
@@ -141,6 +143,9 @@ public class LlmRuntimeClientFactory {
     private static boolean isProviderUnavailable(Throwable exception) {
         Throwable current = exception;
         while (current != null) {
+            if (current instanceof NonTransientAiException || current instanceof TransientAiException) {
+                return true;
+            }
             if (current instanceof WebClientRequestException || current instanceof ResourceAccessException) {
                 return true;
             }

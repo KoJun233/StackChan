@@ -4,6 +4,7 @@ export interface Device {
   applicationOtaSupported: boolean
   commandAvailable: boolean
   displayName: string
+  dynamicExpressionSupported?: boolean
   firmwareVersion: string
   id: string
   lastSeenAt: string | null

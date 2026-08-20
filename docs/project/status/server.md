@@ -1,14 +1,14 @@
 # 服务端工作流
 
 - 状态：READY_FOR_REVIEW
-- 最后更新：2026-08-19
-- 当前分支：`codex/int-013-streaming-tts`
-- 基准提交：`13987b0`
-- 最后验证提交：`13987b0`
+- 最后更新：2026-08-23
+- 当前分支：`codex/media-002-expression-experience`
+- 基准提交：`19bd459`
+- 最后验证提交：`41b8827`
 
 ## 当前目标
 
-交付 `INT-013` 服务端语音流：保留 SCV1，按内容协商 SCV2，并把完整 LLM 回复确定性分段后逐段 TTS 和刷新，缩短等待全部 TTS 的首播延迟。
+在保持 SCV1/SCV2 和现有安全边界的同时，交付 `MEDIA-002D` 连续帧率策略和设备重连同步。
 
 ## 已完成
 
@@ -47,20 +47,29 @@
 - 语音只选择同设备、同角色最近 24 小时内可回应的通知，目标通知 ID 由服务端固定写入提案，仍需两分钟内确认后执行。
 - 不增加回调 URL，不扩大 MCP Tool 数量，不修改固件、设备播放协议或确定性通知正文。
 
+## 已完成的 MEDIA-002C
+
+- V33 为角色增加受约束主题色，为设备保存动态能力、目标/实际 FPS、耗时、丢帧、活动层、降帧原因、堆水位和传感器能力。
+- 语音模型只可在正文末尾建议 12 种情绪、三级强度和 5–15 秒期限；服务端剥离标记、严格验证并发送结构化命令，无效标记回退中性且不会朗读。
+- 角色切换和设备重连同步活动角色主色；提醒使用确定性 `CONTENT/WEAK/5`，系统状态、颜色与动画参数不受模型控制。
+- 旧设备不报告能力时不发送情绪命令；旧协议、静态 PNG、SCV1/SCV2 和通知 ACK 保持兼容。
+
 ## 正在进行
 
-- 同一 `/api/v1/device/voice/turn` 根据 `Accept` 返回 SCV2 StreamingResponseBody 或兼容 SCV1；设备 Bearer、回合 ID 和 WAV 上传限制不变。
-- SCV2 严格发送 START、从 0 连续的 AUDIO 及 COMPLETE/ERROR，元数据和安全错误码有界；完整回复不重复下发到设备。
-- 服务端等待完整 LLM 回复后按自然标点和硬边界最多分为八段，逐段使用会话角色音色合成；每次合成和写出前后检查取消。
-- 客户端断开按取消处理，若完整会话回复已经持久化则不反向破坏其状态；异步响应超时为 90 秒。
+- V35 把 `FIXED/ADAPTIVE` 的帧率约束从离散 `20/30/60` 扩展为连续 `1..60`；固定模式仍要求最小值等于最大值，修改离线可保存，设备重连后自动同步。
+- 新增受管理员会话与 CSRF 保护的帧率查询/更新和临时表情预览接口。服务端只接受 12/9/6 枚举与 1–15 秒期限，不接受任意动画参数。
+- V35 服务、控制器和 WebSocket 边界均已同步并增加 24–57、47 FPS、0/61 拒绝用例。服务端全量 391/391 通过，Testcontainers 从空 PostgreSQL 成功应用 Flyway V1..V35。
+- LAN 运行库已应用 V35，健康接口和首页均为 200，启动日志无 `ERROR`/`Exception`。
+- 实机反馈揭示重连同步把帧率错误地依赖在角色主题同步成功之后；工作树已为两者使用独立会话标记，主题同步失败不再阻止帧率恢复，定向 `DeviceWebSocketHandlerTest` 17/17、服务端全量 392/392 和空库 Flyway V1..V35 通过。
+- `MEDIA-002D` 服务端实现、最终全量回归和 LAN 发布均已完成。
 
 ## 下一步操作
 
-INT-013 server 已部署，配套固件 `29e8c36` 的分段播放、触摸取消和后续回合实机验收通过；等待任务分支人工审核与合并。
+等待用户页面验收；通过后整理相对 `master` 的单一中文任务提交。
 
 ## 阻塞项
 
-- 当前无实现阻塞；用户要求暂缓连接器，不影响 INT-013。
+- 当前无代码或部署阻塞；连接器仍按用户要求暂停。
 - 公网生产入口必须保持 HTTPS-only；不得复用管理员会话或设备 JWT 作为集成令牌。
 
 ## 关键文件
@@ -85,6 +94,13 @@ INT-013 server 已部署，配套固件 `29e8c36` 的分段播放、触摸取消
 
 ## 验证命令与最近结果
 
+- 2026-08-23 服务端全量 392/392 通过；Testcontainers 从空 PostgreSQL 成功应用 Flyway V1..V35。
+- 2026-08-23 经授权只替换 LAN server，运行镜像 `sha256:bfd2019b4e8a84a0132794096d751f3bce872555165a11219081b820f9445810`；健康接口为 200、Flyway V35 无待迁移项、启动日志无错误。CoreS3 重连后恢复 `ADAPTIVE 45–60` 并上报目标 60/实际 55。
+- 2026-08-22 Docker Engine 恢复后完成最新全量回归：391/391 通过；Testcontainers 从空 PostgreSQL 成功应用 Flyway V1..V35。
+
+- MEDIA-002 情绪解析、设备表达、WebSocket、角色、设备 API 与 LLM 异常映射专项 39/39 通过。
+- Docker 恢复后服务端全量 385/385 通过，运行数据库迁移至 V33；LAN 首页和健康检查正常，用户已完成页面与基础动态诊断复核。
+- 排除 `ConversationServiceTest`、`DeviceEventServiceTest`、`PairingServiceTest`、`AdminPasswordPersistenceTest`、`NotificationMcpTransportTest` 和 `LongTermMemoryPersistenceTest` 六个 Testcontainers 类后，服务端回归 361/361 通过；Docker Engine 无响应，未声称完成全量或空库 V1..V33 验证。
 - INT-013 工作树基于 `13987b0`；SCV2 严格帧、确定性分段、服务编排、内容协商和取消定向测试通过。
 - 最终全量 Maven 377/377 通过，并由 Testcontainers 从空 PostgreSQL 成功应用 Flyway V1..V32；INT-013 不增加数据库迁移。
 - `& 'E:\maven-3.9.16\bin\mvn.cmd' -f server\pom.xml test`：351/351 通过。

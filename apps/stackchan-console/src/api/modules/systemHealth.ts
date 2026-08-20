@@ -37,7 +37,26 @@ export interface SystemHealth {
   backup: BackupHealth
   checkedAt: string
   databaseMigration: string
-  devices: (Device & { applicationOtaSupported: boolean, rssi: number | null })[]
+  devices: (Device & {
+    applicationOtaSupported: boolean
+    dynamicExpressionSupported: boolean
+    expression: null | {
+      activeLayer: 'IDLE' | 'EMOTION' | 'INTERACTION' | 'PHYSICAL' | 'SYSTEM'
+      actualFps: number
+      audioUnderruns: number
+      degradeReason: 'NONE' | 'DRAW_BUDGET' | 'DISPLAY_LOCK' | 'AUDIO_BUSY' | 'AUDIO_UNDERRUN' | 'IDLE_SLEEP'
+      dynamicRenderer: boolean
+      displayLockWaitUs: number
+      drawTimeUs: number
+      droppedFrames: number
+      imuSupported: boolean
+      minimumFreeHeap: number
+      proximitySupported: boolean
+      targetFps: number
+      transferTimeUs: number
+    }
+    rssi: number | null
+  })[]
   pendingJobs: {
     expressionPacks: number
     firmwareUpdates: number

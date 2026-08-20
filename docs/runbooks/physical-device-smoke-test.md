@@ -137,4 +137,4 @@ docker compose ps server
 - Never record access or refresh credentials, `Authorization` headers, pairing codes, Wi-Fi passwords, complete provisioning requests, or complete HTTP/WebSocket bodies.
 - Keep the device serial monitor and the server protocol log as the ACK evidence path; do not describe the dashboard or static safe face as receiving an ACK.
 
-The current firmware initializes the CoreS3 display, touch panel, microphone, and speaker through M5Unified. It does not initialize the camera, NFC, external LED, servo, or other motion driver. Audio and screen behavior require the checks above before being claimed as physically verified; motion remains disabled throughout.
+The current candidate firmware initializes the CoreS3 display and touch panel through the official BSP and LVGL, the microphone and speaker through BSP `esp_codec_dev`, and the BMI270 through BSP `sensor_hub`. It does not initialize the camera, NFC, external LED, servo, or other motion driver. Audio and screen behavior require the checks above before being claimed as physically verified; motion remains disabled throughout.

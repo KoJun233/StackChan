@@ -18,6 +18,8 @@ import com.kj.stackchan.llm.LlmProviderUnavailableException;
 import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.memory.CompanionPromptService;
 import com.kj.stackchan.memory.CompletedTurnMemoryCoordinator;
+import com.kj.stackchan.expression.DeviceExpressionService;
+import com.kj.stackchan.expression.ExpressionSuggestionParser;
 import com.kj.stackchan.role.CompanionRoleEntity;
 import com.kj.stackchan.voiceaction.VoiceActionCoordinator;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -36,6 +38,10 @@ public class VoiceTurnService {
     private static final String VOICE_SYSTEM_INSTRUCTION = """
 
             当前是机器人语音对话。请直接使用简体中文回答，不要使用 Markdown。
+            回答正文末尾另起一行追加且只追加一个隐藏表情标记：
+            [[emotion:情绪:强度:秒数]]。情绪只能是 NEUTRAL、HAPPY、LOVING、SAD、ANGRY、
+            SURPRISED、CONFUSED、SHY、TIRED、FOCUSED、NERVOUS、CONTENT；强度只能是
+            WEAK、MEDIUM、STRONG；秒数只能是 5 到 15。标记不会展示或朗读，不能改写正文。
             """;
 
     private final SpeechRuntimeClient speechRuntimeClient;
@@ -49,6 +55,12 @@ public class VoiceTurnService {
     private final VoiceActionCoordinator voiceActionCoordinator;
     private final CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator;
     private final VoiceReplySegmenter replySegmenter;
+    private DeviceExpressionService deviceExpressionService;
+
+    @Autowired(required = false)
+    public void setDeviceExpressionService(DeviceExpressionService deviceExpressionService) {
+        this.deviceExpressionService = deviceExpressionService;
+    }
 
     @Autowired
     public VoiceTurnService(
@@ -208,6 +220,14 @@ public class VoiceTurnService {
                 cancellation.throwIfCancelled();
                 if (reply == null || reply.isBlank()) {
                     throw new LlmProviderUnavailableException();
+                }
+                ExpressionSuggestionParser.Suggestion expression = ExpressionSuggestionParser.parse(reply);
+                reply = expression.reply();
+                if (reply.isBlank()) {
+                    throw new LlmProviderUnavailableException();
+                }
+                if (deviceExpressionService != null) {
+                    deviceExpressionService.apply(deviceId, roleId, expression);
                 }
                 recordStage(deviceId, turnId, VoiceTurnStage.LLM_COMPLETED, null);
                 lastCompletedStage = VoiceTurnStage.LLM_COMPLETED;
