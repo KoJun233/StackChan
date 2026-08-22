@@ -6,7 +6,7 @@
 - 在当前 Windows 工作站上，Maven 位于 `E:\maven-3.9.16\bin\mvn.cmd`；其他机器可使用兼容的 Maven 3.9 可执行文件。
 - Node 必须满足 `^22.22.2 || ^24.15.0 || >=26.0.0`；pnpm 遵循仓库的 `packageManager` 字段。
 - Docker Compose 运行 PostgreSQL、Redis 和 server。固定的 PostgreSQL 镜像为 `postgres@sha256:c2d42a104eb6b37b286a2d9c5cf83f349de4d6516d513d00a2bd9610e2c2e5e4`。
-- 固件构建需要 ESP-IDF。刷写前必须明确确认设备和 commit。
+- 固件构建固定使用 ESP-IDF 5.4.4；官方 CoreS3 BSP 4.0.0 要求 IDF 5.4 或更高，旧 5.3.x 环境不能构建当前依赖锁。刷写前必须明确确认设备和 commit。
 
 密钥值存放在未跟踪的 `.env` 中；`.env.example` 只包含变量名称。不要在被跟踪文件、终端证据或文档中写入 `apiKey`、password、token 或 `Authorization` 的值。
 

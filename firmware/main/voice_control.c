@@ -29,6 +29,7 @@
 // Physical CoreS3 testing overflowed the previous 12 KiB stack on first upload.
 #define VOICE_TASK_STACK_SIZE 32768
 #define VOICE_TASK_PRIORITY 6
+#define VOICE_TASK_CORE 0
 #define VOICE_TOUCH_TASK_STACK_SIZE 4096
 #define VOICE_TOUCH_TASK_PRIORITY 4
 #define VOICE_TOUCH_POLL_MS 50
@@ -1059,8 +1060,8 @@ esp_err_t voice_control_start(void)
         s_voice_session_mutex = NULL;
         return ESP_ERR_NO_MEM;
     }
-    if (xTaskCreate(voice_task, "voice_control", VOICE_TASK_STACK_SIZE, NULL,
-                    VOICE_TASK_PRIORITY, NULL) != pdPASS) {
+    if (xTaskCreatePinnedToCore(voice_task, "voice_control", VOICE_TASK_STACK_SIZE, NULL,
+                               VOICE_TASK_PRIORITY, NULL, VOICE_TASK_CORE) != pdPASS) {
         vTaskDelete(s_touch_task_handle);
         s_touch_task_handle = NULL;
         vSemaphoreDelete(s_voice_session_mutex);

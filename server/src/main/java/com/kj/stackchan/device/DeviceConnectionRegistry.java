@@ -246,6 +246,41 @@ public class DeviceConnectionRegistry {
         }
     }
 
+    public boolean sendExpressionConfiguration(UUID deviceId, String themeColor, String emotion,
+                                               String intensity, int durationSeconds) {
+        try {
+            return sendPayload(deviceId, objectMapper.writeValueAsString(new ConfigureExpressionCommand(
+                    "configure_expression", UUID.randomUUID().toString(), themeColor, emotion,
+                    intensity, durationSeconds
+            )));
+        } catch (JsonProcessingException exception) {
+            return false;
+        }
+    }
+
+    public boolean sendExpressionFrameRateConfiguration(UUID deviceId, String mode,
+                                                        int minFps, int maxFps) {
+        try {
+            return sendPayload(deviceId, objectMapper.writeValueAsString(
+                    new ConfigureExpressionFrameRateCommand(
+                            "configure_expression_frame_rate", UUID.randomUUID().toString(),
+                            mode, minFps, maxFps)));
+        } catch (JsonProcessingException exception) {
+            return false;
+        }
+    }
+
+    public boolean sendExpressionPreview(UUID deviceId, String category, String value,
+                                         int durationSeconds) {
+        try {
+            return sendPayload(deviceId, objectMapper.writeValueAsString(new PreviewExpressionCommand(
+                    "preview_expression", UUID.randomUUID().toString(), category, value,
+                    durationSeconds)));
+        } catch (JsonProcessingException exception) {
+            return false;
+        }
+    }
+
     public int broadcastVoiceConfiguration(
             VoiceWakeSensitivity wakeSensitivity,
             int speechStartThreshold,
@@ -632,6 +667,23 @@ public class DeviceConnectionRegistry {
 
     private record ClearExpressionPackCommand(String type, String command_id) {
     }
+
+    private record ConfigureExpressionCommand(
+            String type,
+            String command_id,
+            String theme_color,
+            String emotion,
+            String intensity,
+            int duration_seconds
+    ) {
+    }
+
+    private record ConfigureExpressionFrameRateCommand(
+            String type, String command_id, String mode, int min_fps, int max_fps) {}
+
+    private record PreviewExpressionCommand(
+            String type, String command_id, String category, String value,
+            int duration_seconds) {}
 
     private record ConfigureVoiceDetectionCommand(
             String type,

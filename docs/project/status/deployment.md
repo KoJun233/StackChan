@@ -1,15 +1,15 @@
 # 部署工作流
 
 - 状态：STABLE
-- 最后更新：2026-08-19
-- 当前分支：`codex/int-013-streaming-tts`
-- 基准提交：`13987b0`
-- 最后验证提交：`29e8c36`
+- 最后更新：2026-08-23
+- 当前分支：`codex/media-002-expression-experience`
+- 基准提交：`19bd459`
+- 最后验证提交：`41b8827`
 - 当前模式：LAN HTTP development
 
 ## 当前目标
 
-维持已部署的 INT-013 LAN server/V32 和已通过实机验收的 CoreS3 `29e8c36` 运行态。
+维持已部署的 MEDIA-002D 最终 LAN server/V35；CoreS3 已由用户自行安装并验收 `41b8827-perf9`，不自动 OTA。
 
 ## 已完成
 
@@ -22,16 +22,15 @@
 
 ## 正在进行
 
-当前运行态为 INT-013 `a04ae0b` server/V32 与 CoreS3 `29e8c36 / motion_disabled / OTA=true`。设备使用 SCV2，分段顺序、播放中触摸停止、晚到分段丢弃和后续回合均通过实机验收。
+LAN server 运行 `media002-final-local-41b8827`/V35，连续 1–60 FPS、帧率重连同步和诊断标签均已发布；当前地址为 `http://192.168.1.3:8080/`。CoreS3 运行 `41b8827-perf9`，用户确认画面流畅度和音量正常。部署前镜像保留为 `stackchan-server:pre-media002-final-41b8827`，当前镜像保留为 `stackchan-server:media002-final-41b8827`，摘要 `sha256:bfd2019b4e8a84a0132794096d751f3bce872555165a11219081b820f9445810`。
 
 ## 下一步操作
 
-保持当前 LAN 运行态，等待任务分支人工审核与合并；不再替换容器或更新设备。
+等待用户在当前 LAN 页面完成最终体验复核；通过后整理单一任务提交。本轮不替用户 OTA、不清除 NVS、不做回退演练。
 
 ## 阻塞项
 
-- 当前没有运行环境阻塞。
-- INT-013 server 与固件运行态无阻塞。凭据轮换仍需显式授权，本轮按用户要求未做 OTA 回退演练。
+- 当前运行态无部署阻塞。设备操作仍需显式授权；继续保留 NVS，不做 OTA 回退演练。
 
 ## 关键文件
 
@@ -44,6 +43,16 @@
 
 ## 验证命令与最近结果
 
+- 2026-08-23 部署前工作树服务端 392/392、空库 Flyway V1..V35、前端 81/81/类型检查/生产构建、双固件 profile、三组任务栈预算和文档检查通过；自动化验证阶段未替换运行容器。
+- 2026-08-23 经用户授权，部署前新 PostgreSQL 备份和最新备份隔离恢复验证成功；只重建 `stackchan-foundation-server-1`，PostgreSQL、Redis 和备份容器 ID 均未变化。
+- 新 server 健康接口、本机首页和 `192.168.1.3:8080` 首页为 200；V35 无待迁移项，启动日志无 `ERROR`/`Exception`，运行静态资源包含新诊断标签。CoreS3 在容器重建后产生新心跳并恢复 `ADAPTIVE 45–60`、目标 60、实际 55。
+- 2026-08-22 经用户授权重启 Docker Desktop 后，既有 PostgreSQL、Redis、server 和备份容器全部恢复；运行 server 镜像仍为预期摘要 `sha256:b819e63378db6250bdbd8fd66939f15960d6c72097fce28b3558114afcf4ae4c`，本轮固件迁移未修改服务端或前端，因此未无意义替换容器。
+- 恢复后 `/api/v1/health` 和首页均为 200，Flyway 确认运行库保持 V35 且无待迁移项，启动日志无应用错误；服务端全量 391/391 和空库 V1..V35 通过。
+- 2026-08-22 部署前新备份和最新备份隔离恢复均成功；只重建 `stackchan-foundation-server-1`，PostgreSQL、Redis 与备份容器 ID 未变化。
+- 运行库成功迁移到 V35；`/api/v1/health` 和首页均为 200，运行镜像与预期新镜像摘要一致，启动日志无 `ERROR`/`Exception`。
+- 首次 Compose 调用因遗漏既有项目名，只创建了一个未启动容器并在 8080 端口检查处退出；原服务未中断，所创建的空容器、空卷与空网络随后被精确清理，再以 `stackchan-foundation` 项目名完成切换。
+- MEDIA-002 server/V34 与前端已部署，CoreS3 已运行 `41b8827`；用户确认平滑边缘和真机预览正常，并反馈固定 60 FPS 与语音并发回归。
+- `d65811d` 首次应用 OTA 因 UI 任务看门狗自动回退；修正候选 `759a91f` 随后安装为 `INSTALLED`，NVS、设备身份、网络、WakeNet、OTA 和 `motion_disabled` 均保留，用户确认基础功能正常。
 - 2026-08-19 INT-013 发布前新备份及最新备份隔离恢复成功；正式数据库未被覆盖。
 - 旧 server 镜像保留为 `pre-int013-a04ae0b`，新镜像保留为 `int013-a04ae0b`；只重建 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器和卷保持不变。
 - 运行库成功从 V30 迁移到 V32，共 32 条迁移成功；`/api/v1/health` 和首页为 200，SCV1/SCV2 未认证语音入口均为 401，启动日志无错误。

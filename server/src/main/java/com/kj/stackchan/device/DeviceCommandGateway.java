@@ -38,5 +38,18 @@ public interface DeviceCommandGateway {
 
     boolean clearExpressionPack(UUID deviceId, String commandId);
 
+    default boolean configureExpression(UUID deviceId, String themeColor, String emotion,
+                                        String intensity, int durationSeconds) {
+        return false;
+    }
+
+    default boolean configureExpressionFrameRate(UUID deviceId, String mode, int minFps, int maxFps) {
+        return false;
+    }
+
+    default boolean previewExpression(UUID deviceId, String category, String value, int durationSeconds) {
+        return false;
+    }
+
     boolean isConnected(UUID deviceId);
 }

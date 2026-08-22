@@ -62,6 +62,7 @@ public class DeviceController {
                         device.getSafetyState(),
                         device.getRssi(),
                         device.isApplicationOtaSupported(),
+                        device.isDynamicExpressionSupported(),
                         device.getLastSeenAt(),
                         isOnline(device),
                         deviceCommandGateway.isConnected(device.getId())
@@ -90,7 +91,10 @@ public class DeviceController {
             @Valid @RequestBody ActiveRoleRequest request
     ) {
         if (roleService == null) throw new IllegalStateException("Role service is unavailable");
-        return roleService.switchActive(deviceId, request.roleId());
+        CompanionRoleService.RoleSnapshot role = roleService.switchActive(deviceId, request.roleId());
+        deviceCommandGateway.configureExpression(
+                deviceId, role.expressionThemeColor(), "NEUTRAL", "MEDIUM", 5);
+        return role;
     }
 
     public record DeviceListResponse(List<DeviceResponse> devices) {
@@ -108,6 +112,7 @@ public class DeviceController {
             String safetyState,
             Integer rssi,
             boolean applicationOtaSupported,
+            boolean dynamicExpressionSupported,
             Instant lastSeenAt,
             boolean online,
             boolean commandAvailable

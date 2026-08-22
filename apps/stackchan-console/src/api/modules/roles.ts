@@ -12,13 +12,14 @@ export interface CompanionRole {
   replyLength: PersonaReplyLength
   taboos: string
   ttsVoiceOverride: string | null
+  expressionThemeColor: string
   tone: PersonaTone
   topicBoundaries: string
   updatedAt: string
 }
 
 export type CompanionRoleInput = Pick<CompanionRole,
-  'name' | 'tone' | 'replyLength' | 'proactivity' | 'backgroundInstructions' | 'topicBoundaries' | 'taboos' | 'ttsVoiceOverride'>
+  'name' | 'tone' | 'replyLength' | 'proactivity' | 'backgroundInstructions' | 'topicBoundaries' | 'taboos' | 'ttsVoiceOverride' | 'expressionThemeColor'>
 
 export function listRoles(): Promise<CompanionRole[]> {
   return apiJson('/api/v1/roles')

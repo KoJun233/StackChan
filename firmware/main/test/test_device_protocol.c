@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include "cJSON.h"
 #include "unity.h"
@@ -15,6 +16,7 @@
 #include "screensaver_motion.h"
 #include "interaction_state.h"
 #include "face_animation.h"
+#include "expression_engine.h"
 #include "strict_json.h"
 #include "touch_interaction.h"
 #include "voice_control.h"
@@ -669,6 +671,32 @@ TEST_CASE("ota capable heartbeat adds one strict capability bit", "[device_proto
     cJSON_Delete(root);
 }
 
+TEST_CASE("dynamic expression heartbeat exposes bounded diagnostics", "[device_protocol]")
+{
+    char payload[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
+    TEST_ASSERT_EQUAL(ESP_OK, device_protocol_encode_heartbeat_with_expression(
+        payload, sizeof(payload), 3, 82, -49, "media002", 60, 58, 98000, 4100,
+        300, 2, 0, 7340032, "EMOTION", 0, true, true));
+    cJSON *root = cJSON_Parse(payload);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_TRUE(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(
+        root, "dynamic_expression_supported")));
+    cJSON *expression = cJSON_GetObjectItemCaseSensitive(root, "expression");
+    TEST_ASSERT_EQUAL_INT(60, cJSON_GetObjectItemCaseSensitive(expression, "target_fps")->valueint);
+    TEST_ASSERT_EQUAL_INT(58, cJSON_GetObjectItemCaseSensitive(expression, "actual_fps")->valueint);
+    TEST_ASSERT_EQUAL_INT(98000, cJSON_GetObjectItemCaseSensitive(expression, "draw_time_us")->valueint);
+    TEST_ASSERT_EQUAL_STRING("EMOTION",
+        cJSON_GetObjectItemCaseSensitive(expression, "active_layer")->valuestring);
+    TEST_ASSERT_TRUE(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(
+        expression, "dynamic_renderer")));
+    TEST_ASSERT_TRUE(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(
+        expression, "proximity_supported")));
+    cJSON_Delete(root);
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, device_protocol_encode_heartbeat_with_expression(
+        payload, sizeof(payload), 3, 82, -49, "media002", 50, 58, 1, 1, 1,
+        0, 0, 1, "IDLE", 0, true, true));
+}
+
 TEST_CASE("only a well-formed stop_motion command is accepted", "[device_protocol]")
 {
     char command_id[DEVICE_PROTOCOL_COMMAND_ID_MAX_LEN] = {0};
@@ -763,6 +791,142 @@ TEST_CASE("interaction commands accept only the strict bounded schema", "[device
     TEST_ASSERT_FALSE(device_protocol_parse_command(bad_night_mode, strlen(bad_night_mode), &command));
     TEST_ASSERT_TRUE(device_protocol_parse_command(stop, strlen(stop), &command));
     TEST_ASSERT_EQUAL(DEVICE_COMMAND_STOP_AUDIO, command.type);
+}
+
+TEST_CASE("expression configuration accepts only bounded semantic values", "[device_protocol]")
+{
+    device_command_t command = {0};
+    const char *valid = "{\"type\":\"configure_expression\",\"command_id\":\"expr-1\","
+                        "\"theme_color\":\"#3A7BFF\",\"emotion\":\"LOVING\","
+                        "\"intensity\":\"STRONG\",\"duration_seconds\":12}";
+    TEST_ASSERT_TRUE(device_protocol_parse_command(valid, strlen(valid), &command));
+    TEST_ASSERT_EQUAL(DEVICE_COMMAND_CONFIGURE_EXPRESSION, command.type);
+    TEST_ASSERT_EQUAL_HEX32(0x3A7BFF, command.expression_theme_rgb);
+    TEST_ASSERT_EQUAL(COMPANION_EMOTION_LOVING, command.expression_emotion);
+    TEST_ASSERT_EQUAL(COMPANION_EMOTION_INTENSITY_STRONG, command.expression_intensity);
+    TEST_ASSERT_EQUAL_INT(12, command.expression_duration_seconds);
+
+    const char *unknown = "{\"type\":\"configure_expression\",\"command_id\":\"expr-1\","
+                          "\"theme_color\":\"#3A7BFF\",\"emotion\":\"ECSTATIC\","
+                          "\"intensity\":\"STRONG\",\"duration_seconds\":12}";
+    TEST_ASSERT_FALSE(device_protocol_parse_command(unknown, strlen(unknown), &command));
+}
+
+TEST_CASE("expression frame-rate policy accepts fixed and bounded adaptive modes", "[device_protocol]")
+{
+    device_command_t command = {0};
+    const char *fixed = "{\"type\":\"configure_expression_frame_rate\",\"command_id\":\"fps-1\","
+                        "\"mode\":\"FIXED\",\"min_fps\":47,\"max_fps\":47}";
+    const char *adaptive = "{\"type\":\"configure_expression_frame_rate\",\"command_id\":\"fps-2\","
+                           "\"mode\":\"ADAPTIVE\",\"min_fps\":24,\"max_fps\":57}";
+    const char *invalid = "{\"type\":\"configure_expression_frame_rate\",\"command_id\":\"fps-3\","
+                          "\"mode\":\"FIXED\",\"min_fps\":30,\"max_fps\":60}";
+    TEST_ASSERT_TRUE(device_protocol_parse_command(fixed, strlen(fixed), &command));
+    TEST_ASSERT_EQUAL(DEVICE_COMMAND_CONFIGURE_EXPRESSION_FRAME_RATE, command.type);
+    TEST_ASSERT_EQUAL(DEVICE_EXPRESSION_FPS_FIXED, command.expression_fps_mode);
+    TEST_ASSERT_EQUAL_INT(47, command.expression_max_fps);
+    TEST_ASSERT_TRUE(device_protocol_parse_command(adaptive, strlen(adaptive), &command));
+    TEST_ASSERT_EQUAL(DEVICE_EXPRESSION_FPS_ADAPTIVE, command.expression_fps_mode);
+    TEST_ASSERT_FALSE(device_protocol_parse_command(invalid, strlen(invalid), &command));
+
+    const char *too_high = "{\"type\":\"configure_expression_frame_rate\",\"command_id\":\"fps-4\","
+                           "\"mode\":\"FIXED\",\"min_fps\":61,\"max_fps\":61}";
+    TEST_ASSERT_FALSE(device_protocol_parse_command(too_high, strlen(too_high), &command));
+}
+
+TEST_CASE("expression preview accepts only enumerated semantics", "[device_protocol]")
+{
+    device_command_t command = {0};
+    const char *emotion = "{\"type\":\"preview_expression\",\"command_id\":\"preview-1\","
+                          "\"category\":\"EMOTION\",\"value\":\"HAPPY\",\"duration_seconds\":5}";
+    const char *updating = "{\"type\":\"preview_expression\",\"command_id\":\"preview-2\","
+                           "\"category\":\"SYSTEM\",\"value\":\"UPDATING\",\"duration_seconds\":5}";
+    const char *unknown = "{\"type\":\"preview_expression\",\"command_id\":\"preview-3\","
+                          "\"category\":\"SYSTEM\",\"value\":\"ROOT_SHELL\",\"duration_seconds\":5}";
+    TEST_ASSERT_TRUE(device_protocol_parse_command(emotion, strlen(emotion), &command));
+    TEST_ASSERT_EQUAL(COMPANION_EXPRESSION_PREVIEW_EMOTION, command.expression_preview);
+    TEST_ASSERT_EQUAL(COMPANION_EMOTION_HAPPY, command.expression_preview_value);
+    TEST_ASSERT_TRUE(device_protocol_parse_command(updating, strlen(updating), &command));
+    TEST_ASSERT_EQUAL(COMPANION_EXPRESSION_PREVIEW_UPDATING, command.expression_preview);
+    TEST_ASSERT_FALSE(device_protocol_parse_command(unknown, strlen(unknown), &command));
+}
+
+TEST_CASE("expression engine layers interaction and restores unexpired emotion", "[expression_engine]")
+{
+    companion_expression_engine_t engine = {0};
+    companion_expression_pose_t pose = {0};
+    companion_expression_engine_init(&engine, 1000);
+    companion_expression_engine_suggest_emotion(
+        &engine, COMPANION_EMOTION_HAPPY, COMPANION_EMOTION_INTENSITY_STRONG, 10000, 1000);
+    companion_expression_engine_trigger(
+        &engine, COMPANION_BEHAVIOR_SHAKE_DIZZY, 2000, 1200);
+    TEST_ASSERT_EQUAL(COMPANION_EXPRESSION_LAYER_PHYSICAL,
+        companion_expression_engine_active_layer(&engine, 1500));
+    companion_expression_engine_set_system(&engine, COMPANION_FACE_SPEAKING, 1600);
+    TEST_ASSERT_EQUAL(COMPANION_EXPRESSION_LAYER_PHYSICAL,
+        companion_expression_engine_active_layer(&engine, 1700));
+    TEST_ASSERT_EQUAL(COMPANION_EXPRESSION_LAYER_INTERACTION,
+        companion_expression_engine_active_layer(&engine, 3300));
+    companion_expression_engine_set_system(&engine, COMPANION_FACE_IDLE, 3400);
+    TEST_ASSERT_EQUAL(COMPANION_EXPRESSION_LAYER_EMOTION,
+        companion_expression_engine_active_layer(&engine, 3500));
+    companion_expression_engine_tick(&engine, 3700, &pose);
+    TEST_ASSERT_GREATER_THAN_FLOAT(0.0f, pose.scale_x);
+    companion_expression_engine_tick(&engine, 12000, &pose);
+    TEST_ASSERT_EQUAL(COMPANION_EXPRESSION_LAYER_IDLE,
+        companion_expression_engine_active_layer(&engine, 12000));
+}
+
+TEST_CASE("expression preview is temporary and cannot override a real interaction", "[expression_engine]")
+{
+    companion_expression_engine_t engine = {0};
+    companion_expression_pose_t pose = {0};
+    companion_expression_engine_init(&engine, 1000);
+    companion_expression_engine_trigger(&engine, COMPANION_BEHAVIOR_NONE, 0, 1001);
+    companion_expression_engine_preview(&engine, COMPANION_EXPRESSION_PREVIEW_EMOTION,
+                                        COMPANION_EMOTION_HAPPY, 5000, 1100);
+    TEST_ASSERT_EQUAL(COMPANION_EXPRESSION_LAYER_EMOTION,
+        companion_expression_engine_active_layer(&engine, 1200));
+    companion_expression_engine_set_system(&engine, COMPANION_FACE_SPEAKING, 1300);
+    TEST_ASSERT_EQUAL(COMPANION_EXPRESSION_LAYER_INTERACTION,
+        companion_expression_engine_active_layer(&engine, 1400));
+    companion_expression_engine_set_system(&engine, COMPANION_FACE_IDLE, 1500);
+    companion_expression_engine_tick(&engine, 6200, &pose);
+    TEST_ASSERT_EQUAL(COMPANION_EXPRESSION_LAYER_IDLE,
+        companion_expression_engine_active_layer(&engine, 6200));
+}
+
+static companion_expression_pose_t settled_emotion_pose(companion_emotion_t emotion)
+{
+    companion_expression_engine_t engine = {0};
+    companion_expression_pose_t pose = {0};
+    companion_expression_engine_init(&engine, 1000);
+    companion_expression_engine_trigger(&engine, COMPANION_BEHAVIOR_NONE, 0, 1001);
+    companion_expression_engine_suggest_emotion(
+        &engine, emotion, COMPANION_EMOTION_INTENSITY_STRONG, 10000, 1001);
+    companion_expression_engine_tick(&engine, 1001, &pose);
+    companion_expression_engine_tick(&engine, 2001, &pose);
+    return pose;
+}
+
+TEST_CASE("ball expressions keep representative silhouettes visually distinct", "[expression_engine]")
+{
+    companion_expression_pose_t happy = settled_emotion_pose(COMPANION_EMOTION_HAPPY);
+    companion_expression_pose_t surprised = settled_emotion_pose(COMPANION_EMOTION_SURPRISED);
+    companion_expression_pose_t confused = settled_emotion_pose(COMPANION_EMOTION_CONFUSED);
+    companion_expression_pose_t angry = settled_emotion_pose(COMPANION_EMOTION_ANGRY);
+    companion_expression_pose_t shy = settled_emotion_pose(COMPANION_EMOTION_SHY);
+
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, happy.left_eye_length, happy.right_eye_length);
+    TEST_ASSERT_GREATER_THAN_FLOAT(0.06f,
+        fabsf(surprised.right_eye_thickness - surprised.left_eye_thickness));
+    TEST_ASSERT_GREATER_THAN_FLOAT(0.15f,
+        fabsf(confused.right_eye_length - confused.left_eye_length));
+    TEST_ASSERT_LESS_THAN_FLOAT(-0.35f, angry.left_eye_angle);
+    TEST_ASSERT_GREATER_THAN_FLOAT(0.35f, angry.right_eye_angle);
+    TEST_ASSERT_EQUAL(COMPANION_BODY_CORAL, angry.body_style);
+    TEST_ASSERT_EQUAL(COMPANION_BODY_BLUSH, shy.body_style);
+    TEST_ASSERT_GREATER_THAN_FLOAT(0.75f, shy.blush);
 }
 
 TEST_CASE("voice control rejects unsafe detection settings before applying them", "[voice_control]")

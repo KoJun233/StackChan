@@ -29,6 +29,22 @@ export interface CreateExpressionPackInput {
   name: string
 }
 
+export type ExpressionFrameRateMode = 'FIXED' | 'ADAPTIVE'
+export type ExpressionPreviewCategory = 'EMOTION' | 'SYSTEM' | 'BEHAVIOR'
+
+export interface ExpressionFrameRateSettings {
+  applied: boolean
+  maxFps: number
+  minFps: number
+  mode: ExpressionFrameRateMode
+}
+
+export interface ExpressionPreviewInput {
+  category: ExpressionPreviewCategory
+  durationSeconds: number
+  value: string
+}
+
 export const expressionStates: { label: string, value: ExpressionState }[] = [
   { label: '待机', value: 'idle' },
   { label: '聆听', value: 'listening' },
@@ -90,4 +106,27 @@ export function deactivateExpressionPack(deviceId: string): Promise<DeviceExpres
 
 export function deleteExpressionPack(packId: string): Promise<void> {
   return apiJson(`/api/v1/expression-packs/${encodeURIComponent(packId)}`, { method: 'DELETE' })
+}
+
+export function getExpressionFrameRate(deviceId: string): Promise<ExpressionFrameRateSettings> {
+  return apiJson(`/api/v1/devices/${encodeURIComponent(deviceId)}/expression/frame-rate`)
+}
+
+export function updateExpressionFrameRate(
+  deviceId: string,
+  settings: Omit<ExpressionFrameRateSettings, 'applied'>,
+): Promise<ExpressionFrameRateSettings> {
+  return apiJson(`/api/v1/devices/${encodeURIComponent(deviceId)}/expression/frame-rate`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  })
+}
+
+export async function previewExpression(deviceId: string, preview: ExpressionPreviewInput): Promise<void> {
+  await apiJson(`/api/v1/devices/${encodeURIComponent(deviceId)}/expression/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(preview),
+  })
 }

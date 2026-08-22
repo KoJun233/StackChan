@@ -157,7 +157,8 @@ public class SystemHealthController {
                         device.getId(), device.getDisplayName(), device.getFirmwareVersion(), device.getRssi(),
                         device.getSafetyState(), device.getLastSeenAt(),
                         device.getLastSeenAt() != null && !device.getLastSeenAt().isBefore(onlineAfter),
-                        commandGateway.isConnected(device.getId()), device.isApplicationOtaSupported()
+                        commandGateway.isConnected(device.getId()), device.isApplicationOtaSupported(),
+                        device.isDynamicExpressionSupported(), device.getExpressionDiagnostics()
                 ))
                 .toList();
     }
@@ -239,7 +240,9 @@ public class SystemHealthController {
             Instant lastSeenAt,
             boolean online,
             boolean commandAvailable,
-            boolean applicationOtaSupported
+            boolean applicationOtaSupported,
+            boolean dynamicExpressionSupported,
+            com.kj.stackchan.device.DeviceExpressionDiagnostics expression
     ) {
     }
 

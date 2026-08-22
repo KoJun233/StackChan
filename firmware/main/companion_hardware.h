@@ -4,7 +4,38 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "expression_engine.h"
 #include "interaction_state.h"
+
+typedef struct {
+    uint8_t target_fps;
+    uint8_t actual_fps;
+    uint32_t draw_time_us;
+    uint32_t transfer_time_us;
+    uint32_t display_lock_wait_us;
+    uint32_t dropped_frames;
+    uint32_t audio_underruns;
+    uint32_t minimum_free_heap;
+    companion_expression_layer_t active_layer;
+    uint8_t degrade_reason;
+    bool dynamic_renderer;
+    bool imu_supported;
+    bool proximity_supported;
+} companion_expression_diagnostics_t;
+
+enum {
+    COMPANION_EXPRESSION_DEGRADE_NONE = 0,
+    COMPANION_EXPRESSION_DEGRADE_DRAW_BUDGET = 1,
+    COMPANION_EXPRESSION_DEGRADE_DISPLAY_LOCK = 2,
+    COMPANION_EXPRESSION_DEGRADE_AUDIO_BUSY = 3,
+    COMPANION_EXPRESSION_DEGRADE_AUDIO_UNDERRUN = 4,
+    COMPANION_EXPRESSION_DEGRADE_IDLE_SLEEP = 5,
+};
+
+typedef enum {
+    COMPANION_EXPRESSION_FPS_FIXED = 0,
+    COMPANION_EXPRESSION_FPS_ADAPTIVE,
+} companion_expression_fps_mode_t;
 
 typedef enum {
     COMPANION_TOUCH_PRESSED = 0,
@@ -44,6 +75,27 @@ esp_err_t companion_hardware_configure_interaction(int volume_percent, bool nigh
 
 /** Waits for a bounded touch edge emitted by the UI task. */
 bool companion_hardware_wait_touch_event(companion_touch_event_t *event, uint32_t timeout_ms);
+
+/** Applies a server-validated role color and bounded emotion suggestion. */
+esp_err_t companion_hardware_configure_expression(uint32_t rgb,
+                                                  companion_emotion_t emotion,
+                                                  companion_emotion_intensity_t intensity,
+                                                  uint32_t duration_ms);
+
+/** Applies a server-persisted fixed target or bounded adaptive frame-rate policy. */
+esp_err_t companion_hardware_configure_expression_frame_rate(
+    companion_expression_fps_mode_t mode, uint8_t min_fps, uint8_t max_fps);
+
+/** Temporarily previews one semantic without changing the real interaction state. */
+esp_err_t companion_hardware_preview_expression(companion_expression_preview_t preview,
+                                                uint8_t value,
+                                                uint32_t duration_ms);
+
+/** Copies privacy-safe renderer diagnostics for the next heartbeat. */
+void companion_hardware_get_expression_diagnostics(companion_expression_diagnostics_t *diagnostics);
+
+/** Gives firmware installation a deterministic highest-priority blue-violet state. */
+void companion_hardware_set_expression_updating(bool updating);
 
 /** Updates the face and records user-visible activity, exiting the screensaver. */
 void companion_hardware_set_state(companion_face_state_t state);

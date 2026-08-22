@@ -1,6 +1,7 @@
 #include "device_protocol.h"
 
 #include <ctype.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "cJSON.h"
@@ -228,6 +229,61 @@ esp_err_t device_protocol_encode_heartbeat_with_ota(char *output,
     return err;
 }
 
+static bool is_upper_hex_color(const char *value)
+{
+    if (value == NULL || strlen(value) != 7 || value[0] != '#') return false;
+    for (size_t index = 1; index < 7; index++) {
+        if (!isdigit((unsigned char)value[index]) &&
+            !(value[index] >= 'A' && value[index] <= 'F')) return false;
+    }
+    return true;
+}
+
+esp_err_t device_protocol_encode_heartbeat_with_expression(
+    char *output, size_t output_size, uint32_t sequence, int battery_percent, int rssi,
+    const char *firmware_version, uint8_t target_fps, uint8_t actual_fps,
+    uint32_t draw_time_us, uint32_t transfer_time_us, uint32_t display_lock_wait_us,
+    uint32_t dropped_frames, uint32_t audio_underruns, uint32_t minimum_free_heap,
+    const char *active_layer, uint8_t degrade_reason, bool dynamic_renderer,
+    bool imu_supported)
+{
+    if (output == NULL || output_size == 0 || sequence == 0 || battery_percent < 0 ||
+        battery_percent > 100 || !is_valid_firmware_version(firmware_version) ||
+        target_fps < 1 || target_fps > 60 || actual_fps > 120 ||
+        active_layer == NULL || degrade_reason > 5) return ESP_ERR_INVALID_ARG;
+    cJSON *root = cJSON_CreateObject();
+    cJSON *expression = cJSON_CreateObject();
+    if (root == NULL || expression == NULL) {
+        cJSON_Delete(root); cJSON_Delete(expression); return ESP_ERR_NO_MEM;
+    }
+    bool complete = cJSON_AddStringToObject(root, "type", "heartbeat") != NULL &&
+                    cJSON_AddNumberToObject(root, "sequence", sequence) != NULL &&
+                    cJSON_AddNumberToObject(root, "battery_percent", battery_percent) != NULL &&
+                    cJSON_AddNumberToObject(root, "rssi", rssi) != NULL &&
+                    cJSON_AddStringToObject(root, "safety_state", "motion_disabled") != NULL &&
+                    cJSON_AddStringToObject(root, "firmware_version", firmware_version) != NULL &&
+                    cJSON_AddBoolToObject(root, "application_ota_supported", true) != NULL &&
+                    cJSON_AddBoolToObject(root, "dynamic_expression_supported", true) != NULL &&
+                    cJSON_AddNumberToObject(expression, "target_fps", target_fps) != NULL &&
+                    cJSON_AddNumberToObject(expression, "actual_fps", actual_fps) != NULL &&
+                    cJSON_AddNumberToObject(expression, "draw_time_us", draw_time_us) != NULL &&
+                    cJSON_AddNumberToObject(expression, "transfer_time_us", transfer_time_us) != NULL &&
+                    cJSON_AddNumberToObject(expression, "display_lock_wait_us", display_lock_wait_us) != NULL &&
+                    cJSON_AddNumberToObject(expression, "dropped_frames", dropped_frames) != NULL &&
+                    cJSON_AddNumberToObject(expression, "audio_underruns", audio_underruns) != NULL &&
+                    cJSON_AddNumberToObject(expression, "minimum_free_heap", minimum_free_heap) != NULL &&
+                    cJSON_AddStringToObject(expression, "active_layer", active_layer) != NULL &&
+                    cJSON_AddNumberToObject(expression, "degrade_reason", degrade_reason) != NULL &&
+                    cJSON_AddBoolToObject(expression, "dynamic_renderer", dynamic_renderer) != NULL &&
+                    cJSON_AddBoolToObject(expression, "imu_supported", imu_supported) != NULL &&
+                    cJSON_AddBoolToObject(expression, "proximity_supported", false) != NULL &&
+                    cJSON_AddItemToObject(root, "expression", expression);
+    if (!complete) cJSON_Delete(expression);
+    esp_err_t err = complete ? print_json(root, output, output_size) : ESP_ERR_NO_MEM;
+    cJSON_Delete(root);
+    return err;
+}
+
 bool device_protocol_parse_stop_motion(const char *payload,
                                        size_t payload_size,
                                        char *command_id,
@@ -342,6 +398,81 @@ bool device_protocol_parse_command(const char *payload,
             command->type = DEVICE_COMMAND_CONFIGURE_INTERACTION;
             command->volume_percent = volume_percent->valueint;
             command->night_mode = cJSON_IsTrue(night_mode);
+        }
+    } else if (valid && strcmp(type->valuestring, "configure_expression") == 0 &&
+               cJSON_GetArraySize(root) == 6) {
+        cJSON *theme_color = cJSON_GetObjectItemCaseSensitive(root, "theme_color");
+        cJSON *emotion = cJSON_GetObjectItemCaseSensitive(root, "emotion");
+        cJSON *intensity = cJSON_GetObjectItemCaseSensitive(root, "intensity");
+        cJSON *duration = cJSON_GetObjectItemCaseSensitive(root, "duration_seconds");
+        unsigned int rgb = 0;
+        int parsed = cJSON_IsString(theme_color) && is_upper_hex_color(theme_color->valuestring)
+            ? sscanf(theme_color->valuestring, "#%06x", &rgb) : 0;
+        valid = parsed == 1 &&
+                cJSON_IsString(emotion) && emotion->valuestring != NULL &&
+                cJSON_IsString(intensity) && intensity->valuestring != NULL &&
+                is_integer_in_range(duration, 5, 15) &&
+                companion_emotion_parse(emotion->valuestring, &command->expression_emotion) &&
+                companion_emotion_intensity_parse(intensity->valuestring,
+                                                   &command->expression_intensity);
+        if (valid) {
+            command->type = DEVICE_COMMAND_CONFIGURE_EXPRESSION;
+            command->expression_theme_rgb = rgb;
+            command->expression_duration_seconds = duration->valueint;
+        }
+    } else if (valid && strcmp(type->valuestring, "configure_expression_frame_rate") == 0 &&
+               cJSON_GetArraySize(root) == 5) {
+        cJSON *mode = cJSON_GetObjectItemCaseSensitive(root, "mode");
+        cJSON *minimum = cJSON_GetObjectItemCaseSensitive(root, "min_fps");
+        cJSON *maximum = cJSON_GetObjectItemCaseSensitive(root, "max_fps");
+        bool fixed = cJSON_IsString(mode) && mode->valuestring != NULL &&
+                     strcmp(mode->valuestring, "FIXED") == 0;
+        bool adaptive = cJSON_IsString(mode) && mode->valuestring != NULL &&
+                        strcmp(mode->valuestring, "ADAPTIVE") == 0;
+        valid = (fixed || adaptive) && cJSON_IsNumber(minimum) && cJSON_IsNumber(maximum) &&
+                minimum->valuedouble == minimum->valueint && maximum->valuedouble == maximum->valueint &&
+                minimum->valueint >= 1 && minimum->valueint <= 60 &&
+                maximum->valueint >= 1 && maximum->valueint <= 60 &&
+                minimum->valueint <= maximum->valueint &&
+                (!fixed || minimum->valueint == maximum->valueint);
+        if (valid) {
+            command->type = DEVICE_COMMAND_CONFIGURE_EXPRESSION_FRAME_RATE;
+            command->expression_fps_mode = fixed
+                ? DEVICE_EXPRESSION_FPS_FIXED : DEVICE_EXPRESSION_FPS_ADAPTIVE;
+            command->expression_min_fps = minimum->valueint;
+            command->expression_max_fps = maximum->valueint;
+        }
+    } else if (valid && strcmp(type->valuestring, "preview_expression") == 0 &&
+               cJSON_GetArraySize(root) == 5) {
+        cJSON *category = cJSON_GetObjectItemCaseSensitive(root, "category");
+        cJSON *value = cJSON_GetObjectItemCaseSensitive(root, "value");
+        cJSON *duration = cJSON_GetObjectItemCaseSensitive(root, "duration_seconds");
+        companion_emotion_t emotion = COMPANION_EMOTION_NEUTRAL;
+        companion_face_state_t state = COMPANION_FACE_IDLE;
+        companion_expression_behavior_t behavior = COMPANION_BEHAVIOR_NONE;
+        bool updating = false;
+        valid = cJSON_IsString(category) && category->valuestring != NULL &&
+                cJSON_IsString(value) && value->valuestring != NULL &&
+                is_integer_in_range(duration, 1, 15);
+        if (valid && strcmp(category->valuestring, "EMOTION") == 0) {
+            valid = companion_emotion_parse(value->valuestring, &emotion);
+            command->expression_preview = COMPANION_EXPRESSION_PREVIEW_EMOTION;
+            command->expression_preview_value = (uint8_t)emotion;
+        } else if (valid && strcmp(category->valuestring, "SYSTEM") == 0) {
+            valid = companion_expression_system_parse(value->valuestring, &state, &updating);
+            command->expression_preview = updating ? COMPANION_EXPRESSION_PREVIEW_UPDATING
+                                                   : COMPANION_EXPRESSION_PREVIEW_SYSTEM;
+            command->expression_preview_value = (uint8_t)state;
+        } else if (valid && strcmp(category->valuestring, "BEHAVIOR") == 0) {
+            valid = companion_expression_behavior_parse(value->valuestring, &behavior);
+            command->expression_preview = COMPANION_EXPRESSION_PREVIEW_BEHAVIOR;
+            command->expression_preview_value = (uint8_t)behavior;
+        } else {
+            valid = false;
+        }
+        if (valid) {
+            command->type = DEVICE_COMMAND_PREVIEW_EXPRESSION;
+            command->expression_duration_seconds = duration->valueint;
         }
     } else if (valid && strcmp(type->valuestring, "install_wake_model") == 0 &&
                cJSON_GetArraySize(root) == 6) {

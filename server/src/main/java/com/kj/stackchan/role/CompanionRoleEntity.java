@@ -28,6 +28,8 @@ public class CompanionRoleEntity {
     @Column(name = "topic_boundaries", nullable = false, length = 2000) private String topicBoundaries;
     @Column(nullable = false, length = 2000) private String taboos;
     @Column(name = "tts_voice_override", length = 160) private String ttsVoiceOverride;
+    @Column(name = "expression_theme_color", nullable = false, length = 7)
+    private String expressionThemeColor = "#FF4FA3";
     @Column(name = "is_default", nullable = false) private boolean defaultRole;
     @Column(name = "archived_at") private Instant archivedAt;
     @Column(name = "created_at", nullable = false) private Instant createdAt;
@@ -38,11 +40,19 @@ public class CompanionRoleEntity {
     public CompanionRoleEntity(String name, PersonaTone tone, PersonaReplyLength replyLength,
                                PersonaProactivity proactivity, String backgroundInstructions,
                                String topicBoundaries, String taboos, String ttsVoiceOverride, Instant now) {
+        this(name, tone, replyLength, proactivity, backgroundInstructions, topicBoundaries, taboos,
+                ttsVoiceOverride, "#FF4FA3", now);
+    }
+
+    public CompanionRoleEntity(String name, PersonaTone tone, PersonaReplyLength replyLength,
+                               PersonaProactivity proactivity, String backgroundInstructions,
+                               String topicBoundaries, String taboos, String ttsVoiceOverride,
+                               String expressionThemeColor, Instant now) {
         this.id = UUID.randomUUID();
         this.defaultRole = false;
         this.createdAt = now;
         update(name, tone, replyLength, proactivity, backgroundInstructions, topicBoundaries, taboos,
-                ttsVoiceOverride, now);
+                ttsVoiceOverride, expressionThemeColor, now);
     }
 
     public CompanionRoleEntity(String name, PersonaTone tone, PersonaReplyLength replyLength,
@@ -54,6 +64,14 @@ public class CompanionRoleEntity {
     public void update(String name, PersonaTone tone, PersonaReplyLength replyLength,
                        PersonaProactivity proactivity, String backgroundInstructions,
                        String topicBoundaries, String taboos, String ttsVoiceOverride, Instant now) {
+        update(name, tone, replyLength, proactivity, backgroundInstructions, topicBoundaries, taboos,
+                ttsVoiceOverride, expressionThemeColor, now);
+    }
+
+    public void update(String name, PersonaTone tone, PersonaReplyLength replyLength,
+                       PersonaProactivity proactivity, String backgroundInstructions,
+                       String topicBoundaries, String taboos, String ttsVoiceOverride,
+                       String expressionThemeColor, Instant now) {
         this.name = name;
         this.tone = tone;
         this.replyLength = replyLength;
@@ -62,6 +80,7 @@ public class CompanionRoleEntity {
         this.topicBoundaries = topicBoundaries;
         this.taboos = taboos;
         this.ttsVoiceOverride = ttsVoiceOverride;
+        this.expressionThemeColor = expressionThemeColor;
         this.updatedAt = now;
     }
 
@@ -76,6 +95,7 @@ public class CompanionRoleEntity {
     public String getTopicBoundaries() { return topicBoundaries; }
     public String getTaboos() { return taboos; }
     public String getTtsVoiceOverride() { return ttsVoiceOverride; }
+    public String getExpressionThemeColor() { return expressionThemeColor; }
     public boolean isDefaultRole() { return defaultRole; }
     public Instant getArchivedAt() { return archivedAt; }
     public Instant getCreatedAt() { return createdAt; }

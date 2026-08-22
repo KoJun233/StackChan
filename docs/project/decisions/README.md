@@ -48,3 +48,4 @@
 | [0035](0035-interactive-notification-responses.md) | ACCEPTED | 互动通知显式声明可用回执，用户经确认回应并由外部来源安全轮询结果。 |
 | [0036](0036-deterministic-notification-digests.md) | ACCEPTED | 同集成单向通知在可选窗口内按原文确定性聚合，并共享可靠设备 ACK。 |
 | [0037](0037-ordered-streaming-voice-playback.md) | ACCEPTED | 设备语音协商 SCV2 有序分段 WAV，并在取消后丢弃晚到分片。 |
+| [0038](0038-layered-expression-rendering-and-resident-appearance-catalog.md) | ACCEPTED | 默认使用分层动态球形表情与局部自适应渲染，并保持 v1 静态 PNG 资源包兼容。 |
