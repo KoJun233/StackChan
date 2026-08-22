@@ -1,14 +1,14 @@
 # 服务端工作流
 
-- 状态：READY_FOR_REVIEW
+- 状态：STABLE
 - 最后更新：2026-08-23
-- 当前分支：`codex/media-002-expression-experience`
-- 基准提交：`19bd459`
-- 最后验证提交：`41b8827`
+- 当前分支：`codex/media-003-eaf-emote-evaluation`（本任务不改服务端）
+- 基准提交：`67e5ad3`
+- 最后验证提交：`67e5ad3`
 
 ## 当前目标
 
-在保持 SCV1/SCV2 和现有安全边界的同时，交付 `MEDIA-002D` 连续帧率策略和设备重连同步。
+维持已合入的 V35、SCV1/SCV2、连续帧率同步和既有安全边界；`MEDIA-003` 不修改服务端协议、数据库或部署。
 
 ## 已完成
 

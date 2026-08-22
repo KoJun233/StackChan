@@ -1,0 +1,5 @@
+version: "0.1.0"
+description: Isolated MEDIA-003 esp_emote_gfx lifecycle probe.
+dependencies:
+  idf: ">=5.5"
+  espressif2022/esp_emote_gfx: "==3.0.5"

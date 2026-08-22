@@ -10,6 +10,8 @@
   "scripts": {
     "docs:check": "node scripts/verify-project-docs.mjs",
     "docs:check:test": "node --test scripts/verify-project-docs.test.mjs",
+    "media003:eaf:generate": "node firmware/experiments/media003/generate-eaf-benchmark.mjs",
+    "media003:eaf:test": "node --test firmware/experiments/media003/generate-eaf-benchmark.test.mjs",
     "dev": "tsx scripts/cli.ts --mode=dev",
     "build": "tsx scripts/cli.ts --mode=build",
     "serve": "tsx scripts/cli.ts --mode=serve",

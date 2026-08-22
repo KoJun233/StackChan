@@ -1,0 +1,6 @@
+version: "0.1.0"
+description: Isolated MEDIA-003 official EAF player probe.
+dependencies:
+  idf: ">=5.5"
+  espressif/esp_lv_eaf_player: "==0.3.0"
+  lvgl/lvgl: "==9.4.0"
