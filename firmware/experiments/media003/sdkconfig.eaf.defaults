@@ -1,0 +1,3 @@
+# The project-owned MEDIA-003 benchmark uses palette RLE only. Keeping the
+# software JPEG decoder would reserve about 19 KiB of DRAM without exercising it.
+CONFIG_ESP_LV_EAF_ENABLE_SW_JPEG=n

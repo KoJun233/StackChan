@@ -2,14 +2,14 @@
 
 - 状态：STABLE
 - 最后更新：2026-08-23
-- 当前分支：`codex/media-002-expression-experience`
-- 基准提交：`19bd459`
-- 最后验证提交：`41b8827`
+- 当前分支：`codex/media-003-eaf-emote-evaluation`（运行态未替换）
+- 基准提交：`67e5ad3`
+- 最后验证提交：`67e5ad3`
 - 当前模式：LAN HTTP development
 
 ## 当前目标
 
-维持已部署的 MEDIA-002D 最终 LAN server/V35；CoreS3 已由用户自行安装并验收 `41b8827-perf9`，不自动 OTA。
+维持已部署的 MEDIA-002D 最终 LAN server/V35；CoreS3 已安装并验收 MEDIA-003 EAF 候选 `71868da`，不自动再次 OTA。
 
 ## 已完成
 
@@ -22,11 +22,11 @@
 
 ## 正在进行
 
-LAN server 运行 `media002-final-local-41b8827`/V35，连续 1–60 FPS、帧率重连同步和诊断标签均已发布；当前地址为 `http://192.168.1.3:8080/`。CoreS3 运行 `41b8827-perf9`，用户确认画面流畅度和音量正常。部署前镜像保留为 `stackchan-server:pre-media002-final-41b8827`，当前镜像保留为 `stackchan-server:media002-final-41b8827`，摘要 `sha256:bfd2019b4e8a84a0132794096d751f3bce872555165a11219081b820f9445810`。
+LAN server 运行 `media002-final-local-41b8827`/V35，连续 1–60 FPS、帧率重连同步和诊断标签均已发布；当前地址为 `http://192.168.1.3:8080/`。CoreS3 运行 `71868da`，应用 OTA 为 `INSTALLED`，EAF 开机片段、native 恢复、语音和触摸成功路径通过。server 镜像未替换，仍为 `stackchan-server:media002-final-41b8827`，摘要 `sha256:bfd2019b4e8a84a0132794096d751f3bce872555165a11219081b820f9445810`。
 
 ## 下一步操作
 
-等待用户在当前 LAN 页面完成最终体验复核；通过后整理单一任务提交。本轮不替用户 OTA、不清除 NVS、不做回退演练。
+保持当前 LAN server/V35 与 CoreS3 `71868da`，完成任务提交回归。本轮不再 OTA、不清除 NVS、不主动做回退演练。
 
 ## 阻塞项
 

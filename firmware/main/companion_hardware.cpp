@@ -20,6 +20,10 @@
 #include "freertos/task.h"
 #include "src/misc/cache/instance/lv_image_cache.h"
 
+#if defined(STACKCHAN_MEDIA003_EAF_PROBE) || defined(STACKCHAN_MEDIA003_EMOTE_PROBE)
+#include "media003_backend_probe.h"
+#endif
+
 #define UI_TASK_STACK_SIZE 6144
 #define UI_TASK_PRIORITY 2
 #define UI_TASK_CORE 1
@@ -126,6 +130,10 @@ static int64_t s_next_input_poll_us;
 static companion_expression_fps_mode_t s_expression_fps_mode = COMPANION_EXPRESSION_FPS_ADAPTIVE;
 static uint8_t s_expression_min_fps = 30U;
 static uint8_t s_expression_max_fps = 60U;
+
+#if defined(STACKCHAN_MEDIA003_EAF_PROBE)
+static bool s_media003_probe_active;
+#endif
 
 // M5Unified kept the AW88298 register at 0 dB and applied its 0..255 master
 // volume as a squared PCM amplitude. The official CoreS3 BSP declares the
@@ -421,6 +429,16 @@ static void create_expression_scene_locked(void)
     s_static_image = lv_image_create(s_screen);
     lv_obj_set_pos(s_static_image, 0, 0);
 
+#if defined(STACKCHAN_MEDIA003_EAF_PROBE) || defined(STACKCHAN_MEDIA003_EMOTE_PROBE)
+    media003_backend_probe_init(s_screen, BALL_SURFACE_X, BALL_SURFACE_Y);
+    media003_backend_probe_diagnostics_t probe = {};
+    media003_backend_probe_get_diagnostics(&probe);
+    ESP_LOGI(TAG, "MEDIA-003 backend=%s ready=%s asset=%" PRIu32
+                  " init=%" PRIu32 " us heap_delta=%" PRIu32,
+             probe.backend, probe.ready ? "true" : "false", probe.asset_bytes,
+             probe.init_time_us, probe.heap_delta_bytes);
+#endif
+
     set_hidden(s_static_image, true);
     set_hidden(s_left_blush, true);
     set_hidden(s_right_blush, true);
@@ -476,7 +494,15 @@ static void update_dynamic_scene_locked(const companion_expression_pose_t &pose,
     int center_y = BALL_SURFACE_SIZE / 2 + (int)lroundf(pose.offset_y * 34.0f);
 
     set_hidden(s_static_image, true);
+#if defined(STACKCHAN_MEDIA003_EAF_PROBE)
+    bool eaf_active = s_expression_engine.behavior == COMPANION_BEHAVIOR_BOOT_APPEAR &&
+                      now_ms < s_expression_engine.behavior_expires_ms;
+    s_media003_probe_active = media003_backend_probe_set_active(eaf_active);
+    set_hidden(s_ball_root, s_media003_probe_active);
+    if (s_media003_probe_active) return;
+#else
     set_hidden(s_ball_root, false);
+#endif
     bool body_style_changed = !s_body_palette_initialized ||
                               s_body_palette_style != pose.body_style;
     bool update_body = !s_body_geometry_initialized || body_style_changed ||

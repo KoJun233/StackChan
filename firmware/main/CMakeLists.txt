@@ -24,6 +24,12 @@ set(stackchan_sources
     "wake_model_ota.c"
     "wake_word_model.c")
 
+if(STACKCHAN_MEDIA003_BACKEND STREQUAL "eaf")
+    list(APPEND stackchan_sources "media003_backend_probe.cpp")
+elseif(STACKCHAN_MEDIA003_BACKEND STREQUAL "emote")
+    list(APPEND stackchan_sources "media003_backend_probe.cpp")
+endif()
+
 if(CONFIG_STACKCHAN_PROTOCOL_TESTS)
     list(APPEND stackchan_sources "test/test_device_protocol.c")
 endif()
@@ -36,6 +42,12 @@ idf_component_register(
     SRCS ${stackchan_sources}
     INCLUDE_DIRS "."
     REQUIRES app_update esp-sr esp_app_format esp_codec_dev esp_driver_usb_serial_jtag esp_event esp_http_client esp_hw_support esp_netif esp_partition esp_timer esp_wifi esp_websocket_client freertos json lvgl m5stack_core_s3 mbedtls nvs_flash sensor_hub unity)
+
+if(STACKCHAN_MEDIA003_BACKEND STREQUAL "eaf")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE STACKCHAN_MEDIA003_EAF_PROBE=1)
+elseif(STACKCHAN_MEDIA003_BACKEND STREQUAL "emote")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE STACKCHAN_MEDIA003_EMOTE_PROBE=1)
+endif()
 
 if(CONFIG_STACKCHAN_LAN_TEST_CERT)
     target_add_binary_data(${COMPONENT_LIB} "lan-test-server.pem" TEXT)

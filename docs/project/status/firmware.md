@@ -2,14 +2,14 @@
 
 - 状态：READY_FOR_REVIEW
 - 最后更新：2026-08-23
-- 当前分支：`codex/media-002-expression-experience`
-- 基准提交：`19bd459`
-- 最后验证提交：`41b8827`
-- 当前实机镜像：`41b8827-perf9`
+- 当前分支：`codex/media-003-eaf-emote-evaluation`
+- 基准提交：`67e5ad3`
+- 最后验证提交：`67e5ad3`
+- 当前实机镜像：`71868da`
 
 ## 当前目标
 
-在不改变运动安全、语音和 OTA 边界的前提下，把 CoreS3 硬件与显示实现完整迁移到官方 BSP + LVGL 9.4，用 160×160 原生动态球体替代默认 10 FPS 机械眼，并保留静态 PNG 兼容模式。
+在不改变已验收原生渲染、运动安全、语音和 OTA 边界的前提下，比较 native、官方 EAF player 与 `esp_emote_gfx`，判断有限生命周期动画是否值得增加一种受控资源格式。
 
 ## 已完成
 
@@ -30,21 +30,23 @@
 
 ## 正在进行
 
-- 官方 `m5stack_core_s3` BSP 4.0.0、`esp_lvgl_port` 2.9.0 和 LVGL 9.4 已替代 M5Unified/M5GFX；显示、触摸、AW88298、ES7210 与 BMI270 均收敛到官方 BSP。
-- UI 使用 `esp_timer` 微秒级唤醒、160×160 局部失效和 24 行双 DMA 缓冲。四层球体底层最多 30 Hz 更新，眼睛、轨道和前景效果仍可按 60 Hz 更新；每五秒记录 LVGL flush 次数、像素和等待时间用于诊断。
-- `41b8827-perf9` 已由用户通过保留 NVS 的应用 OTA 安装。固定 60 FPS 待机实测约 55 FPS，场景更新约 1041 μs、LVGL 刷新约 11077 μs、锁等待约 462 μs、音频 underrun 0、最低空闲堆约 7.56 MiB；用户确认画面流畅度正常。
-- 40 MHz SPI 下 160×160 RGB565 的理论传输下限约 10.24 ms，实测 LVGL 刷新约 11.1 ms 已接近总线边界；本任务不再以未验证 SPI 超频、扩大 DMA 缓冲或全根节点失效换取名义 60 FPS。
-- 官方音量 API 的 `0..100` 是用户刻度，不是 dB 百分比。自定义曲线把旧 M5Unified 的平方 PCM 音量换算为 dB，并加入 CoreS3 BSP 约 `+11.39 dB` 固定模拟链路增益；`0` 保持静音，`100` 对应迁移前满量程。用户确认 `perf9` 回答音量恢复正常。
-- `MEDIA-002D` 固件实现和实机调校已完成，当前仅剩双 profile、任务栈预算和文档的最终回归。
+- 默认 `STACKCHAN_MEDIA003_BACKEND=native`，不包含候选组件；ESP-IDF 5.4.4 完整固件仍为 1,581,488 字节，与 MEDIA-002 最终稳定制品同尺寸。
+- EAF profile 固定官方 `espressif/esp_lv_eaf_player` 0.3.0、LVGL 9.4 和 ESP-IDF 5.5.5，使用独立依赖锁。项目自有 18 帧 RLE 素材只在约 1.8 秒开机窗口显示，之后隐藏并恢复 native。
+- 自有 EAF 为 53,854 字节；同口径 ESP-IDF 5.5.5 native 为 1,605,088 字节，EAF RLE-only 为 1,669,504 字节，净增 64,416 字节，最小 3 MiB 应用分区仍有 47% 余量。
+- Emote profile 固定 `espressif2022/esp_emote_gfx` 3.0.5，只执行 init/deinit 并记录初始化时间和保留堆，不注册 flush、不接管显示。其 1,615,776 字节仅代表 lifecycle 链接成本，不是完整渲染性能。
+- 候选依赖、sdkconfig 和生成器全部位于 `firmware/experiments/media003`；根依赖锁、稳定工具链、表达协议和服务端均不改变。
+- `71868da` 已通过 LAN HTTP 应用 OTA 安装，任务为 `INSTALLED`，NVS、OTA 能力和 `motion_disabled` 保留；本轮未主动演练回退。
+- 用户确认开机 EAF 片段后恢复 native、连续三次唤醒对话和回答声音正常、TTS 播放中触摸停止及下一回合正常，无黑屏、卡住或自动重启。
+- 稳定心跳约 55/60 FPS、绘制 1097 μs、传输 22627 μs、锁等待 10 μs、音频 underrun 0、最低空闲堆 7,735,712 字节。
 
 ## 下一步操作
 
-保持 `perf9` 显示与音量实现不变，等待交付整理。PNG 兼容、IMU 摇晃和三十分钟稳定性可按 runbook 继续补充记录，但不重复刷写已验收镜像。
+完成生成器、目标 profile、既有协议/语音/传输、文档和 diff 最终回归，将实体证据压回唯一任务提交。保持 `71868da` 运行；不刷 Emote lifecycle profile，不建设正式多片段资源协议。
 
 ## 阻塞项
 
-- 自动化无代码阻塞。60 FPS 是调度上限而不是硬件承诺，稳定真机结果约为 55 FPS；接近行为受硬件能力限制，当前不会触发。
-- 用户明确要求本轮不做应用 OTA 回退演练；自定义八图实体安装和未来多资源包常驻仍需单独设计或逐次授权。
+- 自动化和实体成功路径均无阻塞。EAF 依赖 ESP-IDF 5.5 及以上，默认 native 工具链仍为 5.4.4。
+- 多资源包常驻、正式 EAF 资源协议和 Emote 显示接管不在本次原型范围。
 
 ## 关键文件
 
@@ -56,12 +58,24 @@
 - `firmware/main/firmware_ota.c`
 - `firmware/main/expression_pack.c`
 - `firmware/main/companion_hardware.cpp`
+- `firmware/main/media003_backend_probe.cpp`
+- `firmware/experiments/media003/README.md`
+- `firmware/experiments/media003/generate-eaf-benchmark.mjs`
+- `firmware/experiments/media003/eaf_probe/`
+- `firmware/experiments/media003/emote_probe/`
 - `firmware/main/idf_component.yml`
 - `firmware/dependencies.lock`
 - `firmware/sdkconfig.defaults.*`
 
 ## 验证命令与最近结果
 
+- 提交绑定 EAF 候选 `71868da` 完整构建通过：1,669,504 字节，SHA-256 `7E794FDECA4A4CC005C87389A691C3B86FBD783B931E5086607F479394880206`，app descriptor 版本为 `71868da`，镜像校验有效。
+- `71868da` 应用 OTA 为 `INSTALLED`；用户确认 EAF→native、三次语音、声音、触摸取消、下一回合和稳定性正常。心跳约 55/60 FPS、音频 underrun 0、最低空闲堆 7,735,712 字节。
+- MEDIA-003 EAF 生成器测试 3/3 通过；确定性 EAF 大小 53,854 字节，SHA-256 `ABD64A59F59CAFF9CEE7A65921781BF6FE28B150AD876ADDF8CF52505690FE81`，仓库内嵌制品与生成结果逐字节一致。
+- 默认 ESP-IDF 5.4.4 LAN HTTP Quad 完整构建通过：1,581,488 字节，SHA-256 `6E86F2F867015806C8048F9AD9DAB78A85862AB89EF98CB2F9F63DF3589B4133`。
+- ESP-IDF 5.5.5 native 完整构建通过：1,605,088 字节，SHA-256 `D72FC2B4E639300B9E3A34EFA80AE5A98B7541B994536E2B171BDB8C02C5F9BF`。
+- ESP-IDF 5.5.5 EAF RLE-only 完整构建通过：1,669,504 字节，SHA-256 `F53774CBE72BDDD005B8BDF9196C008DB4D3A0E5842D32D1CF43ECF86BD98283`。
+- ESP-IDF 5.5.5 Emote lifecycle 完整构建通过：1,615,776 字节，SHA-256 `338DCC7EE268CC5D3B167C6C990EC847B72672EDFAEEBCE1FFE7867C0E350A51`；不作为可视固件候选。
 - 官方 BSP + LVGL 迁移使用 ESP-IDF 5.4.4/GCC 14.2 完整构建通过；依赖锁定 `m5stack_core_s3 4.0.0`、`esp_lvgl_port 2.9.0`、`lvgl 9.4.0`，不再包含 M5Unified/M5GFX。
 - 新 protocol profile 构建通过：应用大小 `0x397b0`，最小应用分区余量 93%；新增连续帧率、诊断与硬件迁移代码均已编译，LVGL examples 未构建。
 - 性能修正后的 protocol profile 构建通过：应用大小 `0x397b0`，最小应用分区余量 93%。独立 LAN HTTP Quad 测试版本 `41b8827-perf1` 构建通过：应用大小 `0x1819a0`，最小 3 MiB 应用分区余量 `0x17e660`（50%）；bootloader 大小 `0x57b0`、余量 31%。
@@ -93,8 +107,10 @@
 - [0031：应用固件 OTA](../decisions/0031-safe-application-firmware-ota-and-health-center.md)
 - [0037：有序分段语音播放](../decisions/0037-ordered-streaming-voice-playback.md)
 - [0038：分层动态球形表情与兼容资源包](../decisions/0038-layered-expression-rendering-and-resident-appearance-catalog.md)
+- [0039：原生连续渲染与有限 EAF 生命周期片段](../decisions/0039-native-renderer-with-bounded-eaf-lifecycle-clips.md)
 - [物理设备 smoke test](../../runbooks/physical-device-smoke-test.md)
 - [动态球形表情实机验收](../../runbooks/dynamic-expression-smoke-test.md)
+- [MEDIA-003 EAF 实机验收](../../runbooks/media003-eaf-smoke-test.md)
 
 ## 安全与兼容性约束
 

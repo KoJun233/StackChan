@@ -1,7 +1,7 @@
 # 陪伴机器人表情渲染调研
 
 - 文档状态：REFERENCE
-- 调研日期：2026-08-22
+- 调研日期：2026-08-23
 - 关联任务：`MEDIA-002`、`MEDIA-003`
 - 目的：为 StackChan 的表情管理、角色情绪和多资源常驻方案提供可复核的产品与技术依据
 
@@ -43,7 +43,7 @@ StackChan 已有安全可靠的八状态资源包，但当前体验主要受以�
 
 ### 乐鑫 EAF 与 ESP Emote GFX
 
-EAF 全称为 Emote Animation Format。乐鑫官方 [`esp_lv_eaf_player`](https://github.com/espressif/esp-iot-solution/tree/master/components/display/tools/esp_lv_eaf_player) 支持 RLE、Huffman、JPEG 压缩、RGB565、逐帧控制和循环播放，并提供从 GIF 等源素材生成 EAF 的转换器。该组件面向 LVGL v8/v9；StackChan 已在 `MEDIA-002D` 迁移到 LVGL 9.4，因此后续引入 EAF 的主要风险从“更换显示栈”收敛为资源容量、解码开销、取消语义和音频并发。
+EAF 全称为 Emote Animation Format。乐鑫官方 [`esp_lv_eaf_player`](https://github.com/espressif/esp-iot-solution/tree/master/components/display/tools/esp_lv_eaf_player) 0.3.0 支持 RLE、Huffman、JPEG 压缩、RGB565、逐帧控制和循环播放，并提供从 GIF 等源素材生成 EAF 的转换器。该组件面向 LVGL v8/v9，但明确要求 ESP-IDF 5.5 及以上；StackChan 已在 `MEDIA-002D` 迁移到 LVGL 9.4，显示栈兼容，稳定工具链仍需从 5.4.4 迁移后才能正式采用。
 
 [乐鑫 FAQ](https://docs.espressif.com/projects/esp-faq/zh_CN/latest/esp-faq-zh_CN-master.pdf) 对性能边界给出了更直接的建议：EAF 播放慢时优先选择 JPEG 编码；相比 EAF 经 LVGL 播放，直接使用 [`esp_emote_gfx`](https://components.espressif.com/components/espressif2022/esp_emote_gfx) 分段解码刷屏效率更高。`esp_emote_gfx` 使用 Apache-2.0，支持由应用提供 flush callback、RGB565、双缓冲、DMA buffer、任务优先级与 CPU affinity；但它会绕过当前 LVGL 对象树，只有实机基准显著胜出时才值得增加第二套刷新路径。
 
@@ -61,9 +61,30 @@ EAF 全称为 Emote Animation Format。乐鑫官方 [`esp_lv_eaf_player`](https:
 | [`esp_emote_gfx`](https://github.com/espressif2022/esp_emote_gfx) | 3.0.5、约 18 Stars/6 Forks；注册表 14 个版本、2 dependents、1 example | flush callback 和分段 buffer 很适合 160×160 小屏接入 | 最值得做性能原型，但社区规模小且非官方组织 |
 | [`esp_emote_expression`](https://github.com/espressif2022/esp_emote_expression) | 1.0.2、约 6 Stars/1 Fork；注册表 6 个版本、1 dependent、0 examples | 已有事件、分区/mmap、JSON 布局、任务亲和与双缓冲 | 功能最贴近本项目，但成熟度不足以直接取代现有协议与状态机 |
 
-结论修订为完整迁移到官方 CoreS3 BSP + LVGL 9.4，并从应用依赖中移除 M5Unified/M5GFX。原生 LVGL 参数渲染继续负责眨眼、视线、说话等连续动作；EAF/Emote 候选只负责开机、切换、强调情绪等有限时长资源动画。只有同一组自有素材的真机基准同时改善资源容量、切换延迟、WakeNet、TTS 和堆水位，才新增动态资源格式或第二渲染后端。
+结论修订为完整迁移到官方 CoreS3 BSP + LVGL 9.4，并从应用依赖中移除 M5Unified/M5GFX。原生 LVGL 参数渲染继续负责眨眼、视线、说话等连续动作；EAF 候选只负责开机、切换、强调情绪等有限时长资源动画。`esp_emote_gfx` 拥有自己的任务、缓冲与 flush 边界，在没有同素材完整显示实测前不作为第二渲染后端。
 
-StackChan 已有 `expression_a` / `expression_b` 两个 1.5 MiB A/B 分区，可以承载版本化 EAF/Emote 二进制包；但 32 组长动画在 JPEG 编码下可能超出单槽，资源大小、解码耗时和 SPI 传输仍需真机测量。下一资源格式候选应先把项目自有的 160×160 球体动画离线预渲染为一组最小 EAF/Emote 基准包，比较空闲、切换、WakeNet 和 TTS 并发，而不是直接替换当前可回退的原生渲染器。
+StackChan 已有 `expression_a` / `expression_b` 两个 1.5 MiB A/B 分区，可以承载版本化 EAF 二进制包；但大量长动画仍可能超出单槽，资源大小、解码耗时和 SPI 传输必须按片段实测。下一资源格式只允许补充当前可回退的原生渲染器，不能替代离线、错误、说话和空闲等持续表现。
+
+### MEDIA-003 可复现原型结果
+
+2026-08-23 使用项目自有生成器制作了 `160×160`、18 帧、4-bit 调色板、RLE 编码的
+EAF 球体片段。制品为 53,854 字节，SHA-256 为
+`ABD64A59F59CAFF9CEE7A65921781BF6FE28B150AD876ADDF8CF52505690FE81`。
+生成器同时校验外层签名、长度、checksum、帧表和每帧 magic，素材不包含第三方代码、轮廓或配色。
+
+LAN HTTP Quad 完整固件的同口径结果如下：
+
+| 方案 | ESP-IDF | 应用大小 | 相对同版 native | 可得出的结论 |
+| --- | --- | ---: | ---: | --- |
+| 稳定 native | 5.4.4 | 1,581,488 B | — | 与 MEDIA-002 已验收制品同尺寸，默认路径未变化 |
+| native 对照 | 5.5.5 | 1,605,088 B | 0 B | 工具链迁移本身增加 23,600 B |
+| 官方 EAF，RLE-only | 5.5.5 | 1,669,504 B | +64,416 B | 素材占 53,854 B，播放器与接入净增约 10,562 B |
+| `esp_emote_gfx` lifecycle | 5.5.5 | 1,615,776 B | +10,688 B | 只完成 init/deinit，没有动画资源和显示接管，不能作为性能比较 |
+
+因此 `MEDIA-003` 的候选边界是：默认 native 不变；EAF 只在开机约 1.8 秒的生命周期窗口
+显示，结束后回到 native；Emote 只保留隔离生命周期 probe。EAF 是否进入正式资源协议仍取决于
+CoreS3 实体测试中的 WakeNet、TTS、触摸取消、重连、最低堆和重启稳定性。详细决策见
+[ADR 0039](decisions/0039-native-renderer-with-bounded-eaf-lifecycle-clips.md)。
 
 ### M5Stack Avatar
 
