@@ -1,14 +1,21 @@
 # 服务端工作流
 
-- 状态：STABLE
+- 状态：DEPLOYED
 - 最后更新：2026-08-23
-- 当前分支：`codex/media-003-eaf-emote-evaluation`（本任务不改服务端）
-- 基准提交：`67e5ad3`
-- 最后验证提交：`67e5ad3`
+- 当前分支：`codex/media-004-eaf-lifecycle-packs`
+- 基准提交：`4add447`
+- 最后验证提交：`4add447`
 
 ## 当前目标
 
-维持已合入的 V35、SCV1/SCV2、连续帧率同步和既有安全边界；`MEDIA-003` 不修改服务端协议、数据库或部署。
+在保持 V1 PNG、SCV1/SCV2、角色隔离和既有安全边界的同时，新增 V36 与正式 V2 生命周期 EAF 包管理链。
+
+## 已实现的 MEDIA-004
+
+- V36 为资源包增加 `STATIC_PNG` / `LIFECYCLE_EAF` 类型、严格版本耦合、片段表和设备 `lifecycle_clip_supported` 能力位。
+- multipart 接口接受最多三个受控事件，服务端编译器验证 EAF 签名、checksum、帧/块表、RLE4 解码长度、尺寸、时长、大小和逐片段摘要，再生成确定性 V2 制品。
+- 旧客户端和旧固件继续使用 V1；V2 启用要求目标设备显式上报能力，缺失不能推断支持。角色切换成功后只向支持设备触发受限 `ROLE_SWITCH` 行为。
+- 当前验证：395/395 全量通过，Testcontainers 从空 PostgreSQL 成功应用 Flyway V1..V36；重连门控专项 1/1 通过。
 
 ## 已完成
 
@@ -65,7 +72,7 @@
 
 ## 下一步操作
 
-等待用户页面验收；通过后整理相对 `master` 的单一中文任务提交。
+LAN server 已发布 V36 与生命周期动画接口。下一步由用户在已登录页面复核管理流程；设备能力门控的实体成功路径需在后续固件 OTA 后执行。
 
 ## 阻塞项
 
@@ -94,6 +101,8 @@
 
 ## 验证命令与最近结果
 
+- 2026-08-23 MEDIA-004 服务端全量 395/395 通过；Testcontainers 从空 PostgreSQL 成功应用 Flyway V1..V36。生命周期编译/WebSocket 定向 19/19、旧固件重连门控 1/1 通过。
+- 2026-08-23 MEDIA-004 发布前备份及隔离恢复成功，只替换 LAN server；运行库迁移至 V36，健康接口与首页为 200，未认证表情包和设备接口为 401，基础容器未替换且 CoreS3 未 OTA。
 - 2026-08-23 服务端全量 392/392 通过；Testcontainers 从空 PostgreSQL 成功应用 Flyway V1..V35。
 - 2026-08-23 经授权只替换 LAN server，运行镜像 `sha256:bfd2019b4e8a84a0132794096d751f3bce872555165a11219081b820f9445810`；健康接口为 200、Flyway V35 无待迁移项、启动日志无错误。CoreS3 重连后恢复 `ADAPTIVE 45–60` 并上报目标 60/实际 55。
 - 2026-08-22 Docker Engine 恢复后完成最新全量回归：391/391 通过；Testcontainers 从空 PostgreSQL 成功应用 Flyway V1..V35。

@@ -229,6 +229,10 @@ static companion_expression_pose_t behavior_pose(companion_expression_behavior_t
             pose.eye_open = 0.10f; pose.scale_x = 1.04f; pose.scale_y = 0.92f;
             pose.offset_y = 0.09f; pose.sleeping = true;
             break;
+        case COMPANION_BEHAVIOR_ROLE_SWITCH:
+            pose.scale_x = 0.92f; pose.scale_y = 1.08f; pose.eye_open = 1.08f;
+            pose.orbit = 1.0f; pose.particle_count = 4;
+            break;
         case COMPANION_BEHAVIOR_NONE:
         default:
             break;
@@ -410,7 +414,7 @@ void companion_expression_engine_trigger(companion_expression_engine_t *engine,
                                          uint32_t duration_ms,
                                          uint32_t now_ms)
 {
-    if (engine == NULL || !engine->initialized || behavior > COMPANION_BEHAVIOR_DROWSY_SLEEP) return;
+    if (engine == NULL || !engine->initialized || behavior > COMPANION_BEHAVIOR_ROLE_SWITCH) return;
     if (behavior == COMPANION_BEHAVIOR_NONE) {
         engine->behavior = behavior;
         engine->behavior_expires_ms = now_ms;
@@ -444,7 +448,7 @@ void companion_expression_engine_preview(companion_expression_engine_t *engine,
                         value <= COMPANION_FACE_RECOVERABLE_ERROR) ||
                        (preview == COMPANION_EXPRESSION_PREVIEW_BEHAVIOR &&
                         value > COMPANION_BEHAVIOR_NONE &&
-                        value <= COMPANION_BEHAVIOR_DROWSY_SLEEP) ||
+                        value <= COMPANION_BEHAVIOR_ROLE_SWITCH) ||
                        preview == COMPANION_EXPRESSION_PREVIEW_UPDATING;
     if (engine == NULL || !engine->initialized || preview == COMPANION_EXPRESSION_PREVIEW_NONE ||
         preview > COMPANION_EXPRESSION_PREVIEW_UPDATING || duration_ms < 1000U ||
@@ -599,7 +603,7 @@ bool companion_expression_behavior_parse(const char *value,
 {
     static const char *const names[] = {
         "NONE", "BOOT_APPEAR", "WAKE", "IDLE_BREATHE", "PROXIMITY_CURIOUS",
-        "SHAKE_DIZZY", "DROWSY_SLEEP"
+        "SHAKE_DIZZY", "DROWSY_SLEEP", "ROLE_SWITCH"
     };
     if (value == NULL || behavior == NULL) return false;
     for (size_t index = 1; index < sizeof(names) / sizeof(names[0]); index++) {

@@ -130,7 +130,7 @@ class DeviceWebSocketHandlerTest {
         handler().afterConnectionEstablished(session);
 
         handler.handleTextMessage(session, new TextMessage("""
-                {"type":"heartbeat","sequence":9,"battery_percent":80,"rssi":-54,"safety_state":"motion_disabled","firmware_version":"media002","application_ota_supported":true,"dynamic_expression_supported":true,"expression":{"target_fps":20,"actual_fps":20,"draw_time_us":6200,"transfer_time_us":4100,"display_lock_wait_us":300,"dropped_frames":2,"audio_underruns":0,"minimum_free_heap":7340032,"active_layer":"PHYSICAL","degrade_reason":5,"dynamic_renderer":true,"imu_supported":true,"proximity_supported":false}}
+                {"type":"heartbeat","sequence":9,"battery_percent":80,"rssi":-54,"safety_state":"motion_disabled","firmware_version":"media002","application_ota_supported":true,"dynamic_expression_supported":true,"expression":{"target_fps":20,"actual_fps":20,"draw_time_us":6200,"transfer_time_us":4100,"display_lock_wait_us":300,"dropped_frames":2,"audio_underruns":0,"minimum_free_heap":7340032,"active_layer":"PHYSICAL","degrade_reason":5,"dynamic_renderer":true,"imu_supported":true,"proximity_supported":false,"lifecycle_clips_supported":true}}
                 """));
 
         ArgumentCaptor<DeviceExpressionDiagnostics> diagnostics =
@@ -147,6 +147,7 @@ class DeviceWebSocketHandlerTest {
         assertThat(diagnostics.getValue().degradeReason()).isEqualTo("IDLE_SLEEP");
         assertThat(diagnostics.getValue().dynamicRenderer()).isTrue();
         assertThat(diagnostics.getValue().proximitySupported()).isFalse();
+        assertThat(diagnostics.getValue().lifecycleClipsSupported()).isTrue();
     }
 
     @Test

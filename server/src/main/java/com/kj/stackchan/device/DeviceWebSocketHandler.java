@@ -53,6 +53,12 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             "target_fps", "actual_fps", "draw_time_us", "transfer_time_us",
             "display_lock_wait_us", "dropped_frames", "audio_underruns", "minimum_free_heap",
             "active_layer", "degrade_reason", "dynamic_renderer", "imu_supported",
+            "proximity_supported", "lifecycle_clips_supported"
+    );
+    private static final Set<String> LEGACY_EXPRESSION_DIAGNOSTIC_FIELDS = Set.of(
+            "target_fps", "actual_fps", "draw_time_us", "transfer_time_us",
+            "display_lock_wait_us", "dropped_frames", "audio_underruns", "minimum_free_heap",
+            "active_layer", "degrade_reason", "dynamic_renderer", "imu_supported",
             "proximity_supported"
     );
     private static final Set<String> EXPRESSION_LAYERS = Set.of(
@@ -453,7 +459,8 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
 
     private DeviceExpressionDiagnostics parseExpressionDiagnostics(JsonNode value) {
         if (value == null || !value.isObject()) throw new InvalidDeviceEventException();
-        requireOnlyFields(value, EXPRESSION_DIAGNOSTIC_FIELDS);
+        requireOnlyFields(value, value.has("lifecycle_clips_supported")
+                ? EXPRESSION_DIAGNOSTIC_FIELDS : LEGACY_EXPRESSION_DIAGNOSTIC_FIELDS);
         int targetFps = requiredInteger(value, "target_fps");
         int actualFps = requiredInteger(value, "actual_fps");
         int drawTime = requiredInteger(value, "draw_time_us");
@@ -467,17 +474,20 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         JsonNode dynamicRenderer = value.get("dynamic_renderer");
         JsonNode imu = value.get("imu_supported");
         JsonNode proximity = value.get("proximity_supported");
+        JsonNode lifecycleClips = value.get("lifecycle_clips_supported");
         if (targetFps < 1 || targetFps > 60 || actualFps < 0 ||
                 actualFps > 120 || drawTime < 0 || transferTime < 0 || lockWait < 0 ||
                 !EXPRESSION_LAYERS.contains(layer) || reasonCode < 0 ||
                 reasonCode >= EXPRESSION_DEGRADE_REASONS.length || dynamicRenderer == null ||
                 !dynamicRenderer.isBoolean() || imu == null || !imu.isBoolean() ||
-                proximity == null || !proximity.isBoolean()) {
+                proximity == null || !proximity.isBoolean() ||
+                (lifecycleClips != null && !lifecycleClips.isBoolean())) {
             throw new InvalidDeviceEventException();
         }
         return new DeviceExpressionDiagnostics(targetFps, actualFps, drawTime, transferTime, lockWait,
                 dropped, underruns, minimumHeap, layer, EXPRESSION_DEGRADE_REASONS[reasonCode],
-                dynamicRenderer.booleanValue(), imu.booleanValue(), proximity.booleanValue());
+                dynamicRenderer.booleanValue(), imu.booleanValue(), proximity.booleanValue(),
+                lifecycleClips != null && lifecycleClips.isBoolean() && lifecycleClips.booleanValue());
     }
 
     private CommandAcknowledgementEvent parseCommandAcknowledgement(JsonNode root) {

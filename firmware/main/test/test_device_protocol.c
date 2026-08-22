@@ -691,6 +691,8 @@ TEST_CASE("dynamic expression heartbeat exposes bounded diagnostics", "[device_p
         expression, "dynamic_renderer")));
     TEST_ASSERT_TRUE(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(
         expression, "proximity_supported")));
+    TEST_ASSERT_TRUE(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(
+        expression, "lifecycle_clips_supported")));
     cJSON_Delete(root);
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, device_protocol_encode_heartbeat_with_expression(
         payload, sizeof(payload), 3, 82, -49, "media002", 50, 58, 1, 1, 1,

@@ -38,6 +38,8 @@ public class DeviceEntity {
 
     @Column(name = "dynamic_expression_supported", nullable = false)
     private boolean dynamicExpressionSupported;
+    @Column(name = "lifecycle_clip_supported", nullable = false)
+    private boolean lifecycleClipSupported;
     @Column(name = "expression_fps_mode", nullable = false, length = 16)
     private String expressionFpsMode = "ADAPTIVE";
     @Column(name = "expression_min_fps", nullable = false)
@@ -107,6 +109,7 @@ public class DeviceEntity {
         return applicationOtaSupported;
     }
     public boolean isDynamicExpressionSupported() { return dynamicExpressionSupported; }
+    public boolean isLifecycleClipSupported() { return lifecycleClipSupported; }
     public String getExpressionFpsMode() { return expressionFpsMode; }
     public int getExpressionMinFps() { return expressionMinFps; }
     public int getExpressionMaxFps() { return expressionMaxFps; }
@@ -121,7 +124,8 @@ public class DeviceEntity {
                 expressionTargetFps, expressionActualFps, expressionDrawTimeUs, expressionTransferTimeUs,
                 expressionDisplayLockWaitUs, expressionDroppedFrames, expressionAudioUnderruns,
                 expressionMinimumFreeHeap, expressionActiveLayer, expressionDegradeReason,
-                expressionDynamicRenderer, expressionImuSupported, expressionProximitySupported);
+                expressionDynamicRenderer, expressionImuSupported, expressionProximitySupported,
+                lifecycleClipSupported);
     }
 
     public String getRefreshTokenHash() {
@@ -141,6 +145,7 @@ public class DeviceEntity {
         this.safetyState = "motion_disabled";
         this.applicationOtaSupported = false;
         this.dynamicExpressionSupported = false;
+        this.lifecycleClipSupported = false;
     }
 
     void rotateCredentials(String refreshTokenHash, Instant issuedAt) {
@@ -167,6 +172,7 @@ public class DeviceEntity {
         this.rssi = rssi;
         this.applicationOtaSupported = applicationOtaSupported;
         this.dynamicExpressionSupported = expression != null;
+        this.lifecycleClipSupported = expression != null && expression.lifecycleClipsSupported();
         if (expression != null) {
             this.expressionTargetFps = expression.targetFps();
             this.expressionActualFps = expression.actualFps();

@@ -1,6 +1,15 @@
 import { apiJson, csrfHeaders, notifySessionExpired, responseError } from '../client'
 
 export type ExpressionState = 'idle' | 'listening' | 'processing' | 'speaking' | 'success' | 'no_speech' | 'offline' | 'error'
+export type LifecycleClip = 'boot_appear' | 'wake' | 'role_switch'
+
+export interface ExpressionPackClip {
+  frameCount: number
+  frameDelayMs: number
+  name: LifecycleClip
+  sha256: string
+  size: number
+}
 
 export interface ExpressionPack {
   artifactSha256: string
@@ -10,7 +19,15 @@ export interface ExpressionPack {
   formatVersion: number
   id: string
   name: string
+  packType: 'STATIC_PNG' | 'LIFECYCLE_EAF'
+  clips: ExpressionPackClip[]
   states: ExpressionState[]
+}
+
+export interface CreateLifecycleExpressionPackInput {
+  clips: Partial<Record<LifecycleClip, { file: File, frameDelayMs: number }>>
+  description: string
+  name: string
 }
 
 export interface DeviceExpressionPack {
@@ -80,9 +97,40 @@ export async function createExpressionPack(input: CreateExpressionPackInput): Pr
   return response.json() as Promise<ExpressionPack>
 }
 
+export async function createLifecycleExpressionPack(input: CreateLifecycleExpressionPackInput): Promise<ExpressionPack> {
+  const form = new FormData()
+  form.append('name', input.name)
+  form.append('description', input.description)
+  lifecycleClips.forEach(({ value }) => {
+    const clip = input.clips[value]
+    if (!clip) return
+    form.append(value, clip.file)
+    form.append(`${value}_frame_delay_ms`, String(clip.frameDelayMs))
+  })
+  const response = await fetch('/api/v1/expression-packs/lifecycle', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json', ...csrfHeaders() },
+    body: form,
+  })
+  if (response.status === 401) notifySessionExpired()
+  if (!response.ok) throw await responseError(response, '生命周期动画包生成失败。')
+  return response.json() as Promise<ExpressionPack>
+}
+
 export function expressionPreviewUrl(packId: string, state: ExpressionState) {
   return `/api/v1/expression-packs/${encodeURIComponent(packId)}/states/${state}`
 }
+
+export function lifecycleClipUrl(packId: string, clip: LifecycleClip) {
+  return `/api/v1/expression-packs/${encodeURIComponent(packId)}/clips/${clip}`
+}
+
+export const lifecycleClips: { label: string, value: LifecycleClip }[] = [
+  { label: '开机出现', value: 'boot_appear' },
+  { label: '苏醒', value: 'wake' },
+  { label: '角色切换', value: 'role_switch' },
+]
 
 export function getDeviceExpressionPack(deviceId: string): Promise<DeviceExpressionPack> {
   return apiJson(`/api/v1/expression-packs/device?deviceId=${encodeURIComponent(deviceId)}`)

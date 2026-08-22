@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   activateExpressionPack,
   createExpressionPack,
+  createLifecycleExpressionPack,
   deactivateExpressionPack,
   deleteExpressionPack,
   expressionStates,
@@ -35,6 +36,36 @@ describe('expression resource pack API', () => {
     expect(request[1]).toEqual(expect.objectContaining({ method: 'POST', credentials: 'same-origin' }))
     expect(form.get('name')).toBe('机械宠物')
     expect(expressionStates.every(({ value }) => form.get(value) === images[value])).toBe(true)
+  })
+
+  it('creates a bounded lifecycle package from the supplied EAF clips', async () => {
+    const pack = { id: 'lifecycle-pack', name: '柔和登场', packType: 'LIFECYCLE_EAF' }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(pack), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const bootAppear = new File(['EAF'], 'boot.eaf', { type: 'application/vnd.espressif.eaf' })
+    const roleSwitch = new File(['EAF'], 'role.eaf', { type: 'application/vnd.espressif.eaf' })
+
+    await expect(createLifecycleExpressionPack({
+      name: '柔和登场',
+      description: '测试',
+      clips: {
+        boot_appear: { file: bootAppear, frameDelayMs: 24 },
+        role_switch: { file: roleSwitch, frameDelayMs: 40 },
+      },
+    })).resolves.toEqual(pack)
+
+    const request = fetchMock.mock.calls[0]
+    const form = (request[1] as RequestInit).body as FormData
+    expect(request[0]).toBe('/api/v1/expression-packs/lifecycle')
+    expect(request[1]).toEqual(expect.objectContaining({ method: 'POST', credentials: 'same-origin' }))
+    expect(form.get('boot_appear')).toBe(bootAppear)
+    expect(form.get('boot_appear_frame_delay_ms')).toBe('24')
+    expect(form.get('wake')).toBeNull()
+    expect(form.get('role_switch')).toBe(roleSwitch)
+    expect(form.get('role_switch_frame_delay_ms')).toBe('40')
   })
 
   it('lists packages and controls one encoded device selection', async () => {

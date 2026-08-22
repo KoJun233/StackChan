@@ -63,6 +63,7 @@ public class DeviceController {
                         device.getRssi(),
                         device.isApplicationOtaSupported(),
                         device.isDynamicExpressionSupported(),
+                        device.isLifecycleClipSupported(),
                         device.getLastSeenAt(),
                         isOnline(device),
                         deviceCommandGateway.isConnected(device.getId())
@@ -94,6 +95,10 @@ public class DeviceController {
         CompanionRoleService.RoleSnapshot role = roleService.switchActive(deviceId, request.roleId());
         deviceCommandGateway.configureExpression(
                 deviceId, role.expressionThemeColor(), "NEUTRAL", "MEDIUM", 5);
+        deviceRepository.findById(deviceId)
+                .filter(DeviceEntity::isLifecycleClipSupported)
+                .ifPresent(device -> deviceCommandGateway.previewExpression(
+                        deviceId, "BEHAVIOR", "ROLE_SWITCH", 2));
         return role;
     }
 
@@ -113,6 +118,7 @@ public class DeviceController {
             Integer rssi,
             boolean applicationOtaSupported,
             boolean dynamicExpressionSupported,
+            boolean lifecycleClipSupported,
             Instant lastSeenAt,
             boolean online,
             boolean commandAvailable

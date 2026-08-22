@@ -11,6 +11,7 @@
 #define EXPRESSION_PACK_ID_SIZE 37
 #define EXPRESSION_PACK_SHA256_SIZE 65
 #define EXPRESSION_PACK_MAX_ARTIFACT_SIZE (1536U * 1024U)
+#define EXPRESSION_LIFECYCLE_CLIP_MAX_SIZE (384U * 1024U)
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,10 +23,26 @@ typedef struct {
     size_t artifact_size;
 } expression_pack_request_t;
 
+typedef enum {
+    EXPRESSION_LIFECYCLE_BOOT_APPEAR = 0,
+    EXPRESSION_LIFECYCLE_WAKE,
+    EXPRESSION_LIFECYCLE_ROLE_SWITCH,
+    EXPRESSION_LIFECYCLE_COUNT,
+} expression_lifecycle_clip_t;
+
+typedef struct {
+    uint8_t *data;
+    size_t size;
+    uint16_t frame_count;
+    uint16_t frame_delay_ms;
+} expression_lifecycle_clip_data_t;
+
 /** Restores and validates the active A/B expression slot, falling back to built-in rendering. */
 esp_err_t expression_pack_init(void);
 
 bool expression_pack_is_active(void);
+
+bool expression_pack_has_lifecycle_clips(void);
 
 /** Downloads, verifies and atomically activates an expression package without rebooting. */
 esp_err_t expression_pack_install(const device_identity_t *identity,
@@ -38,6 +55,9 @@ esp_err_t expression_pack_clear(void);
 esp_err_t expression_pack_read_state(companion_face_state_t state,
                                      uint8_t **image,
                                      size_t *image_size);
+
+esp_err_t expression_pack_read_lifecycle_clip(expression_lifecycle_clip_t clip,
+                                              expression_lifecycle_clip_data_t *output);
 
 #ifdef __cplusplus
 }

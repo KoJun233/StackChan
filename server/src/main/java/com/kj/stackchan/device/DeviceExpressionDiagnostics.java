@@ -13,5 +13,6 @@ public record DeviceExpressionDiagnostics(
         String degradeReason,
         boolean dynamicRenderer,
         boolean imuSupported,
-        boolean proximitySupported
+        boolean proximitySupported,
+        boolean lifecycleClipsSupported
 ) { }

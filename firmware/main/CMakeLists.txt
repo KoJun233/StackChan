@@ -14,6 +14,7 @@ set(stackchan_sources
     "firmware_ota.c"
     "face_animation.c"
     "interaction_state.c"
+    "lifecycle_clip_player.cpp"
     "safety_state.c"
     "screensaver_motion.c"
     "strict_json.c"
@@ -41,7 +42,7 @@ endif()
 idf_component_register(
     SRCS ${stackchan_sources}
     INCLUDE_DIRS "."
-    REQUIRES app_update esp-sr esp_app_format esp_codec_dev esp_driver_usb_serial_jtag esp_event esp_http_client esp_hw_support esp_netif esp_partition esp_timer esp_wifi esp_websocket_client freertos json lvgl m5stack_core_s3 mbedtls nvs_flash sensor_hub unity)
+    REQUIRES app_update esp-sr esp_app_format esp_codec_dev esp_driver_usb_serial_jtag esp_event esp_http_client esp_hw_support esp_lv_eaf_player esp_netif esp_partition esp_timer esp_wifi esp_websocket_client freertos json lvgl m5stack_core_s3 mbedtls nvs_flash sensor_hub unity)
 
 if(STACKCHAN_MEDIA003_BACKEND STREQUAL "eaf")
     target_compile_definitions(${COMPONENT_LIB} PRIVATE STACKCHAN_MEDIA003_EAF_PROBE=1)

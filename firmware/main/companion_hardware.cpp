@@ -14,6 +14,7 @@
 #include "esp_timer.h"
 #include "expression_engine.h"
 #include "expression_pack.h"
+#include "lifecycle_clip_player.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -130,6 +131,7 @@ static int64_t s_next_input_poll_us;
 static companion_expression_fps_mode_t s_expression_fps_mode = COMPANION_EXPRESSION_FPS_ADAPTIVE;
 static uint8_t s_expression_min_fps = 30U;
 static uint8_t s_expression_max_fps = 60U;
+static companion_expression_behavior_t s_last_lifecycle_behavior = COMPANION_BEHAVIOR_NONE;
 
 #if defined(STACKCHAN_MEDIA003_EAF_PROBE)
 static bool s_media003_probe_active;
@@ -428,6 +430,7 @@ static void create_expression_scene_locked(void)
     lv_obj_set_style_text_color(s_sleep_large, lv_color_hex(0xFFFFFF), 0);
     s_static_image = lv_image_create(s_screen);
     lv_obj_set_pos(s_static_image, 0, 0);
+    lifecycle_clip_player_init(s_screen, BALL_SURFACE_X, BALL_SURFACE_Y);
 
 #if defined(STACKCHAN_MEDIA003_EAF_PROBE) || defined(STACKCHAN_MEDIA003_EMOTE_PROBE)
     media003_backend_probe_init(s_screen, BALL_SURFACE_X, BALL_SURFACE_Y);
@@ -462,6 +465,8 @@ static void clear_static_image_locked(void)
 
 static bool show_static_image_locked(uint8_t *image, size_t image_size)
 {
+    lifecycle_clip_player_stop();
+    s_last_lifecycle_behavior = COMPANION_BEHAVIOR_NONE;
     clear_static_image_locked();
     memset(&s_static_image_dsc, 0, sizeof(s_static_image_dsc));
     s_static_image_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
@@ -494,6 +499,41 @@ static void update_dynamic_scene_locked(const companion_expression_pose_t &pose,
     int center_y = BALL_SURFACE_SIZE / 2 + (int)lroundf(pose.offset_y * 34.0f);
 
     set_hidden(s_static_image, true);
+    lifecycle_clip_player_poll();
+    companion_expression_behavior_t lifecycle_behavior = COMPANION_BEHAVIOR_NONE;
+    bool interaction_active = s_expression_engine.updating ||
+                              s_face_state == COMPANION_FACE_LISTENING ||
+                              s_face_state == COMPANION_FACE_PROCESSING ||
+                              s_face_state == COMPANION_FACE_SPEAKING ||
+                              !s_connected;
+    if (!interaction_active && s_expression_engine.preview == COMPANION_EXPRESSION_PREVIEW_BEHAVIOR &&
+        now_ms < s_expression_engine.preview_expires_ms) {
+        lifecycle_behavior = (companion_expression_behavior_t)s_expression_engine.preview_value;
+    } else if (!interaction_active && s_expression_engine.behavior != COMPANION_BEHAVIOR_NONE &&
+               now_ms < s_expression_engine.behavior_expires_ms) {
+        lifecycle_behavior = s_expression_engine.behavior;
+    }
+    if (interaction_active) {
+        lifecycle_clip_player_stop();
+        s_last_lifecycle_behavior = COMPANION_BEHAVIOR_NONE;
+    } else if (lifecycle_behavior != COMPANION_BEHAVIOR_NONE &&
+               lifecycle_behavior != s_last_lifecycle_behavior) {
+        lifecycle_clip_player_stop();
+        expression_lifecycle_clip_t clip = EXPRESSION_LIFECYCLE_COUNT;
+        if (lifecycle_behavior == COMPANION_BEHAVIOR_BOOT_APPEAR) clip = EXPRESSION_LIFECYCLE_BOOT_APPEAR;
+        else if (lifecycle_behavior == COMPANION_BEHAVIOR_WAKE) clip = EXPRESSION_LIFECYCLE_WAKE;
+        else if (lifecycle_behavior == COMPANION_BEHAVIOR_ROLE_SWITCH) clip = EXPRESSION_LIFECYCLE_ROLE_SWITCH;
+        if (clip < EXPRESSION_LIFECYCLE_COUNT && expression_pack_has_lifecycle_clips()) {
+            (void)lifecycle_clip_player_play(clip);
+        }
+        s_last_lifecycle_behavior = lifecycle_behavior;
+    }
+    bool lifecycle_active = lifecycle_clip_player_is_active();
+    if (!lifecycle_active && lifecycle_behavior == COMPANION_BEHAVIOR_NONE) {
+        s_last_lifecycle_behavior = COMPANION_BEHAVIOR_NONE;
+    }
+    set_hidden(s_ball_root, lifecycle_active);
+    if (lifecycle_active) return;
 #if defined(STACKCHAN_MEDIA003_EAF_PROBE)
     bool eaf_active = s_expression_engine.behavior == COMPANION_BEHAVIOR_BOOT_APPEAR &&
                       now_ms < s_expression_engine.behavior_expires_ms;

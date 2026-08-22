@@ -1,15 +1,15 @@
 # 固件工作流
 
-- 状态：READY_FOR_REVIEW
+- 状态：READY_FOR_TEST
 - 最后更新：2026-08-23
-- 当前分支：`codex/media-003-eaf-emote-evaluation`
-- 基准提交：`67e5ad3`
-- 最后验证提交：`67e5ad3`
+- 当前分支：`codex/media-004-eaf-lifecycle-packs`
+- 基准提交：`4add447`
+- 最后验证提交：`4add447`
 - 当前实机镜像：`71868da`
 
 ## 当前目标
 
-在不改变已验收原生渲染、运动安全、语音和 OTA 边界的前提下，比较 native、官方 EAF player 与 `esp_emote_gfx`，判断有限生命周期动画是否值得增加一种受控资源格式。
+在不改变已验收原生渲染、运动安全、语音和 OTA 边界的前提下，将已验收 EAF 结论实现为受控 V2 生命周期资源包。
 
 ## 已完成
 
@@ -28,7 +28,7 @@
 - 触摸触发喜爱，IMU 加速度突变触发摇晃眩晕。CoreS3 无独立接近传感器，明确上报 `proximity_supported=false`。
 - 静态 PNG 启用后仍保持原 A/B 资源包和全屏解码路径，并在诊断中标记当前非动态渲染。
 
-## 正在进行
+## 已完成的 MEDIA-003
 
 - 默认 `STACKCHAN_MEDIA003_BACKEND=native`，不包含候选组件；ESP-IDF 5.4.4 完整固件仍为 1,581,488 字节，与 MEDIA-002 最终稳定制品同尺寸。
 - EAF profile 固定官方 `espressif/esp_lv_eaf_player` 0.3.0、LVGL 9.4 和 ESP-IDF 5.5.5，使用独立依赖锁。项目自有 18 帧 RLE 素材只在约 1.8 秒开机窗口显示，之后隐藏并恢复 native。
@@ -39,14 +39,23 @@
 - 用户确认开机 EAF 片段后恢复 native、连续三次唤醒对话和回答声音正常、TTS 播放中触摸停止及下一回合正常，无黑屏、卡住或自动重启。
 - 稳定心跳约 55/60 FPS、绘制 1097 μs、传输 22627 μs、锁等待 10 μs、音频 underrun 0、最低空闲堆 7,735,712 字节。
 
+## 正在进行的 MEDIA-004
+
+- 根固件统一升级为 ESP-IDF 5.5.5，并正式依赖 `espressif/esp_lv_eaf_player` 0.3.0；软件 JPEG 关闭，只接受 RLE4。
+- `expression_pack` 同时校验 V1 `SCEPKG1` 与 V2 `SCEPKG2`，V1/V2 复用原 A/B 分区和原子切换状态，不修改分区表或 NVS 布局。
+- V2 严格验证 manifest、连续偏移、总/片段 SHA-256、EAF checksum、160×160 尺寸、帧/块表、RLE4 解码长度和全部资源上限。
+- 正式播放器从已验证分区把单片段复制到 PSRAM，使用 LVGL EAF object 一次播放；完成、缺失、拒绝或高优先级交互到来时删除对象、释放内存并恢复原生动态球体。
+- 开机、唤醒和角色切换三个事件有独立片段；同一行为不会循环重播。心跳显式上报 `lifecycle_clips_supported=true`，旧固件继续兼容。
+- ESP-IDF 5.5.5 protocol profile 已编译通过；使用独立 sdkconfig 的 LAN HTTP Quad 候选也已编译通过，软件 JPEG 保持关闭。未连接设备、未发起 OTA。
+
 ## 下一步操作
 
-完成生成器、目标 profile、既有协议/语音/传输、文档和 diff 最终回归，将实体证据压回唯一任务提交。保持 `71868da` 运行；不刷 Emote lifecycle profile，不建设正式多片段资源协议。
+保持 `71868da` 运行；LAN server/V36 已部署，但本次未连接设备或发起 OTA。经授权后生成最终提交绑定固件并执行保留 NVS 的应用 OTA，验证三个生命周期片段、原生回退、语音并发和触摸取消。
 
 ## 阻塞项
 
-- 自动化和实体成功路径均无阻塞。EAF 依赖 ESP-IDF 5.5 及以上，默认 native 工具链仍为 5.4.4。
-- 多资源包常驻、正式 EAF 资源协议和 Emote 显示接管不在本次原型范围。
+- 自动化当前无代码阻塞。正式 EAF 依赖 ESP-IDF 5.5 及以上，根固件因此统一升级到 5.5.5。
+- 多资源包同时常驻、任意 GIF/视频、Emote 显示接管和实体成功路径不在未授权范围。
 
 ## 关键文件
 
@@ -57,6 +66,7 @@
 - `firmware/main/voice_control.c`
 - `firmware/main/firmware_ota.c`
 - `firmware/main/expression_pack.c`
+- `firmware/main/lifecycle_clip_player.cpp`
 - `firmware/main/companion_hardware.cpp`
 - `firmware/main/media003_backend_probe.cpp`
 - `firmware/experiments/media003/README.md`
@@ -69,6 +79,7 @@
 
 ## 验证命令与最近结果
 
+- MEDIA-004 ESP-IDF 5.5.5 protocol profile 编译通过，应用大小 237,776 字节；独立 sdkconfig 的 LAN HTTP Quad profile 编译通过，制品 1,618,336 字节、最小 3 MiB 应用分区余量 49%，SHA-256 `BBF266A5FB77A47198FDC1EC4D22D9962DE1F32C054F69EC7FE4908AC84263F2`。该制品来自未提交工作树，只作为构建证据，不作为 OTA 候选。
 - 提交绑定 EAF 候选 `71868da` 完整构建通过：1,669,504 字节，SHA-256 `7E794FDECA4A4CC005C87389A691C3B86FBD783B931E5086607F479394880206`，app descriptor 版本为 `71868da`，镜像校验有效。
 - `71868da` 应用 OTA 为 `INSTALLED`；用户确认 EAF→native、三次语音、声音、触摸取消、下一回合和稳定性正常。心跳约 55/60 FPS、音频 underrun 0、最低空闲堆 7,735,712 字节。
 - MEDIA-003 EAF 生成器测试 3/3 通过；确定性 EAF 大小 53,854 字节，SHA-256 `ABD64A59F59CAFF9CEE7A65921781BF6FE28B150AD876ADDF8CF52505690FE81`，仓库内嵌制品与生成结果逐字节一致。
@@ -108,9 +119,12 @@
 - [0037：有序分段语音播放](../decisions/0037-ordered-streaming-voice-playback.md)
 - [0038：分层动态球形表情与兼容资源包](../decisions/0038-layered-expression-rendering-and-resident-appearance-catalog.md)
 - [0039：原生连续渲染与有限 EAF 生命周期片段](../decisions/0039-native-renderer-with-bounded-eaf-lifecycle-clips.md)
+- [0040：版本化表情资源容器与互斥活动槽](../decisions/0040-versioned-expression-pack-container.md)
+- [表情资源包 V2](../../protocol/expression-pack-v2.md)
 - [物理设备 smoke test](../../runbooks/physical-device-smoke-test.md)
 - [动态球形表情实机验收](../../runbooks/dynamic-expression-smoke-test.md)
 - [MEDIA-003 EAF 实机验收](../../runbooks/media003-eaf-smoke-test.md)
+- [EAF 生命周期资源包实机验收](../../runbooks/eaf-lifecycle-pack-smoke-test.md)
 
 ## 安全与兼容性约束
 
