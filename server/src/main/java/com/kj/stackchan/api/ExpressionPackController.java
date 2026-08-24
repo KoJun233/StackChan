@@ -6,6 +6,9 @@ import java.util.UUID;
 
 import com.kj.stackchan.expression.DeviceExpressionPackEntity;
 import com.kj.stackchan.expression.ExpressionPackEntity;
+import com.kj.stackchan.expression.ExpressionPackClipEntity;
+import com.kj.stackchan.expression.ExpressionPackType;
+import com.kj.stackchan.expression.LifecycleClip;
 import com.kj.stackchan.expression.ExpressionPackService;
 import com.kj.stackchan.expression.ExpressionPackStateEntity;
 import com.kj.stackchan.expression.ExpressionState;
@@ -56,6 +59,29 @@ public class ExpressionPackController {
         return response(service.create(name, description, images));
     }
 
+    @PostMapping(path = "/lifecycle", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public ExpressionPackResponse createLifecycle(
+            @RequestParam String name,
+            @RequestParam(required = false) String description,
+            MultipartHttpServletRequest request
+    ) {
+        EnumMap<LifecycleClip, byte[]> clips = new EnumMap<>(LifecycleClip.class);
+        EnumMap<LifecycleClip, Integer> frameDelays = new EnumMap<>(LifecycleClip.class);
+        try {
+            for (LifecycleClip clip : LifecycleClip.values()) {
+                MultipartFile file = request.getFile(clip.wireName());
+                if (file == null || file.isEmpty()) continue;
+                clips.put(clip, file.getBytes());
+                String delay = request.getParameter(clip.wireName() + "_frame_delay_ms");
+                if (delay != null) frameDelays.put(clip, Integer.parseInt(delay));
+            }
+        } catch (Exception exception) {
+            throw new com.kj.stackchan.expression.InvalidExpressionPackException();
+        }
+        return response(service.createLifecycle(name, description, clips, frameDelays));
+    }
+
     @GetMapping
     public ExpressionPackListResponse list() {
         return new ExpressionPackListResponse(service.list().stream().map(this::response).toList());
@@ -69,6 +95,17 @@ public class ExpressionPackController {
                 .contentLength(state.getImageSize())
                 .cacheControl(CacheControl.noStore())
                 .body(state.getImageData());
+    }
+
+    @GetMapping(path = "/{packId}/clips/{clipName}", produces = "application/vnd.espressif.eaf")
+    public ResponseEntity<byte[]> clip(@PathVariable UUID packId, @PathVariable String clipName) {
+        ExpressionPackClipEntity clip = service.clip(packId, clipName);
+        byte[] data = clip.getClipData();
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/vnd.espressif.eaf"))
+                .contentLength(data.length)
+                .cacheControl(CacheControl.noStore())
+                .body(data);
     }
 
     @GetMapping(path = "/device")
@@ -96,14 +133,23 @@ public class ExpressionPackController {
     }
 
     private ExpressionPackResponse response(ExpressionPackEntity pack) {
+        List<ExpressionPackClipResponse> clips = pack.getPackType() == ExpressionPackType.LIFECYCLE_EAF
+                ? service.clips(pack.getId()).stream().map(value -> new ExpressionPackClipResponse(
+                        value.getClipName(), value.getClipSize(), value.getFrameCount(),
+                        value.getFrameDelayMs(), value.getClipSha256())).toList()
+                : List.of();
         return new ExpressionPackResponse(
                 pack.getId(),
                 pack.getName(),
                 pack.getDescription(),
                 pack.getFormatVersion(),
+                pack.getPackType().name(),
                 pack.getArtifactSha256(),
                 pack.getArtifactSize(),
-                List.of(ExpressionState.values()).stream().map(ExpressionState::wireName).toList(),
+                pack.getPackType() == ExpressionPackType.STATIC_PNG
+                        ? List.of(ExpressionState.values()).stream().map(ExpressionState::wireName).toList()
+                        : List.of(),
+                clips,
                 pack.getCreatedAt()
         );
     }
@@ -131,12 +177,18 @@ public class ExpressionPackController {
             String name,
             String description,
             int formatVersion,
+            String packType,
             String artifactSha256,
             int artifactSize,
             List<String> states,
+            List<ExpressionPackClipResponse> clips,
             java.time.Instant createdAt
     ) {
     }
+
+    public record ExpressionPackClipResponse(
+            String name, int size, int frameCount, int frameDelayMs, String sha256
+    ) {}
 
     public record DeviceExpressionPackResponse(
             UUID deviceId,

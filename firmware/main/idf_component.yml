@@ -1,5 +1,7 @@
 dependencies:
+  idf: ">=5.5"
   espressif/esp-sr: "==2.4.6"
+  espressif/esp_lv_eaf_player: "==0.3.0"
   espressif/esp_websocket_client: "^1.4.0"
   espressif/m5stack_core_s3: "==4.0.0"
   lvgl/lvgl: "==9.4.0"

@@ -50,3 +50,4 @@
 | [0037](0037-ordered-streaming-voice-playback.md) | ACCEPTED | 设备语音协商 SCV2 有序分段 WAV，并在取消后丢弃晚到分片。 |
 | [0038](0038-layered-expression-rendering-and-resident-appearance-catalog.md) | ACCEPTED | 默认使用分层动态球形表情与局部自适应渲染，并保持 v1 静态 PNG 资源包兼容。 |
 | [0039](0039-native-renderer-with-bounded-eaf-lifecycle-clips.md) | ACCEPTED | 原生 LVGL 继续负责连续表情，官方 EAF 只承担已验收的有限时长生命周期片段。 |
+| [0040](0040-versioned-expression-pack-container.md) | ACCEPTED | V1 PNG 与 V2 生命周期 EAF 共享互斥 A/B 资源槽，原生渲染始终作为连续与安全回退。 |

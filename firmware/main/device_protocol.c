@@ -277,6 +277,7 @@ esp_err_t device_protocol_encode_heartbeat_with_expression(
                     cJSON_AddBoolToObject(expression, "dynamic_renderer", dynamic_renderer) != NULL &&
                     cJSON_AddBoolToObject(expression, "imu_supported", imu_supported) != NULL &&
                     cJSON_AddBoolToObject(expression, "proximity_supported", false) != NULL &&
+                    cJSON_AddBoolToObject(expression, "lifecycle_clips_supported", true) != NULL &&
                     cJSON_AddItemToObject(root, "expression", expression);
     if (!complete) cJSON_Delete(expression);
     esp_err_t err = complete ? print_json(root, output, output_size) : ESP_ERR_NO_MEM;

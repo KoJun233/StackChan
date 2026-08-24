@@ -23,7 +23,7 @@ public class DeviceExpressionService {
             "RECOVERABLE_ERROR", "OFFLINE", "UPDATING");
     private static final Set<String> PREVIEW_BEHAVIORS = Set.of(
             "BOOT_APPEAR", "WAKE", "IDLE_BREATHE", "PROXIMITY_CURIOUS",
-            "SHAKE_DIZZY", "DROWSY_SLEEP");
+            "SHAKE_DIZZY", "DROWSY_SLEEP", "ROLE_SWITCH");
     private final DeviceRepository deviceRepository;
     private final DeviceCommandGateway commandGateway;
     private final CompanionRoleService roleService;

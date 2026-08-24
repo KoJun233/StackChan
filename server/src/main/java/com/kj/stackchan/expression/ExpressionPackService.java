@@ -22,9 +22,11 @@ public class ExpressionPackService {
 
     private final ExpressionPackRepository packRepository;
     private final ExpressionPackStateRepository stateRepository;
+    private final ExpressionPackClipRepository clipRepository;
     private final DeviceExpressionPackRepository mappingRepository;
     private final DeviceRepository deviceRepository;
     private final ExpressionPackCompiler compiler;
+    private final LifecycleExpressionPackCompiler lifecycleCompiler;
     private final DeviceCommandGateway commandGateway;
     private final Clock clock;
     private final TransactionTemplate transactionTemplate;
@@ -32,21 +34,42 @@ public class ExpressionPackService {
     public ExpressionPackService(
             ExpressionPackRepository packRepository,
             ExpressionPackStateRepository stateRepository,
+            ExpressionPackClipRepository clipRepository,
             DeviceExpressionPackRepository mappingRepository,
             DeviceRepository deviceRepository,
             ExpressionPackCompiler compiler,
+            LifecycleExpressionPackCompiler lifecycleCompiler,
             DeviceCommandGateway commandGateway,
             Clock clock,
             PlatformTransactionManager transactionManager
     ) {
         this.packRepository = packRepository;
         this.stateRepository = stateRepository;
+        this.clipRepository = clipRepository;
         this.mappingRepository = mappingRepository;
         this.deviceRepository = deviceRepository;
         this.compiler = compiler;
+        this.lifecycleCompiler = lifecycleCompiler;
         this.commandGateway = commandGateway;
         this.clock = clock;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+    }
+
+    @Transactional
+    public ExpressionPackEntity createLifecycle(
+            String rawName,
+            String rawDescription,
+            Map<LifecycleClip, byte[]> clips,
+            Map<LifecycleClip, Integer> frameDelays
+    ) {
+        String name = normalizeRequired(rawName, 80);
+        String description = normalizeOptional(rawDescription, 240);
+        GeneratedLifecycleExpressionPack generated = lifecycleCompiler.compile(clips, frameDelays);
+        ExpressionPackEntity pack = packRepository.save(new ExpressionPackEntity(
+                name, description, generated, clock.instant()));
+        generated.clips().forEach((clip, value) -> clipRepository.save(
+                new ExpressionPackClipEntity(pack.getId(), clip, value)));
+        return pack;
     }
 
     @Transactional
@@ -72,9 +95,31 @@ public class ExpressionPackService {
 
     @Transactional(readOnly = true)
     public ExpressionPackStateEntity state(UUID packId, String stateName) {
+        ExpressionPackEntity pack = packRepository.findById(packId)
+                .orElseThrow(ExpressionPackNotFoundException::new);
+        if (pack.getPackType() != ExpressionPackType.STATIC_PNG) {
+            throw new ExpressionPackNotFoundException();
+        }
         ExpressionState state = ExpressionState.fromWireName(stateName);
         return stateRepository.findByPackIdAndStateName(packId, state.wireName())
                 .orElseThrow(ExpressionPackNotFoundException::new);
+    }
+
+    @Transactional(readOnly = true)
+    public ExpressionPackClipEntity clip(UUID packId, String clipName) {
+        ExpressionPackEntity pack = packRepository.findById(packId)
+                .orElseThrow(ExpressionPackNotFoundException::new);
+        if (pack.getPackType() != ExpressionPackType.LIFECYCLE_EAF) {
+            throw new ExpressionPackNotFoundException();
+        }
+        LifecycleClip clip = LifecycleClip.fromWireName(clipName);
+        return clipRepository.findByPackIdAndClipName(packId, clip.wireName())
+                .orElseThrow(ExpressionPackNotFoundException::new);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ExpressionPackClipEntity> clips(UUID packId) {
+        return clipRepository.findAllByPackIdOrderByClipName(packId);
     }
 
     @Transactional(readOnly = true)
@@ -88,7 +133,10 @@ public class ExpressionPackService {
 
     @Transactional
     public DeviceExpressionPackEntity activate(UUID deviceId, UUID packId) {
-        if (!deviceRepository.existsById(deviceId) || !packRepository.existsById(packId)) {
+        var device = deviceRepository.findById(deviceId).orElse(null);
+        var pack = packRepository.findById(packId).orElse(null);
+        if (device == null || pack == null ||
+                (pack.getPackType() == ExpressionPackType.LIFECYCLE_EAF && !device.isLifecycleClipSupported())) {
             throw new InvalidExpressionPackException();
         }
         DeviceExpressionPackEntity mapping = mappingRepository.findByDeviceIdForUpdate(deviceId)
@@ -138,17 +186,19 @@ public class ExpressionPackService {
                     mappingRepository.findByDeviceIdForUpdate(candidate.getDeviceId())
                             .filter(mapping -> mapping.isEnabled() &&
                                     mapping.getStatus() == DeviceExpressionPackStatus.READY)
-                            .flatMap(mapping -> packRepository.findById(mapping.getPackId()).map(pack -> {
-                                String commandId = UUID.randomUUID().toString();
-                                mapping.markInstalling(commandId, clock.instant());
-                                return new InstallCommand(
-                                        mapping.getDeviceId(),
-                                        pack.getId(),
-                                        pack.getArtifactSha256(),
-                                        pack.getArtifactSize(),
-                                        commandId
-                                );
-                            }))
+                            .flatMap(mapping -> packRepository.findById(mapping.getPackId())
+                                    .filter(pack -> canInstall(mapping.getDeviceId(), pack))
+                                    .map(pack -> {
+                                        String commandId = UUID.randomUUID().toString();
+                                        mapping.markInstalling(commandId, clock.instant());
+                                        return new InstallCommand(
+                                                mapping.getDeviceId(),
+                                                pack.getId(),
+                                                pack.getArtifactSha256(),
+                                                pack.getArtifactSize(),
+                                                commandId
+                                        );
+                                    }))
                             .orElse(null));
             if (command == null) {
                 continue;
@@ -212,7 +262,7 @@ public class ExpressionPackService {
         }
         ExpressionPackEntity pack = transactionTemplate.execute(status ->
                 packRepository.findById(mapping.getPackId()).orElse(null));
-        if (pack != null) {
+        if (pack != null && canInstall(deviceId, pack)) {
             commandGateway.installExpressionPack(
                     deviceId,
                     pack.getId(),
@@ -221,6 +271,12 @@ public class ExpressionPackService {
                     UUID.randomUUID().toString()
             );
         }
+    }
+
+    private boolean canInstall(UUID deviceId, ExpressionPackEntity pack) {
+        return pack.getPackType() == ExpressionPackType.STATIC_PNG || deviceRepository.findById(deviceId)
+                .map(device -> device.isLifecycleClipSupported())
+                .orElse(false);
     }
 
     private static String normalizeRequired(String value, int maximum) {

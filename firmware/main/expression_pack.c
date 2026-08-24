@@ -29,12 +29,27 @@
 #define EXPRESSION_MAX_IMAGE_SIZE (384U * 1024U)
 #define EXPRESSION_DOWNLOAD_BUFFER_SIZE 4096U
 #define EXPRESSION_STATE_COUNT 8U
+#define EXPRESSION_CLIP_COUNT 3U
 
 typedef struct {
     uint32_t offset;
     uint32_t length;
     char sha256[EXPRESSION_PACK_SHA256_SIZE];
 } expression_entry_t;
+
+typedef struct {
+    uint32_t offset;
+    uint32_t length;
+    uint16_t frame_count;
+    uint16_t frame_delay_ms;
+    char sha256[EXPRESSION_PACK_SHA256_SIZE];
+} expression_clip_entry_t;
+
+typedef enum {
+    EXPRESSION_PACK_KIND_NONE = 0,
+    EXPRESSION_PACK_KIND_STATIC_PNG,
+    EXPRESSION_PACK_KIND_LIFECYCLE_EAF,
+} expression_pack_kind_t;
 
 typedef struct {
     uint32_t magic;
@@ -51,14 +66,23 @@ static const char *const SLOT_LABELS[] = {NULL, "expression_a", "expression_b"};
 static const char *const STATE_NAMES[] = {
     "idle", "listening", "processing", "speaking", "success", "no_speech", "offline", "error"
 };
-static const uint8_t PACKAGE_MAGIC[] = {'S', 'C', 'E', 'P', 'K', 'G', '1', 0};
+static const char *const CLIP_NAMES[] = {"boot_appear", "wake", "role_switch"};
+static const uint8_t PACKAGE_MAGIC_V1[] = {'S', 'C', 'E', 'P', 'K', 'G', '1', 0};
+static const uint8_t PACKAGE_MAGIC_V2[] = {'S', 'C', 'E', 'P', 'K', 'G', '2', 0};
 static const uint8_t PNG_MAGIC[] = {0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a};
 
 static expression_state_t s_state;
 static expression_entry_t s_entries[EXPRESSION_STATE_COUNT];
+static expression_clip_entry_t s_clip_entries[EXPRESSION_CLIP_COUNT];
 static SemaphoreHandle_t s_mutex;
 static bool s_initialized;
 static bool s_active_valid;
+static expression_pack_kind_t s_pack_kind;
+
+static uint16_t read_u16_le(const uint8_t *data)
+{
+    return (uint16_t)data[0] | ((uint16_t)data[1] << 8);
+}
 
 static uint32_t read_u32_le(const uint8_t *data)
 {
@@ -106,9 +130,11 @@ static void reset_state(void)
 {
     memset(&s_state, 0, sizeof(s_state));
     memset(s_entries, 0, sizeof(s_entries));
+    memset(s_clip_entries, 0, sizeof(s_clip_entries));
     s_state.magic = EXPRESSION_STATE_MAGIC;
     s_state.version = EXPRESSION_STATE_VERSION;
     s_active_valid = false;
+    s_pack_kind = EXPRESSION_PACK_KIND_NONE;
 }
 
 static bool state_is_valid(const expression_state_t *state)
@@ -203,6 +229,14 @@ static int state_index(const char *name)
     return -1;
 }
 
+static int clip_index(const char *name)
+{
+    for (int index = 0; index < (int)EXPRESSION_CLIP_COUNT; index++) {
+        if (strcmp(name, CLIP_NAMES[index]) == 0) return index;
+    }
+    return -1;
+}
+
 static bool json_integer(cJSON *node, int minimum, int maximum)
 {
     return cJSON_IsNumber(node) && node->valuedouble == (double)node->valueint &&
@@ -220,52 +254,71 @@ static bool validate_png_header(const esp_partition_t *partition, size_t offset,
     return header[25] == 2 || header[25] == 3 || header[25] == 6;
 }
 
-static bool validate_package(const esp_partition_t *partition,
-                             size_t artifact_size,
-                             const char *expected_sha256,
-                             expression_entry_t output[EXPRESSION_STATE_COUNT])
+static bool partition_sum32(const esp_partition_t *partition, size_t offset,
+                            size_t length, uint32_t *output)
 {
-    uint8_t header[EXPRESSION_HEADER_SIZE] = {0};
-    if (partition == NULL || artifact_size <= EXPRESSION_HEADER_SIZE || artifact_size > partition->size ||
-        esp_partition_read(partition, 0, header, sizeof(header)) != ESP_OK ||
-        memcmp(header, PACKAGE_MAGIC, sizeof(PACKAGE_MAGIC)) != 0 || read_u32_le(header + 8) != 1) {
-        return false;
+    uint8_t buffer[256];
+    uint32_t sum = 0;
+    size_t consumed = 0;
+    while (consumed < length) {
+        size_t chunk = length - consumed;
+        if (chunk > sizeof(buffer)) chunk = sizeof(buffer);
+        if (esp_partition_read(partition, offset + consumed, buffer, chunk) != ESP_OK) return false;
+        for (size_t index = 0; index < chunk; index++) sum += buffer[index];
+        consumed += chunk;
     }
-    uint32_t manifest_size = read_u32_le(header + 12);
-    if (manifest_size == 0 || manifest_size > EXPRESSION_MAX_MANIFEST_SIZE ||
-        EXPRESSION_HEADER_SIZE + manifest_size >= artifact_size) {
-        return false;
-    }
-    char package_sha256[EXPRESSION_PACK_SHA256_SIZE] = {0};
-    if (!partition_digest(partition, 0, artifact_size, package_sha256) ||
-        strcmp(package_sha256, expected_sha256) != 0) {
-        return false;
-    }
+    *output = sum;
+    return true;
+}
 
-    char *manifest = malloc((size_t)manifest_size + 1);
-    if (manifest == NULL) {
-        return false;
+static bool validate_eaf(const esp_partition_t *partition, uint32_t offset, uint32_t length,
+                         uint16_t expected_frames)
+{
+    uint8_t header[20] = {0};
+    if (length < sizeof(header) || esp_partition_read(partition, offset, header, 16) != ESP_OK ||
+        header[0] != 0x89 || memcmp(header + 1, "EAF", 3) != 0) return false;
+    uint32_t frames = read_u32_le(header + 4);
+    uint32_t checksum = read_u32_le(header + 8);
+    uint32_t payload_length = read_u32_le(header + 12);
+    if (frames != expected_frames || frames == 0 || frames > 120 ||
+        payload_length != length - 16 || 16U + frames * 8U >= length) return false;
+    uint32_t actual_checksum = 0;
+    if (!partition_sum32(partition, offset + 16, length - 16, &actual_checksum) ||
+        actual_checksum != checksum) return false;
+    uint32_t frame_region = 16U + frames * 8U;
+    uint32_t expected_offset = 0;
+    for (uint32_t index = 0; index < frames; index++) {
+        uint8_t table[8] = {0};
+        if (esp_partition_read(partition, offset + 16U + index * 8U, table, sizeof(table)) != ESP_OK) return false;
+        uint32_t frame_size = read_u32_le(table);
+        uint32_t frame_offset = read_u32_le(table + 4);
+        if (frame_offset != expected_offset || frame_size < 86 ||
+            frame_offset > length - frame_region || frame_size > length - frame_region - frame_offset ||
+            esp_partition_read(partition, offset + frame_region + frame_offset, header, sizeof(header)) != ESP_OK ||
+            header[0] != 0x5a || header[1] != 0x5a || memcmp(header + 2, "_S", 2) != 0 ||
+            header[4] != 0 || header[11] != 4 || read_u16_le(header + 12) != 160 ||
+            read_u16_le(header + 14) != 160) return false;
+        expected_offset += frame_size;
     }
-    bool valid = esp_partition_read(partition, EXPRESSION_HEADER_SIZE, manifest, manifest_size) == ESP_OK;
-    manifest[manifest_size] = '\0';
-    cJSON *root = valid ? cJSON_ParseWithLength(manifest, manifest_size) : NULL;
-    free(manifest);
-    valid = root != NULL && cJSON_IsObject(root) && cJSON_GetArraySize(root) == 4 &&
-            json_integer(cJSON_GetObjectItemCaseSensitive(root, "version"), 1, 1) &&
-            json_integer(cJSON_GetObjectItemCaseSensitive(root, "width"), 320, 320) &&
-            json_integer(cJSON_GetObjectItemCaseSensitive(root, "height"), 240, 240);
+    return frame_region + expected_offset == length;
+}
+
+static bool validate_static_manifest(const esp_partition_t *partition, cJSON *root,
+                                     uint32_t payload_start, size_t artifact_size,
+                                     expression_entry_t output[EXPRESSION_STATE_COUNT])
+{
+    bool valid = root != NULL && cJSON_IsObject(root) && cJSON_GetArraySize(root) == 4 &&
+                 json_integer(cJSON_GetObjectItemCaseSensitive(root, "version"), 1, 1) &&
+                 json_integer(cJSON_GetObjectItemCaseSensitive(root, "width"), 320, 320) &&
+                 json_integer(cJSON_GetObjectItemCaseSensitive(root, "height"), 240, 240);
     cJSON *states = root == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(root, "states");
     valid = valid && cJSON_IsArray(states) && cJSON_GetArraySize(states) == EXPRESSION_STATE_COUNT;
     bool seen[EXPRESSION_STATE_COUNT] = {false};
-    uint32_t payload_start = EXPRESSION_HEADER_SIZE + manifest_size;
     uint32_t expected_payload_offset = 0;
     int expected_state_index = 0;
     cJSON *entry = NULL;
     cJSON_ArrayForEach(entry, states) {
-        if (!valid || !cJSON_IsObject(entry) || cJSON_GetArraySize(entry) != 7) {
-            valid = false;
-            break;
-        }
+        if (!valid || !cJSON_IsObject(entry) || cJSON_GetArraySize(entry) != 7) { valid = false; break; }
         cJSON *name = cJSON_GetObjectItemCaseSensitive(entry, "state");
         cJSON *format = cJSON_GetObjectItemCaseSensitive(entry, "format");
         cJSON *width = cJSON_GetObjectItemCaseSensitive(entry, "width");
@@ -297,10 +350,105 @@ static bool validate_package(const esp_partition_t *partition,
             expected_state_index++;
         }
     }
-    for (size_t index = 0; valid && index < EXPRESSION_STATE_COUNT; index++) {
-        valid = seen[index];
+    for (size_t index = 0; valid && index < EXPRESSION_STATE_COUNT; index++) valid = seen[index];
+    return valid && payload_start + expected_payload_offset == artifact_size;
+}
+
+static bool validate_lifecycle_manifest(const esp_partition_t *partition, cJSON *root,
+                                        uint32_t payload_start, size_t artifact_size,
+                                        expression_clip_entry_t output[EXPRESSION_CLIP_COUNT])
+{
+    cJSON *kind = root == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(root, "kind");
+    cJSON *clips = root == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(root, "clips");
+    bool valid = root != NULL && cJSON_IsObject(root) && cJSON_GetArraySize(root) == 5 &&
+                 json_integer(cJSON_GetObjectItemCaseSensitive(root, "version"), 2, 2) &&
+                 cJSON_IsString(kind) && strcmp(kind->valuestring, "lifecycle_eaf") == 0 &&
+                 json_integer(cJSON_GetObjectItemCaseSensitive(root, "width"), 160, 160) &&
+                 json_integer(cJSON_GetObjectItemCaseSensitive(root, "height"), 160, 160) &&
+                 cJSON_IsArray(clips) && cJSON_GetArraySize(clips) >= 1 &&
+                 cJSON_GetArraySize(clips) <= EXPRESSION_CLIP_COUNT;
+    bool seen[EXPRESSION_CLIP_COUNT] = {false};
+    int previous_index = -1;
+    uint32_t expected_payload_offset = 0;
+    cJSON *entry = NULL;
+    cJSON_ArrayForEach(entry, clips) {
+        if (!valid || !cJSON_IsObject(entry) || cJSON_GetArraySize(entry) != 9) { valid = false; break; }
+        cJSON *name = cJSON_GetObjectItemCaseSensitive(entry, "event");
+        cJSON *format = cJSON_GetObjectItemCaseSensitive(entry, "format");
+        cJSON *width = cJSON_GetObjectItemCaseSensitive(entry, "width");
+        cJSON *height = cJSON_GetObjectItemCaseSensitive(entry, "height");
+        cJSON *frames = cJSON_GetObjectItemCaseSensitive(entry, "frameCount");
+        cJSON *delay = cJSON_GetObjectItemCaseSensitive(entry, "frameDelayMs");
+        cJSON *offset = cJSON_GetObjectItemCaseSensitive(entry, "offset");
+        cJSON *length = cJSON_GetObjectItemCaseSensitive(entry, "length");
+        cJSON *sha256 = cJSON_GetObjectItemCaseSensitive(entry, "sha256");
+        int index = cJSON_IsString(name) && name->valuestring != NULL ? clip_index(name->valuestring) : -1;
+        valid = index > previous_index && index >= 0 && !seen[index] && cJSON_IsString(format) &&
+                strcmp(format->valuestring, "eaf-rle4") == 0 && json_integer(width, 160, 160) &&
+                json_integer(height, 160, 160) && json_integer(frames, 1, 120) &&
+                json_integer(delay, 16, 100) && frames->valueint * delay->valueint <= 5000 &&
+                json_integer(offset, 0, EXPRESSION_PACK_MAX_ARTIFACT_SIZE) &&
+                json_integer(length, 24, EXPRESSION_LIFECYCLE_CLIP_MAX_SIZE) &&
+                cJSON_IsString(sha256) && sha256->valuestring != NULL &&
+                is_hex_string(sha256->valuestring, 64) &&
+                (uint32_t)offset->valueint == expected_payload_offset;
+        uint32_t absolute_offset = valid ? payload_start + (uint32_t)offset->valueint : 0;
+        uint32_t clip_length = valid ? (uint32_t)length->valueint : 0;
+        valid = valid && absolute_offset >= payload_start && absolute_offset <= artifact_size &&
+                clip_length <= artifact_size - absolute_offset &&
+                validate_eaf(partition, absolute_offset, clip_length, (uint16_t)frames->valueint);
+        char actual_sha256[EXPRESSION_PACK_SHA256_SIZE] = {0};
+        valid = valid && partition_digest(partition, absolute_offset, clip_length, actual_sha256) &&
+                strcmp(actual_sha256, sha256->valuestring) == 0;
+        if (valid) {
+            seen[index] = true;
+            output[index].offset = absolute_offset;
+            output[index].length = clip_length;
+            output[index].frame_count = (uint16_t)frames->valueint;
+            output[index].frame_delay_ms = (uint16_t)delay->valueint;
+            memcpy(output[index].sha256, sha256->valuestring, EXPRESSION_PACK_SHA256_SIZE);
+            expected_payload_offset += clip_length;
+            previous_index = index;
+        }
     }
-    valid = valid && payload_start + expected_payload_offset == artifact_size;
+    return valid && payload_start + expected_payload_offset == artifact_size;
+}
+
+static bool validate_package(const esp_partition_t *partition, size_t artifact_size,
+                             const char *expected_sha256,
+                             expression_entry_t states[EXPRESSION_STATE_COUNT],
+                             expression_clip_entry_t clips[EXPRESSION_CLIP_COUNT],
+                             expression_pack_kind_t *kind)
+{
+    uint8_t header[EXPRESSION_HEADER_SIZE] = {0};
+    if (partition == NULL || kind == NULL || artifact_size <= EXPRESSION_HEADER_SIZE ||
+        artifact_size > partition->size ||
+        esp_partition_read(partition, 0, header, sizeof(header)) != ESP_OK) return false;
+    bool static_pack = memcmp(header, PACKAGE_MAGIC_V1, sizeof(PACKAGE_MAGIC_V1)) == 0 &&
+                       read_u32_le(header + 8) == 1;
+    bool lifecycle_pack = memcmp(header, PACKAGE_MAGIC_V2, sizeof(PACKAGE_MAGIC_V2)) == 0 &&
+                          read_u32_le(header + 8) == 2;
+    uint32_t manifest_size = read_u32_le(header + 12);
+    if ((!static_pack && !lifecycle_pack) || manifest_size == 0 ||
+        manifest_size > EXPRESSION_MAX_MANIFEST_SIZE ||
+        EXPRESSION_HEADER_SIZE + manifest_size >= artifact_size) return false;
+    char package_sha256[EXPRESSION_PACK_SHA256_SIZE] = {0};
+    if (!partition_digest(partition, 0, artifact_size, package_sha256) ||
+        strcmp(package_sha256, expected_sha256) != 0) return false;
+    char *manifest = malloc((size_t)manifest_size + 1);
+    if (manifest == NULL) return false;
+    bool valid = esp_partition_read(partition, EXPRESSION_HEADER_SIZE, manifest, manifest_size) == ESP_OK;
+    manifest[manifest_size] = '\0';
+    cJSON *root = valid ? cJSON_ParseWithLength(manifest, manifest_size) : NULL;
+    free(manifest);
+    uint32_t payload_start = EXPRESSION_HEADER_SIZE + manifest_size;
+    if (static_pack) {
+        valid = valid && validate_static_manifest(partition, root, payload_start, artifact_size, states);
+        *kind = valid ? EXPRESSION_PACK_KIND_STATIC_PNG : EXPRESSION_PACK_KIND_NONE;
+    } else {
+        valid = valid && validate_lifecycle_manifest(partition, root, payload_start, artifact_size, clips);
+        *kind = valid ? EXPRESSION_PACK_KIND_LIFECYCLE_EAF : EXPRESSION_PACK_KIND_NONE;
+    }
     cJSON_Delete(root);
     return valid;
 }
@@ -336,7 +484,8 @@ esp_err_t expression_pack_init(void)
         const esp_partition_t *partition = esp_partition_find_first(
             ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, SLOT_LABELS[s_state.active_slot]);
         s_active_valid = validate_package(
-            partition, s_state.artifact_size, s_state.sha256, s_entries);
+            partition, s_state.artifact_size, s_state.sha256, s_entries,
+            s_clip_entries, &s_pack_kind);
         if (!s_active_valid) {
             ESP_LOGW(TAG, "Active expression package is invalid; built-in face restored");
             reset_state();
@@ -351,7 +500,19 @@ bool expression_pack_is_active(void)
 {
     bool active = false;
     if (s_initialized && s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
-        active = s_active_valid && s_state.active_slot != EXPRESSION_SLOT_NONE;
+        active = s_active_valid && s_state.active_slot != EXPRESSION_SLOT_NONE &&
+                 s_pack_kind == EXPRESSION_PACK_KIND_STATIC_PNG;
+        xSemaphoreGive(s_mutex);
+    }
+    return active;
+}
+
+bool expression_pack_has_lifecycle_clips(void)
+{
+    bool active = false;
+    if (s_initialized && s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        active = s_active_valid && s_state.active_slot != EXPRESSION_SLOT_NONE &&
+                 s_pack_kind == EXPRESSION_PACK_KIND_LIFECYCLE_EAF;
         xSemaphoreGive(s_mutex);
     }
     return active;
@@ -460,8 +621,10 @@ esp_err_t expression_pack_install(const device_identity_t *identity,
     }
     esp_err_t err = download_to_partition(identity, request, partition);
     expression_entry_t entries[EXPRESSION_STATE_COUNT] = {0};
+    expression_clip_entry_t clips[EXPRESSION_CLIP_COUNT] = {0};
+    expression_pack_kind_t kind = EXPRESSION_PACK_KIND_NONE;
     if (err == ESP_OK && !validate_package(
-            partition, request->artifact_size, request->sha256, entries)) {
+            partition, request->artifact_size, request->sha256, entries, clips, &kind)) {
         err = ESP_ERR_INVALID_RESPONSE;
     }
     if (err != ESP_OK || xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
@@ -469,17 +632,24 @@ esp_err_t expression_pack_install(const device_identity_t *identity,
     }
     expression_state_t previous = s_state;
     expression_entry_t previous_entries[EXPRESSION_STATE_COUNT];
+    expression_clip_entry_t previous_clips[EXPRESSION_CLIP_COUNT];
+    expression_pack_kind_t previous_kind = s_pack_kind;
     memcpy(previous_entries, s_entries, sizeof(previous_entries));
+    memcpy(previous_clips, s_clip_entries, sizeof(previous_clips));
     s_state.active_slot = target_slot;
     s_state.artifact_size = (uint32_t)request->artifact_size;
     memcpy(s_state.pack_id, request->pack_id, sizeof(s_state.pack_id));
     memcpy(s_state.sha256, request->sha256, sizeof(s_state.sha256));
     memcpy(s_entries, entries, sizeof(s_entries));
+    memcpy(s_clip_entries, clips, sizeof(s_clip_entries));
+    s_pack_kind = kind;
     s_active_valid = true;
     err = save_state_locked();
     if (err != ESP_OK) {
         s_state = previous;
         memcpy(s_entries, previous_entries, sizeof(s_entries));
+        memcpy(s_clip_entries, previous_clips, sizeof(s_clip_entries));
+        s_pack_kind = previous_kind;
         s_active_valid = previous.active_slot != EXPRESSION_SLOT_NONE;
     } else if (previous.active_slot != EXPRESSION_SLOT_NONE &&
                previous.active_slot != target_slot) {
@@ -504,12 +674,17 @@ esp_err_t expression_pack_clear(void)
     }
     expression_state_t previous = s_state;
     expression_entry_t previous_entries[EXPRESSION_STATE_COUNT];
+    expression_clip_entry_t previous_clips[EXPRESSION_CLIP_COUNT];
+    expression_pack_kind_t previous_kind = s_pack_kind;
     memcpy(previous_entries, s_entries, sizeof(previous_entries));
+    memcpy(previous_clips, s_clip_entries, sizeof(previous_clips));
     reset_state();
     esp_err_t err = save_state_locked();
     if (err != ESP_OK) {
         s_state = previous;
         memcpy(s_entries, previous_entries, sizeof(s_entries));
+        memcpy(s_clip_entries, previous_clips, sizeof(s_clip_entries));
+        s_pack_kind = previous_kind;
         s_active_valid = previous.active_slot != EXPRESSION_SLOT_NONE;
     }
     if (err == ESP_OK) {
@@ -538,7 +713,8 @@ esp_err_t expression_pack_read_state(companion_face_state_t state,
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (!s_active_valid || s_state.active_slot == EXPRESSION_SLOT_NONE) {
+    if (!s_active_valid || s_state.active_slot == EXPRESSION_SLOT_NONE ||
+        s_pack_kind != EXPRESSION_PACK_KIND_STATIC_PNG) {
         xSemaphoreGive(s_mutex);
         return ESP_ERR_NOT_FOUND;
     }
@@ -562,5 +738,45 @@ esp_err_t expression_pack_read_state(companion_face_state_t state,
     }
     *image = buffer;
     *image_size = entry.length;
+    return ESP_OK;
+}
+
+esp_err_t expression_pack_read_lifecycle_clip(expression_lifecycle_clip_t clip,
+                                              expression_lifecycle_clip_data_t *output)
+{
+    if (output == NULL || clip < 0 || clip >= EXPRESSION_LIFECYCLE_COUNT ||
+        !s_initialized || s_mutex == NULL) return ESP_ERR_INVALID_ARG;
+    memset(output, 0, sizeof(*output));
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) return ESP_ERR_INVALID_STATE;
+    if (!s_active_valid || s_state.active_slot == EXPRESSION_SLOT_NONE ||
+        s_pack_kind != EXPRESSION_PACK_KIND_LIFECYCLE_EAF) {
+        xSemaphoreGive(s_mutex);
+        return ESP_ERR_NOT_FOUND;
+    }
+    expression_clip_entry_t entry = s_clip_entries[(int)clip];
+    const esp_partition_t *partition = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, SLOT_LABELS[s_state.active_slot]);
+    if (partition == NULL || entry.length < 24 ||
+        entry.length > EXPRESSION_LIFECYCLE_CLIP_MAX_SIZE || entry.frame_count == 0 ||
+        entry.frame_delay_ms < 16 || entry.frame_delay_ms > 100) {
+        xSemaphoreGive(s_mutex);
+        return ESP_ERR_NOT_FOUND;
+    }
+    uint8_t *data = heap_caps_malloc(entry.length, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (data == NULL) data = malloc(entry.length);
+    if (data == NULL) {
+        xSemaphoreGive(s_mutex);
+        return ESP_ERR_NO_MEM;
+    }
+    if (esp_partition_read(partition, entry.offset, data, entry.length) != ESP_OK) {
+        free(data);
+        xSemaphoreGive(s_mutex);
+        return ESP_FAIL;
+    }
+    xSemaphoreGive(s_mutex);
+    output->data = data;
+    output->size = entry.length;
+    output->frame_count = entry.frame_count;
+    output->frame_delay_ms = entry.frame_delay_ms;
     return ESP_OK;
 }

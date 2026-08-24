@@ -5,6 +5,7 @@ export interface Device {
   commandAvailable: boolean
   displayName: string
   dynamicExpressionSupported?: boolean
+  lifecycleClipSupported?: boolean
   firmwareVersion: string
   id: string
   lastSeenAt: string | null

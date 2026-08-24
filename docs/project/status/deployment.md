@@ -2,14 +2,14 @@
 
 - 状态：STABLE
 - 最后更新：2026-08-23
-- 当前分支：`codex/media-003-eaf-emote-evaluation`（运行态未替换）
-- 基准提交：`67e5ad3`
-- 最后验证提交：`67e5ad3`
+- 当前分支：`codex/media-004-eaf-lifecycle-packs`（V36/页面已部署）
+- 基准提交：`4add447`
+- 最后验证提交：`4add447`
 - 当前模式：LAN HTTP development
 
 ## 当前目标
 
-维持已部署的 MEDIA-002D 最终 LAN server/V35；CoreS3 已安装并验收 MEDIA-003 EAF 候选 `71868da`，不自动再次 OTA。
+维持已部署的 MEDIA-004 LAN server/V36 与 CoreS3 `71868da`；服务端和页面已发布，设备固件仍需逐次授权后 OTA。
 
 ## 已完成
 
@@ -22,11 +22,11 @@
 
 ## 正在进行
 
-LAN server 运行 `media002-final-local-41b8827`/V35，连续 1–60 FPS、帧率重连同步和诊断标签均已发布；当前地址为 `http://192.168.1.3:8080/`。CoreS3 运行 `71868da`，应用 OTA 为 `INSTALLED`，EAF 开机片段、native 恢复、语音和触摸成功路径通过。server 镜像未替换，仍为 `stackchan-server:media002-final-41b8827`，摘要 `sha256:bfd2019b4e8a84a0132794096d751f3bce872555165a11219081b820f9445810`。
+LAN server 已由 MEDIA-004 源快照 `0b70f33` 构建并运行 V36，生命周期 EAF 页面和接口已发布；当前地址为 `http://192.168.1.3:8080/`，镜像摘要为 `sha256:50d3f5bc86ce34441cbf16332a58ef99ea21afe8ff18028036539b9cf7ae0dbc`。CoreS3 仍运行 `71868da`，尚未安装 MEDIA-004 固件，因此页面会按能力门控禁止向该旧固件启用 V2 包。
 
 ## 下一步操作
 
-保持当前 LAN server/V35 与 CoreS3 `71868da`，完成任务提交回归。本轮不再 OTA、不清除 NVS、不主动做回退演练。
+由用户登录“表情与角色形象”页面复核生命周期动画管理；设备侧继续保持 `71868da`。如需实机启用 V2 包，再单独授权保留 NVS 的应用 OTA，并执行 EAF→原生回退、语音并发和角色切换验收。
 
 ## 阻塞项
 
@@ -44,6 +44,8 @@ LAN server 运行 `media002-final-local-41b8827`/V35，连续 1–60 FPS、帧�
 ## 验证命令与最近结果
 
 - 2026-08-23 部署前工作树服务端 392/392、空库 Flyway V1..V35、前端 81/81/类型检查/生产构建、双固件 profile、三组任务栈预算和文档检查通过；自动化验证阶段未替换运行容器。
+- 2026-08-23 MEDIA-004 发布前新 PostgreSQL 备份及最新备份隔离恢复验证成功；只替换 `stackchan-foundation-server-1`，运行库由 V35 迁移到 V36，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。
+- 新 server 健康接口、本机首页和 `192.168.1.3:8080` 首页为 200；未认证表情包与设备接口均为 401。运行镜像为 `sha256:50d3f5bc86ce34441cbf16332a58ef99ea21afe8ff18028036539b9cf7ae0dbc`，旧镜像保留为 `pre-media004-0b70f33`，本次未 OTA CoreS3。
 - 2026-08-23 经用户授权，部署前新 PostgreSQL 备份和最新备份隔离恢复验证成功；只重建 `stackchan-foundation-server-1`，PostgreSQL、Redis 和备份容器 ID 均未变化。
 - 新 server 健康接口、本机首页和 `192.168.1.3:8080` 首页为 200；V35 无待迁移项，启动日志无 `ERROR`/`Exception`，运行静态资源包含新诊断标签。CoreS3 在容器重建后产生新心跳并恢复 `ADAPTIVE 45–60`、目标 60、实际 55。
 - 2026-08-22 经用户授权重启 Docker Desktop 后，既有 PostgreSQL、Redis、server 和备份容器全部恢复；运行 server 镜像仍为预期摘要 `sha256:b819e63378db6250bdbd8fd66939f15960d6c72097fce28b3558114afcf4ae4c`，本轮固件迁移未修改服务端或前端，因此未无意义替换容器。

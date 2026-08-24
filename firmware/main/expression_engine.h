@@ -39,6 +39,7 @@ typedef enum {
     COMPANION_BEHAVIOR_PROXIMITY_CURIOUS,
     COMPANION_BEHAVIOR_SHAKE_DIZZY,
     COMPANION_BEHAVIOR_DROWSY_SLEEP,
+    COMPANION_BEHAVIOR_ROLE_SWITCH,
 } companion_expression_behavior_t;
 
 typedef enum {

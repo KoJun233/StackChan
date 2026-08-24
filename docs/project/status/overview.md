@@ -2,15 +2,15 @@
 
 - 状态：ACTIVE
 - 最后更新：2026-08-23
-- 当前分支：`codex/media-003-eaf-emote-evaluation`
-- 实现基准：`67e5ad3`
-- 最后验证提交：`67e5ad3`
+- 当前分支：`codex/media-004-eaf-lifecycle-packs`
+- 实现基准：`4add447`
+- 最后验证提交：`4add447`
 - 当前部署：LAN HTTP development mode
 - 生产边界：HTTPS-only
 
 ## 当前结论
 
-`MEDIA-002A/B/C/D` 已由 `67e5ad3` 合入。`MEDIA-003` 保持原生 LVGL 为默认与安全回退，项目自有 160×160 RLE EAF 开机片段已通过实体成功路径；`esp_emote_gfx` 3.0.5 只完成生命周期 probe，不接管显示。
+`MEDIA-003` 已由 `4add447` 合入。`MEDIA-004` 已把已验收结论产品化为 V2 生命周期 EAF 包：V1 PNG 与 V2 EAF 共享互斥 A/B 槽，服务端、页面和固件严格支持 `boot_appear`、`wake`、`role_switch`，原生 LVGL 始终负责连续表情与安全回退。V36 与页面已部署；CoreS3 尚未 OTA，继续由设备能力门控保护。
 
 V35 页面、接口、重连同步和诊断标签继续稳定运行。CoreS3 已通过保留 NVS 的应用 OTA 安装 `71868da`，任务为 `INSTALLED`；用户确认 EAF→native、三次唤醒对话、回答声音、触摸取消和下一回合正常，无黑屏、卡住或自动重启。
 
@@ -18,10 +18,10 @@ V35 页面、接口、重连同步和诊断标签继续稳定运行。CoreS3 已
 
 | 工作流 | 状态 | 当前事实 | 下一步 |
 | --- | --- | --- | --- |
-| [服务端](server.md) | STABLE | MEDIA-002D/V35 与重连同步已由 `67e5ad3` 合入；本任务不改服务端 | 无操作 |
-| [前端](frontend.md) | STABLE | 连续滑块、预览按钮和诊断标签已由 `67e5ad3` 合入；本任务不改前端 | 无操作 |
-| [固件](firmware.md) | READY_FOR_REVIEW | `71868da` EAF 生命周期片段实体成功路径通过；native 默认和 Emote 隔离边界不变 | 最终回归并整理唯一任务提交 |
-| [部署](deployment.md) | STABLE | LAN 运行 MEDIA-002/V35，CoreS3 运行 `71868da` | 保持运行态；不自动推送或再 OTA |
+| [服务端](server.md) | DEPLOYED | V36、V2 包编译/存储、设备能力门控和片段接口已发布 | 页面与实机 smoke test |
+| [前端](frontend.md) | DEPLOYED | 生命周期上传、间隔配置、元数据和能力门控已发布 | 用户登录页面复核 |
+| [固件](firmware.md) | READY_FOR_TEST | 正式 EAF player、V2 校验/A/B 安装和三事件回退已通过 protocol 与 LAN 构建 | 经授权生成提交绑定候选并 OTA |
+| [部署](deployment.md) | STABLE | LAN 已运行 MEDIA-004/V36，CoreS3 仍运行 `71868da` | 保持服务端，OTA 需单独授权 |
 
 ## 当前能力地图
 
@@ -36,12 +36,15 @@ V35 页面、接口、重连同步和诊断标签继续稳定运行。CoreS3 已
 
 ## 版本与运行态
 
-- Git：`master` 合并提交 `67e5ad3`；MEDIA-003 分支基于该提交。
-- LAN server：`media002-final-local-41b8827`，Flyway V35，当前地址 `http://192.168.1.3:8080/`；运行镜像和保留的旧镜像信息见[部署状态](deployment.md)。
+- Git：`master` 合并提交 `4add447`；MEDIA-004 分支基于该提交。
+- LAN server：MEDIA-004 源快照 `0b70f33`，Flyway V36，当前地址 `http://192.168.1.3:8080/`；运行镜像和保留的旧镜像信息见[部署状态](deployment.md)。
 - CoreS3：当前运行 `71868da`；EAF 开机片段、native 恢复、语音与触摸成功路径通过，应用 OTA 与 `motion_disabled` 保持。
 - 实机固件提交只作为运行候选，不能替代 `master` 作为新任务分支基线。
 
 ## 最近验证
+
+- MEDIA-004：服务端 395/395、空库 Flyway V1..V36 通过；新增重连能力门控明确阻止回退到旧固件后继续安装 V2。控制台 Vitest 27 文件 82/82、类型检查和 production build 通过；ESP-IDF 5.5.5 protocol profile 与独立 sdkconfig 的 LAN HTTP Quad profile 均编译通过。LAN 候选为 1,618,336 字节、最小应用分区余量 49%，SHA-256 `BBF266A5FB77A47198FDC1EC4D22D9962DE1F32C054F69EC7FE4908AC84263F2`；该未提交工作树候选仅作为构建证据，不用于 OTA。
+- MEDIA-004 LAN：发布前备份和隔离恢复成功，只替换 server；运行库迁移至 V36，健康接口和本机/LAN 首页为 200，未认证表情包与设备接口为 401，PostgreSQL、Redis 和备份容器未替换。CoreS3 未刷写。
 
 - MEDIA-003 项目自有 EAF 生成器 3/3 通过；53,854 字节制品 SHA-256 为 `ABD64A59F59CAFF9CEE7A65921781BF6FE28B150AD876ADDF8CF52505690FE81`，内嵌制品与生成结果逐字节一致。
 - 默认 ESP-IDF 5.4.4 LAN HTTP Quad 完整固件仍为 1,581,488 字节，与 MEDIA-002 最终稳定制品同尺寸。ESP-IDF 5.5.5 同口径 native、EAF RLE-only 和 Emote lifecycle 分别为 1,605,088、1,669,504 和 1,615,776 字节；三者均编译通过。
@@ -85,8 +88,8 @@ V35 页面、接口、重连同步和诊断标签继续稳定运行。CoreS3 已
 - 用户已确认基础外部通知测试正常；免打扰延期和离线重连两个专项场景尚未执行，不阻塞代码审核或提交整理。
 - 用户明确要求本轮不做固件 OTA 回退演练；自定义表情实体素材和公网生产部署仍需要各自单独授权。
 - MEDIA-002 已合入，固件成功路径、显示性能和音量回归已通过；固定 60 FPS 仍是调度目标而不是硬件承诺。
-- MEDIA-003 无代码或实体阻塞。`esp_emote_gfx` 仍不作为可刷写候选；正式多片段资源协议不在本任务内。
+- MEDIA-003 已合入且无遗留阻塞。`esp_emote_gfx` 仍不进入正式显示链；MEDIA-004 服务端已部署，实体成功路径仍需要后续单独授权 OTA。
 
 ## 下一步
 
-完成 MEDIA-003 最终自动化和文档回归，把实体证据压回相对 `master` 的唯一中文任务提交。保持 CoreS3 `71868da`；推送仍需单独授权。
+保持已部署的 LAN server/V36 与 CoreS3 `71868da`；用户先复核生命周期动画页面。经授权后生成最终提交绑定的 OTA 候选，完成 EAF→原生回退、语音并发与角色切换实机验收。OTA 和推送仍需分别授权。
