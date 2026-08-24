@@ -95,7 +95,8 @@ class AgentManagementControllerTest {
                 .andExpect(jsonPath("$.framework").value("spring-ai-alibaba-react-agent"))
                 .andExpect(jsonPath("$.frameworkVersion").value("1.1.2.2"))
                 .andExpect(jsonPath("$.limits.maxToolCalls").value(4))
-                .andExpect(jsonPath("$.builtInTools", hasSize(2)))
+                .andExpect(jsonPath("$.builtInTools", hasSize(3)))
+                .andExpect(jsonPath("$.builtInTools[?(@.id == 'upcoming_device_calendar_events')]", hasSize(1)))
                 .andExpect(jsonPath("$.skills[0].name").value("daily-routine"))
                 .andExpect(jsonPath("$.skills[0].files", hasSize(2)))
                 .andExpect(jsonPath("$.mcp.tools", hasSize(0)));

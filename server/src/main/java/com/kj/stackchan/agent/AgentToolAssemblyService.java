@@ -13,9 +13,11 @@ import java.util.Set;
 import com.alibaba.cloud.ai.graph.skills.registry.SkillRegistry;
 import com.alibaba.cloud.ai.graph.skills.registry.filesystem.FileSystemSkillRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kj.stackchan.calendar.ICloudCalendarService;
 import com.kj.stackchan.config.AppProperties;
 import com.kj.stackchan.memory.LongTermMemoryService;
 import com.kj.stackchan.reminder.ReminderService;
+import com.kj.stackchan.workday.WorkdaySettingsService;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.stereotype.Service;
@@ -27,7 +29,8 @@ public class AgentToolAssemblyService {
             CurrentTimeTool.ID,
             CapabilityListTool.ID,
             NextReminderTool.ID,
-            PendingMemoryCountTool.ID
+            PendingMemoryCountTool.ID,
+            UpcomingCalendarEventsTool.ID
     );
 
     private final AgentSettingsService settingsService;
@@ -39,6 +42,8 @@ public class AgentToolAssemblyService {
     private final Clock clock;
     private final ReminderService reminderService;
     private final LongTermMemoryService memoryService;
+    private final ICloudCalendarService calendarService;
+    private final WorkdaySettingsService workdaySettingsService;
 
     public AgentToolAssemblyService(
             AgentSettingsService settingsService,
@@ -49,7 +54,9 @@ public class AgentToolAssemblyService {
             AppProperties appProperties,
             Clock clock,
             ReminderService reminderService,
-            LongTermMemoryService memoryService
+            LongTermMemoryService memoryService,
+            ICloudCalendarService calendarService,
+            WorkdaySettingsService workdaySettingsService
     ) {
         this.settingsService = settingsService;
         this.mcpCatalog = mcpCatalog;
@@ -60,6 +67,8 @@ public class AgentToolAssemblyService {
         this.clock = clock;
         this.reminderService = reminderService;
         this.memoryService = memoryService;
+        this.calendarService = calendarService;
+        this.workdaySettingsService = workdaySettingsService;
     }
 
     public AgentToolAssembly assemble(AgentInvocationContext context) {
@@ -88,6 +97,15 @@ public class AgentToolAssemblyService {
         if (context.deviceId() != null && settingsService.isEnabled(
                 AgentCapabilityType.BUILTIN_TOOL, PendingMemoryCountTool.ID)) {
             ToolCallback callback = callback(new PendingMemoryCountTool(context.deviceId(), context.roleId(), memoryService, objectMapper));
+            directTools.add(callback);
+            auditMetadata.put(callback.getToolDefinition().name(), new AgentToolPolicyInterceptor.ToolAuditMetadata(
+                    AgentToolSource.BUILTIN, null, null));
+        }
+        if (context.deviceId() != null && settingsService.isEnabled(
+                AgentCapabilityType.BUILTIN_TOOL, UpcomingCalendarEventsTool.ID)) {
+            ToolCallback callback = callback(new UpcomingCalendarEventsTool(
+                    context.deviceId(), calendarService, workdaySettingsService, clock, objectMapper
+            ));
             directTools.add(callback);
             auditMetadata.put(callback.getToolDefinition().name(), new AgentToolPolicyInterceptor.ToolAuditMetadata(
                     AgentToolSource.BUILTIN, null, null));

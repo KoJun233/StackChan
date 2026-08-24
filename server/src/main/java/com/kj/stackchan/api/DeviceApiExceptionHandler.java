@@ -2,6 +2,9 @@ package com.kj.stackchan.api;
 
 import java.nio.charset.StandardCharsets;
 
+import com.kj.stackchan.calendar.ICloudCalendarFailureCode;
+import com.kj.stackchan.calendar.ICloudCalendarUnavailableException;
+import com.kj.stackchan.calendar.InvalidICloudCalendarException;
 import com.kj.stackchan.conversation.ConversationNotFoundException;
 import com.kj.stackchan.conversation.InvalidPersonalDataRequestException;
 import com.kj.stackchan.conversation.PersonalDataConflictException;
@@ -32,6 +35,8 @@ import com.kj.stackchan.role.RoleNotFoundException;
 import com.kj.stackchan.wakeword.InvalidWakeWordModelJobException;
 import com.kj.stackchan.wakeword.WakeWordModelCatalogUnavailableException;
 import com.kj.stackchan.wakeword.WakeWordModelNotFoundException;
+import com.kj.stackchan.workday.InvalidWorkdaySettingsException;
+import com.kj.stackchan.workday.InvalidWorkdayStateException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -100,6 +105,21 @@ public class DeviceApiExceptionHandler {
     );
     public static final ApiError INVALID_INTERACTION_SETTINGS = new ApiError(
             "invalid_interaction_settings", "交互设置无效。"
+    );
+    public static final ApiError INVALID_WORKDAY_SETTINGS = new ApiError(
+            "invalid_workday_settings", "工作陪伴设置无效。"
+    );
+    public static final ApiError INVALID_WORKDAY_STATE = new ApiError(
+            "invalid_workday_state", "当前工作陪伴状态不允许此操作。"
+    );
+    public static final ApiError INVALID_ICLOUD_CALENDAR = new ApiError(
+            "invalid_icloud_calendar", "iCloud 日历配置无效。"
+    );
+    public static final ApiError ICLOUD_AUTHENTICATION_FAILED = new ApiError(
+            "icloud_authentication_failed", "Apple 账号或 App 专用密码无效。"
+    );
+    public static final ApiError ICLOUD_CALENDAR_UNAVAILABLE = new ApiError(
+            "icloud_calendar_unavailable", "iCloud 日历暂时不可用，请稍后重试。"
     );
     public static final ApiError PROACTIVE_TOPIC_NOT_FOUND = new ApiError(
             "proactive_topic_not_found", "未找到指定的主动关心主题。"
@@ -226,6 +246,29 @@ public class DeviceApiExceptionHandler {
         return response(HttpStatus.BAD_REQUEST, INVALID_INTERACTION_SETTINGS);
     }
 
+    @ExceptionHandler(InvalidWorkdaySettingsException.class)
+    ResponseEntity<ApiError> invalidWorkdaySettings(InvalidWorkdaySettingsException exception) {
+        return response(HttpStatus.BAD_REQUEST, INVALID_WORKDAY_SETTINGS);
+    }
+
+    @ExceptionHandler(InvalidWorkdayStateException.class)
+    ResponseEntity<ApiError> invalidWorkdayState(InvalidWorkdayStateException exception) {
+        return response(HttpStatus.CONFLICT, INVALID_WORKDAY_STATE);
+    }
+
+    @ExceptionHandler(InvalidICloudCalendarException.class)
+    ResponseEntity<ApiError> invalidICloudCalendar(InvalidICloudCalendarException exception) {
+        return response(HttpStatus.BAD_REQUEST, INVALID_ICLOUD_CALENDAR);
+    }
+
+    @ExceptionHandler(ICloudCalendarUnavailableException.class)
+    ResponseEntity<ApiError> iCloudCalendarUnavailable(ICloudCalendarUnavailableException exception) {
+        if (exception.getFailureCode() == ICloudCalendarFailureCode.AUTHENTICATION_FAILED) {
+            return response(HttpStatus.UNPROCESSABLE_ENTITY, ICLOUD_AUTHENTICATION_FAILED);
+        }
+        return response(HttpStatus.BAD_GATEWAY, ICLOUD_CALENDAR_UNAVAILABLE);
+    }
+
     @ExceptionHandler(ProactiveTopicCooldownNotFoundException.class)
     ResponseEntity<ApiError> proactiveTopicNotFound(ProactiveTopicCooldownNotFoundException exception) {
         return response(HttpStatus.NOT_FOUND, PROACTIVE_TOPIC_NOT_FOUND);
@@ -321,6 +364,12 @@ public class DeviceApiExceptionHandler {
         }
         if (requestUri.startsWith("/api/v1/settings/interactions")) {
             return response(HttpStatus.BAD_REQUEST, INVALID_INTERACTION_SETTINGS);
+        }
+        if (requestUri.startsWith("/api/v1/workday") && requestUri.contains("/calendar")) {
+            return response(HttpStatus.BAD_REQUEST, INVALID_ICLOUD_CALENDAR);
+        }
+        if (requestUri.startsWith("/api/v1/workday")) {
+            return response(HttpStatus.BAD_REQUEST, INVALID_WORKDAY_SETTINGS);
         }
         if (requestUri.startsWith("/api/v1/firmware")) {
             return response(HttpStatus.CONFLICT, INVALID_FIRMWARE_UPDATE);
