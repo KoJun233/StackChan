@@ -3,6 +3,7 @@
 - 状态：ACCEPTED
 - 日期：2026-08-20
 - 修订：2026-08-23，`MEDIA-002D` 完整迁移到官方 CoreS3 BSP + LVGL 9.4，并完成真机性能与音量调校
+- 修订：2026-08-24，纠正 K151 整机包含 LTR-553ALS-WA 接近/环境光传感器；MEDIA-002 的 `false` 是固件未初始化而非硬件缺失
 - 工作流：前端、服务端、固件
 - 关联：[0022：版本化表情资源包](0022-versioned-expression-resource-packs.md)、[0033：角色容器](0033-companion-role-containers.md)、[表情渲染调研](../expression-rendering-landscape.md)
 
@@ -61,7 +62,7 @@ StackChan 使用 320×240、RGB565 的 ILI9342C 屏幕。面板可以按 60 Hz �
 
 原计划每阶段使用独立任务分支；用户在 `MEDIA-002A` 审核后明确要求 A/B/C 合并到当前任务分支，因此本次作为一个跨三端任务提交交付。固件仍先完成自动化与制品校验，再经逐次授权提供应用 OTA；保留 NVS，不把设计确认视为刷写或部署授权。
 
-CoreS3 当前没有独立接近传感器，因此固件保留“靠近好奇”的受限语义与优先级，但能力心跳明确上报 `proximity_supported=false`，不会伪造接近事件。IMU 摇晃和触摸反应可直接启用。
+官方 K151 整机包含 LTR-553ALS-WA 接近/环境光传感器。MEDIA-002 固件没有初始化该器件，因此当时能力心跳仍如实上报 `proximity_supported=false`，不会伪造接近事件；后续 BODY-001 必须先完成驱动、能力探测和故障回退，才能改为 true。IMU 摇晃和触摸反应继续可直接启用。
 
 ## 原因
 

@@ -12,6 +12,7 @@
 | [`project/architecture.md`](project/architecture.md) | 架构说明 |
 | [`project/development.md`](project/development.md) | 开发环境与验证命令 |
 | [`project/roadmap.md`](project/roadmap.md) | 产品路线图 |
+| [`project/workday-companion-v1.md`](project/workday-companion-v1.md) | 工作日桌面陪伴 V1 的范围、架构、任务拆分与验收 |
 | [`project/todo.md`](project/todo.md) | 下一阶段任务顺序、范围与验收条件 |
 | [`project/milestones.md`](project/milestones.md) | 已合入任务与验证里程碑索引 |
 | [`project/decisions/README.md`](project/decisions/README.md) | 架构决策索引 |

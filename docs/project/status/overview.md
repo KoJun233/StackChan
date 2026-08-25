@@ -1,27 +1,27 @@
 # 全局工作流总览
 
 - 状态：ACTIVE
-- 最后更新：2026-08-23
-- 当前分支：`codex/media-004-eaf-lifecycle-packs`
-- 实现基准：`4add447`
-- 最后验证提交：`4add447`
+- 最后更新：2026-08-25
+- 当前分支：`codex/workday-companion-v1`
+- 实现基准：`fa093dc`
+- 最后验证提交：`a2a8e29`
 - 当前部署：LAN HTTP development mode
 - 生产边界：HTTPS-only
 
 ## 当前结论
 
-`MEDIA-003` 已由 `4add447` 合入。`MEDIA-004` 已把已验收结论产品化为 V2 生命周期 EAF 包：V1 PNG 与 V2 EAF 共享互斥 A/B 槽，服务端、页面和固件严格支持 `boot_appear`、`wake`、`role_switch`，原生 LVGL 始终负责连续表情与安全回退。V36 与页面已部署；CoreS3 尚未 OTA，继续由设备能力门控保护。
+`MEDIA-004` 任务提交 `8c28f0a` 已由 `fa093dc` 合入 `master`。V1 PNG 与 V2 EAF 共享互斥 A/B 槽，服务端、页面和固件严格支持 `boot_appear`、`wake`、`role_switch`，原生 LVGL 始终负责连续表情与安全回退。V36 与页面已部署；用户暂无 EAF 素材，因此 V2 实体激活验收延期，CoreS3 保持 `71868da`，本主线不 OTA、不把延期写成通过。
 
-V35 页面、接口、重连同步和诊断标签继续稳定运行。CoreS3 已通过保留 NVS 的应用 OTA 安装 `71868da`，任务为 `INSTALLED`；用户确认 EAF→native、三次唤醒对话、回答声音、触摸取消和下一回合正常，无黑屏、卡住或自动重启。
+当前进入 `WORK-001` 私用工作日桌面陪伴 V1。V37 设置入口、V38 持久状态机以及 `CONN-001` 的 V39 只读 iCloud Calendar 均已发布。真实账号已连接并缓存一条日程；运行审计证明原语音回合只调用时间和提醒 Tool，因此把“提醒为空”误答成“没有日程”。修正已发布：每小时只读同步、设备绑定的近期日历 Tool 和日程问题强制调用均已进入 LAN server，等待用户语音复测。当前仍不自动启动工作模式、不读取天气、不生成简报或动作。产品先服务单用户数月；开源安装、摄像头、NFC、红外、Home Assistant、日历写入、随机主动闲聊和模型运动权限冻结。详细边界见[开发设计](../workday-companion-v1.md)和 [ADR 0041](../decisions/0041-private-first-deterministic-workday-companion.md)。
 
 ## 工作流摘要
 
 | 工作流 | 状态 | 当前事实 | 下一步 |
 | --- | --- | --- | --- |
-| [服务端](server.md) | DEPLOYED | V36、V2 包编译/存储、设备能力门控和片段接口已发布 | 页面与实机 smoke test |
-| [前端](frontend.md) | DEPLOYED | 生命周期上传、间隔配置、元数据和能力门控已发布 | 用户登录页面复核 |
-| [固件](firmware.md) | READY_FOR_TEST | 正式 EAF player、V2 校验/A/B 安装和三事件回退已通过 protocol 与 LAN 构建 | 经授权生成提交绑定候选并 OTA |
-| [部署](deployment.md) | STABLE | LAN 已运行 MEDIA-004/V36，CoreS3 仍运行 `71868da` | 保持服务端，OTA 需单独授权 |
+| [服务端](server.md) | ACTIVE | 小时同步与近期日历 Tool 已发布；完整 418/418 | 由用户语音复测 |
+| [前端](frontend.md) | ACTIVE | 邮箱专用入口已发布；85/85、类型检查和构建通过 | 由用户复测连接流程 |
+| [固件](firmware.md) | STABLE | CoreS3 `71868da` 稳定；MEDIA-004 V2 实体激活延期 | 先设计 K151 能力探测与安全动作，不连接设备 |
+| [部署](deployment.md) | STABLE | LAN 运行 CONN-001/V39，CoreS3 仍运行 `71868da` | 服务可直接发布；Git 推送和固件仍需授权 |
 
 ## 当前能力地图
 
@@ -31,18 +31,26 @@ V35 页面、接口、重连同步和诊断标签继续稳定运行。CoreS3 已
 - 设备：配对/JWT/WebSocket、唤醒模型 OTA、动态球形表情、兼容八状态 PNG 包和应用 A/B OTA。
 - 数据与运维：个人数据搜索/导出/删除、7 日/4 周备份、隔离恢复和健康中心。
 - 外部通知：固定设备集成、一次性令牌、幂等 REST/MCP、可靠单飞、互动回执，以及可选的同集成确定性原文摘要。
+- 日历：V39 提供 iCloud CalDAV 只读发现与 `REPORT` 查询、加密 App 专用密码、Apple Account 已验证邮箱、显式允许列表、私人事件脱敏、二十四小时缓存、每小时同步和设备绑定的未来七天 Agent Tool。区域回退仅在全球认证失败时尝试中国大陆入口，只允许 Apple 全球/中国大陆根入口和 `p数字-caldav` HTTPS 分片。
 
 完整合并记录见[里程碑索引](../milestones.md)，长期架构约束见[ADR 索引](../decisions/README.md)。
 
 ## 版本与运行态
 
-- Git：`master` 合并提交 `4add447`；MEDIA-004 分支基于该提交。
-- LAN server：MEDIA-004 源快照 `0b70f33`，Flyway V36，当前地址 `http://192.168.1.3:8080/`；运行镜像和保留的旧镜像信息见[部署状态](deployment.md)。
+- Git：`master` 合并提交 `fa093dc`；WORK-001 分支基于该提交。
+- LAN server：CONN-001 Agent 日历闭环源快照 `a2a8e29`，Flyway V39，当前地址 `http://192.168.1.3:8080/`；运行镜像和回滚镜像信息见[部署状态](deployment.md)。
 - CoreS3：当前运行 `71868da`；EAF 开机片段、native 恢复、语音与触摸成功路径通过，应用 OTA 与 `motion_disabled` 保持。
 - 实机固件提交只作为运行候选，不能替代 `master` 作为新任务分支基线。
 
 ## 最近验证
 
+- CONN-001 Agent 日历闭环：真实运行库存在一条未过期缓存事件；对应原语音回合审计只记录 `current_date_time` 和 `next_device_reminder`，确认错误不在 iCloud 同步而在 Agent 缺少日历数据源。新增每小时同步、允许列表门控、单连接失败隔离、设备绑定只读 Tool、未来七天重叠事件查询和日程问题强制调用。专项 18/18、服务端完整 418/418、空库 Flyway V1..V39 通过；发布前新备份和隔离恢复成功，只替换 server。运行镜像为 `sha256:fafc4e24a7d0191f20ec3300a2100517ed43c5c82d34088e0858c0edaaa688ed`，健康状态为 `ok`，本机与 LAN 首页为 200，未认证日历接口为 401，运行库保持 V39 和一条未过期缓存事件，无迁移、前端或固件改动。
+- CONN-001 Apple 分片修正：真实账号 Shell 逐步验证 principal 207、calendar-home-set 207、编号中国大陆分片日历发现 207，共发现四个日历；手机号与故意错误密码均固定返回 403，因此撤销手机号兼容入口。日历定向 7/7、服务端完整 412/412、空库 Flyway V1..V39、控制台 85/85、类型检查和 production build 通过。发布前备份和隔离恢复成功，只替换 server；本机/LAN 首页和健康接口正常，未认证日历接口为 401，运行库保持 V39，无固件改动。
+- CONN-001 中国大陆区域修正：Apple 官方资料确认中国大陆 iCloud 使用 `*.icloud.com.cn` 服务域；新增全球认证失败后回退、中国大陆完整发现/查询和非认证失败不重试测试。日历定向 6/6、服务端完整 411/411、空库 Flyway V1..V39 通过。发布前备份和隔离恢复成功，只替换 server；本机/LAN/健康接口均为 200，运行库保持 V39，无迁移、前端或固件改动。
+- CONN-001 手机号兼容：服务端日历定向 7/7、完整 409/409 和空库 Flyway V1..V39 通过；控制台 Vitest 28 文件 85/85、类型检查和 production build 通过。中国大陆 11 位手机号自动补 `+86`，国际号码要求 E.164 国家码，响应仅返回脱敏标识。发布前备份及隔离恢复成功，只替换 server；本机/LAN/健康接口均为 200，未认证日历接口为 401，运行静态资源包含新账号标签。尚未使用真实 Apple 凭据，未操作固件。
+- CONN-001/V39：加密服务、CalDAV 与控制器定向 5/5、完整服务端复跑 406/406 通过，Testcontainers 从空 PostgreSQL 应用 Flyway V1..V39；完整控制台 Vitest 28 文件 85/85、`vue-tsc -b` 和 production build 通过。发布前备份及隔离恢复成功，只替换 server，运行库迁移到 V39，本机/LAN/健康接口均为 200，未认证日历接口为 401；未连接真实 Apple 账号、未操作固件。
+- WORK-001A/V38：服务端定向 8/8、真实 PostgreSQL 去重专项 1/1、完整 404/404 通过，空库成功应用 Flyway V1..V38；控制台 Vitest 28 文件 84/84、类型检查和 production build 通过。发布前备份与隔离恢复通过，只替换 server，运行库迁移至 V38，本机/LAN/健康接口均为 200；未访问 iCloud、未连接或刷写设备。
+- WORK-001A 第一切片：服务端定向 4/4、完整重跑 399/399 通过，Testcontainers 从空 PostgreSQL 应用 Flyway V1..V37；控制台 Vitest 28 文件 83/83、`vue-tsc -b` 和 production build 通过。完整服务端第一次运行命中既有异步重复请求用例的瞬时 `ConcurrentModificationException`，单独 1/1 通过后全量复跑成功。发布前备份与隔离恢复通过，只替换 server，运行库迁移至 V37，本机/LAN/健康接口均为 200；未连接 iCloud、未操作设备。
 - MEDIA-004：服务端 395/395、空库 Flyway V1..V36 通过；新增重连能力门控明确阻止回退到旧固件后继续安装 V2。控制台 Vitest 27 文件 82/82、类型检查和 production build 通过；ESP-IDF 5.5.5 protocol profile 与独立 sdkconfig 的 LAN HTTP Quad profile 均编译通过。LAN 候选为 1,618,336 字节、最小应用分区余量 49%，SHA-256 `BBF266A5FB77A47198FDC1EC4D22D9962DE1F32C054F69EC7FE4908AC84263F2`；该未提交工作树候选仅作为构建证据，不用于 OTA。
 - MEDIA-004 LAN：发布前备份和隔离恢复成功，只替换 server；运行库迁移至 V36，健康接口和本机/LAN 首页为 200，未认证表情包与设备接口为 401，PostgreSQL、Redis 和备份容器未替换。CoreS3 未刷写。
 
@@ -84,12 +92,12 @@ V35 页面、接口、重连同步和诊断标签继续稳定运行。CoreS3 已
 
 - `EVT-001`、`ROLE-001`、`ROLE-002`、`EVT-002`、`EVT-003` 和 `INT-013` 均已合入。
 - 用户已明确覆盖原分支拆分方案，要求 `MEDIA-002A/B/C` 在当前分支一次性交付；该例外已写入 ADR 0038。
-- 用户明确要求暂缓日历；整个 `CONN-*` 连接器组不在当前任务内。
+- 用户已恢复日历和天气连接器，但仅允许私用 V1 的只读 iCloud Calendar 与固定地点 Open-Meteo；其他连接器继续冻结。
 - 用户已确认基础外部通知测试正常；免打扰延期和离线重连两个专项场景尚未执行，不阻塞代码审核或提交整理。
 - 用户明确要求本轮不做固件 OTA 回退演练；自定义表情实体素材和公网生产部署仍需要各自单独授权。
 - MEDIA-002 已合入，固件成功路径、显示性能和音量回归已通过；固定 60 FPS 仍是调度目标而不是硬件承诺。
-- MEDIA-003 已合入且无遗留阻塞。`esp_emote_gfx` 仍不进入正式显示链；MEDIA-004 服务端已部署，实体成功路径仍需要后续单独授权 OTA。
+- MEDIA-003/004 已合入且无代码阻塞。`esp_emote_gfx` 仍不进入正式显示链；MEDIA-004 V2 实体激活因暂无素材延期，后续只有在提供素材并单独授权时才执行。
 
 ## 下一步
 
-保持已部署的 LAN server/V36 与 CoreS3 `71868da`；用户先复核生命周期动画页面。经授权后生成最终提交绑定的 OTA 候选，完成 EAF→原生回退、语音并发与角色切换实机验收。OTA 和推送仍需分别授权。
+保持 CoreS3 `71868da` 不变，由用户再次询问机器人近期日程并确认 Agent 日历 Tool 成功；通过后进入 `WEATHER-001` 固定地点 Open-Meteo。服务端可按长期授权直接发布，实体动作、OTA 和推送仍需分别授权。

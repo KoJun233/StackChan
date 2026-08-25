@@ -1,14 +1,14 @@
 # 服务端工作流
 
-- 状态：DEPLOYED
-- 最后更新：2026-08-23
-- 当前分支：`codex/media-004-eaf-lifecycle-packs`
-- 基准提交：`4add447`
-- 最后验证提交：`4add447`
+- 状态：ACTIVE
+- 最后更新：2026-08-25
+- 当前分支：`codex/workday-companion-v1`
+- 基准提交：`fa093dc`
+- 最后验证提交：`a2a8e29`
 
 ## 当前目标
 
-在保持 V1 PNG、SCV1/SCV2、角色隔离和既有安全边界的同时，新增 V36 与正式 V2 生命周期 EAF 包管理链。
+复测已发布的 `CONN-001` V39 每小时日历同步与设备绑定近期日历 Tool；成功后实现 `WEATHER-001` 固定地点天气，同时维持 SCV1/SCV2、角色隔离和设备安全边界。
 
 ## 已实现的 MEDIA-004
 
@@ -63,6 +63,22 @@
 
 ## 正在进行
 
+- V37 新增设备级工作日设置，默认关闭；保存工作日掩码、可跨午夜时段、50/10 节奏、10/45 离开阈值、固定地点坐标和 IANA 时区。
+- `/api/v1/workday/{deviceId}/settings` 提供受既有管理员安全链保护的读取/更新；数据库、服务和请求验证共同拒绝空工作日、同起止时间、半组坐标、越界坐标和不安全阈值。
+- `WorkdaySettingsService` 可按设备时区判定普通或跨午夜工作窗口；未创建设置时只产生安全的默认关闭记录。
+- V38 新增设备持久运行态、七态转换、明确在场专注累计、离开阈值、休息/稍后/今日跳过和跨工作日安全停止；运行事实可在服务重启后恢复。
+- 首次简报以 `(device_id, work_date)` 原子占位，`PENDING` 也阻止重放；成功、部分成功、失败和取消只记计数，不保存正文。
+- 日指标只保存启动/结束、专注秒数、简报结果和休息选择，查询与写入时清理九十天以前记录；新增受管理员安全链保护的 runtime/metrics 只读接口。
+- 当前不启动定时调度、不访问 iCloud/Open-Meteo、不生成语音和动作；状态转换服务供后续语音、日历、天气和传感器编排复用。
+- WORK-001A server 已发布到 LAN，运行库迁移至 V38；健康接口为 200，未认证工作日运行态接口保持 401。
+- V39 新增加密 iCloud 连接、发现日历、显式允许列表与短期事件缓存；App 专用密码复用 AES-GCM 秘密边界，所有响应只返回账户掩码和安全状态。
+- Apple Account 标识只接受账户“登录与安全性”中已登记并验证的电子邮件地址；真实 Shell 对照证明手机号格式会在密码校验前被 Apple CalDAV 固定拒绝，因此不再作为可用入口展示或接收。
+- CalDAV 客户端只实现 `PROPFIND` 与 `REPORT calendar-query`；发现默认访问全球 `caldav.icloud.com`，仅在认证失败时尝试中国大陆 `caldav.icloud.com.cn`。生产重定向和查询严格限制在这两个根入口及 `p数字-caldav.icloud.com[.cn]` 编号 HTTPS 分片。单响应限制 2 MiB、最多 64 个日历和 1000 条聚合事件。
+- 同步只读取允许列表中的未来七天事件，缓存最长二十四小时；不保存备注、参与人、附件或会议正文，私人事件在入库前替换为“私人日程”并删除地点。
+- 每小时扫描已连接或可重试错误状态，只同步存在允许日历且距上次成功同步至少一小时的设备；认证失败停止自动重试，单设备失败不影响其他设备，手动同步继续保留。
+- 内建 `upcoming_device_calendar_events` 只读 Tool 绑定当前认证设备，最多返回未来七天内八条未结束事件及缓存时间；日程问题必须调用该 Tool，提醒 Tool 和历史对话不能替代日历事实。
+- 连接删除通过外键级联物理删除密码密文、日历白名单和事件缓存；除每小时只读日历同步外，当前不启用工作模式周期调度。真实凭据只在运行态加密保存，不写入日志或文档。
+- CONN-001 server 及手机号兼容已发布到 LAN，运行库保持 V39；健康接口为 200，未认证日历接口保持 401，PostgreSQL、Redis、备份容器和 CoreS3 未替换。
 - V35 把 `FIXED/ADAPTIVE` 的帧率约束从离散 `20/30/60` 扩展为连续 `1..60`；固定模式仍要求最小值等于最大值，修改离线可保存，设备重连后自动同步。
 - 新增受管理员会话与 CSRF 保护的帧率查询/更新和临时表情预览接口。服务端只接受 12/9/6 枚举与 1–15 秒期限，不接受任意动画参数。
 - V35 服务、控制器和 WebSocket 边界均已同步并增加 24–57、47 FPS、0/61 拒绝用例。服务端全量 391/391 通过，Testcontainers 从空 PostgreSQL 成功应用 Flyway V1..V35。
@@ -72,11 +88,11 @@
 
 ## 下一步操作
 
-LAN server 已发布 V36 与生命周期动画接口。下一步由用户在已登录页面复核管理流程；设备能力门控的实体成功路径需在后续固件 OTA 后执行。
+由用户再次询问机器人近期日程，确认已发布 Tool 的真实语音调用；成功后进入 `WEATHER-001` 固定地点 Open-Meteo。
 
 ## 阻塞项
 
-- 当前无代码或部署阻塞；连接器仍按用户要求暂停。
+- 当前无代码阻塞；iCloud Calendar、天气和实体动作按开发设计分阶段进入，凭据和设备操作仍需独立边界。
 - 公网生产入口必须保持 HTTPS-only；不得复用管理员会话或设备 JWT 作为集成令牌。
 
 ## 关键文件
@@ -86,6 +102,8 @@ LAN server 已发布 V36 与生命周期动画接口。下一步由用户在已�
 - `server/src/main/java/com/kj/stackchan/agent/`
 - `server/src/main/java/com/kj/stackchan/api/`
 - `server/src/main/resources/db/migration/`
+- `server/src/main/java/com/kj/stackchan/calendar/`
+- `server/src/main/resources/db/migration/V39__icloud_calendar_read_only.sql`
 - `server/src/main/java/com/kj/stackchan/notification/`
 - `server/src/main/java/com/kj/stackchan/role/`
 - `server/src/main/java/com/kj/stackchan/speech/VoiceReplySegmenter.java`
@@ -101,6 +119,15 @@ LAN server 已发布 V36 与生命周期动画接口。下一步由用户在已�
 
 ## 验证命令与最近结果
 
+- 2026-08-25 CONN-001 Agent 日历闭环：运行库无正文统计确认一条缓存事件有效，Agent 审计确认原失败回合只调用时间和提醒 Tool。新增每小时同步、允许列表门控、单连接失败隔离、设备绑定 Tool、缓存新鲜度区分、重叠事件查询和强制路由；专项 18/18、完整服务端 418/418、空库 Flyway V1..V39 通过。发布前备份和隔离恢复成功，只替换 server；运行健康、LAN 200、未认证日历 401、V39 和一条有效缓存事件均通过，无迁移、前端或固件改动。
+- 2026-08-25 CONN-001 Apple 分片修正：真实账号 Shell 依次获得 principal 207、calendar-home-set 207 和编号中国大陆分片日历发现 207，共发现四个日历；确认现网失败由白名单漏接 `p数字-caldav` 命名导致。手机号与故意错误密码均固定返回 403，因此服务端收紧为邮箱。日历定向 7/7、完整服务端 412/412、空库 Flyway V1..V39 通过；修正已发布，运行库保持 V39，无固件改动。
+- 2026-08-25 CONN-001 中国大陆区域修正：Apple 官方资料确认 `*.icloud.com.cn` 用于中国大陆 iCloud 服务；本地双端点测试覆盖全球认证失败后回退、中国大陆发现与事件查询，以及非认证失败不跨区重试。日历定向 6/6、服务端完整 411/411 和空库 Flyway V1..V39 通过。发布前备份和隔离恢复成功，只替换 LAN server；本机/LAN/健康接口为 200，运行库保持 V39，无数据库迁移、前端或固件改动。
+- 2026-08-25 CONN-001 手机号兼容：日历与控制器定向 7/7、服务端完整 409/409 通过；Testcontainers 从空 PostgreSQL 应用 Flyway V1..V39，无新增迁移。自动化覆盖中国大陆号码规范化、手机号脱敏和不支持格式拒绝；随后只替换 LAN server，运行库保持 V39，本机/LAN/健康接口为 200，未认证日历接口为 401。未连接真实 Apple 账号，未操作 CoreS3。
+- 2026-08-25 CONN-001/V39 发布：新备份与隔离恢复成功，只替换 LAN server；运行库由 V38 迁移至 V39，健康和本机/LAN 首页为 200，未认证日历接口为 401，基础容器与 CoreS3 未变化。
+- 2026-08-25 CONN-001/V39 候选：加密服务、CalDAV 与控制器定向 5/5、完整服务端复跑 406/406 通过；Testcontainers 从空 PostgreSQL 成功应用 Flyway V1..V39。首次完整运行命中既有 `ConversationControllerTest` 流式响应发送竞态，该用例单独 1/1 及随后全量复跑均通过。
+- 2026-08-25 WORK-001A/V38：服务端定向 8/8、PostgreSQL 原子简报占位专项 1/1、完整 404/404 通过；Testcontainers 从空 PostgreSQL 应用 Flyway V1..V38。首次持久化专项的测试上下文缺少既有设备依赖替身，补齐测试夹具后重跑通过，生产代码未因该夹具失败调整。
+
+- 2026-08-24 WORK-001A 第一切片：服务端定向 4/4 通过；全量首次因既有 `ConversationControllerTest` 瞬时 `ConcurrentModificationException` 失败，该用例单独 1/1 通过后完整重跑 399/399 通过；Testcontainers 从空 PostgreSQL 成功应用 Flyway V1..V37。
 - 2026-08-23 MEDIA-004 服务端全量 395/395 通过；Testcontainers 从空 PostgreSQL 成功应用 Flyway V1..V36。生命周期编译/WebSocket 定向 19/19、旧固件重连门控 1/1 通过。
 - 2026-08-23 MEDIA-004 发布前备份及隔离恢复成功，只替换 LAN server；运行库迁移至 V36，健康接口与首页为 200，未认证表情包和设备接口为 401，基础容器未替换且 CoreS3 未 OTA。
 - 2026-08-23 服务端全量 392/392 通过；Testcontainers 从空 PostgreSQL 成功应用 Flyway V1..V35。
@@ -127,6 +154,8 @@ LAN server 已发布 V36 与生命周期动画接口。下一步由用户在已�
 ## 相关设计、计划和决策
 
 - [当前任务清单](../todo.md)
+- [工作日桌面陪伴 V1 开发设计](../workday-companion-v1.md)
+- [0041：私用优先的确定性工作日陪伴闭环](../decisions/0041-private-first-deterministic-workday-companion.md)
 - [稳定架构](../architecture.md)
 - [0007：设备语音与持久提醒](../decisions/0007-device-voice-and-durable-reminders.md)
 - [0023：受控 ReactAgent、Skill、Tool 与 MCP](../decisions/0023-controlled-react-agent-skills-tools-mcp.md)
@@ -144,4 +173,4 @@ LAN server 已发布 V36 与生命周期动画接口。下一步由用户在已�
 - 不记录通知令牌、API Key、JWT、音频、转写、回复正文、Tool 参数/结果或完整供应商响应。
 - 新外部权限只能创建和查询自身通知，不能访问管理员、设备、聊天或提醒管理 API。
 - 现有提醒、旧固件、Agent MCP Client 和管理员 CSRF 行为必须兼容；SCV1 不得移除。
-- INT-013 server 已部署到 LAN；外部推送、固件刷写或凭据变更仍需分别明确授权。
+- 服务端及内置管理页面可按用户长期授权直接发布；Git 外部推送、固件刷写/OTA 或凭据变更仍需分别明确授权。

@@ -1,15 +1,15 @@
 # 部署工作流
 
 - 状态：STABLE
-- 最后更新：2026-08-23
-- 当前分支：`codex/media-004-eaf-lifecycle-packs`（V36/页面已部署）
-- 基准提交：`4add447`
-- 最后验证提交：`4add447`
+- 最后更新：2026-08-25
+- 当前分支：`codex/workday-companion-v1`（运行态为 CONN-001/V39）
+- 基准提交：`fa093dc`
+- 最后验证提交：`a2a8e29`
 - 当前模式：LAN HTTP development
 
 ## 当前目标
 
-维持已部署的 MEDIA-004 LAN server/V36 与 CoreS3 `71868da`；服务端和页面已发布，设备固件仍需逐次授权后 OTA。
+维持已发布的 CONN-001 LAN server/V39 与 CoreS3 `71868da`；等待每小时日历同步和设备绑定近期日历 Tool 的真实语音复测。
 
 ## 已完成
 
@@ -22,15 +22,17 @@
 
 ## 正在进行
 
-LAN server 已由 MEDIA-004 源快照 `0b70f33` 构建并运行 V36，生命周期 EAF 页面和接口已发布；当前地址为 `http://192.168.1.3:8080/`，镜像摘要为 `sha256:50d3f5bc86ce34441cbf16332a58ef99ea21afe8ff18028036539b9cf7ae0dbc`。CoreS3 仍运行 `71868da`，尚未安装 MEDIA-004 固件，因此页面会按能力门控禁止向该旧固件启用 V2 包。
+LAN server 已由 CONN-001 Agent 日历闭环源快照 `a2a8e29` 构建并运行 V39，工作日设置、持久七态状态机、管理页只读状态、iCloud 连接、日历白名单、手动与每小时同步以及设备绑定近期日历 Tool 均已发布；CalDAV 在全球端点认证失败时会尝试中国大陆端点，并只接受 Apple 根入口与编号 HTTPS 分片。当前地址为 `http://192.168.1.3:8080/`，镜像摘要为 `sha256:fafc4e24a7d0191f20ec3300a2100517ed43c5c82d34088e0858c0edaaa688ed`。工作模式设置默认关闭，当前仍不会自动启动、读取天气、生成简报或执行动作。
+
+CoreS3 仍运行稳定固件 `71868da`。CONN-001 没有固件改动，本次未 OTA；MEDIA-004 V2 实体激活继续等待 EAF 素材。
 
 ## 下一步操作
 
-由用户登录“表情与角色形象”页面复核生命周期动画管理；设备侧继续保持 `71868da`。如需实机启用 V2 包，再单独授权保留 NVS 的应用 OTA，并执行 EAF→原生回退、语音并发和角色切换验收。
+由用户再次询问机器人近期日程并确认 Agent Tool 读取缓存。成功后进入 `WEATHER-001` 固定地点天气；任何 Git 推送或固件操作仍等待独立授权。
 
 ## 阻塞项
 
-- 当前运行态无部署阻塞。设备操作仍需显式授权；继续保留 NVS，不做 OTA 回退演练。
+- 当前运行态无部署阻塞。用户于 2026-08-25 明确长期授权服务端及其内置管理页面可直接部署；Git 外部推送、固件刷写/OTA、凭据轮换、部署模式切换以及卷或端口变更仍需分别显式授权。
 
 ## 关键文件
 
@@ -43,6 +45,20 @@ LAN server 已由 MEDIA-004 源快照 `0b70f33` 构建并运行 V36，生命周�
 
 ## 验证命令与最近结果
 
+- 2026-08-25 CONN-001 Agent 日历闭环发布前新 PostgreSQL 备份和隔离恢复验证成功；旧镜像保留为 `pre-v39-calendar-agent-a2a8e29`，只替换 `stackchan-foundation-server-1`。新容器为 `7a6b6821a206`；PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 及数据卷均未变化。
+- 运行源快照为 `a2a8e29`，镜像为 `sha256:fafc4e24a7d0191f20ec3300a2100517ed43c5c82d34088e0858c0edaaa688ed`；运行库保持 V39 且一条缓存事件仍有效。本机和 `192.168.1.3:8080` 首页为 200，健康状态为 `ok`，未认证日历接口为 401，启动后无应用级 `ERROR`；CoreS3 未刷写。
+- 2026-08-25 CONN-001 Apple 编号分片修正发布前新 PostgreSQL 备份和隔离恢复验证成功；旧镜像保留为 `pre-v39-caldav-shard-1af1c03`，只替换 `stackchan-foundation-server-1`。PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 及数据卷均未变化。
+- 运行源快照为 `1af1c03`，镜像为 `sha256:c1ee04a036376a1a36e3416ec54aa62a72da213a52d29f854a5c6e03f2612b68`；运行库保持 V39。本机和 `192.168.1.3:8080` 首页为 200，健康接口状态为 `ok`，未认证日历接口为 401，静态资源包含“Apple 账号邮箱”。CoreS3 未刷写。
+- 2026-08-25 CONN-001 中国大陆区域回退发布前新 PostgreSQL 备份和隔离恢复验证成功；旧镜像保留为 `pre-v39-cn-caldav-3a547e6`，只替换 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。
+- 运行库保持 V39，39 条迁移验证成功；本机首页、`192.168.1.3:8080` 首页和健康接口均为 200，未认证日历接口为 401。运行镜像为 `sha256:24aee105c5c94d06fd7367fea56670850e5535d7bb1abc7f6d6186c3cadda3a2`，CoreS3 未刷写。
+- 2026-08-25 CONN-001 手机号兼容发布前新 PostgreSQL 备份和隔离恢复验证成功；旧 V39 镜像保留为 `pre-v39-phone-842ac4b`，只替换 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。
+- 运行库保持 V39；本机首页、`192.168.1.3:8080` 首页和健康接口均为 200，未认证日历接口为 401，运行静态资源包含“Apple 账号邮箱或手机号”。运行镜像为 `sha256:7a9b2768820206878fe4f3e240736e9d69cf13e39ceb96578898f1b546ccf7a9`，未录入真实 Apple 凭据，CoreS3 未刷写。
+- 2026-08-25 CONN-001/V39 发布前新 PostgreSQL 备份和隔离恢复验证成功；旧 V38 镜像保留为 `pre-v39-9f3b427`，只替换 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。
+- 运行库由 V38 迁移至 V39，共 39 条迁移验证成功；本机首页、`192.168.1.3:8080` 首页和健康接口均为 200，未认证日历接口为 401。运行镜像为 `sha256:47d77048d39d7cfc3f4a4a31de9c93d68ebd4dd997decbdb6abdc75554ef23d7`，未录入真实 Apple 凭据，CoreS3 未刷写。
+- 2026-08-25 WORK-001A/V38 发布前新 PostgreSQL 备份和隔离恢复验证成功；旧 server 镜像保留为 `pre-work001a-v38-e9c3edd`，只替换 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。
+- 运行库由 V37 迁移至 V38；本机首页、LAN 首页和健康接口均为 200，未认证工作日运行态接口为 401。运行镜像为 `sha256:17b863a5dc4fad4ce5d8df7d1869a0c94bbcaf2de3d39f85b6a4f5e462521258`，CoreS3 未刷写。
+- 2026-08-24 WORK-001A 发布前新 PostgreSQL 备份和最新备份隔离恢复验证成功；旧 server 镜像保留为 `pre-work001a-9a9fee0`，只替换 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。
+- 运行库由 V36 迁移至 V37；本机首页、LAN 首页和健康接口均为 200，未认证工作日设置接口为 401，运行静态资源包含“工作日桌面陪伴”，启动日志无 `ERROR`/`Exception`。本次未连接、测试或刷写 CoreS3。
 - 2026-08-23 部署前工作树服务端 392/392、空库 Flyway V1..V35、前端 81/81/类型检查/生产构建、双固件 profile、三组任务栈预算和文档检查通过；自动化验证阶段未替换运行容器。
 - 2026-08-23 MEDIA-004 发布前新 PostgreSQL 备份及最新备份隔离恢复验证成功；只替换 `stackchan-foundation-server-1`，运行库由 V35 迁移到 V36，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。
 - 新 server 健康接口、本机首页和 `192.168.1.3:8080` 首页为 200；未认证表情包与设备接口均为 401。运行镜像为 `sha256:50d3f5bc86ce34441cbf16332a58ef99ea21afe8ff18028036539b9cf7ae0dbc`，旧镜像保留为 `pre-media004-0b70f33`，本次未 OTA CoreS3。
@@ -80,6 +96,8 @@ LAN server 已由 MEDIA-004 源快照 `0b70f33` 构建并运行 V36，生命周�
 ## 相关设计、计划和决策
 
 - [当前任务清单](../todo.md)
+- [工作日桌面陪伴 V1 开发设计](../workday-companion-v1.md)
+- [0041：私用优先的确定性工作日陪伴闭环](../decisions/0041-private-first-deterministic-workday-companion.md)
 - [开发环境与命令](../development.md)
 - [0004：LAN HTTP 仅限开发](../decisions/0004-lan-http-development-only.md)
 - [0005：生产 HTTPS-only](../decisions/0005-secure-production-boundary.md)
@@ -92,4 +110,4 @@ LAN server 已由 MEDIA-004 源快照 `0b70f33` 构建并运行 V36，生命周�
 
 - 不组合 LAN 与 production Compose，不允许公网明文 HTTP/WS。
 - 不把管理员密码、通知令牌、API Key、JWT、Wi-Fi 凭据或加密主密钥写入仓库、镜像或日志。
-- 后续再次替换容器、修改卷/端口、轮换凭据、刷写固件或推送分支仍需明确授权；既有部署授权不自动延伸到 INT-013。
+- 服务端及其内置管理页面可按用户的长期授权直接发布；Git 外部推送、固件刷写/OTA、修改卷/端口、切换部署模式或轮换凭据仍需明确授权。

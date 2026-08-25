@@ -207,6 +207,105 @@ class AgentOrchestratorTest {
     }
 
     @Test
+    void refusesToGuessCalendarWhenTheDeviceCalendarToolIsUnavailable() {
+        AgentSettingsService settingsService = mock(AgentSettingsService.class);
+        AgentToolAssemblyService assemblyService = mock(AgentToolAssemblyService.class);
+        AgentToolAuditService auditService = mock(AgentToolAuditService.class);
+        LlmRuntimeClientFactory clientFactory = mock(LlmRuntimeClientFactory.class);
+        SkillRegistry skillRegistry = mock(SkillRegistry.class);
+        AgentInvocationContext context = new AgentInvocationContext(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                AgentChannel.VOICE
+        );
+        when(settingsService.runtimeSettings()).thenReturn(new AgentSettingsService.RuntimeSettings(
+                true, true, true, Instant.parse("2026-08-25T00:00:00Z")
+        ));
+        when(assemblyService.assemble(context)).thenReturn(new AgentToolAssemblyService.AgentToolAssembly(
+                List.of(), Map.of(), skillRegistry, List.of(), Map.of(), List.of()
+        ));
+
+        AgentOrchestrator orchestrator = new AgentOrchestrator(
+                settingsService,
+                assemblyService,
+                auditService,
+                clientFactory,
+                new ObjectMapper(),
+                new AppProperties()
+        );
+
+        List<String> output = orchestrator.stream(new AgentOrchestrator.AgentRequest(
+                context,
+                "你是测试助手。",
+                List.of(),
+                "我最近几天有什么日程"
+        )).collectList().block();
+
+        assertThat(output).containsExactly("我暂时无法可靠读取当前设备的日历缓存，所以不能猜测。");
+    }
+
+    @Test
+    void requiresTheDeviceCalendarToolBeforeAnsweringCalendarQuestions() {
+        AgentSettingsService settingsService = mock(AgentSettingsService.class);
+        AgentToolAssemblyService assemblyService = mock(AgentToolAssemblyService.class);
+        AgentToolAuditService auditService = mock(AgentToolAuditService.class);
+        LlmRuntimeClientFactory clientFactory = mock(LlmRuntimeClientFactory.class);
+        ChatModel chatModel = mock(ChatModel.class);
+        SkillRegistry skillRegistry = mock(SkillRegistry.class);
+        AtomicInteger executions = new AtomicInteger();
+        ToolCallback callback = ToolCallbacks.from(new CalendarTestTool(executions))[0];
+        AgentInvocationContext context = new AgentInvocationContext(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                AgentChannel.VOICE
+        );
+        when(settingsService.runtimeSettings()).thenReturn(new AgentSettingsService.RuntimeSettings(
+                true, true, true, Instant.parse("2026-08-25T00:00:00Z")
+        ));
+        when(assemblyService.assemble(context)).thenReturn(new AgentToolAssemblyService.AgentToolAssembly(
+                List.of(callback),
+                Map.of(),
+                skillRegistry,
+                List.of(),
+                Map.of(UpcomingCalendarEventsTool.ID, new AgentToolPolicyInterceptor.ToolAuditMetadata(
+                        AgentToolSource.BUILTIN, null, null
+                )),
+                List.of()
+        ));
+        when(clientFactory.createAgentChatModel()).thenReturn(chatModel);
+        when(chatModel.getDefaultOptions()).thenReturn(OpenAiChatOptions.builder().model("test-model").build());
+        when(chatModel.call(any(Prompt.class))).thenReturn(
+                response(AssistantMessage.builder()
+                        .content("")
+                        .toolCalls(List.of(new AssistantMessage.ToolCall(
+                                "call-calendar", "function", UpcomingCalendarEventsTool.ID, "{}"
+                        )))
+                        .build()),
+                response(new AssistantMessage("明天有一条日程。"))
+        );
+
+        AgentOrchestrator orchestrator = new AgentOrchestrator(
+                settingsService,
+                assemblyService,
+                auditService,
+                clientFactory,
+                new ObjectMapper(),
+                new AppProperties()
+        );
+        List<String> output = orchestrator.stream(new AgentOrchestrator.AgentRequest(
+                context,
+                "你是测试助手。",
+                List.of(),
+                "明天有什么日程"
+        )).collectList().block();
+
+        assertThat(output).containsExactly("明天有一条日程。");
+        assertThat(executions).hasValue(1);
+    }
+
+    @Test
     void readsAnEnabledManagedSkillBeforeAnswering() {
         AgentSettingsService settingsService = mock(AgentSettingsService.class);
         AgentToolAssemblyService assemblyService = mock(AgentToolAssemblyService.class);
@@ -283,6 +382,21 @@ class AgentOrchestratorTest {
         public String read() {
             executions.incrementAndGet();
             return "{\"time\":\"10:00\"}";
+        }
+    }
+
+    public static class CalendarTestTool {
+
+        private final AtomicInteger executions;
+
+        public CalendarTestTool(AtomicInteger executions) {
+            this.executions = executions;
+        }
+
+        @Tool(name = UpcomingCalendarEventsTool.ID, description = "Return a fixed calendar event")
+        public String read() {
+            executions.incrementAndGet();
+            return "{\"available\":true,\"total\":1}";
         }
     }
 }

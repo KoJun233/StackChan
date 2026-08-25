@@ -18,6 +18,7 @@ import com.kj.stackchan.agent.CapabilityListTool;
 import com.kj.stackchan.agent.CurrentTimeTool;
 import com.kj.stackchan.agent.InvalidAgentSkillException;
 import com.kj.stackchan.agent.InvalidAgentMcpConnectionException;
+import com.kj.stackchan.agent.UpcomingCalendarEventsTool;
 import com.kj.stackchan.config.AppProperties;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -43,7 +44,8 @@ public class AgentManagementController {
 
     private static final Map<String, String> BUILTIN_DESCRIPTIONS = Map.of(
             CurrentTimeTool.ID, "读取当前用户时区的日期和时间",
-            CapabilityListTool.ID, "列出本回合实际授权能力"
+            CapabilityListTool.ID, "列出本回合实际授权能力",
+            UpcomingCalendarEventsTool.ID, "读取当前设备未来七天的只读 iCloud 日历缓存"
     );
 
     private final AgentSettingsService settingsService;
