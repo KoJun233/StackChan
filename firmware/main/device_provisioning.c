@@ -11,6 +11,7 @@
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -88,26 +89,33 @@ bool device_provisioning_parse_request(const char *payload,
     const char *parse_end = NULL;
     cJSON *root = cJSON_ParseWithLengthOpts(payload, payload_length, &parse_end, 0);
     if (!cJSON_IsObject(root) ||
-        !strict_json_has_only_trailing_whitespace(payload, payload_length, parse_end) ||
-        cJSON_GetArraySize(root) != 5) {
+        !strict_json_has_only_trailing_whitespace(payload, payload_length, parse_end)) {
         cJSON_Delete(root);
         return false;
     }
     const cJSON *type = required_string(root, "type");
-    const cJSON *ssid = required_string(root, "wifiSsid");
-    const cJSON *password = required_string(root, "wifiPassword");
     const cJSON *server_base_url = required_string(root, "serverBaseUrl");
     const cJSON *pairing_code = required_string(root, "pairingCode");
-    bool valid = type != NULL && strcmp(type->valuestring, "provision") == 0 &&
-                 copy_string(request->ssid, sizeof(request->ssid), ssid == NULL ? NULL : ssid->valuestring, false) &&
-                 copy_string(request->password, sizeof(request->password),
-                             password == NULL ? NULL : password->valuestring, true) &&
+    bool valid = type != NULL &&
                  copy_string(request->server_base_url, sizeof(request->server_base_url),
                              server_base_url == NULL ? NULL : server_base_url->valuestring, false) &&
                  copy_string(request->pairing_code, sizeof(request->pairing_code),
                              pairing_code == NULL ? NULL : pairing_code->valuestring, false) &&
                  device_identity_is_valid_server_base_url(request->server_base_url) &&
                  is_valid_pairing_code(request->pairing_code);
+    if (valid && strcmp(type->valuestring, "provision") == 0 && cJSON_GetArraySize(root) == 5) {
+        const cJSON *ssid = required_string(root, "wifiSsid");
+        const cJSON *password = required_string(root, "wifiPassword");
+        valid = copy_string(request->ssid, sizeof(request->ssid),
+                            ssid == NULL ? NULL : ssid->valuestring, false) &&
+                copy_string(request->password, sizeof(request->password),
+                            password == NULL ? NULL : password->valuestring, true);
+        request->kind = DEVICE_PROVISIONING_REQUEST_FULL;
+    } else if (valid && strcmp(type->valuestring, "update_server") == 0 && cJSON_GetArraySize(root) == 3) {
+        request->kind = DEVICE_PROVISIONING_REQUEST_SERVER_ONLY;
+    } else {
+        valid = false;
+    }
     cJSON_Delete(root);
     if (!valid) {
         memset(request, 0, sizeof(*request));
@@ -299,6 +307,28 @@ static void provision(const device_provisioning_request_t *request)
     report_result("complete");
 }
 
+static void update_server(const device_provisioning_request_t *request)
+{
+    if (!wait_for_wifi_connection()) {
+        report_result("wifi_connection_failed");
+        return;
+    }
+    device_identity_t identity = {0};
+    if (claim_device(request, &identity) != ESP_OK) {
+        report_result("claim_failed");
+        return;
+    }
+    if (device_identity_save(&identity) != ESP_OK) {
+        memset(&identity, 0, sizeof(identity));
+        report_result("identity_save_failed");
+        return;
+    }
+    memset(&identity, 0, sizeof(identity));
+    report_result("complete");
+    vTaskDelay(pdMS_TO_TICKS(250));
+    esp_restart();
+}
+
 static void provisioning_task(void *argument)
 {
     (void)argument;
@@ -327,7 +357,11 @@ static void provisioning_task(void *argument)
                         report_result("invalid_request");
                     } else {
                         report_result("started");
-                        provision(&request);
+                        if (request.kind == DEVICE_PROVISIONING_REQUEST_SERVER_ONLY) {
+                            update_server(&request);
+                        } else {
+                            provision(&request);
+                        }
                     }
                     memset(&request, 0, sizeof(request));
                 }

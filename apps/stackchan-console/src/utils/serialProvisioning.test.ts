@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   buildProvisioningPayload,
+  buildServerUpdatePayload,
   parseProvisioningStatus,
   provisionStackChan,
+  updateStackChanServer,
   validateServerBaseUrl,
 } from './serialProvisioning'
 
-describe('StackChan Web Serial provisioning', () => {
+describe('stackChan Web Serial provisioning', () => {
   it('builds exactly one compact firmware provisioning object', () => {
     const payload = buildProvisioningPayload({
       wifiSsid: 'StackChan-WiFi',
@@ -17,6 +19,17 @@ describe('StackChan Web Serial provisioning', () => {
 
     expect(payload).toBe('{"type":"provision","wifiSsid":"StackChan-WiFi","wifiPassword":"wifi-secret","serverBaseUrl":"http://192.168.137.1:8080","pairingCode":"ABCD_123"}')
     expect(payload).not.toContain('\n')
+  })
+
+  it('builds a strict server-only update without Wi-Fi fields', () => {
+    const payload = buildServerUpdatePayload({
+      serverBaseUrl: 'http://192.168.137.1:8080',
+      pairingCode: 'ABCD_123',
+    })
+
+    expect(payload).toBe('{"type":"update_server","serverBaseUrl":"http://192.168.137.1:8080","pairingCode":"ABCD_123"}')
+    expect(payload).not.toContain('wifiSsid')
+    expect(payload).not.toContain('wifiPassword')
   })
 
   it('accepts secure origins and private LAN HTTP origins only', () => {
@@ -72,5 +85,36 @@ describe('StackChan Web Serial provisioning', () => {
     expect(port.close).toHaveBeenCalledOnce()
     expect(statuses).toEqual(['started', 'complete'])
     expect(new TextDecoder().decode(chunks[0])).toBe('{"type":"provision","wifiSsid":"StackChan-WiFi","wifiPassword":"wifi-secret","serverBaseUrl":"https://stackchan.example","pairingCode":"ABCD_123"}\n')
+  })
+
+  it('writes only server update fields to the selected serial port', async () => {
+    const chunks: Uint8Array[] = []
+    const writable = new WritableStream<Uint8Array>({
+      write(chunk) {
+        chunks.push(chunk)
+      },
+    })
+    const readable = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"type":"provisioning","status":"started"}\n'))
+        controller.enqueue(new TextEncoder().encode('{"type":"provisioning","status":"complete"}\n'))
+        controller.close()
+      },
+    })
+    const port = {
+      open: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      readable,
+      writable,
+    }
+
+    await expect(updateStackChanServer(port, {
+      serverBaseUrl: 'https://stackchan.example',
+      pairingCode: 'ABCD_123',
+    })).resolves.toBe('complete')
+
+    const wirePayload = new TextDecoder().decode(chunks[0])
+    expect(wirePayload).toBe('{"type":"update_server","serverBaseUrl":"https://stackchan.example","pairingCode":"ABCD_123"}\n')
+    expect(wirePayload).not.toContain('wifi')
   })
 })

@@ -18,8 +18,8 @@
 
 1. `BASE-010`（COMPLETED）：MEDIA-004 合入后的状态、里程碑和 K151 硬件事实已恢复；V2 EAF 实体激活因暂无素材延期，不执行 OTA，也不声称通过。
 2. `WORK-001`（ACTIVE）：V37 设备设置、管理 API 与页面已完成；继续按[工作日桌面陪伴 V1 开发设计](workday-companion-v1.md)实现持久状态机、首次简报去重、在场专注、互动休息和本地指标。
-3. `CONN-001`（ACTIVE）：V39 只读接入 iCloud Calendar，使用已验证 Apple Account 邮箱、加密 App 专用密码、日历允许列表、未来七天同步和二十四小时事件缓存；真实连接、缓存、每小时同步和设备绑定近期日历 Tool 已发布，等待语音复测。
-4. `WEATHER-001`（READY）：管理页配置固定位置，使用 Open-Meteo 提供确定性天气摘要。
+3. `CONN-001`（COMPLETED）：V39 只读接入 iCloud Calendar，使用已验证 Apple Account 邮箱、加密 App 专用密码、日历允许列表、未来七天同步和二十四小时事件缓存；真实连接、每小时同步和设备绑定近期日历 Tool 已发布并通过用户语音复测。
+4. `WEATHER-001`（COMPLETED）：V40、管理页固定位置、Open-Meteo 当前及今明两天最小缓存、每小时同步、确定性摘要和设备绑定天气 Tool 已发布并通过用户验收。
 5. `BODY-001`（READY）：在默认 `motion_disabled`、本地校准、软限位和音频空闲约束下启用五种 K151 固件动作模板，并恢复接近/环境光能力。
 6. `PILOT-001`（BLOCKED）：实体动作需后续单独授权；十四天私用门槛依赖前述实现完成。
 

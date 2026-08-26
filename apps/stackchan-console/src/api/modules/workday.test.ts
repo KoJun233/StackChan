@@ -6,9 +6,12 @@ import {
   getWorkdayMetrics,
   getWorkdayRuntime,
   getWorkdaySettings,
+  getWorkdayWeather,
   saveWorkdaySettings,
   syncICloudCalendar,
+  syncWorkdayWeather,
   testICloudCalendarConnection,
+  testWorkdayWeather,
   updateAllowedICloudCalendars,
 } from './workday'
 
@@ -103,5 +106,35 @@ describe('workday settings API', () => {
     }))
     expect(fetchMock).toHaveBeenNthCalledWith(5, `/api/v1/workday/${deviceId}/calendar/sync`, expect.objectContaining({ method: 'POST' }))
     expect(fetchMock).toHaveBeenNthCalledWith(6, `/api/v1/workday/${deviceId}/calendar/connection`, expect.objectContaining({ method: 'DELETE' }))
+  })
+
+  it('uses fixed-location read-only weather endpoints', async () => {
+    const deviceId = 'a88e4a94-8536-4fa1-91ed-8681b597429d'
+    const location = {
+      latitude: 31.2304,
+      locationName: '上海办公室',
+      longitude: 121.4737,
+      zoneId: 'Asia/Shanghai',
+    }
+    const response = { configured: true, deviceId, daily: [], fresh: true }
+    const fetchMock = vi.fn()
+    for (let index = 0; index < 3; index += 1) {
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(response), {
+        headers: { 'Content-Type': 'application/json' },
+      }))
+    }
+    vi.stubGlobal('document', { cookie: '' })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getWorkdayWeather(deviceId)
+    await testWorkdayWeather(deviceId, location)
+    await syncWorkdayWeather(deviceId)
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, `/api/v1/workday/${deviceId}/weather`, expect.any(Object))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, `/api/v1/workday/${deviceId}/weather/connection:test`, expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify(location),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, `/api/v1/workday/${deviceId}/weather/sync`, expect.objectContaining({ method: 'POST' }))
   })
 })

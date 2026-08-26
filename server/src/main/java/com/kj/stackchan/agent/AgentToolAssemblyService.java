@@ -18,6 +18,7 @@ import com.kj.stackchan.config.AppProperties;
 import com.kj.stackchan.memory.LongTermMemoryService;
 import com.kj.stackchan.reminder.ReminderService;
 import com.kj.stackchan.workday.WorkdaySettingsService;
+import com.kj.stackchan.weather.WorkdayWeatherService;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.stereotype.Service;
@@ -30,7 +31,8 @@ public class AgentToolAssemblyService {
             CapabilityListTool.ID,
             NextReminderTool.ID,
             PendingMemoryCountTool.ID,
-            UpcomingCalendarEventsTool.ID
+            UpcomingCalendarEventsTool.ID,
+            CurrentDeviceWeatherTool.ID
     );
 
     private final AgentSettingsService settingsService;
@@ -44,6 +46,7 @@ public class AgentToolAssemblyService {
     private final LongTermMemoryService memoryService;
     private final ICloudCalendarService calendarService;
     private final WorkdaySettingsService workdaySettingsService;
+    private final WorkdayWeatherService weatherService;
 
     public AgentToolAssemblyService(
             AgentSettingsService settingsService,
@@ -56,7 +59,8 @@ public class AgentToolAssemblyService {
             ReminderService reminderService,
             LongTermMemoryService memoryService,
             ICloudCalendarService calendarService,
-            WorkdaySettingsService workdaySettingsService
+            WorkdaySettingsService workdaySettingsService,
+            WorkdayWeatherService weatherService
     ) {
         this.settingsService = settingsService;
         this.mcpCatalog = mcpCatalog;
@@ -69,6 +73,7 @@ public class AgentToolAssemblyService {
         this.memoryService = memoryService;
         this.calendarService = calendarService;
         this.workdaySettingsService = workdaySettingsService;
+        this.weatherService = weatherService;
     }
 
     public AgentToolAssembly assemble(AgentInvocationContext context) {
@@ -105,6 +110,15 @@ public class AgentToolAssemblyService {
                 AgentCapabilityType.BUILTIN_TOOL, UpcomingCalendarEventsTool.ID)) {
             ToolCallback callback = callback(new UpcomingCalendarEventsTool(
                     context.deviceId(), calendarService, workdaySettingsService, clock, objectMapper
+            ));
+            directTools.add(callback);
+            auditMetadata.put(callback.getToolDefinition().name(), new AgentToolPolicyInterceptor.ToolAuditMetadata(
+                    AgentToolSource.BUILTIN, null, null));
+        }
+        if (context.deviceId() != null && settingsService.isEnabled(
+                AgentCapabilityType.BUILTIN_TOOL, CurrentDeviceWeatherTool.ID)) {
+            ToolCallback callback = callback(new CurrentDeviceWeatherTool(
+                    context.deviceId(), weatherService, objectMapper
             ));
             directTools.add(callback);
             auditMetadata.put(callback.getToolDefinition().name(), new AgentToolPolicyInterceptor.ToolAuditMetadata(

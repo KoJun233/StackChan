@@ -1,15 +1,15 @@
 # 部署工作流
 
 - 状态：STABLE
-- 最后更新：2026-08-25
-- 当前分支：`codex/workday-companion-v1`（运行态为 CONN-001/V39）
-- 基准提交：`fa093dc`
-- 最后验证提交：`a2a8e29`
+- 最后更新：2026-08-28
+- 当前分支：`codex/weather-001-open-meteo`（运行态为 WEATHER-001/V40）
+- 基准提交：`3e48ce9`
+- 最后验证提交：`fe95767`
 - 当前模式：LAN HTTP development
 
 ## 当前目标
 
-维持已发布的 CONN-001 LAN server/V39 与 CoreS3 `71868da`；等待每小时日历同步和设备绑定近期日历 Tool 的真实语音复测。
+维持 WEATHER-001 LAN server/V40、已安装的 USB 服务地址快捷更新固件，并保证天气缓存在服务启动后自动恢复且到期前续期。
 
 ## 已完成
 
@@ -22,13 +22,13 @@
 
 ## 正在进行
 
-LAN server 已由 CONN-001 Agent 日历闭环源快照 `a2a8e29` 构建并运行 V39，工作日设置、持久七态状态机、管理页只读状态、iCloud 连接、日历白名单、手动与每小时同步以及设备绑定近期日历 Tool 均已发布；CalDAV 在全球端点认证失败时会尝试中国大陆端点，并只接受 Apple 根入口与编号 HTTPS 分片。当前地址为 `http://192.168.1.3:8080/`，镜像摘要为 `sha256:fafc4e24a7d0191f20ec3300a2100517ed43c5c82d34088e0858c0edaaa688ed`。工作模式设置默认关闭，当前仍不会自动启动、读取天气、生成简报或执行动作。
+LAN server 运行 WEATHER-001/V40 天气续期修复，当前宿主机局域网地址为 `http://192.168.1.4:8080/`，镜像摘要为 `sha256:e23e5f0a5cf2a1c1b65e0de67f77cb7bd7c15e69bbc3c862f71c42836f8aa20d`。固定地点天气、USB 服务地址快捷更新管理页和启动后自动补同步均已发布；工作模式设置仍默认关闭，不会自动启动、生成首次简报或执行动作。
 
-CoreS3 仍运行稳定固件 `71868da`。CONN-001 没有固件改动，本次未 OTA；MEDIA-004 V2 实体激活继续等待 EAF 素材。
+CoreS3 已运行 LAN HTTP Quad 固件 `fe95767`，通过 USB `COM3` 安装且保留 NVS、Wi-Fi、设备身份和 `motion_disabled`；服务地址已快捷切换到当前宿主机，设备在线。MEDIA-004 V2 实体激活继续等待 EAF 素材。
 
 ## 下一步操作
 
-由用户再次询问机器人近期日程并确认 Agent Tool 读取缓存。成功后进入 `WEATHER-001` 固定地点天气；任何 Git 推送或固件操作仍等待独立授权。
+保持当前 server/V40、基础容器和 CoreS3 `fe95767` 不变；用户复测机器人天气问答。Git 分支外部推送仍需新的明确授权。
 
 ## 阻塞项
 
@@ -45,6 +45,12 @@ CoreS3 仍运行稳定固件 `71868da`。CONN-001 没有固件改动，本次未
 
 ## 验证命令与最近结果
 
+- 2026-08-28 天气续期修复发布：发布前新 PostgreSQL 备份及最新备份校验成功，旧镜像保留为 `pre-weather-refresh-fix-fe95767`，只替换 `stackchan-foundation-server-1`。新容器为 `e61d46f8494a`，镜像为 `sha256:e23e5f0a5cf2a1c1b65e0de67f77cb7bd7c15e69bbc3c862f71c42836f8aa20d`；健康状态为 `ok`，运行库保持 V40。启动十秒后的真实 Open-Meteo 同步为 `READY`，缓存有效至 2026-08-28 19:41（Asia/Shanghai），数据库包含 8 月 28/29 两条预报。首次 Compose 调用误用 `stackchan` 项目名，只创建未启动容器并因 8080 占用退出；原服务未中断，误建的空容器、网络和空卷已精确删除，随后以正确项目名完成切换。
+- 2026-08-27 USB 服务地址快捷更新页面发布：部署前新 PostgreSQL 备份与隔离恢复成功，旧镜像保留为 `pre-usb-server-update-902bb95`，只替换 `stackchan-foundation-server-1`。新容器为 `944ed2ceedc3`，镜像为 `sha256:9ff0dce7ae5f17dc048fe341595b9f6dfcc688d576a476fdc3539c56199b3b9f`；PostgreSQL `6d8feaa18623`、Redis `58e31a403637` 和备份容器 `c94b190f0428` 未变化。健康状态为 `ok`，40 条迁移验证成功且运行库保持 V40，本机与 `192.168.1.4:8080` 首页为 200，未认证设备接口为 401，运行配网页资源包含“仅更新服务地址”。未连接或操作 CoreS3。
+- 2026-08-26 用户确认经纬度输入修正、真实固定位置同步和机器人天气问答均正常，WEATHER-001 人工验收通过。
+- 2026-08-26 修正经纬度输入被 `type=number` 转成数字后与字符串校验模型冲突导致的英文 `Invalid input`；改用保留字符串的十进制文本输入并提供示例。控制台 86/86、类型检查和 production build 通过；发布前新备份和隔离恢复成功，旧镜像保留为 `pre-v40-coordinate-fe5cece`，只替换 server。新容器为 `22a64c2dfe07`，镜像为 `sha256:9f3f06e5cf3528d467cebc74e534b7d5750fb7f505175244da8b6b9a78330b0a`；PostgreSQL、Redis 和备份容器 ID 未变化，V40 无待迁移项，健康和当前 LAN 首页为 200，运行资源包含经纬度示例，CoreS3 未操作。
+- 2026-08-26 WEATHER-001/V40 发布前新 PostgreSQL 备份和隔离恢复验证成功；旧镜像保留为 `pre-v40-weather-ecad118`，只替换 `stackchan-foundation-server-1`。新容器为 `80fff6f9ff74`；PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 及数据卷均未变化。
+- 运行源快照为 `ecad118`，镜像为 `sha256:db1f48cb1730351ce501d78e02b11635074c87a4fc6f31301233b1a6ead74c74`；Flyway 从 V39 成功迁移到 V40。本机与当前 LAN `192.168.1.4:8080` 首页为 200，健康状态为 `ok`，未认证天气接口为 401，运行静态资源包含 `Open-Meteo`，启动日志无应用级 `ERROR`；CoreS3 未连接、未刷写。
 - 2026-08-25 CONN-001 Agent 日历闭环发布前新 PostgreSQL 备份和隔离恢复验证成功；旧镜像保留为 `pre-v39-calendar-agent-a2a8e29`，只替换 `stackchan-foundation-server-1`。新容器为 `7a6b6821a206`；PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 及数据卷均未变化。
 - 运行源快照为 `a2a8e29`，镜像为 `sha256:fafc4e24a7d0191f20ec3300a2100517ed43c5c82d34088e0858c0edaaa688ed`；运行库保持 V39 且一条缓存事件仍有效。本机和 `192.168.1.3:8080` 首页为 200，健康状态为 `ok`，未认证日历接口为 401，启动后无应用级 `ERROR`；CoreS3 未刷写。
 - 2026-08-25 CONN-001 Apple 编号分片修正发布前新 PostgreSQL 备份和隔离恢复验证成功；旧镜像保留为 `pre-v39-caldav-shard-1af1c03`，只替换 `stackchan-foundation-server-1`。PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 及数据卷均未变化。

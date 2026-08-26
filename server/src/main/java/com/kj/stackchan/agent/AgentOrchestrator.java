@@ -45,11 +45,17 @@ public class AgentOrchestrator {
             "(?i)(日程|行程|日历|(?:今天|明天|最近|这几天|本周).{0,6}安排)"
                     + "|(?:calendar|schedule|agenda)"
     );
+    private static final Pattern WEATHER_QUESTION = Pattern.compile(
+            "(?:天气|气温|温度|下雨|降雨|带伞|冷不冷|热不热"
+                    + "|(?:weather|temperature|rain|forecast))",
+            Pattern.CASE_INSENSITIVE
+    );
     private static final String TOOL_LIMIT_REPLY = "本次查询已达到工具调用上限，我不能可靠地继续查询。";
     private static final String AGENT_TIMEOUT_REPLY = "这次工具查询超时了，我暂时无法给出可靠结果。";
     private static final String REQUIRED_TIME_TOOL_REPLY = "我暂时无法可靠读取当前日期和时间，所以不能猜测。";
     private static final String REQUIRED_CAPABILITY_TOOL_REPLY = "我暂时无法可靠读取当前授权的 Tool 和 Skill，所以不能猜测。";
     private static final String REQUIRED_CALENDAR_TOOL_REPLY = "我暂时无法可靠读取当前设备的日历缓存，所以不能猜测。";
+    private static final String REQUIRED_WEATHER_TOOL_REPLY = "我暂时无法可靠读取当前设备的天气缓存，所以不能猜测。";
 
     private final AgentSettingsService settingsService;
     private final AgentToolAssemblyService toolAssemblyService;
@@ -158,6 +164,9 @@ public class AgentOrchestrator {
         if (CALENDAR_QUESTION.matcher(userMessage).find()) {
             return UpcomingCalendarEventsTool.ID;
         }
+        if (WEATHER_QUESTION.matcher(userMessage).find()) {
+            return CurrentDeviceWeatherTool.ID;
+        }
         return null;
     }
 
@@ -167,6 +176,9 @@ public class AgentOrchestrator {
         }
         if (UpcomingCalendarEventsTool.ID.equals(toolName)) {
             return REQUIRED_CALENDAR_TOOL_REPLY;
+        }
+        if (CurrentDeviceWeatherTool.ID.equals(toolName)) {
+            return REQUIRED_WEATHER_TOOL_REPLY;
         }
         return REQUIRED_CAPABILITY_TOOL_REPLY;
     }
@@ -190,6 +202,8 @@ public class AgentOrchestrator {
                 未授权或失败时不得猜测。
                 用户询问日程、行程、日历或近期安排时，必须调用 upcoming_device_calendar_events；
                 不得用提醒 Tool、历史对话或常识代替日历缓存。缓存不可用时必须如实说明。
+                用户询问天气、气温、降雨或是否需要带伞时，必须调用 current_device_weather；
+                不得用历史对话、常识或模型知识代替天气缓存。缓存不可用时必须如实说明。
                 """.formatted(directToolNames, skillNames);
     }
 

@@ -12,7 +12,13 @@
 #define DEVICE_PROVISIONING_SERVER_BASE_URL_MAX_LEN 192
 #define DEVICE_PROVISIONING_PAIRING_CODE_MAX_LEN 13
 
+typedef enum {
+    DEVICE_PROVISIONING_REQUEST_FULL = 0,
+    DEVICE_PROVISIONING_REQUEST_SERVER_ONLY,
+} device_provisioning_request_kind_t;
+
 typedef struct {
+    device_provisioning_request_kind_t kind;
     char ssid[DEVICE_PROVISIONING_SSID_MAX_LEN];
     char password[DEVICE_PROVISIONING_PASSWORD_MAX_LEN];
     char server_base_url[DEVICE_PROVISIONING_SERVER_BASE_URL_MAX_LEN];
@@ -21,8 +27,8 @@ typedef struct {
 
 /**
  * Parses one strict USB provisioning JSON request without retaining its source
- * buffer. The command must have type "provision" and exactly the documented
- * Wi-Fi, server, and pairing fields.
+ * buffer. Full provisioning includes Wi-Fi, server, and pairing fields; a
+ * server-only update includes only the server and pairing fields.
  */
 bool device_provisioning_parse_request(const char *payload,
                                        size_t payload_length,

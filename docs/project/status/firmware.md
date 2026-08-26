@@ -1,15 +1,22 @@
 # 固件工作流
 
 - 状态：STABLE
-- 最后更新：2026-08-24
-- 当前分支：`codex/workday-companion-v1`
-- 基准提交：`fa093dc`
-- 最后验证提交：`fa093dc`
-- 当前实机镜像：`71868da`
+- 最后更新：2026-08-28
+- 当前分支：`codex/weather-001-open-meteo`
+- 基准提交：`3e48ce9`
+- 最后验证提交：`fe95767`
+- 当前实机镜像：`fe95767`
 
 ## 当前目标
 
-保持 CoreS3 `71868da` 与默认 `motion_disabled` 稳定运行；为后续 BODY-001 设计 K151 接近/环境光能力探测、本地校准和五种有限动作模板，不连接或修改实体设备。
+保持 CoreS3 `fe95767` 与默认 `motion_disabled` 稳定运行；已验证可只通过物理 USB 更新服务地址并保留现有 Wi-Fi。
+
+## 已实现的服务地址快捷更新
+
+- USB 严格解析器新增 `update_server` 命令，只接受类型、目标服务地址和一次性配对码三个字段；Wi-Fi 字段、额外字段、缺失配对码和不安全地址全部拒绝。
+- 快捷更新不会调用 Wi-Fi 配置写入，也不会在连接目标服务前清除旧身份；它等待现有 Wi-Fi、向目标服务重新 claim 同一硬件身份，仅在成功后保存新身份。
+- 新身份保存成功后先返回非秘密 `complete`，再重启以便传输任务重新加载地址和凭据。Wi-Fi 或 claim 失败时，原 Wi-Fi 和已保存身份保持不变。
+- 完整配网兼容路径、URL 安全边界、一次性配对码和日志脱敏边界不变；未增加服务端远程重定向接口。
 
 ## 已完成
 
@@ -50,21 +57,25 @@
 
 ## 正在进行
 
-- WORK-001 开发设计已确认 K151 的真实整机能力和运动安全边界；固件实现尚未开始，当前运行设备继续保持 `71868da` 与 `motion_disabled`。
+- 服务地址快捷更新已在 WEATHER-001 同一任务分支完成自动构建、USB 安装和启动验证；NVS、Wi-Fi、设备身份与 `motion_disabled` 均保留。
+- WORK-001 开发设计已确认 K151 的真实整机能力和运动安全边界；固件实现尚未开始，当前运行设备继续保持 `fe95767` 与 `motion_disabled`。
 - BODY-001 将先在协议 profile 中实现能力缺失、未校准、音频忙和动作超时拒绝，再进入任何实体候选构建。
 
 ## 下一步操作
 
-保持 `71868da` 运行。先在协议 profile 中定义缺失即不支持的 K151 能力位、校准状态、动作枚举和音频忙拒绝测试；未经后续逐次授权不连接设备、不构建 OTA 候选、不改变 `motion_disabled` 运行态。
+保持 CoreS3 `fe95767` 和 `motion_disabled` 不变；无需再次刷写。后续任何固件刷写或 OTA 仍需新的明确授权。
 
 ## 阻塞项
 
 - 自动化当前无代码阻塞。MEDIA-004 V2 实体激活因用户暂无 EAF 素材延期，不能视为失败或通过。
+- 当前无固件阻塞；USB 快捷更新已完成实机安装，后续固件动作仍受逐次授权边界约束。
 - 摄像头、NFC、红外、舞蹈、连续旋转、任意角度协议、模型运动权限和未校准舵机保持冻结。
 
 ## 关键文件
 
 - `firmware/main/device_transport.c`
+- `firmware/main/device_provisioning.c`
+- `firmware/main/device_provisioning.h`
 - `firmware/main/device_protocol.c`
 - `firmware/main/voice_service.c`
 - `firmware/main/voice_protocol.c`
@@ -84,6 +95,8 @@
 
 ## 验证命令与最近结果
 
+- 2026-08-28 经用户明确授权，将提交绑定的 LAN HTTP Quad 候选通过 USB `COM3` 安装到当前 CoreS3；app descriptor 为 `fe95767`，制品 1,618,560 字节，SHA-256 `0FBFA97917748757FAF2EB6AE87B8C88EE24D2DC1C22760DD7DCA95E59962B44`。只写 bootloader、应用、分区表、OTA data 和 srmodels，未全片擦除、未写 NVS 分区；启动确认 NVS 加密、Wi-Fi 配置、设备身份、WakeNet、显示/触摸/音频、BMI270 与 `motion_disabled` 保留，设备随后连接当前服务并上线。
+- 2026-08-27 USB 服务地址快捷更新：ESP-IDF 5.5.5 protocol profile 编译通过，应用大小 `0x3bb10`（244,496 字节）、最小 3 MiB 应用分区余量 92%；LAN HTTP Quad profile 编译通过，制品 `0x18b280`（1,618,560 字节）、最小应用分区余量 49%，SHA-256 `B4950956B69C385B6E7269341DCC2B46E6746C9B3E14C2793470856904C9E98F`。三组配网、语音和传输任务栈回归与静态预算全部通过。该制品来自提交前工作树，只作为构建证据，不作为安装候选；未连接或操作 CoreS3。
 - MEDIA-004 ESP-IDF 5.5.5 protocol profile 编译通过，应用大小 237,776 字节；独立 sdkconfig 的 LAN HTTP Quad profile 编译通过，制品 1,618,336 字节、最小 3 MiB 应用分区余量 49%，SHA-256 `BBF266A5FB77A47198FDC1EC4D22D9962DE1F32C054F69EC7FE4908AC84263F2`。该制品来自未提交工作树，只作为构建证据，不作为 OTA 候选。
 - 提交绑定 EAF 候选 `71868da` 完整构建通过：1,669,504 字节，SHA-256 `7E794FDECA4A4CC005C87389A691C3B86FBD783B931E5086607F479394880206`，app descriptor 版本为 `71868da`，镜像校验有效。
 - `71868da` 应用 OTA 为 `INSTALLED`；用户确认 EAF→native、三次语音、声音、触摸取消、下一回合和稳定性正常。心跳约 55/60 FPS、音频 underrun 0、最低空闲堆 7,735,712 字节。
