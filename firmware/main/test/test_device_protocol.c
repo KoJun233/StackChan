@@ -519,9 +519,42 @@ TEST_CASE("USB provisioning accepts one bounded claim request", "[device_provisi
     device_provisioning_request_t request = {0};
 
     TEST_ASSERT_TRUE(device_provisioning_parse_request(request_json, strlen(request_json), &request));
+    TEST_ASSERT_EQUAL(DEVICE_PROVISIONING_REQUEST_FULL, request.kind);
     TEST_ASSERT_EQUAL_STRING("home-network", request.ssid);
     TEST_ASSERT_EQUAL_STRING(TEST_SERVER_BASE_URL, request.server_base_url);
     TEST_ASSERT_EQUAL_STRING("ABCD_123", request.pairing_code);
+}
+
+TEST_CASE("USB provisioning accepts one server-only update without Wi-Fi fields", "[device_provisioning]")
+{
+    const char *request_json = "{\"type\":\"update_server\",\"serverBaseUrl\":\"" TEST_SERVER_BASE_URL "\","
+                               "\"pairingCode\":\"ABCD_123\"}";
+    device_provisioning_request_t request = {0};
+
+    TEST_ASSERT_TRUE(device_provisioning_parse_request(request_json, strlen(request_json), &request));
+    TEST_ASSERT_EQUAL(DEVICE_PROVISIONING_REQUEST_SERVER_ONLY, request.kind);
+    TEST_ASSERT_EQUAL_STRING("", request.ssid);
+    TEST_ASSERT_EQUAL_STRING("", request.password);
+    TEST_ASSERT_EQUAL_STRING(TEST_SERVER_BASE_URL, request.server_base_url);
+    TEST_ASSERT_EQUAL_STRING("ABCD_123", request.pairing_code);
+}
+
+TEST_CASE("USB server-only update rejects Wi-Fi and ambiguous fields", "[device_provisioning]")
+{
+    const char *wifi_field = "{\"type\":\"update_server\",\"serverBaseUrl\":\"" TEST_SERVER_BASE_URL "\","
+                             "\"pairingCode\":\"ABCD\",\"wifiSsid\":\"must-not-change\"}";
+    const char *missing_code = "{\"type\":\"update_server\",\"serverBaseUrl\":\"" TEST_SERVER_BASE_URL "\"}";
+    const char *invalid_url = "{\"type\":\"update_server\",\"serverBaseUrl\":\"http://public.example\","
+                              "\"pairingCode\":\"ABCD\"}";
+    device_provisioning_request_t zero = {0};
+    device_provisioning_request_t request = {0};
+
+    TEST_ASSERT_FALSE(device_provisioning_parse_request(wifi_field, strlen(wifi_field), &request));
+    TEST_ASSERT_EQUAL_MEMORY(&zero, &request, sizeof(request));
+    TEST_ASSERT_FALSE(device_provisioning_parse_request(missing_code, strlen(missing_code), &request));
+    TEST_ASSERT_EQUAL_MEMORY(&zero, &request, sizeof(request));
+    TEST_ASSERT_FALSE(device_provisioning_parse_request(invalid_url, strlen(invalid_url), &request));
+    TEST_ASSERT_EQUAL_MEMORY(&zero, &request, sizeof(request));
 }
 
 TEST_CASE("strict JSON distinguishes decoded NUL escapes from literal text", "[strict_json]")

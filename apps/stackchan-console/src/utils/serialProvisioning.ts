@@ -5,6 +5,11 @@ export interface WifiProvisioningRequest {
   wifiSsid: string
 }
 
+export interface ServerUpdateRequest {
+  pairingCode: string
+  serverBaseUrl: string
+}
+
 export interface SerialPortLike {
   close: () => Promise<void>
   open: (options: { baudRate: number }) => Promise<void>
@@ -16,15 +21,15 @@ export interface WebSerialApi {
   requestPort: () => Promise<SerialPortLike>
 }
 
-export type ProvisioningStatus =
-  | 'started'
-  | 'complete'
-  | 'invalid_request'
-  | 'identity_clear_failed'
-  | 'wifi_configuration_failed'
-  | 'wifi_connection_failed'
-  | 'claim_failed'
-  | 'identity_save_failed'
+export type ProvisioningStatus
+  = | 'started'
+    | 'complete'
+    | 'invalid_request'
+    | 'identity_clear_failed'
+    | 'wifi_configuration_failed'
+    | 'wifi_connection_failed'
+    | 'claim_failed'
+    | 'identity_save_failed'
 
 const STATUS_VALUES = new Set<ProvisioningStatus>([
   'started',
@@ -84,7 +89,7 @@ export function validateServerBaseUrl(value: string): boolean {
     return false
   }
   const parts = match[1].split('.')
-  if (parts.length !== 4 || parts.some(part => !/^(0|[1-9]\d{0,2})$/.test(part))) {
+  if (parts.length !== 4 || parts.some(part => !/^(?:0|[1-9]\d{0,2})$/.test(part))) {
     return false
   }
   const octets = parts.map(Number)
@@ -106,7 +111,7 @@ export function buildProvisioningPayload(request: WifiProvisioningRequest): stri
   if (!validateServerBaseUrl(request.serverBaseUrl)) {
     throw new Error('服务器地址与固件支持的 HTTPS 或私有局域网 HTTP 格式不匹配。')
   }
-  if (!/^[A-Za-z0-9_-]{1,12}$/.test(request.pairingCode)) {
+  if (!/^[\w-]{1,12}$/.test(request.pairingCode)) {
     throw new Error('一次性配对码格式无效。')
   }
   const payload = JSON.stringify({
@@ -118,6 +123,24 @@ export function buildProvisioningPayload(request: WifiProvisioningRequest): stri
   })
   if (utf8Length(payload) > MAX_PROVISIONING_LINE_BYTES) {
     throw new Error('配网信息过长，无法安全发送给机器人。')
+  }
+  return payload
+}
+
+export function buildServerUpdatePayload(request: ServerUpdateRequest): string {
+  if (!validateServerBaseUrl(request.serverBaseUrl)) {
+    throw new Error('服务器地址与固件支持的 HTTPS 或私有局域网 HTTP 格式不匹配。')
+  }
+  if (!/^[\w-]{1,12}$/.test(request.pairingCode)) {
+    throw new Error('一次性配对码格式无效。')
+  }
+  const payload = JSON.stringify({
+    type: 'update_server',
+    serverBaseUrl: request.serverBaseUrl,
+    pairingCode: request.pairingCode,
+  })
+  if (utf8Length(payload) > MAX_PROVISIONING_LINE_BYTES) {
+    throw new Error('服务地址信息过长，无法安全发送给机器人。')
   }
   return payload
 }
@@ -161,13 +184,12 @@ async function readWithTimeout(
   }
 }
 
-export async function provisionStackChan(
+async function sendProvisioningRequest(
   port: SerialPortLike,
-  request: WifiProvisioningRequest,
+  payload: string,
   onStatus?: (status: ProvisioningStatus) => void,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<ProvisioningStatus> {
-  const payload = buildProvisioningPayload(request)
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
   let writer: WritableStreamDefaultWriter<Uint8Array> | undefined
   try {
@@ -221,4 +243,22 @@ export async function provisionStackChan(
       // Closing an already disconnected Web Serial port is harmless.
     }
   }
+}
+
+export async function provisionStackChan(
+  port: SerialPortLike,
+  request: WifiProvisioningRequest,
+  onStatus?: (status: ProvisioningStatus) => void,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<ProvisioningStatus> {
+  return sendProvisioningRequest(port, buildProvisioningPayload(request), onStatus, timeoutMs)
+}
+
+export async function updateStackChanServer(
+  port: SerialPortLike,
+  request: ServerUpdateRequest,
+  onStatus?: (status: ProvisioningStatus) => void,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<ProvisioningStatus> {
+  return sendProvisioningRequest(port, buildServerUpdatePayload(request), onStatus, timeoutMs)
 }

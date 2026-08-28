@@ -3,6 +3,7 @@ package com.kj.stackchan.api;
 import java.time.LocalTime;
 
 import com.kj.stackchan.calendar.ICloudCalendarService;
+import com.kj.stackchan.weather.WorkdayWeatherService;
 import com.kj.stackchan.workday.WorkdaySettingsService;
 import com.kj.stackchan.workday.WorkdayRuntimeService;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,7 @@ class WorkdaySettingsControllerTest {
     @Mock private WorkdaySettingsService settingsService;
     @Mock private WorkdayRuntimeService runtimeService;
     @Mock private ICloudCalendarService calendarService;
+    @Mock private WorkdayWeatherService weatherService;
 
     @Test
     void mapsBoundedWorkdaySettings() {
@@ -34,7 +36,7 @@ class WorkdaySettingsControllerTest {
 
     @Test
     void delegatesRuntimeAndBoundedMetricsReads() {
-        var controller = new WorkdaySettingsController(settingsService, runtimeService, calendarService);
+        var controller = new WorkdaySettingsController(settingsService, runtimeService, calendarService, weatherService);
         var deviceId = java.util.UUID.randomUUID();
 
         controller.runtime(deviceId);
@@ -46,7 +48,7 @@ class WorkdaySettingsControllerTest {
 
     @Test
     void delegatesCalendarConnectionOperations() {
-        var controller = new WorkdaySettingsController(settingsService, runtimeService, calendarService);
+        var controller = new WorkdaySettingsController(settingsService, runtimeService, calendarService, weatherService);
         var deviceId = java.util.UUID.randomUUID();
         var calendarId = java.util.UUID.randomUUID();
         var connection = new WorkdaySettingsController.ICloudCalendarConnectionRequest("me@icloud.com", "secret");
@@ -67,5 +69,22 @@ class WorkdaySettingsControllerTest {
         org.mockito.Mockito.verify(calendarService).updateAllowed(deviceId, java.util.Set.of(calendarId));
         org.mockito.Mockito.verify(calendarService).sync(deviceId);
         org.mockito.Mockito.verify(calendarService).disconnect(deviceId);
+    }
+
+    @Test
+    void delegatesWeatherTestSyncAndStatus() {
+        var controller = new WorkdaySettingsController(settingsService, runtimeService, calendarService, weatherService);
+        var deviceId = java.util.UUID.randomUUID();
+        var location = new WorkdaySettingsController.WeatherLocationRequest(
+                "上海办公室", 31.2304, 121.4737, "Asia/Shanghai"
+        );
+
+        controller.weather(deviceId);
+        controller.testWeather(deviceId, location);
+        controller.syncWeather(deviceId);
+
+        org.mockito.Mockito.verify(weatherService).get(deviceId);
+        org.mockito.Mockito.verify(weatherService).test(deviceId, location.toCommand());
+        org.mockito.Mockito.verify(weatherService).sync(deviceId);
     }
 }

@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import type { FormExpose } from '@fantastic-admin/components'
+import type { PairingCode } from '@/api/modules/devices'
 import type { SerialPortLike } from '@/utils/serialProvisioning'
 import { toTypedSchema } from '@vee-validate/zod'
 import * as z from 'zod'
-import type { PairingCode } from '@/api/modules/devices'
 import { createPairingCode, isPairingCodeExpired } from '@/api/modules/devices'
 import {
   getWebSerialApi,
   provisionStackChan,
+  updateStackChanServer,
   validateServerBaseUrl,
 } from '@/utils/serialProvisioning'
 
@@ -34,12 +35,10 @@ const webSerialAvailable = typeof window !== 'undefined'
   && getWebSerialApi() !== null
 
 const validationSchema = toTypedSchema(z.object({
-  wifiSsid: z.string().min(1, '请输入 Wi-Fi 名称')
-    .refine(value => new TextEncoder().encode(value).byteLength <= 32, 'Wi-Fi 名称不能超过 32 字节'),
+  wifiSsid: z.string().min(1, '请输入 Wi-Fi 名称').refine(value => new TextEncoder().encode(value).byteLength <= 32, 'Wi-Fi 名称不能超过 32 字节'),
   wifiPassword: z.string()
     .refine(value => new TextEncoder().encode(value).byteLength <= 63, 'Wi-Fi 密码不能超过 63 字节'),
-  serverBaseUrl: z.string().trim().min(1, '请输入 StackChan 服务地址')
-    .refine(validateServerBaseUrl, '请输入 HTTPS 地址，或 LAN 固件使用的私有 IPv4 HTTP 地址'),
+  serverBaseUrl: z.string().trim().min(1, '请输入 StackChan 服务地址').refine(validateServerBaseUrl, '请输入 HTTPS 地址，或 LAN 固件使用的私有 IPv4 HTTP 地址'),
 }))
 
 const remainingSeconds = computed(() => {
@@ -101,8 +100,8 @@ async function connectRobot() {
   connecting.value = true
   try {
     selectedPort.value = await serial.requestPort()
-    provisioningMessage.value = '已选择机器人串口，可以写入 Wi-Fi 配置。'
-    useFaToast().success('机器人已连接', { description: '下一步填写信息并点击“写入 Wi-Fi 配置”。' })
+    provisioningMessage.value = '已选择机器人串口，可以写入完整配置或只更新服务地址。'
+    useFaToast().success('机器人已连接', { description: '下一步填写信息并选择需要的写入方式。' })
   }
   catch (error) {
     if (!(error instanceof DOMException && error.name === 'NotFoundError')) {
@@ -170,6 +169,54 @@ async function submitForm() {
   await formRef.value?.submit()
 }
 
+async function updateServerOnly() {
+  if (!selectedPort.value) {
+    useFaToast().error('尚未连接机器人', { description: '请先点击“通过 USB 连接机器人”。' })
+    return
+  }
+  const serverBaseUrl = model.value.serverBaseUrl.trim()
+  if (!validateServerBaseUrl(serverBaseUrl)) {
+    useFaToast().error('服务地址无效', { description: '请输入 HTTPS 地址，或 LAN 固件使用的私有 IPv4 HTTP 地址。' })
+    return
+  }
+  provisioning.value = true
+  provisioningMessage.value = '正在生成一次性配对码…'
+  const port = selectedPort.value
+  try {
+    if (!pairingCode.value || isPairingCodeExpired(pairingCode.value)) {
+      pairingCode.value = await createPairingCode(accountStore.account || 'admin')
+      startCountdown()
+    }
+    provisioningMessage.value = '正在通过 USB 更新服务地址；现有 Wi-Fi 配置不会改变…'
+    const result = await updateStackChanServer(port, {
+      serverBaseUrl,
+      pairingCode: pairingCode.value.value,
+    }, (status) => {
+      if (status === 'started') {
+        provisioningMessage.value = '机器人已接收新地址，正在重新配对并保存身份…'
+      }
+    })
+    if (result === 'invalid_request') {
+      throw new Error('当前固件不支持仅更新服务地址，请先升级固件或使用完整配网。')
+    }
+    if (result !== 'complete') {
+      throw new Error(provisioningFailureMessages[result] ?? '服务地址更新失败，请重试。')
+    }
+    provisioningMessage.value = '服务地址已更新，机器人正在重启并连接管理服务。'
+    useFaToast().success('服务地址更新成功', { description: 'Wi-Fi 配置保持不变，请在设备总览确认机器人重新上线。' })
+  }
+  catch (error) {
+    provisioningMessage.value = error instanceof Error ? error.message : '服务地址更新失败，请重试。'
+    useFaToast().error('更新失败', { description: provisioningMessage.value })
+  }
+  finally {
+    pairingCode.value = null
+    selectedPort.value = null
+    stopCountdown()
+    provisioning.value = false
+  }
+}
+
 async function copyCode() {
   if (!pairingCode.value) {
     return
@@ -223,7 +270,7 @@ onUnmounted(stopCountdown)
           description="请通过 localhost 打开管理后台，并使用最新版 Microsoft Edge 或 Google Chrome。"
           class="mb-5"
         />
-        <div v-else class="mb-5 flex flex-wrap items-center gap-3 rounded-lg border bg-muted/40 p-4">
+        <div v-else class="mb-5 p-4 border rounded-lg bg-muted/40 flex flex-wrap gap-3 items-center">
           <FaButton type="button" variant="outline" :loading="connecting" :disabled="provisioning" @click="connectRobot">
             {{ selectedPort ? '重新选择机器人' : '通过 USB 连接机器人' }}
           </FaButton>
@@ -237,7 +284,7 @@ onUnmounted(stopCountdown)
           :model="model"
           :validation-schema="validationSchema"
           scroll-to-error
-          class="grid grid-cols-1 gap-x-8 gap-y-6 items-start md:grid-cols-2"
+          class="gap-x-8 gap-y-6 grid grid-cols-1 items-start md:grid-cols-2"
           @submit="submit"
         >
           <FaFormItem name="wifiSsid" label="Wi-Fi 名称" required>
@@ -257,80 +304,93 @@ onUnmounted(stopCountdown)
           </FaFormItem>
         </FaForm>
 
-        <div class="mt-6 flex flex-wrap items-center gap-3">
+        <div class="mt-6 flex flex-wrap gap-3 items-center">
           <FaButton
             type="button"
             :loading="provisioning"
             :disabled="!webSerialAvailable || !selectedPort"
             @click="submitForm"
           >
-            写入 Wi-Fi 配置
+            完整写入 Wi-Fi 与服务
+          </FaButton>
+          <FaButton
+            type="button"
+            variant="outline"
+            :loading="provisioning"
+            :disabled="!webSerialAvailable || !selectedPort"
+            @click="updateServerOnly"
+          >
+            仅更新服务地址
           </FaButton>
           <span v-if="provisioningMessage" class="text-sm text-muted-foreground">
             {{ provisioningMessage }}
           </span>
         </div>
+        <div class="text-sm text-muted-foreground leading-6 mt-3">
+          “仅更新服务地址”不会重写 Wi-Fi 名称或密码；需要机器人运行支持该功能的新固件。
+        </div>
       </FaCard>
 
-      <div class="grid gap-4 lg:grid-cols-2">
-      <FaCard>
-        <template #header>
-          <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div class="gap-4 grid lg:grid-cols-2">
+        <FaCard>
+          <template #header>
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div class="space-y-1">
+                <div class="text-base font-semibold">
+                  一次性配对码
+                </div>
+                <div class="text-sm text-muted-foreground">
+                  浏览器配网会自动生成；也可手动生成后用于其他串口工具。
+                </div>
+              </div>
+              <FaButton :loading="generating" @click="generate">
+                {{ pairingCode ? '重新生成' : '生成配对码' }}
+              </FaButton>
+            </div>
+          </template>
+
+          <FaAlert v-if="!pairingCode" title="尚未生成配对码" description="生成后可在有效期内复制并用于 USB 配置。" />
+          <div v-else class="space-y-4">
+            <div class="text-3xl tracking-widest font-mono font-semibold px-4 py-6 text-center border rounded-lg bg-muted/50 break-all">
+              {{ pairingCode.value }}
+            </div>
+            <div class="flex flex-wrap gap-3 items-center justify-between">
+              <div v-if="expired" class="text-sm text-destructive">
+                配对码已过期，请重新生成。
+              </div>
+              <div v-else class="text-sm text-muted-foreground">
+                剩余有效时间：<span class="text-foreground font-medium font-mono">{{ countdown }}</span>
+              </div>
+              <FaButton variant="outline" :disabled="expired" @click="copyCode">
+                复制配对码
+              </FaButton>
+            </div>
+          </div>
+        </FaCard>
+
+        <FaCard>
+          <template #header>
             <div class="space-y-1">
               <div class="text-base font-semibold">
-                一次性配对码
+                安全配置说明
               </div>
               <div class="text-sm text-muted-foreground">
-                浏览器配网会自动生成；也可手动生成后用于其他串口工具。
+                配网数据在浏览器与机器人的 USB 串口之间直传。
               </div>
             </div>
-            <FaButton :loading="generating" @click="generate">
-              {{ pairingCode ? '重新生成' : '生成配对码' }}
-            </FaButton>
-          </div>
-        </template>
+          </template>
 
-        <FaAlert v-if="!pairingCode" title="尚未生成配对码" description="生成后可在有效期内复制并用于 USB 配置。" />
-        <div v-else class="space-y-4">
-          <div class="rounded-lg border bg-muted/50 px-4 py-6 text-center font-mono text-3xl font-semibold tracking-widest break-all">
-            {{ pairingCode.value }}
+          <ol class="text-sm leading-6 ps-5 list-decimal space-y-3">
+            <li>浏览器只向服务端申请一次性配对码，不会上传 Wi-Fi 名称或密码。</li>
+            <li>Wi-Fi 配置只通过物理 USB 串口发送给当前连接的机器人。</li>
+            <li>服务地址变化时可单独更新，机器人重新配对成功后会自动重启，原 Wi-Fi 配置保持不变。</li>
+            <li>LAN HTTP 仅供受信任私有局域网开发；生产固件仍只接受 HTTPS。</li>
+            <li>机器人报告完成后，可在设备总览确认在线状态和心跳。</li>
+          </ol>
+          <div class="text-sm text-muted-foreground leading-6 mt-5 p-4 border border-primary/20 rounded-lg bg-primary/5">
+            配对码仅可使用一次；设备访问令牌绝不会在此页面显示。
           </div>
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div v-if="expired" class="text-sm text-destructive">
-              配对码已过期，请重新生成。
-            </div>
-            <div v-else class="text-sm text-muted-foreground">
-              剩余有效时间：<span class="font-mono text-foreground font-medium">{{ countdown }}</span>
-            </div>
-            <FaButton variant="outline" :disabled="expired" @click="copyCode">
-              复制配对码
-            </FaButton>
-          </div>
-        </div>
-      </FaCard>
-
-      <FaCard>
-        <template #header>
-          <div class="space-y-1">
-            <div class="text-base font-semibold">
-              安全配置说明
-            </div>
-            <div class="text-sm text-muted-foreground">
-              配网数据在浏览器与机器人的 USB 串口之间直传。
-            </div>
-          </div>
-        </template>
-
-        <ol class="list-decimal space-y-3 ps-5 text-sm leading-6">
-          <li>浏览器只向服务端申请一次性配对码，不会上传 Wi-Fi 名称或密码。</li>
-          <li>Wi-Fi 配置只通过物理 USB 串口发送给当前连接的机器人。</li>
-          <li>LAN HTTP 仅供受信任私有局域网开发；生产固件仍只接受 HTTPS。</li>
-          <li>机器人报告完成后，可在设备总览确认在线状态和心跳。</li>
-        </ol>
-        <div class="mt-5 rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm leading-6 text-muted-foreground">
-          配对码仅可使用一次；设备访问令牌绝不会在此页面显示。
-        </div>
-      </FaCard>
+        </FaCard>
       </div>
     </div>
   </FaPageMain>

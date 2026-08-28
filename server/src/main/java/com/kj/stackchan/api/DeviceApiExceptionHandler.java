@@ -37,6 +37,8 @@ import com.kj.stackchan.wakeword.WakeWordModelCatalogUnavailableException;
 import com.kj.stackchan.wakeword.WakeWordModelNotFoundException;
 import com.kj.stackchan.workday.InvalidWorkdaySettingsException;
 import com.kj.stackchan.workday.InvalidWorkdayStateException;
+import com.kj.stackchan.weather.InvalidWorkdayWeatherException;
+import com.kj.stackchan.weather.WorkdayWeatherUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -120,6 +122,12 @@ public class DeviceApiExceptionHandler {
     );
     public static final ApiError ICLOUD_CALENDAR_UNAVAILABLE = new ApiError(
             "icloud_calendar_unavailable", "iCloud 日历暂时不可用，请稍后重试。"
+    );
+    public static final ApiError INVALID_WORKDAY_WEATHER = new ApiError(
+            "invalid_workday_weather", "天气位置或时区配置无效。"
+    );
+    public static final ApiError WORKDAY_WEATHER_UNAVAILABLE = new ApiError(
+            "workday_weather_unavailable", "天气服务暂时不可用，请稍后重试。"
     );
     public static final ApiError PROACTIVE_TOPIC_NOT_FOUND = new ApiError(
             "proactive_topic_not_found", "未找到指定的主动关心主题。"
@@ -269,6 +277,16 @@ public class DeviceApiExceptionHandler {
         return response(HttpStatus.BAD_GATEWAY, ICLOUD_CALENDAR_UNAVAILABLE);
     }
 
+    @ExceptionHandler(InvalidWorkdayWeatherException.class)
+    ResponseEntity<ApiError> invalidWorkdayWeather(InvalidWorkdayWeatherException exception) {
+        return response(HttpStatus.BAD_REQUEST, INVALID_WORKDAY_WEATHER);
+    }
+
+    @ExceptionHandler(WorkdayWeatherUnavailableException.class)
+    ResponseEntity<ApiError> workdayWeatherUnavailable(WorkdayWeatherUnavailableException exception) {
+        return response(HttpStatus.BAD_GATEWAY, WORKDAY_WEATHER_UNAVAILABLE);
+    }
+
     @ExceptionHandler(ProactiveTopicCooldownNotFoundException.class)
     ResponseEntity<ApiError> proactiveTopicNotFound(ProactiveTopicCooldownNotFoundException exception) {
         return response(HttpStatus.NOT_FOUND, PROACTIVE_TOPIC_NOT_FOUND);
@@ -367,6 +385,9 @@ public class DeviceApiExceptionHandler {
         }
         if (requestUri.startsWith("/api/v1/workday") && requestUri.contains("/calendar")) {
             return response(HttpStatus.BAD_REQUEST, INVALID_ICLOUD_CALENDAR);
+        }
+        if (requestUri.startsWith("/api/v1/workday") && requestUri.contains("/weather")) {
+            return response(HttpStatus.BAD_REQUEST, INVALID_WORKDAY_WEATHER);
         }
         if (requestUri.startsWith("/api/v1/workday")) {
             return response(HttpStatus.BAD_REQUEST, INVALID_WORKDAY_SETTINGS);

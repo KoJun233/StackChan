@@ -84,15 +84,22 @@ For a custom wake-word image, first complete [Custom Wake Word Model](custom-wak
 
 ## USB Provisioning Contract
 
-After the foundation logs `USB provisioning ready`, send exactly one compact provisioning JSON line over the base USB serial connection. Supply the required type, Wi-Fi network name and password, server base URL for the firmware's selected transport profile, and fresh one-time pairing code directly to the device; do not paste that line into test evidence.
+After the foundation logs `USB provisioning ready`, send exactly one compact provisioning JSON line over the base USB serial connection. Full provisioning supplies the required type, Wi-Fi network name and password, server base URL for the firmware's selected transport profile, and fresh one-time pairing code directly to the device. Firmware with server-only update support also accepts a distinct strict command containing only its type, the replacement server base URL, and a fresh one-time pairing code. Do not paste either complete line into test evidence.
 
 The preferred operator path is the Fantastic-admin page **机器人设备 → 设备配网**:
 
 1. Open the administrator UI through `http://localhost:8080` for LAN development, or an HTTPS origin for secure deployment, using the latest Microsoft Edge or Google Chrome.
 2. Close ESP-IDF monitor and any other program holding the robot serial port, connect the robot through physical USB, then choose **通过 USB 连接机器人**.
-3. Enter the Wi-Fi name and password plus the server origin that matches the flashed firmware profile, then choose **写入 Wi-Fi 配置**.
+3. Enter the Wi-Fi name and password plus the server origin that matches the flashed firmware profile, then choose **完整写入 Wi-Fi 与服务**.
 4. The page requests a fresh one-time pairing code from the server and writes the compact JSON line directly to the selected serial port. The Wi-Fi password is not sent to the server or browser storage and is cleared from the form after success or failure.
 5. Wait for the non-secret `complete` result, then confirm the device appears online. If Web Serial is unavailable, use the manual one-time pairing-code section and a trusted serial tool.
+
+When only the host address changes and the robot must keep its existing Wi-Fi configuration:
+
+1. Confirm the installed firmware supports the server-only USB command. Old firmware rejects it as `invalid_request`; the page explains that a firmware upgrade or full provisioning is required.
+2. Select the robot over USB, enter only the replacement StackChan server origin, then choose **仅更新服务地址**. The browser obtains a fresh one-time pairing code and sends no Wi-Fi field.
+3. The robot keeps the current identity and Wi-Fi configuration while it waits for Wi-Fi and claims the replacement server. A connection or claim failure leaves the previous stored identity and Wi-Fi untouched.
+4. After a successful claim, the robot saves the replacement identity, reports `complete`, and restarts so the transport reloads the new server and credentials. Confirm the same hardware device record returns online; do not interpret `complete` alone as online proof.
 
 - Default secure firmware accepts only an `https://` origin, with at most a trailing slash and no non-root path, query, fragment, or userinfo. The server certificate must chain to the ESP-IDF public CA bundle.
 - Self-signed HTTPS test firmware applies the same `https://` origin syntax, but the server must present the certificate embedded from `firmware/main/lan-test-server.pem`; the public CA bundle is not the trust source for this profile.
@@ -102,7 +109,7 @@ The preferred operator path is the Fantastic-admin page **机器人设备 → �
 - Keep the device connected through a credential refresh and confirm it reconnects successfully. This is a required check after flashing matching firmware.
 - With the same physical device and hardware identity, provision again over USB with a fresh one-time code. Confirm the replacement credentials reconnect successfully and the prior credentials no longer work. This same-hardware re-pair is also a required check after flashing matching firmware.
 - Use the temporary protocol-log procedure below, then send Stop motion and confirm the device remains physically still. The dashboard does not currently expose ACK evidence.
-- Reconfigure Wi-Fi or pair again only with physical USB access and a fresh one-time code. A valid re-provisioning request first removes the old device identity, so a failed replacement requires a new code rather than restoring the old credential.
+- Reconfigure Wi-Fi or pair again only with physical USB access and a fresh one-time code. Full provisioning first removes the old device identity, so a failed full replacement requires a new code rather than restoring the old credential. Server-only update does not clear the stored identity before the replacement server claim succeeds and never rewrites Wi-Fi.
 
 ## Protocol ACK Debug Evidence
 

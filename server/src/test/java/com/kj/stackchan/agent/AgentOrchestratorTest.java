@@ -306,6 +306,80 @@ class AgentOrchestratorTest {
     }
 
     @Test
+    void refusesToGuessWeatherWhenTheDeviceWeatherToolIsUnavailable() {
+        AgentSettingsService settingsService = mock(AgentSettingsService.class);
+        AgentToolAssemblyService assemblyService = mock(AgentToolAssemblyService.class);
+        AgentToolAuditService auditService = mock(AgentToolAuditService.class);
+        LlmRuntimeClientFactory clientFactory = mock(LlmRuntimeClientFactory.class);
+        SkillRegistry skillRegistry = mock(SkillRegistry.class);
+        AgentInvocationContext context = new AgentInvocationContext(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), AgentChannel.VOICE
+        );
+        when(settingsService.runtimeSettings()).thenReturn(new AgentSettingsService.RuntimeSettings(
+                true, true, true, Instant.parse("2026-08-25T00:00:00Z")
+        ));
+        when(assemblyService.assemble(context)).thenReturn(new AgentToolAssemblyService.AgentToolAssembly(
+                List.of(), Map.of(), skillRegistry, List.of(), Map.of(), List.of()
+        ));
+        AgentOrchestrator orchestrator = new AgentOrchestrator(
+                settingsService, assemblyService, auditService, clientFactory,
+                new ObjectMapper(), new AppProperties()
+        );
+
+        List<String> output = orchestrator.stream(new AgentOrchestrator.AgentRequest(
+                context, "你是测试助手。", List.of(), "今天会下雨吗"
+        )).collectList().block();
+
+        assertThat(output).containsExactly("我暂时无法可靠读取当前设备的天气缓存，所以不能猜测。");
+    }
+
+    @Test
+    void requiresTheDeviceWeatherToolBeforeAnsweringWeatherQuestions() {
+        AgentSettingsService settingsService = mock(AgentSettingsService.class);
+        AgentToolAssemblyService assemblyService = mock(AgentToolAssemblyService.class);
+        AgentToolAuditService auditService = mock(AgentToolAuditService.class);
+        LlmRuntimeClientFactory clientFactory = mock(LlmRuntimeClientFactory.class);
+        ChatModel chatModel = mock(ChatModel.class);
+        SkillRegistry skillRegistry = mock(SkillRegistry.class);
+        AtomicInteger executions = new AtomicInteger();
+        ToolCallback callback = ToolCallbacks.from(new WeatherTestTool(executions))[0];
+        AgentInvocationContext context = new AgentInvocationContext(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), AgentChannel.VOICE
+        );
+        when(settingsService.runtimeSettings()).thenReturn(new AgentSettingsService.RuntimeSettings(
+                true, true, true, Instant.parse("2026-08-25T00:00:00Z")
+        ));
+        when(assemblyService.assemble(context)).thenReturn(new AgentToolAssemblyService.AgentToolAssembly(
+                List.of(callback), Map.of(), skillRegistry, List.of(),
+                Map.of(CurrentDeviceWeatherTool.ID, new AgentToolPolicyInterceptor.ToolAuditMetadata(
+                        AgentToolSource.BUILTIN, null, null
+                )), List.of()
+        ));
+        when(clientFactory.createAgentChatModel()).thenReturn(chatModel);
+        when(chatModel.getDefaultOptions()).thenReturn(OpenAiChatOptions.builder().model("test-model").build());
+        when(chatModel.call(any(Prompt.class))).thenReturn(
+                response(AssistantMessage.builder()
+                        .content("")
+                        .toolCalls(List.of(new AssistantMessage.ToolCall(
+                                "call-weather", "function", CurrentDeviceWeatherTool.ID, "{}"
+                        )))
+                        .build()),
+                response(new AssistantMessage("今天有雨，记得带伞。"))
+        );
+        AgentOrchestrator orchestrator = new AgentOrchestrator(
+                settingsService, assemblyService, auditService, clientFactory,
+                new ObjectMapper(), new AppProperties()
+        );
+
+        List<String> output = orchestrator.stream(new AgentOrchestrator.AgentRequest(
+                context, "你是测试助手。", List.of(), "今天需要带伞吗"
+        )).collectList().block();
+
+        assertThat(output).containsExactly("今天有雨，记得带伞。");
+        assertThat(executions).hasValue(1);
+    }
+
+    @Test
     void readsAnEnabledManagedSkillBeforeAnswering() {
         AgentSettingsService settingsService = mock(AgentSettingsService.class);
         AgentToolAssemblyService assemblyService = mock(AgentToolAssemblyService.class);
@@ -397,6 +471,21 @@ class AgentOrchestratorTest {
         public String read() {
             executions.incrementAndGet();
             return "{\"available\":true,\"total\":1}";
+        }
+    }
+
+    public static class WeatherTestTool {
+
+        private final AtomicInteger executions;
+
+        public WeatherTestTool(AtomicInteger executions) {
+            this.executions = executions;
+        }
+
+        @Tool(name = CurrentDeviceWeatherTool.ID, description = "Return fixed weather")
+        public String read() {
+            executions.incrementAndGet();
+            return "{\"available\":true,\"summary\":\"今天有雨\"}";
         }
     }
 }

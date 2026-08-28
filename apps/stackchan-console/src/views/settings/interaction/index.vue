@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Device } from '@/api/modules/devices'
 import type { MissedReminderPolicy, ProactiveTopicCooldown, SaveInteractionSettingsInput } from '@/api/modules/interactions'
-import type { ICloudCalendarConnection, SaveWorkdaySettingsInput, WorkdayMetrics, WorkdayRuntime } from '@/api/modules/workday'
+import type { ICloudCalendarConnection, SaveWorkdaySettingsInput, WorkdayMetrics, WorkdayRuntime, WorkdayWeather, WorkdayWeatherLocationInput } from '@/api/modules/workday'
 import { toTypedSchema } from '@vee-validate/zod'
 import * as z from 'zod'
 import { listDevices } from '@/api/modules/devices'
@@ -20,9 +20,12 @@ import {
   getWorkdayMetrics,
   getWorkdayRuntime,
   getWorkdaySettings,
+  getWorkdayWeather,
   saveWorkdaySettings,
   syncICloudCalendar,
+  syncWorkdayWeather,
   testICloudCalendarConnection,
+  testWorkdayWeather,
   updateAllowedICloudCalendars,
 } from '@/api/modules/workday'
 
@@ -61,10 +64,12 @@ const resumingTopic = ref('')
 const model = ref<InteractionFormModel>(defaults())
 const workdayRuntime = ref<WorkdayRuntime | null>(null)
 const workdayMetrics = ref<WorkdayMetrics | null>(null)
+const workdayWeather = ref<WorkdayWeather | null>(null)
 const icloudConnection = ref<ICloudCalendarConnection | null>(null)
 const icloudAccountEmail = ref('')
 const icloudAppSpecificPassword = ref('')
 const calendarAction = ref<'connect' | 'disconnect' | 'save' | 'sync' | 'test' | ''>('')
+const weatherAction = ref<'sync' | 'test' | ''>('')
 
 const runtimeStateLabels: Record<WorkdayRuntime['state'], string> = {
   OFF: '未开始',
@@ -239,15 +244,17 @@ async function loadSettings(deviceId: string) {
   }
   loading.value = true
   try {
-    const [settings, workday, runtime, metrics, calendar] = await Promise.all([
+    const [settings, workday, runtime, metrics, calendar, weather] = await Promise.all([
       getInteractionSettings(deviceId),
       getWorkdaySettings(deviceId),
       getWorkdayRuntime(deviceId),
       getWorkdayMetrics(deviceId),
       getICloudCalendarConnection(deviceId),
+      getWorkdayWeather(deviceId),
     ])
     workdayRuntime.value = runtime
     workdayMetrics.value = metrics
+    workdayWeather.value = weather
     icloudConnection.value = calendar
     icloudAccountEmail.value = ''
     icloudAppSpecificPassword.value = ''
@@ -362,6 +369,7 @@ async function submit(values: InteractionFormModel) {
       saveInteractionSettings(values.deviceId, interactionInput),
       saveWorkdaySettings(values.deviceId, workdayInput),
     ])
+    workdayWeather.value = await getWorkdayWeather(values.deviceId)
     useFaToast().success('设置已保存', { description: '工作日陪伴保持默认关闭；启用后按固定规则运行。' })
   }
   catch (error) {
@@ -390,6 +398,89 @@ function workDaysMask(values: WorkdayFormFields) {
 
 function optionalCoordinate(value: string) {
   return value.trim() === '' ? null : Number(value)
+}
+
+function weatherLocationInput(): WorkdayWeatherLocationInput {
+  const latitude = optionalCoordinate(model.value.latitude)
+  const longitude = optionalCoordinate(model.value.longitude)
+  if (latitude === null || longitude === null) {
+    throw new Error('请先同时填写纬度和经度。')
+  }
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90
+    || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+    throw new Error('请填写有效的经纬度。')
+  }
+  const zoneId = model.value.workdayZoneId.trim()
+  if (!zoneId) {
+    throw new Error('请填写工作日时区。')
+  }
+  return {
+    locationName: model.value.locationName.trim(),
+    latitude,
+    longitude,
+    zoneId,
+  }
+}
+
+function weatherStatusText() {
+  if (!workdayWeather.value?.configured) {
+    return '尚未配置固定位置'
+  }
+  if (workdayWeather.value.status === 'ERROR') {
+    return '最近同步失败'
+  }
+  if (workdayWeather.value.fresh) {
+    return '天气缓存可用'
+  }
+  return workdayWeather.value.lastSyncedAt ? '天气缓存已过期' : '等待首次同步'
+}
+
+function weatherFailureText() {
+  const failure = workdayWeather.value?.lastFailureCode
+  if (!failure) {
+    return ''
+  }
+  return {
+    REQUEST_FAILED: '暂时无法访问 Open-Meteo',
+    RESPONSE_TOO_LARGE: '天气响应超过安全限制',
+    INVALID_RESPONSE: 'Open-Meteo 返回了无法识别的数据',
+  }[failure]
+}
+
+async function runWeatherAction(action: 'sync' | 'test', operation: () => Promise<void>) {
+  if (!model.value.deviceId) {
+    return
+  }
+  weatherAction.value = action
+  try {
+    await operation()
+  }
+  catch (error) {
+    useFaToast().error('天气操作失败', {
+      description: error instanceof Error ? error.message : '暂时无法读取固定位置天气。',
+    })
+  }
+  finally {
+    weatherAction.value = ''
+  }
+}
+
+async function testWeather() {
+  await runWeatherAction('test', async () => {
+    const result = await testWorkdayWeather(model.value.deviceId, weatherLocationInput())
+    useFaToast().success('天气连接测试成功', {
+      description: `${result.summary} 测试不会保存位置或天气数据。`,
+    })
+  })
+}
+
+async function syncWeather() {
+  await runWeatherAction('sync', async () => {
+    workdayWeather.value = await syncWorkdayWeather(model.value.deviceId)
+    useFaToast().success('固定位置天气已同步', {
+      description: workdayWeather.value.summary ?? '缓存有效期为 1 小时。',
+    })
+  })
 }
 
 function formatFocus(seconds: number) {
@@ -673,7 +764,7 @@ onMounted(loadDevices)
             <div class="gap-6 grid">
               <FaAlert
                 title="确定性工作状态已经持久化"
-                description="保存配置不会自动开始工作。当前状态、首次简报去重和 90 天聚合已就绪；日历、天气、传感器和舵机仍未接入。"
+                description="保存配置不会自动开始工作。当前状态、首次简报去重、90 天聚合、只读日历和固定位置天气已就绪；首次简报正文、传感器和舵机仍未接入。"
               />
               <div class="gap-4 grid lg:grid-cols-4 sm:grid-cols-2">
                 <FaCard title="当前状态" description="服务重启后从 PostgreSQL 恢复。">
@@ -768,11 +859,50 @@ onMounted(loadDevices)
                   <FaInput v-model="model.locationName" class="w-full" />
                 </FaFormItem>
                 <FaFormItem name="latitude" label="纬度" description="与经度同时填写；留空则不启用天气。">
-                  <FaInput v-model="model.latitude" type="number" step="any" class="w-full" />
+                  <FaInput v-model="model.latitude" type="text" inputmode="decimal" placeholder="例如 31.2304" class="w-full" />
                 </FaFormItem>
                 <FaFormItem name="longitude" label="经度" description="数据源固定为 Open-Meteo。">
-                  <FaInput v-model="model.longitude" type="number" step="any" class="w-full" />
+                  <FaInput v-model="model.longitude" type="text" inputmode="decimal" placeholder="例如 121.4737" class="w-full" />
                 </FaFormItem>
+              </div>
+              <div class="pt-6 border-t gap-5 grid">
+                <FaAlert
+                  title="Open-Meteo 固定位置天气"
+                  description="使用当前填写的位置可先做无保存测试；保存设置后再手动同步。服务端每小时刷新一次，只缓存当前及今明两天的必要字段。"
+                />
+                <div class="flex flex-wrap gap-3 items-center justify-between">
+                  <div>
+                    <div class="font-medium">
+                      {{ weatherStatusText() }}
+                      <span v-if="workdayWeather?.locationName" class="text-muted-foreground font-normal"> · {{ workdayWeather.locationName }}</span>
+                    </div>
+                    <div class="text-sm text-muted-foreground mt-1">
+                      <span v-if="weatherFailureText()">{{ weatherFailureText() }} · </span>
+                      <span v-if="workdayWeather?.lastSyncedAt">上次同步 {{ new Date(workdayWeather.lastSyncedAt).toLocaleString() }}</span>
+                      <span v-else>尚无天气缓存</span>
+                      <span v-if="workdayWeather?.cacheExpiresAt"> · 有效至 {{ new Date(workdayWeather.cacheExpiresAt).toLocaleString() }}</span>
+                    </div>
+                    <p v-if="workdayWeather?.summary" class="text-sm mt-2">
+                      {{ workdayWeather.summary }}
+                    </p>
+                  </div>
+                  <a href="https://open-meteo.com/" target="_blank" rel="noreferrer" class="text-sm text-primary underline-offset-4 hover:underline">
+                    天气数据：Open-Meteo
+                  </a>
+                </div>
+                <div class="flex flex-wrap gap-3">
+                  <FaButton type="button" variant="outline" :loading="weatherAction === 'test'" @click="testWeather">
+                    测试当前填写位置
+                  </FaButton>
+                  <FaButton
+                    type="button"
+                    :disabled="!workdayWeather?.configured"
+                    :loading="weatherAction === 'sync'"
+                    @click="syncWeather"
+                  >
+                    同步已保存位置
+                  </FaButton>
+                </div>
               </div>
               <div class="pt-6 border-t gap-5 grid">
                 <FaAlert

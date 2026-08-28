@@ -5,6 +5,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.kj.stackchan.calendar.ICloudCalendarService;
+import com.kj.stackchan.weather.WorkdayWeatherService;
 import com.kj.stackchan.workday.WorkdaySettingsService;
 import com.kj.stackchan.workday.WorkdayRuntimeService;
 import jakarta.validation.Valid;
@@ -31,15 +32,18 @@ public class WorkdaySettingsController {
     private final WorkdaySettingsService settingsService;
     private final WorkdayRuntimeService runtimeService;
     private final ICloudCalendarService calendarService;
+    private final WorkdayWeatherService weatherService;
 
     public WorkdaySettingsController(
             WorkdaySettingsService settingsService,
             WorkdayRuntimeService runtimeService,
-            ICloudCalendarService calendarService
+            ICloudCalendarService calendarService,
+            WorkdayWeatherService weatherService
     ) {
         this.settingsService = settingsService;
         this.runtimeService = runtimeService;
         this.calendarService = calendarService;
+        this.weatherService = weatherService;
     }
 
     @GetMapping("/{deviceId}/settings")
@@ -52,7 +56,9 @@ public class WorkdaySettingsController {
             @PathVariable UUID deviceId,
             @Valid @RequestBody WorkdaySettingsRequest request
     ) {
-        return settingsService.save(deviceId, request.toCommand());
+        WorkdaySettingsService.WorkdaySettingsSnapshot saved = settingsService.save(deviceId, request.toCommand());
+        weatherService.settingsChanged(saved);
+        return saved;
     }
 
     @GetMapping("/{deviceId}/runtime")
@@ -107,6 +113,24 @@ public class WorkdaySettingsController {
         calendarService.disconnect(deviceId);
     }
 
+    @GetMapping("/{deviceId}/weather")
+    public WorkdayWeatherService.WeatherSnapshot weather(@PathVariable UUID deviceId) {
+        return weatherService.get(deviceId);
+    }
+
+    @PostMapping(path = "/{deviceId}/weather/connection:test", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public WorkdayWeatherService.WeatherTestSnapshot testWeather(
+            @PathVariable UUID deviceId,
+            @Valid @RequestBody WeatherLocationRequest request
+    ) {
+        return weatherService.test(deviceId, request.toCommand());
+    }
+
+    @PostMapping("/{deviceId}/weather/sync")
+    public WorkdayWeatherService.WeatherSnapshot syncWeather(@PathVariable UUID deviceId) {
+        return weatherService.sync(deviceId);
+    }
+
     public record WorkdaySettingsRequest(
             boolean enabled,
             @Min(1) @Max(127) int workDaysMask,
@@ -139,4 +163,15 @@ public class WorkdaySettingsController {
     }
 
     public record AllowedCalendarsRequest(@NotNull Set<UUID> allowedCalendarIds) { }
+
+    public record WeatherLocationRequest(
+            @NotNull @Size(max = 120) String locationName,
+            @NotNull @Min(-90) @Max(90) Double latitude,
+            @NotNull @Min(-180) @Max(180) Double longitude,
+            @NotBlank @Size(max = 80) String zoneId
+    ) {
+        WorkdayWeatherService.LocationCommand toCommand() {
+            return new WorkdayWeatherService.LocationCommand(locationName, latitude, longitude, zoneId);
+        }
+    }
 }

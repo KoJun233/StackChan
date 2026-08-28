@@ -113,6 +113,63 @@ export interface ICloudCalendarConnectionTest {
   ok: boolean
 }
 
+export type WorkdayWeatherStatus = 'READY' | 'ERROR'
+export type WorkdayWeatherFailureCode = 'REQUEST_FAILED' | 'RESPONSE_TOO_LARGE' | 'INVALID_RESPONSE'
+
+export interface WorkdayWeatherCurrent {
+  apparentTemperature: number
+  description: string
+  observedAt: string
+  precipitation: number
+  temperature: number
+  weatherCode: number
+}
+
+export interface WorkdayWeatherDaily {
+  apparentTemperatureMax: number
+  apparentTemperatureMin: number
+  date: string
+  description: string
+  precipitationProbabilityMax: number
+  precipitationSum: number
+  temperatureMax: number
+  temperatureMin: number
+  weatherCode: number
+}
+
+export interface WorkdayWeather {
+  cacheExpiresAt: string | null
+  configured: boolean
+  current: WorkdayWeatherCurrent | null
+  daily: WorkdayWeatherDaily[]
+  deviceId: string
+  fresh: boolean
+  lastAttemptedAt: string | null
+  lastFailureCode: WorkdayWeatherFailureCode | null
+  lastSyncedAt: string | null
+  locationName: string
+  status: WorkdayWeatherStatus | null
+  summary: string | null
+  zoneId: string
+}
+
+export interface WorkdayWeatherLocationInput {
+  latitude: number
+  locationName: string
+  longitude: number
+  zoneId: string
+}
+
+export interface WorkdayWeatherTest {
+  current: WorkdayWeatherCurrent
+  daily: WorkdayWeatherDaily[]
+  locationName: string
+  observedAt: string
+  ok: boolean
+  summary: string
+  zoneId: string
+}
+
 export type SaveWorkdaySettingsInput = Omit<
   WorkdaySettings,
   'deviceId' | 'updatedAt' | 'weatherLocationConfigured'
@@ -184,4 +241,23 @@ export function syncICloudCalendar(deviceId: string): Promise<ICloudCalendarConn
 
 export function disconnectICloudCalendar(deviceId: string): Promise<void> {
   return apiJson(`/api/v1/workday/${encodeURIComponent(deviceId)}/calendar/connection`, { method: 'DELETE' })
+}
+
+export function getWorkdayWeather(deviceId: string): Promise<WorkdayWeather> {
+  return apiJson(`/api/v1/workday/${encodeURIComponent(deviceId)}/weather`)
+}
+
+export function testWorkdayWeather(
+  deviceId: string,
+  input: WorkdayWeatherLocationInput,
+): Promise<WorkdayWeatherTest> {
+  return apiJson(`/api/v1/workday/${encodeURIComponent(deviceId)}/weather/connection:test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+}
+
+export function syncWorkdayWeather(deviceId: string): Promise<WorkdayWeather> {
+  return apiJson(`/api/v1/workday/${encodeURIComponent(deviceId)}/weather/sync`, { method: 'POST' })
 }
