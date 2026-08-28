@@ -52,3 +52,4 @@
 | [0039](0039-native-renderer-with-bounded-eaf-lifecycle-clips.md) | ACCEPTED | 原生 LVGL 继续负责连续表情，官方 EAF 只承担已验收的有限时长生命周期片段。 |
 | [0040](0040-versioned-expression-pack-container.md) | ACCEPTED | V1 PNG 与 V2 生命周期 EAF 共享互斥 A/B 资源槽，原生渲染始终作为连续与安全回退。 |
 | [0041](0041-private-first-deterministic-workday-companion.md) | ACCEPTED | 先以确定性日程、天气、在场、休息和有限动作建立私用工作日陪伴闭环，再依据长期使用数据开放后继能力。 |
+| [0042](0042-local-first-k151-body-safety.md) | ACCEPTED | K151 动作默认禁用，由本地校准、反馈、固定模板、软限位和停止门控最终裁决。 |

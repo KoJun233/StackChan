@@ -7,6 +7,8 @@ import java.util.UUID;
 import com.kj.stackchan.calendar.ICloudCalendarService;
 import com.kj.stackchan.weather.WorkdayWeatherService;
 import com.kj.stackchan.workday.WorkdaySettingsService;
+import com.kj.stackchan.workday.WorkdayCompanionService;
+import com.kj.stackchan.workday.WorkdayRestAction;
 import com.kj.stackchan.workday.WorkdayRuntimeService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -15,6 +17,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.MediaType;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,19 +34,32 @@ public class WorkdaySettingsController {
 
     private final WorkdaySettingsService settingsService;
     private final WorkdayRuntimeService runtimeService;
+    private final WorkdayCompanionService companionService;
     private final ICloudCalendarService calendarService;
     private final WorkdayWeatherService weatherService;
 
+    @Autowired
     public WorkdaySettingsController(
             WorkdaySettingsService settingsService,
             WorkdayRuntimeService runtimeService,
+            WorkdayCompanionService companionService,
             ICloudCalendarService calendarService,
             WorkdayWeatherService weatherService
     ) {
         this.settingsService = settingsService;
         this.runtimeService = runtimeService;
+        this.companionService = companionService;
         this.calendarService = calendarService;
         this.weatherService = weatherService;
+    }
+
+    WorkdaySettingsController(
+            WorkdaySettingsService settingsService,
+            WorkdayRuntimeService runtimeService,
+            ICloudCalendarService calendarService,
+            WorkdayWeatherService weatherService
+    ) {
+        this(settingsService, runtimeService, null, calendarService, weatherService);
     }
 
     @GetMapping("/{deviceId}/settings")
@@ -64,6 +80,24 @@ public class WorkdaySettingsController {
     @GetMapping("/{deviceId}/runtime")
     public WorkdayRuntimeService.WorkdayRuntimeSnapshot runtime(@PathVariable UUID deviceId) {
         return runtimeService.get(deviceId);
+    }
+
+    @PostMapping("/{deviceId}/runtime:start")
+    public WorkdayRuntimeService.WorkdayRuntimeSnapshot start(@PathVariable UUID deviceId) {
+        return companionService.start(deviceId);
+    }
+
+    @PostMapping("/{deviceId}/runtime:stop")
+    public WorkdayRuntimeService.WorkdayRuntimeSnapshot stop(@PathVariable UUID deviceId) {
+        return companionService.stop(deviceId);
+    }
+
+    @PostMapping(path = "/{deviceId}/rest:respond", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public WorkdayRuntimeService.WorkdayRuntimeSnapshot respondToRest(
+            @PathVariable UUID deviceId,
+            @Valid @RequestBody WorkdayRestResponseRequest request
+    ) {
+        return companionService.respondToRest(deviceId, request.action());
     }
 
     @GetMapping("/{deviceId}/metrics")
@@ -174,4 +208,6 @@ public class WorkdaySettingsController {
             return new WorkdayWeatherService.LocationCommand(locationName, latitude, longitude, zoneId);
         }
     }
+
+    public record WorkdayRestResponseRequest(@NotNull WorkdayRestAction action) { }
 }

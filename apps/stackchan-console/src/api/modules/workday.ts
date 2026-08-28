@@ -28,6 +28,7 @@ export type WorkdayRuntimeState
     | 'SKIPPED_FOR_DAY'
 
 export type WorkdayBriefStatus = 'PENDING' | 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'CANCELLED'
+export type WorkdayRestAction = 'START_REST' | 'SNOOZE' | 'SKIP_FOR_DAY'
 
 export interface WorkdayRuntime {
   absenceStartedAt: string | null
@@ -192,6 +193,25 @@ export function saveWorkdaySettings(
 
 export function getWorkdayRuntime(deviceId: string): Promise<WorkdayRuntime> {
   return apiJson(`/api/v1/workday/${encodeURIComponent(deviceId)}/runtime`)
+}
+
+export function startWorkday(deviceId: string): Promise<WorkdayRuntime> {
+  return apiJson(`/api/v1/workday/${encodeURIComponent(deviceId)}/runtime:start`, { method: 'POST' })
+}
+
+export function stopWorkday(deviceId: string): Promise<WorkdayRuntime> {
+  return apiJson(`/api/v1/workday/${encodeURIComponent(deviceId)}/runtime:stop`, { method: 'POST' })
+}
+
+export function respondToWorkdayRest(
+  deviceId: string,
+  action: WorkdayRestAction,
+): Promise<WorkdayRuntime> {
+  return apiJson(`/api/v1/workday/${encodeURIComponent(deviceId)}/rest:respond`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }),
+  })
 }
 
 export function getWorkdayMetrics(deviceId: string, days = 90): Promise<WorkdayMetrics> {

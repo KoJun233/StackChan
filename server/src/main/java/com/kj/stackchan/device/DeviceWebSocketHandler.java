@@ -49,6 +49,26 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             "type", "sequence", "battery_percent", "rssi", "safety_state", "firmware_version",
             "application_ota_supported", "dynamic_expression_supported", "expression"
     );
+    private static final Set<String> HEARTBEAT_WITH_BODY_FIELDS = Set.of(
+            "type", "sequence", "battery_percent", "rssi", "safety_state", "firmware_version",
+            "application_ota_supported", "dynamic_expression_supported", "expression",
+            "body_motion_supported", "body_touch_supported", "proximity_supported",
+            "ambient_light_supported", "servo_feedback_supported", "body"
+    );
+    private static final Set<String> BODY_DIAGNOSTIC_FIELDS = Set.of(
+            "calibrated", "present", "ambient_light", "motion_state",
+            "last_failure_code", "failure_count"
+    );
+    private static final Set<String> AMBIENT_LIGHT_VALUES = Set.of(
+            "UNAVAILABLE", "DARK", "DIM", "NORMAL", "BRIGHT"
+    );
+    private static final Set<String> BODY_MOTION_STATES = Set.of("DISABLED", "ARMED", "RUNNING");
+    private static final Set<String> BODY_FAILURE_CODES = Set.of(
+            "NONE", "CAPABILITY_MISSING", "NOT_CALIBRATED", "ADMIN_DISABLED",
+            "AUDIO_BUSY", "OFFLINE", "UPDATING", "DEVICE_ERROR", "BUSY",
+            "SOFT_LIMIT", "TIMEOUT", "TOUCH_STOP", "VOICE_STOP",
+            "FEEDBACK_FAULT", "HARDWARE_FAILURE"
+    );
     private static final Set<String> EXPRESSION_DIAGNOSTIC_FIELDS = Set.of(
             "target_fps", "actual_fps", "draw_time_us", "transfer_time_us",
             "display_lock_wait_us", "dropped_frames", "audio_underruns", "minimum_free_heap",
@@ -91,6 +111,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     private static final Set<String> VOICE_TURN_FAILURE_FIELDS = Set.of(
             "type", "sequence", "turn_id", "stage", "elapsed_ms", "failure_code"
     );
+    private static final Set<String> WORKDAY_TOGGLE_FIELDS = Set.of("type", "sequence");
     private static final int MAX_VOICE_TURN_ELAPSED_MS = 300_000;
 
     private final DeviceConnectionRegistry connectionRegistry;
@@ -310,14 +331,21 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
 
     private void processEvent(UUID deviceId, WebSocketSession session, DeviceInboundEvent event) {
         if (event instanceof HeartbeatEvent heartbeat) {
-            if (heartbeat.expression() == null) {
+            if (heartbeat.body() != null) {
                 deviceEventService.recordHeartbeat(
                         deviceId, heartbeat.safetyState(), heartbeat.firmwareVersion(),
-                        heartbeat.rssi(), heartbeat.applicationOtaSupported());
-            } else {
+                        heartbeat.rssi(), heartbeat.applicationOtaSupported(),
+                        heartbeat.expression(), heartbeat.body());
+            } else if (heartbeat.expression() != null) {
                 deviceEventService.recordHeartbeat(
                         deviceId, heartbeat.safetyState(), heartbeat.firmwareVersion(),
                         heartbeat.rssi(), heartbeat.applicationOtaSupported(), heartbeat.expression());
+            } else {
+                deviceEventService.recordHeartbeat(
+                        deviceId, heartbeat.safetyState(), heartbeat.firmwareVersion(),
+                        heartbeat.rssi(), heartbeat.applicationOtaSupported());
+            }
+            if (heartbeat.expression() != null) {
                 if (deviceExpressionService != null) {
                     if (!Boolean.TRUE.equals(session.getAttributes().get(EXPRESSION_THEME_SYNCED_ATTRIBUTE)) &&
                             deviceExpressionService.synchronizeActiveRoleTheme(deviceId)) {
@@ -379,6 +407,14 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             }
             return;
         }
+        if (event instanceof WorkdayToggleEvent) {
+            try {
+                deviceEventService.toggleWorkday(deviceId);
+            } catch (RuntimeException exception) {
+                logger.warn("Workday toggle rejected for device={}", deviceId);
+            }
+            return;
+        }
         CommandAcknowledgementEvent acknowledgement = (CommandAcknowledgementEvent) event;
         logger.debug(
                 "Device {} acknowledged command {} with accepted={} result={}",
@@ -412,6 +448,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
                 case "wake_model_status" -> parseWakeModelStatus(root);
                 case "firmware_update_status" -> parseFirmwareUpdateStatus(root);
                 case "voice_turn_stage" -> parseVoiceTurnStage(root);
+                case "workday_toggle" -> parseWorkdayToggle(root);
                 default -> throw new InvalidDeviceEventException();
             };
         } catch (IOException exception) {
@@ -430,7 +467,8 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         }
         int rssi = requiredInteger(root, "rssi");
         String safetyState = requiredText(root, "safety_state");
-        if (!DeviceEventService.MOTION_DISABLED.equals(safetyState)) {
+        if (!DeviceEventService.MOTION_DISABLED.equals(safetyState) &&
+                !DeviceEventService.MOTION_ARMED.equals(safetyState)) {
             throw new InvalidDeviceEventException();
         }
         String firmwareVersion = root.has("firmware_version") ? requiredText(root, "firmware_version") : null;
@@ -451,10 +489,56 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             if (!supported.isBoolean() || !supported.booleanValue()) throw new InvalidDeviceEventException();
             expression = parseExpressionDiagnostics(root.get("expression"));
         }
+        DeviceBodyDiagnostics body = null;
+        if (root.has("body")) {
+            body = parseBodyDiagnostics(root);
+            boolean armedBody = "ARMED".equals(body.motionState()) ||
+                    "RUNNING".equals(body.motionState());
+            if ((DeviceEventService.MOTION_ARMED.equals(safetyState) && !armedBody) ||
+                    (DeviceEventService.MOTION_DISABLED.equals(safetyState) && armedBody)) {
+                throw new InvalidDeviceEventException();
+            }
+        }
         return new HeartbeatEvent(
                 sequence, batteryPercent, rssi, safetyState, firmwareVersion, applicationOtaSupported,
-                expression
+                expression, body
         );
+    }
+
+    private WorkdayToggleEvent parseWorkdayToggle(JsonNode root) {
+        requireOnlyFields(root, WORKDAY_TOGGLE_FIELDS);
+        return new WorkdayToggleEvent(requiredPositiveSequence(root));
+    }
+
+    private DeviceBodyDiagnostics parseBodyDiagnostics(JsonNode root) {
+        JsonNode value = root.get("body");
+        if (value == null || !value.isObject()) throw new InvalidDeviceEventException();
+        requireOnlyFields(value, BODY_DIAGNOSTIC_FIELDS);
+        boolean bodyMotionSupported = requiredBoolean(root, "body_motion_supported");
+        boolean bodyTouchSupported = requiredBoolean(root, "body_touch_supported");
+        boolean proximitySupported = requiredBoolean(root, "proximity_supported");
+        boolean ambientLightSupported = requiredBoolean(root, "ambient_light_supported");
+        boolean servoFeedbackSupported = requiredBoolean(root, "servo_feedback_supported");
+        boolean calibrated = requiredBoolean(value, "calibrated");
+        boolean present = requiredBoolean(value, "present");
+        String ambientLight = requiredText(value, "ambient_light");
+        String motionState = requiredText(value, "motion_state");
+        String failureCode = requiredText(value, "last_failure_code");
+        long failureCount = requiredNonnegativeLong(value, "failure_count");
+        if (!AMBIENT_LIGHT_VALUES.contains(ambientLight) ||
+                !BODY_MOTION_STATES.contains(motionState) ||
+                !BODY_FAILURE_CODES.contains(failureCode) ||
+                (!ambientLightSupported && !"UNAVAILABLE".equals(ambientLight)) ||
+                (!proximitySupported && present) ||
+                (servoFeedbackSupported && !bodyMotionSupported) ||
+                (("ARMED".equals(motionState) || "RUNNING".equals(motionState)) &&
+                        (!bodyMotionSupported || !servoFeedbackSupported || !calibrated))) {
+            throw new InvalidDeviceEventException();
+        }
+        return new DeviceBodyDiagnostics(
+                bodyMotionSupported, bodyTouchSupported, proximitySupported,
+                ambientLightSupported, servoFeedbackSupported, calibrated, present,
+                ambientLight, motionState, failureCode, failureCount);
     }
 
     private DeviceExpressionDiagnostics parseExpressionDiagnostics(JsonNode value) {
@@ -610,6 +694,12 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         return field.longValue();
     }
 
+    private boolean requiredBoolean(JsonNode root, String fieldName) {
+        JsonNode field = root.get(fieldName);
+        if (field == null || !field.isBoolean()) throw new InvalidDeviceEventException();
+        return field.booleanValue();
+    }
+
     private String requiredText(JsonNode root, String fieldName) {
         JsonNode field = root.get(fieldName);
         if (field == null || !field.isTextual() || field.textValue().isBlank()) {
@@ -645,7 +735,9 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
                 || (root.size() == HEARTBEAT_WITH_OTA_FIELDS.size() && root.properties().stream()
                 .allMatch(entry -> HEARTBEAT_WITH_OTA_FIELDS.contains(entry.getKey())))
                 || (root.size() == HEARTBEAT_WITH_EXPRESSION_FIELDS.size() && root.properties().stream()
-                .allMatch(entry -> HEARTBEAT_WITH_EXPRESSION_FIELDS.contains(entry.getKey())));
+                .allMatch(entry -> HEARTBEAT_WITH_EXPRESSION_FIELDS.contains(entry.getKey())))
+                || (root.size() == HEARTBEAT_WITH_BODY_FIELDS.size() && root.properties().stream()
+                .allMatch(entry -> HEARTBEAT_WITH_BODY_FIELDS.contains(entry.getKey())));
     }
 
     private AtomicLong lastSequence(WebSocketSession session) {
@@ -668,10 +760,12 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     }
 
     private sealed interface DeviceInboundEvent permits HeartbeatEvent, CommandAcknowledgementEvent,
-            WakeModelStatusEvent, FirmwareUpdateStatusEvent, VoiceTurnStageEvent {
+            WakeModelStatusEvent, FirmwareUpdateStatusEvent, VoiceTurnStageEvent, WorkdayToggleEvent {
 
         long sequence();
     }
+
+    private record WorkdayToggleEvent(long sequence) implements DeviceInboundEvent { }
 
     private record HeartbeatEvent(
             long sequence,
@@ -680,7 +774,8 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             String safetyState,
             String firmwareVersion,
             boolean applicationOtaSupported,
-            DeviceExpressionDiagnostics expression
+            DeviceExpressionDiagnostics expression,
+            DeviceBodyDiagnostics body
     )
             implements DeviceInboundEvent {
     }

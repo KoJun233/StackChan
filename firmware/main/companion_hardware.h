@@ -73,6 +73,9 @@ void companion_hardware_request_playback_stop(void);
 /** Applies server-controlled speaker volume and display night mode. */
 esp_err_t companion_hardware_configure_interaction(int volume_percent, bool night_mode);
 
+/** Applies a bounded ambient-light brightness target without changing workday state. */
+esp_err_t companion_hardware_set_ambient_brightness(int brightness_percent);
+
 /** Waits for a bounded touch edge emitted by the UI task. */
 bool companion_hardware_wait_touch_event(companion_touch_event_t *event, uint32_t timeout_ms);
 
@@ -93,6 +96,9 @@ esp_err_t companion_hardware_preview_expression(companion_expression_preview_t p
 
 /** Copies privacy-safe renderer diagnostics for the next heartbeat. */
 void companion_hardware_get_expression_diagnostics(companion_expression_diagnostics_t *diagnostics);
+
+/** Reports only local busy/error gates used by the body-motion safety policy. */
+void companion_hardware_get_motion_guard(bool *audio_busy, bool *updating, bool *device_error);
 
 /** Gives firmware installation a deterministic highest-priority blue-violet state. */
 void companion_hardware_set_expression_updating(bool updating);

@@ -6,6 +6,7 @@
 #include "freertos/task.h"
 
 #include "companion_hardware.h"
+#include "body_hardware.h"
 #include "device_identity.h"
 #include "device_provisioning.h"
 #include "device_transport.h"
@@ -59,6 +60,13 @@ void app_main(void)
     if (nvs_err != ESP_OK) {
         ESP_LOGE(TAG, "Encrypted NVS initialization failed: %s", esp_err_to_name(nvs_err));
         return;
+    }
+    if (hardware_err == ESP_OK) {
+        esp_err_t body_err = body_hardware_init();
+        if (body_err != ESP_OK) {
+            ESP_LOGW(TAG, "K151 body hardware unavailable; display and voice continue safely: %s",
+                     esp_err_to_name(body_err));
+        }
     }
     esp_err_t expression_err = expression_pack_init();
     if (expression_err != ESP_OK) {

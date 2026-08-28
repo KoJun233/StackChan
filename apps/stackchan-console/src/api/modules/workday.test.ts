@@ -7,7 +7,10 @@ import {
   getWorkdayRuntime,
   getWorkdaySettings,
   getWorkdayWeather,
+  respondToWorkdayRest,
   saveWorkdaySettings,
+  startWorkday,
+  stopWorkday,
   syncICloudCalendar,
   syncWorkdayWeather,
   testICloudCalendarConnection,
@@ -72,6 +75,29 @@ describe('workday settings API', () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, `/api/v1/workday/${deviceId}/runtime`, expect.any(Object))
     expect(fetchMock).toHaveBeenNthCalledWith(2, `/api/v1/workday/${deviceId}/metrics?days=90`, expect.any(Object))
+  })
+
+  it('uses explicit workday lifecycle and rest response endpoints', async () => {
+    const deviceId = 'a88e4a94-8536-4fa1-91ed-8681b597429d'
+    const fetchMock = vi.fn()
+    for (let index = 0; index < 3; index += 1) {
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ deviceId, state: 'ACTIVE_PRESENT' }), {
+        headers: { 'Content-Type': 'application/json' },
+      }))
+    }
+    vi.stubGlobal('document', { cookie: '' })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await startWorkday(deviceId)
+    await respondToWorkdayRest(deviceId, 'SNOOZE')
+    await stopWorkday(deviceId)
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, `/api/v1/workday/${deviceId}/runtime:start`, expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, `/api/v1/workday/${deviceId}/rest:respond`, expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ action: 'SNOOZE' }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, `/api/v1/workday/${deviceId}/runtime:stop`, expect.objectContaining({ method: 'POST' }))
   })
 
   it('uses explicit read-only calendar management endpoints', async () => {

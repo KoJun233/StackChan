@@ -15,6 +15,7 @@
 typedef enum {
     DEVICE_PROVISIONING_REQUEST_FULL = 0,
     DEVICE_PROVISIONING_REQUEST_SERVER_ONLY,
+    DEVICE_PROVISIONING_REQUEST_BODY_CALIBRATION,
 } device_provisioning_request_kind_t;
 
 typedef struct {
@@ -28,7 +29,8 @@ typedef struct {
 /**
  * Parses one strict USB provisioning JSON request without retaining its source
  * buffer. Full provisioning includes Wi-Fi, server, and pairing fields; a
- * server-only update includes only the server and pairing fields.
+ * server-only update includes only the server and pairing fields. The physical
+ * body calibration diagnostic accepts no fields beyond its exact request type.
  */
 bool device_provisioning_parse_request(const char *payload,
                                        size_t payload_length,

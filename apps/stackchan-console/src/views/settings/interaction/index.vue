@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import type { Device } from '@/api/modules/devices'
+import type { BodyMotion, Device } from '@/api/modules/devices'
 import type { MissedReminderPolicy, ProactiveTopicCooldown, SaveInteractionSettingsInput } from '@/api/modules/interactions'
-import type { ICloudCalendarConnection, SaveWorkdaySettingsInput, WorkdayMetrics, WorkdayRuntime, WorkdayWeather, WorkdayWeatherLocationInput } from '@/api/modules/workday'
+import type { ICloudCalendarConnection, SaveWorkdaySettingsInput, WorkdayMetrics, WorkdayRestAction, WorkdayRuntime, WorkdayWeather, WorkdayWeatherLocationInput } from '@/api/modules/workday'
 import { toTypedSchema } from '@vee-validate/zod'
 import * as z from 'zod'
-import { listDevices } from '@/api/modules/devices'
+import {
+  calibrateDeviceBody,
+  configureDeviceBodyMotion,
+  listDevices,
+  playDeviceBodyMotion,
+  stopDeviceMotion,
+} from '@/api/modules/devices'
 import {
   getInteractionSettings,
   listProactiveTopics,
@@ -21,7 +27,10 @@ import {
   getWorkdayRuntime,
   getWorkdaySettings,
   getWorkdayWeather,
+  respondToWorkdayRest,
   saveWorkdaySettings,
+  startWorkday,
+  stopWorkday,
   syncICloudCalendar,
   syncWorkdayWeather,
   testICloudCalendarConnection,
@@ -70,6 +79,16 @@ const icloudAccountEmail = ref('')
 const icloudAppSpecificPassword = ref('')
 const calendarAction = ref<'connect' | 'disconnect' | 'save' | 'sync' | 'test' | ''>('')
 const weatherAction = ref<'sync' | 'test' | ''>('')
+const workdayAction = ref<'start' | 'stop' | WorkdayRestAction | ''>('')
+const bodyAction = ref<'calibrate' | 'disable' | 'enable' | BodyMotion | ''>('')
+
+const bodyMotions: { label: string, value: BodyMotion }[] = [
+  { label: '唤醒', value: 'WAKE' },
+  { label: '看向主人', value: 'LOOK_USER' },
+  { label: '轻点头', value: 'NOD_SMALL' },
+  { label: '思考', value: 'THINK' },
+  { label: '困倦', value: 'DROWSY' },
+]
 
 const runtimeStateLabels: Record<WorkdayRuntime['state'], string> = {
   OFF: '未开始',
@@ -93,6 +112,8 @@ const deviceOptions = computed(() => devices.value.map(device => ({
   label: `${device.displayName} · ${device.online ? '在线' : '离线'}`,
   value: device.id,
 })))
+
+const selectedDevice = computed(() => devices.value.find(device => device.id === model.value.deviceId) ?? null)
 
 const missedPolicyOptions: { label: string, value: MissedReminderPolicy }[] = [
   { label: '恢复在线后立即播放', value: 'PLAY_NOW' },
@@ -612,6 +633,76 @@ async function stopAudio() {
   }
 }
 
+async function runWorkdayAction(
+  action: 'start' | 'stop' | WorkdayRestAction,
+  operation: () => Promise<WorkdayRuntime>,
+) {
+  if (!model.value.deviceId || workdayAction.value) {
+    return
+  }
+  workdayAction.value = action
+  try {
+    workdayRuntime.value = await operation()
+    workdayMetrics.value = await getWorkdayMetrics(model.value.deviceId)
+    useFaToast().success('工作状态已更新')
+  }
+  catch (error) {
+    useFaToast().error('工作状态更新失败', {
+      description: error instanceof Error ? error.message : '当前无法执行这项工作操作。',
+    })
+  }
+  finally {
+    workdayAction.value = ''
+  }
+}
+
+async function beginWorkday() {
+  await runWorkdayAction('start', () => startWorkday(model.value.deviceId))
+}
+
+async function endWorkday() {
+  await runWorkdayAction('stop', () => stopWorkday(model.value.deviceId))
+}
+
+async function respondToRest(action: WorkdayRestAction) {
+  await runWorkdayAction(action, () => respondToWorkdayRest(model.value.deviceId, action))
+}
+
+async function runBodyAction(action: typeof bodyAction.value, operation: () => Promise<void>, message: string) {
+  if (!model.value.deviceId || bodyAction.value) {
+    return
+  }
+  bodyAction.value = action
+  try {
+    await operation()
+    useFaToast().success(message, { description: '命令已送达设备，实际结果以下一次心跳诊断为准。' })
+  }
+  catch (error) {
+    useFaToast().error('身体动作命令失败', {
+      description: error instanceof Error ? error.message : '机器人当前无法接收命令。',
+    })
+  }
+  finally {
+    bodyAction.value = ''
+  }
+}
+
+async function calibrateBody() {
+  await runBodyAction('calibrate', () => calibrateDeviceBody(model.value.deviceId), '已下发中位校准')
+}
+
+async function configureBody(enabled: boolean) {
+  await runBodyAction(enabled ? 'enable' : 'disable', () => configureDeviceBodyMotion(model.value.deviceId, enabled), enabled ? '已请求启用身体动作' : '已禁用身体动作')
+}
+
+async function playBody(motion: BodyMotion) {
+  await runBodyAction(motion, () => playDeviceBodyMotion(model.value.deviceId, motion), '已下发固定动作')
+}
+
+async function stopBody() {
+  await runBodyAction('disable', () => stopDeviceMotion(model.value.deviceId), '已发送本地停止命令')
+}
+
 watch(() => model.value.deviceId, (deviceId, previous) => {
   if (deviceId && deviceId !== previous) {
     loadSettings(deviceId)
@@ -669,6 +760,95 @@ onMounted(loadDevices)
               >
                 <FaNumberField v-model="model.followUpWindowSeconds" :min="3" :max="8" class="w-full" />
               </FaFormItem>
+            </div>
+          </FaCard>
+
+          <FaCard title="K151 安全身体感" class="md:col-span-2">
+            <div class="gap-5 grid">
+              <FaAlert
+                title="动作默认关闭，校准不会主动转动舵机"
+                description="先扶正头部并执行中位校准，再显式启用。固件只接受下列五种固定动作；录音、播报、升级、离线、触摸停止、超时或反馈异常都会拒绝或立即断电。"
+              />
+              <div class="gap-4 grid lg:grid-cols-4 sm:grid-cols-2">
+                <FaCard title="运动安全状态">
+                  <p class="text-lg font-semibold">
+                    {{ selectedDevice?.body.motionState === 'RUNNING' ? '动作中' : selectedDevice?.body.motionState === 'ARMED' ? '已启用' : '已禁用' }}
+                  </p>
+                  <p class="text-sm text-muted-foreground mt-1">
+                    {{ selectedDevice?.body.calibrated ? '已校准中位' : '尚未校准' }} · {{ selectedDevice?.body.servoFeedbackSupported ? '反馈正常' : '反馈未验证' }}
+                  </p>
+                </FaCard>
+                <FaCard title="在场感知">
+                  <p class="text-lg font-semibold">
+                    {{ selectedDevice?.body.proximitySupported ? (selectedDevice.body.present ? '检测到在场' : '当前未在场') : '不支持' }}
+                  </p>
+                  <p class="text-sm text-muted-foreground mt-1">
+                    只上报布尔结果，不保存原始距离
+                  </p>
+                </FaCard>
+                <FaCard title="环境光">
+                  <p class="text-lg font-semibold">
+                    {{ selectedDevice?.body.ambientLightSupported ? selectedDevice.body.ambientLight : '不可用' }}
+                  </p>
+                  <p class="text-sm text-muted-foreground mt-1">
+                    仅 DARK / DIM / NORMAL / BRIGHT 档位
+                  </p>
+                </FaCard>
+                <FaCard title="最近安全诊断">
+                  <p class="text-lg font-semibold">
+                    {{ selectedDevice?.body.lastFailureCode ?? 'NONE' }}
+                  </p>
+                  <p class="text-sm text-muted-foreground mt-1">
+                    累计 {{ selectedDevice?.body.failureCount ?? 0 }} 次拒绝或停止
+                  </p>
+                </FaCard>
+              </div>
+              <div class="flex flex-wrap gap-3">
+                <FaButton
+                  type="button"
+                  variant="outline"
+                  :disabled="!selectedDevice?.online || !selectedDevice?.body.bodyMotionSupported"
+                  :loading="bodyAction === 'calibrate'"
+                  @click="calibrateBody"
+                >
+                  校准当前中位
+                </FaButton>
+                <FaButton
+                  type="button"
+                  :disabled="!selectedDevice?.online || !selectedDevice?.body.bodyMotionSupported || !selectedDevice?.body.calibrated"
+                  :loading="bodyAction === 'enable'"
+                  @click="configureBody(true)"
+                >
+                  显式启用动作
+                </FaButton>
+                <FaButton
+                  type="button"
+                  variant="destructive"
+                  :disabled="!selectedDevice?.online"
+                  :loading="bodyAction === 'disable'"
+                  @click="stopBody"
+                >
+                  立即停止并禁用
+                </FaButton>
+              </div>
+              <div class="pt-5 border-t">
+                <div class="text-sm font-medium mb-3">
+                  固件内置动作模板
+                </div>
+                <div class="flex flex-wrap gap-3">
+                  <FaButton
+                    v-for="motion in bodyMotions"
+                    :key="motion.value"
+                    type="button"
+                    variant="outline"
+                    :disabled="!selectedDevice?.online || selectedDevice?.body.motionState !== 'ARMED' || !!bodyAction"
+                    :loading="bodyAction === motion.value"
+                    @click="playBody(motion.value)"
+                  >
+                    {{ motion.label }}
+                  </FaButton>
+                </div>
+              </div>
             </div>
           </FaCard>
 
@@ -763,9 +943,39 @@ onMounted(loadDevices)
           <FaCard title="工作日桌面陪伴" class="md:col-span-2">
             <div class="gap-6 grid">
               <FaAlert
-                title="确定性工作状态已经持久化"
-                description="保存配置不会自动开始工作。当前状态、首次简报去重、90 天聚合、只读日历和固定位置天气已就绪；首次简报正文、传感器和舵机仍未接入。"
+                title="工作陪伴由你显式开始"
+                description="开始后会按设备在场状态累计专注，首次简报读取新鲜天气和允许的日历缓存；离开、免打扰、活动语音和临近日程会抑制打扰。"
               />
+              <div class="flex flex-wrap gap-3">
+                <FaButton
+                  type="button"
+                  :loading="workdayAction === 'start'"
+                  :disabled="Boolean(workdayAction) || workdayRuntime?.state !== 'OFF' || !selectedDevice?.online"
+                  @click="beginWorkday"
+                >
+                  开始工作
+                </FaButton>
+                <FaButton
+                  type="button"
+                  variant="outline"
+                  :loading="workdayAction === 'stop'"
+                  :disabled="Boolean(workdayAction) || !workdayRuntime || workdayRuntime.state === 'OFF'"
+                  @click="endWorkday"
+                >
+                  结束工作
+                </FaButton>
+                <template v-if="workdayRuntime?.state === 'REST_PROMPTED'">
+                  <FaButton type="button" variant="outline" :loading="workdayAction === 'START_REST'" :disabled="Boolean(workdayAction)" @click="respondToRest('START_REST')">
+                    开始休息
+                  </FaButton>
+                  <FaButton type="button" variant="outline" :loading="workdayAction === 'SNOOZE'" :disabled="Boolean(workdayAction)" @click="respondToRest('SNOOZE')">
+                    稍后 10 分钟
+                  </FaButton>
+                  <FaButton type="button" variant="outline" :loading="workdayAction === 'SKIP_FOR_DAY'" :disabled="Boolean(workdayAction)" @click="respondToRest('SKIP_FOR_DAY')">
+                    今天跳过
+                  </FaButton>
+                </template>
+              </div>
               <div class="gap-4 grid lg:grid-cols-4 sm:grid-cols-2">
                 <FaCard title="当前状态" description="服务重启后从 PostgreSQL 恢复。">
                   <p class="text-lg font-semibold">
@@ -788,7 +998,7 @@ onMounted(loadDevices)
                     {{ formatBriefStatus(workdayRuntime?.briefStatus ?? null) }}
                   </p>
                   <p class="text-sm text-muted-foreground mt-1">
-                    当前切片尚不生成真实简报
+                    成功、部分成功或取消后当天不重复
                   </p>
                 </FaCard>
                 <FaCard title="近 90 天" description="仅保存本地聚合，不含正文。">

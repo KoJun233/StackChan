@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createPairingCode, isPairingCodeExpired, stopDeviceMotion } from './devices'
+import {
+  calibrateDeviceBody,
+  configureDeviceBodyMotion,
+  createPairingCode,
+  isPairingCodeExpired,
+  playDeviceBodyMotion,
+  stopDeviceMotion,
+} from './devices'
 
 describe('device management API', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -45,6 +52,31 @@ describe('device management API', () => {
         method: 'POST',
         credentials: 'same-origin',
       }),
+    )
+  })
+
+  it('sends only structured body calibration, enable, and named motion commands', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 202 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await calibrateDeviceBody('device/id')
+    await configureDeviceBodyMotion('device/id', true)
+    await playDeviceBodyMotion('device/id', 'NOD_SMALL')
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/devices/device%2Fid/commands/calibrate-body',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/devices/device%2Fid/body-motion',
+      expect.objectContaining({ method: 'PUT', body: '{"enabled":true}' }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      '/api/v1/devices/device%2Fid/commands/body-motion',
+      expect.objectContaining({ method: 'POST', body: '{"motion":"NOD_SMALL"}' }),
     )
   })
 })

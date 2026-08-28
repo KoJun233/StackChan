@@ -285,6 +285,107 @@ esp_err_t device_protocol_encode_heartbeat_with_expression(
     return err;
 }
 
+const char *device_protocol_ambient_light_name(device_ambient_light_t ambient_light)
+{
+    switch (ambient_light) {
+    case DEVICE_AMBIENT_LIGHT_DARK: return "DARK";
+    case DEVICE_AMBIENT_LIGHT_DIM: return "DIM";
+    case DEVICE_AMBIENT_LIGHT_NORMAL: return "NORMAL";
+    case DEVICE_AMBIENT_LIGHT_BRIGHT: return "BRIGHT";
+    case DEVICE_AMBIENT_LIGHT_UNAVAILABLE:
+    default:
+        return "UNAVAILABLE";
+    }
+}
+
+esp_err_t device_protocol_encode_heartbeat_with_body(
+    char *output, size_t output_size, uint32_t sequence, int battery_percent, int rssi,
+    const char *firmware_version, uint8_t target_fps, uint8_t actual_fps,
+    uint32_t draw_time_us, uint32_t transfer_time_us, uint32_t display_lock_wait_us,
+    uint32_t dropped_frames, uint32_t audio_underruns, uint32_t minimum_free_heap,
+    const char *active_layer, uint8_t degrade_reason, bool dynamic_renderer,
+    bool imu_supported, const device_body_diagnostics_t *body)
+{
+    if (output == NULL || output_size == 0 || sequence == 0 || battery_percent < 0 ||
+        battery_percent > 100 || !is_valid_firmware_version(firmware_version) ||
+        target_fps < 1 || target_fps > 60 || actual_fps > 120 || active_layer == NULL ||
+        degrade_reason > 5 || body == NULL ||
+        body->ambient_light > DEVICE_AMBIENT_LIGHT_BRIGHT ||
+        body->safety_state > SAFETY_STATE_MOTION_ARMED ||
+        body->motion_runtime > SAFETY_MOTION_RUNNING ||
+        body->last_failure > SAFETY_FAILURE_HARDWARE_FAILURE) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    safety_state_t safety_state = body->safety_state;
+    cJSON *root = cJSON_CreateObject();
+    cJSON *expression = cJSON_CreateObject();
+    cJSON *body_json = cJSON_CreateObject();
+    if (root == NULL || expression == NULL || body_json == NULL) {
+        cJSON_Delete(root);
+        cJSON_Delete(expression);
+        cJSON_Delete(body_json);
+        return ESP_ERR_NO_MEM;
+    }
+    bool complete = cJSON_AddStringToObject(root, "type", "heartbeat") != NULL &&
+                    cJSON_AddNumberToObject(root, "sequence", sequence) != NULL &&
+                    cJSON_AddNumberToObject(root, "battery_percent", battery_percent) != NULL &&
+                    cJSON_AddNumberToObject(root, "rssi", rssi) != NULL &&
+                    cJSON_AddStringToObject(root, "safety_state",
+                                            safety_state_name(safety_state)) != NULL &&
+                    cJSON_AddStringToObject(root, "firmware_version", firmware_version) != NULL &&
+                    cJSON_AddBoolToObject(root, "application_ota_supported", true) != NULL &&
+                    cJSON_AddBoolToObject(root, "dynamic_expression_supported", true) != NULL &&
+                    cJSON_AddNumberToObject(expression, "target_fps", target_fps) != NULL &&
+                    cJSON_AddNumberToObject(expression, "actual_fps", actual_fps) != NULL &&
+                    cJSON_AddNumberToObject(expression, "draw_time_us", draw_time_us) != NULL &&
+                    cJSON_AddNumberToObject(expression, "transfer_time_us", transfer_time_us) != NULL &&
+                    cJSON_AddNumberToObject(expression, "display_lock_wait_us", display_lock_wait_us) != NULL &&
+                    cJSON_AddNumberToObject(expression, "dropped_frames", dropped_frames) != NULL &&
+                    cJSON_AddNumberToObject(expression, "audio_underruns", audio_underruns) != NULL &&
+                    cJSON_AddNumberToObject(expression, "minimum_free_heap", minimum_free_heap) != NULL &&
+                    cJSON_AddStringToObject(expression, "active_layer", active_layer) != NULL &&
+                    cJSON_AddNumberToObject(expression, "degrade_reason", degrade_reason) != NULL &&
+                    cJSON_AddBoolToObject(expression, "dynamic_renderer", dynamic_renderer) != NULL &&
+                    cJSON_AddBoolToObject(expression, "imu_supported", imu_supported) != NULL &&
+                    cJSON_AddBoolToObject(expression, "proximity_supported",
+                                          body->proximity_supported) != NULL &&
+                    cJSON_AddBoolToObject(expression, "lifecycle_clips_supported", true) != NULL &&
+                    cJSON_AddItemToObject(root, "expression", expression) &&
+                    cJSON_AddBoolToObject(root, "body_motion_supported",
+                                          body->body_motion_supported) != NULL &&
+                    cJSON_AddBoolToObject(root, "body_touch_supported",
+                                          body->body_touch_supported) != NULL &&
+                    cJSON_AddBoolToObject(root, "proximity_supported",
+                                          body->proximity_supported) != NULL &&
+                    cJSON_AddBoolToObject(root, "ambient_light_supported",
+                                          body->ambient_light_supported) != NULL &&
+                    cJSON_AddBoolToObject(root, "servo_feedback_supported",
+                                          body->servo_feedback_supported) != NULL &&
+                    cJSON_AddBoolToObject(body_json, "calibrated", body->calibrated) != NULL &&
+                    cJSON_AddBoolToObject(body_json, "present", body->present) != NULL &&
+                    cJSON_AddStringToObject(body_json, "ambient_light",
+                        device_protocol_ambient_light_name(body->ambient_light)) != NULL &&
+                    cJSON_AddStringToObject(body_json, "motion_state",
+                        body->motion_runtime == SAFETY_MOTION_RUNNING
+                            ? "RUNNING"
+                            : (safety_state == SAFETY_STATE_MOTION_ARMED ? "ARMED" : "DISABLED")) != NULL &&
+                    cJSON_AddStringToObject(body_json, "last_failure_code",
+                        safety_failure_code_name(body->last_failure)) != NULL &&
+                    cJSON_AddNumberToObject(body_json, "failure_count", body->failure_count) != NULL &&
+                    cJSON_AddItemToObject(root, "body", body_json);
+    if (!complete) {
+        if (cJSON_GetObjectItemCaseSensitive(root, "expression") != expression) {
+            cJSON_Delete(expression);
+        }
+        if (cJSON_GetObjectItemCaseSensitive(root, "body") != body_json) {
+            cJSON_Delete(body_json);
+        }
+    }
+    esp_err_t err = complete ? print_json(root, output, output_size) : ESP_ERR_NO_MEM;
+    cJSON_Delete(root);
+    return err;
+}
+
 bool device_protocol_parse_stop_motion(const char *payload,
                                        size_t payload_size,
                                        char *command_id,
@@ -475,6 +576,24 @@ bool device_protocol_parse_command(const char *payload,
             command->type = DEVICE_COMMAND_PREVIEW_EXPRESSION;
             command->expression_duration_seconds = duration->valueint;
         }
+    } else if (valid && strcmp(type->valuestring, "configure_body_motion") == 0 &&
+               cJSON_GetArraySize(root) == 3) {
+        cJSON *enabled = cJSON_GetObjectItemCaseSensitive(root, "enabled");
+        valid = cJSON_IsBool(enabled);
+        if (valid) {
+            command->type = DEVICE_COMMAND_CONFIGURE_BODY_MOTION;
+            command->body_motion_enabled = cJSON_IsTrue(enabled);
+        }
+    } else if (valid && strcmp(type->valuestring, "calibrate_body_center") == 0 &&
+               cJSON_GetArraySize(root) == 2) {
+        command->type = DEVICE_COMMAND_CALIBRATE_BODY_CENTER;
+    } else if (valid && strcmp(type->valuestring, "play_body_motion") == 0 &&
+               cJSON_GetArraySize(root) == 3) {
+        cJSON *motion = cJSON_GetObjectItemCaseSensitive(root, "motion");
+        valid = cJSON_IsString(motion) && motion->valuestring != NULL &&
+                safety_motion_template_parse(motion->valuestring,
+                                             &command->body_motion_template);
+        if (valid) command->type = DEVICE_COMMAND_PLAY_BODY_MOTION;
     } else if (valid && strcmp(type->valuestring, "install_wake_model") == 0 &&
                cJSON_GetArraySize(root) == 6) {
         cJSON *job_id = cJSON_GetObjectItemCaseSensitive(root, "job_id");
@@ -680,6 +799,21 @@ esp_err_t device_protocol_encode_voice_turn_stage(char *output,
     if (complete && failure_name != NULL) {
         complete = cJSON_AddStringToObject(root, "failure_code", failure_name) != NULL;
     }
+    esp_err_t err = complete ? print_json(root, output, output_size) : ESP_ERR_NO_MEM;
+    cJSON_Delete(root);
+    return err;
+}
+
+esp_err_t device_protocol_encode_workday_toggle(char *output, size_t output_size,
+                                                uint32_t sequence)
+{
+    if (output == NULL || output_size == 0 || sequence == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) return ESP_ERR_NO_MEM;
+    bool complete = cJSON_AddStringToObject(root, "type", "workday_toggle") != NULL &&
+                    cJSON_AddNumberToObject(root, "sequence", sequence) != NULL;
     esp_err_t err = complete ? print_json(root, output, output_size) : ESP_ERR_NO_MEM;
     cJSON_Delete(root);
     return err;

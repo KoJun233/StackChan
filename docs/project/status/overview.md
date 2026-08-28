@@ -1,10 +1,11 @@
 # 全局工作流总览
 
 - 状态：ACTIVE
-- 最后更新：2026-08-28
-- 当前分支：`codex/weather-001-open-meteo`
-- 实现基准：`3e48ce9`
-- 最后验证提交：`3e48ce9`
+- 最后更新：2026-08-30
+- 当前分支：`codex/work-001-companion`
+- 实现基准：`3596c80`
+- 最后验证提交：`3596c80`
+- 最后验证范围：当前 WORK-001 任务提交（推送前复核）
 - 当前部署：LAN HTTP development mode
 - 生产边界：HTTPS-only
 
@@ -12,16 +13,18 @@
 
 `MEDIA-004` 任务提交 `8c28f0a` 已由 `fa093dc` 合入 `master`。V1 PNG 与 V2 EAF 共享互斥 A/B 槽，服务端、页面和固件严格支持 `boot_appear`、`wake`、`role_switch`，原生 LVGL 始终负责连续表情与安全回退。V36 与页面已部署；用户暂无 EAF 素材，因此 V2 实体激活验收延期，CoreS3 保持 `71868da`，本主线不 OTA、不把延期写成通过。
 
-当前进入 `WORK-001` 私用工作日桌面陪伴 V1。V37 设置入口、V38 持久状态机以及 `CONN-001` 的 V39 只读 iCloud Calendar 均已发布，用户已确认机器人能够通过设备绑定 Tool 正确读取日程。`WEATHER-001` 已发布并通过用户验收；8 月 28 日实机复测发现旧日预报替换存在 JPA 删除/插入唯一键冲突，且服务重启需等待一小时才首次调度。修复已改为删除后显式 flush、启动十秒检查、五分钟轮询并提前十分钟续期，真实 Open-Meteo/数据库同步已恢复。USB 服务地址快捷更新也已随 `fe95767` 安装到 CoreS3，保留 Wi-Fi、NVS、身份和 `motion_disabled`。当前仍不自动启动工作模式、不生成首次简报或动作。产品先服务单用户数月；开源安装、摄像头、NFC、红外、Home Assistant、日历写入、随机主动闲聊和模型运动权限冻结。详细边界见[开发设计](../workday-companion-v1.md)和 [ADR 0041](../decisions/0041-private-first-deterministic-workday-companion.md)。
+`WORK-001` 私用工作日桌面陪伴 V1 已完成整体交付。V37/V38 设置和持久状态、V39 只读 iCloud、V40 固定地点天气、V41 K151 安全能力及 V42 周期编排均已发布；确定性首次简报、在席 50/10、三种休息回应、返回表现，以及管理页/确认式语音/顶部长按三个显式入口已经闭环。日历与天气独立降级，环境光只调屏幕亮度，真实动作仍受 `motion_armed` 门控。用户自行安装提交绑定固件 `424cb49` 后，实机顶部长按启动和停止均通过，跨调度周期保持 `OFF`，全过程保持 `motion_disabled`。A/B/C 只是内部阶段，最终仍为一个 `WORK-001` 提交和一次推送。产品先服务单用户数月；开源安装、摄像头、NFC、红外、Home Assistant、日历写入、随机主动闲聊和模型运动权限冻结。详细边界见[开发设计](../workday-companion-v1.md)和 [ADR 0041](../decisions/0041-private-first-deterministic-workday-companion.md)。
+
+`BODY-001` 已完成 K151 接近/环境光、顶部触摸、反馈舵机和本地安全状态实现，协议只允许校准、显式开关和五种固定模板，禁止任意角度/速度/循环。V41 和管理页已发布。经用户授权，当前任务固件已通过 COM3 保留 NVS 直刷；严格 USB 本地校准诊断连续两次完成两路反馈中位校准，设备全程保持 `motion_disabled`。根因为按需开启 VM 后 250 ms 不足以覆盖升压轨和两个舵机冷启动，等待延长至 1200 ms 后稳定恢复；INA226 同时确认底座电池源存在。实体动作启用和模板仍未授权、未执行。安全边界见 [ADR 0042](../decisions/0042-local-first-k151-body-safety.md)和[实体冒烟 runbook](../../runbooks/k151-body-motion-smoke-test.md)。
 
 ## 工作流摘要
 
 | 工作流 | 状态 | 当前事实 | 下一步 |
 | --- | --- | --- | --- |
-| [服务端](server.md) | STABLE | 天气替换冲突、启动延迟和到期空窗已修复并发布 | 用户复测机器人天气问答 |
-| [前端](frontend.md) | READY_FOR_REVIEW | USB 配网页已发布仅更新服务地址动作 | 用户验收页面；匹配固件后做真实切换验收 |
-| [固件](firmware.md) | STABLE | CoreS3 已运行 `fe95767`，NVS/Wi-Fi/身份与运动禁用保留 | 保持运行，后续固件动作需新授权 |
-| [部署](deployment.md) | STABLE | LAN 已运行天气续期修复/V40，真实缓存为 READY | 用户复测“明天需要带伞吗” |
+| [服务端](server.md) | STABLE | WORK-001 定向 50/50、非回环整套 417/417，LAN 已运行 V42 | 等待用户审核并合入任务分支 |
+| [前端](frontend.md) | STABLE | 完整控制台 90/90，工作控制已随 V42 发布 | 等待用户审核并合入任务分支 |
+| [固件](firmware.md) | STABLE | `424cb49` 已安装，顶部长按启停实机通过且动作保持禁用 | 当前硬件未上报环境光能力，按不支持路径安全降级 |
+| [部署](deployment.md) | STABLE | 新备份与隔离恢复通过，LAN 已运行 V42，设备运行 `424cb49` | 保持 LAN 开发模式，等待用户审核合入 |
 
 ## 当前能力地图
 
@@ -38,12 +41,16 @@
 
 ## 版本与运行态
 
-- Git：`master` 合并提交 `3e48ce9`；WEATHER-001 分支基于该提交。
-- LAN server：WEATHER-001/V40 天气续期修复，当前宿主机地址 `http://192.168.1.4:8080/`；运行镜像和回滚镜像信息见[部署状态](deployment.md)。
-- CoreS3：当前运行 `fe95767`；USB 服务地址快捷更新、Wi-Fi/NVS 保留、语音链路与 `motion_disabled` 均已验证。
+- Git：`master` 合并提交 `3596c80`；`WORK-001` 分支基于该提交，已获一次任务分支推送授权，后续 PR 创建、审核和合并由用户执行。
+- LAN server：WORK-001/V42，当前宿主机地址 `http://192.168.1.4:8080/`；运行镜像和回滚镜像信息见[部署状态](deployment.md)。
+- CoreS3：当前运行 `424cb49` LAN HTTP Quad 固件；Wi-Fi/NVS、语音链路、8192 字节主栈与 `motion_disabled` 已保留，中位校准已连续两次通过，WORK-001 顶部长按启停已实机通过。
 - 实机固件提交只作为运行候选，不能替代 `master` 作为新任务分支基线。
 
 ## 最近验证
+
+- 2026-08-30 WORK-001 实机收口：用户自行安装 `424cb49` LAN HTTP Quad 固件；设备在线上报同版本且保持 `motion_disabled / DISABLED`。临时启用周日后，1500 ms 顶部长按成功创建 `ACTIVE_PRESENT` 运行态；第二次长按切换为 `OFF`，跨十五秒调度周期未自动重启。`VOICE_STOP` 确认为语音交互开始时的安全停动记录，不是身体硬件故障。当前设备未上报接近、环境光和舵机反馈能力，因此这些路径继续按能力缺失安全降级，未宣称实体环境光验收通过。
+
+- BODY-001 无动作校准闭环：`9ae97ba` LAN HTTP Quad 镜像校验有效并通过 COM3 仅写应用分区，NVS 保留。自动诊断避开语音占用后连续两次返回 `body_calibration=complete`；两次均确认 INA226 电池源存在、两路位置反馈有效并记录“motion remains disabled”。根因为安全设计按需开启 VM 后只等待 250 ms，短于真实冷启动；延长至 1200 ms 后稳定恢复。全程未启用或执行动作。
 
 - 天气续期修复：专项 5/5 通过；完整服务端共运行 430 个用例，30 个因受限环境无法建立 Java loopback 而出现基础设施错误，无业务断言失败。发布前备份与校验成功，只替换 server；健康为 `ok`，真实同步状态为 `READY`，缓存包含 2026-08-28/29 两条预报且未再出现唯一键错误。8 月 29 日固定地点预报为毛毛雨、最高降水概率 78%、预计降水 1.2 mm。
 - USB 服务地址快捷更新实机：经授权通过 COM3 安装 `fe95767` LAN HTTP Quad，未擦除或写入 NVS；设备保留 Wi-Fi、身份和 `motion_disabled` 并连接 `192.168.1.4:8080`。
@@ -56,8 +63,8 @@
 - CONN-001 中国大陆区域修正：Apple 官方资料确认中国大陆 iCloud 使用 `*.icloud.com.cn` 服务域；新增全球认证失败后回退、中国大陆完整发现/查询和非认证失败不重试测试。日历定向 6/6、服务端完整 411/411、空库 Flyway V1..V39 通过。发布前备份和隔离恢复成功，只替换 server；本机/LAN/健康接口均为 200，运行库保持 V39，无迁移、前端或固件改动。
 - CONN-001 手机号兼容：服务端日历定向 7/7、完整 409/409 和空库 Flyway V1..V39 通过；控制台 Vitest 28 文件 85/85、类型检查和 production build 通过。中国大陆 11 位手机号自动补 `+86`，国际号码要求 E.164 国家码，响应仅返回脱敏标识。发布前备份及隔离恢复成功，只替换 server；本机/LAN/健康接口均为 200，未认证日历接口为 401，运行静态资源包含新账号标签。尚未使用真实 Apple 凭据，未操作固件。
 - CONN-001/V39：加密服务、CalDAV 与控制器定向 5/5、完整服务端复跑 406/406 通过，Testcontainers 从空 PostgreSQL 应用 Flyway V1..V39；完整控制台 Vitest 28 文件 85/85、`vue-tsc -b` 和 production build 通过。发布前备份及隔离恢复成功，只替换 server，运行库迁移到 V39，本机/LAN/健康接口均为 200，未认证日历接口为 401；未连接真实 Apple 账号、未操作固件。
-- WORK-001A/V38：服务端定向 8/8、真实 PostgreSQL 去重专项 1/1、完整 404/404 通过，空库成功应用 Flyway V1..V38；控制台 Vitest 28 文件 84/84、类型检查和 production build 通过。发布前备份与隔离恢复通过，只替换 server，运行库迁移至 V38，本机/LAN/健康接口均为 200；未访问 iCloud、未连接或刷写设备。
-- WORK-001A 第一切片：服务端定向 4/4、完整重跑 399/399 通过，Testcontainers 从空 PostgreSQL 应用 Flyway V1..V37；控制台 Vitest 28 文件 83/83、`vue-tsc -b` 和 production build 通过。完整服务端第一次运行命中既有异步重复请求用例的瞬时 `ConcurrentModificationException`，单独 1/1 通过后全量复跑成功。发布前备份与隔离恢复通过，只替换 server，运行库迁移至 V37，本机/LAN/健康接口均为 200；未连接 iCloud、未操作设备。
+- WORK-001 阶段 A/V38：服务端定向 8/8、真实 PostgreSQL 去重专项 1/1、完整 404/404 通过，空库成功应用 Flyway V1..V38；控制台 Vitest 28 文件 84/84、类型检查和 production build 通过。发布前备份与隔离恢复通过，只替换 server，运行库迁移至 V38，本机/LAN/健康接口均为 200；未访问 iCloud、未连接或刷写设备。
+- WORK-001 阶段 A 第一切片：服务端定向 4/4、完整重跑 399/399 通过，Testcontainers 从空 PostgreSQL 应用 Flyway V1..V37；控制台 Vitest 28 文件 83/83、`vue-tsc -b` 和 production build 通过。完整服务端第一次运行命中既有异步重复请求用例的瞬时 `ConcurrentModificationException`，单独 1/1 通过后全量复跑成功。发布前备份与隔离恢复通过，只替换 server，运行库迁移至 V37，本机/LAN/健康接口均为 200；未连接 iCloud、未操作设备。
 - MEDIA-004：服务端 395/395、空库 Flyway V1..V36 通过；新增重连能力门控明确阻止回退到旧固件后继续安装 V2。控制台 Vitest 27 文件 82/82、类型检查和 production build 通过；ESP-IDF 5.5.5 protocol profile 与独立 sdkconfig 的 LAN HTTP Quad profile 均编译通过。LAN 候选为 1,618,336 字节、最小应用分区余量 49%，SHA-256 `BBF266A5FB77A47198FDC1EC4D22D9962DE1F32C054F69EC7FE4908AC84263F2`；该未提交工作树候选仅作为构建证据，不用于 OTA。
 - MEDIA-004 LAN：发布前备份和隔离恢复成功，只替换 server；运行库迁移至 V36，健康接口和本机/LAN 首页为 200，未认证表情包与设备接口为 401，PostgreSQL、Redis 和备份容器未替换。CoreS3 未刷写。
 
@@ -107,4 +114,4 @@
 
 ## 下一步
 
-保持当前 LAN server/V40 和 CoreS3 `fe95767` 不变；用户先复测机器人天气问答。通过后把天气续期修复、USB 服务地址快捷更新与 WEATHER-001 压缩为同一任务提交；Git 推送仍需用户明确授权，PR 创建和合并由用户完成。实体动作和后续 OTA 仍需分别授权。
+保持当前 LAN server/V41 和 CoreS3 `5e14d73` 的 `motion_disabled` 不变；把 SCS 写 ACK 兼容修复压回单一任务提交并重建提交绑定 LAN HTTP Quad 候选。Git 推送仍需用户明确授权；新的固件候选也需再次获批后才可保留 NVS 安装，本轮只复测无动作校准，动作继续按 runbook 分阶段授权。

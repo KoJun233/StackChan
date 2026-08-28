@@ -74,6 +74,37 @@ class DeviceEventServiceTest {
         assertThat(updated.getFirmwareVersion()).isEqualTo("b954a43");
     }
 
+    @Test
+    void persistsArmedStateOnlyWithCalibratedFeedbackDiagnostics() {
+        DeviceEntity device = deviceRepository.save(new DeviceEntity(
+                "body-" + UUID.randomUUID(),
+                "body001"
+        ));
+        DeviceBodyDiagnostics body = new DeviceBodyDiagnostics(
+                true, true, true, true, true, true, true,
+                "NORMAL", "ARMED", "NONE", 0);
+
+        deviceEventService.recordHeartbeat(
+                device.getId(), "motion_armed", "body001", -48, true, null, body);
+
+        DeviceEntity updated = deviceRepository.findById(device.getId()).orElseThrow();
+        assertThat(updated.getSafetyState()).isEqualTo("motion_armed");
+        assertThat(updated.getBodyDiagnostics().present()).isTrue();
+        assertThat(updated.getBodyDiagnostics().servoFeedbackSupported()).isTrue();
+    }
+
+    @Test
+    void rejectsArmedStateWithoutCalibratedFeedback() {
+        DeviceBodyDiagnostics body = new DeviceBodyDiagnostics(
+                true, true, true, true, false, true, false,
+                "NORMAL", "ARMED", "NONE", 0);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                deviceEventService.recordHeartbeat(
+                        UUID.randomUUID(), "motion_armed", "body001", -48, true, null, body))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     @TestConfiguration(proxyBeanMethods = false)
     static class FixedClockConfiguration {
 

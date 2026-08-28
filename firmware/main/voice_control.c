@@ -19,6 +19,7 @@
 #include "companion_hardware.h"
 #include "continuous_conversation.h"
 #include "device_transport.h"
+#include "safety_state.h"
 #include "voice_protocol.h"
 #include "voice_service.h"
 #include "touch_interaction.h"
@@ -130,6 +131,7 @@ static bool press_to_talk_held(void)
 
 static void begin_turn(const char *turn_id, int64_t started_us)
 {
+    safety_state_stop_motion_with_reason(SAFETY_FAILURE_VOICE_STOP);
     taskENTER_CRITICAL(&s_interaction_lock);
     s_cancel_requested = false;
     s_feedback_dismiss_requested = false;
@@ -220,6 +222,15 @@ static void request_turn_cancellation(void)
 void voice_control_cancel_active_turn(void)
 {
     request_turn_cancellation();
+}
+
+bool voice_control_motion_blocked(void)
+{
+    bool blocked;
+    taskENTER_CRITICAL(&s_interaction_lock);
+    blocked = s_active_turn || s_interaction_phase != TOUCH_INTERACTION_IDLE;
+    taskEXIT_CRITICAL(&s_interaction_lock);
+    return blocked;
 }
 
 static void request_feedback_dismissal(void)

@@ -1,15 +1,16 @@
 # 部署工作流
 
 - 状态：STABLE
-- 最后更新：2026-08-28
-- 当前分支：`codex/weather-001-open-meteo`（运行态为 WEATHER-001/V40）
-- 基准提交：`3e48ce9`
-- 最后验证提交：`fe95767`
+- 最后更新：2026-08-30
+- 当前分支：`codex/work-001-companion`（运行态为 WORK-001 server/V42，实机固件为 `424cb49`）
+- 基准提交：`3596c80`
+- 最后验证提交：`3596c80`
+- 最后验证范围：当前 WORK-001 任务提交（推送前复核）
 - 当前模式：LAN HTTP development
 
 ## 当前目标
 
-维持 WEATHER-001 LAN server/V40、已安装的 USB 服务地址快捷更新固件，并保证天气缓存在服务启动后自动恢复且到期前续期。
+保持已发布的 WORK-001 LAN server/V42 和实机 `424cb49` 稳定运行；实机继续保持 `motion_disabled`。
 
 ## 已完成
 
@@ -22,13 +23,13 @@
 
 ## 正在进行
 
-LAN server 运行 WEATHER-001/V40 天气续期修复，当前宿主机局域网地址为 `http://192.168.1.4:8080/`，镜像摘要为 `sha256:e23e5f0a5cf2a1c1b65e0de67f77cb7bd7c15e69bbc3c862f71c42836f8aa20d`。固定地点天气、USB 服务地址快捷更新管理页和启动后自动补同步均已发布；工作模式设置仍默认关闭，不会自动启动、生成首次简报或执行动作。
+LAN server 已运行 WORK-001/V42，当前宿主机局域网地址为 `http://192.168.1.4:8080/`，容器为 `51fb6601e52a`，镜像摘要为 `sha256:0e2bc6760001bb4d0304a738e019e5d8d42fc65cf4d6cef3a0bff496df0d4920`；旧 V41 镜像保留为 `pre-work001-v42-6c750ff`。运行态已启用十五秒周期编排、确定性首次简报和休息提醒。
 
-CoreS3 已运行 LAN HTTP Quad 固件 `fe95767`，通过 USB `COM3` 安装且保留 NVS、Wi-Fi、设备身份和 `motion_disabled`；服务地址已快捷切换到当前宿主机，设备在线。MEDIA-004 V2 实体激活继续等待 EAF 素材。
+CoreS3 当前上报 LAN HTTP Quad 固件 `424cb49`，保留 NVS、Wi-Fi、设备身份和 `motion_disabled`；启动、语音、无动作中位校准及 WORK-001 顶部长按启动/停止正常。服务地址仍指向当前宿主机。MEDIA-004 V2 实体激活继续等待 EAF 素材。
 
 ## 下一步操作
 
-保持当前 server/V40、基础容器和 CoreS3 `fe95767` 不变；用户复测机器人天气问答。Git 分支外部推送仍需新的明确授权。
+保持当前 LAN server/V42 与 `424cb49` 实机运行态；WORK-001 任务分支推送后由用户创建、审核和合并 PR，不改变部署模式，不启用身体动作。
 
 ## 阻塞项
 
@@ -44,6 +45,15 @@ CoreS3 已运行 LAN HTTP Quad 固件 `fe95767`，通过 USB `COM3` 安装且保
 - `scripts/verify-lan-compose.ps1`
 
 ## 验证命令与最近结果
+
+- 2026-08-30 WORK-001 实机收口：用户自行安装 `424cb49`；数据库确认设备在线、固件版本匹配并持续为 `motion_disabled / DISABLED`。顶部长按先切换到 `ACTIVE_PRESENT`，再次长按切换为 `OFF`，跨调度周期保持停止。COM3 仅做授权范围内的只读监听，未下发命令或动作。
+
+- 2026-08-29 WORK-001/V42 发布：现有备份容器内完成新 PostgreSQL 备份和最新备份隔离恢复；旧镜像保留为 `pre-work001-v42-6c750ff`，只替换 `stackchan-foundation-server-1`。新容器为 `51fb6601e52a`，镜像为 `sha256:0e2bc6760001bb4d0304a738e019e5d8d42fc65cf4d6cef3a0bff496df0d4920`；PostgreSQL `6d8feaa18623`、Redis `58e31a403637` 和备份容器 `c94b190f0428` 未变化。运行库由 V41 迁移到 V42，健康为 `ok`，本机与 `192.168.1.4:8080` 首页为 200，未认证工作接口为 401，运行资源包含新工作陪伴控制且启动后无应用级错误。CoreS3 已恢复心跳，上报 `6c750ff / DISABLED`；未连接串口或刷写固件。
+- 2026-08-29 BODY-001 写 ACK 诊断：用户安装 `5e14d73` 后，经逐次授权和刷新管理页，在 COM3 实时捕获一次到达设备的无动作校准；三次均为 `stage=yaw_torque_off`，时间约 840467/840597/840727 ms，130 ms 间隔证明真实时钟等待已生效。M5Stack 官方上层不依赖 `EnableTorque()` 返回值而继续读取反馈；修复改为写指令只确认 UART 发送，再读回 yaw/pitch 扭矩寄存器，确认关闭后才读取位置。双 profile 工作树构建及三组任务栈回归/静态预算通过；未启用动作。
+- 2026-08-29 BODY-001 回包等待诊断：用户安装 `839e146` 后，经逐次授权在机器人无播报时实时捕获一次无动作校准；三次均为 `stage=yaw_torque_off`，时间间隔仅约 70 ms。确认 `pdMS_TO_TICKS(5)` 在 100 Hz 下为 0，固定扫描在回包前结束。修复改为 50 ms 单调时钟截止与最少 1 tick 阻塞，双 profile 工作树构建通过；未启用动作。
+- 2026-08-29 BODY-001 校准反馈诊断：用户已通过网页 OTA 安装 `2108f78`。数据库确认设备在线、`body_motion_supported=true`、`servo_feedback_supported=false`、`body_calibrated=false`、`FEEDBACK_FAULT`。经用户明确授权只读连接 COM3；端口连接触发设备重启，随后正常回到 `2108f78`、网络与语音恢复、`motion_disabled` 保持。用户按提示只执行一次无动作校准，失败计数从 0 增至 1；未启用身体动作。加固代码已完成双 profile 工作树构建，但未安装。
+- 2026-08-29 BODY-001 OTA 回退诊断：经用户逐次批准，对 `d1abe9d` 进行第二次 OTA 并只读监听 COM3。下载、SHA-256 和镜像装载成功；新镜像约 1.8 秒时在 BMI270 初始化错误路径报告 `A stack overflow in task main`，随即由 bootloader 回到 factory `fe95767`。旧固件重新连接 LAN server，NVS、Wi-Fi、身份、语音和 `motion_disabled` 保留；未执行校准、运动或舵机供电测试。
+- 2026-08-29 BODY-001 发布：新 PostgreSQL 备份和最新备份隔离恢复验证成功，旧 server 镜像保留为 `pre-body001-3596c80`；只替换 `stackchan-foundation-server-1`，新容器为 `5f10d0a2037b`，镜像为 `sha256:a1f3c3cdad658579695d9ed54190b33f317fb3d3ffe09843897bafbda2b630cd`。PostgreSQL `6d8feaa18623`、Redis `58e31a403637` 和备份容器 `c94b190f0428` 未变化；运行库由 V40 迁移到 V41，健康为 `ok`，本机与 `192.168.1.4:8080` 首页为 200，未认证设备接口为 401，静态资源包含 K151 管理卡。CoreS3 未连接、未刷写，旧固件 `fe95767` 已恢复心跳并保持 `motion_disabled`。
 
 - 2026-08-28 天气续期修复发布：发布前新 PostgreSQL 备份及最新备份校验成功，旧镜像保留为 `pre-weather-refresh-fix-fe95767`，只替换 `stackchan-foundation-server-1`。新容器为 `e61d46f8494a`，镜像为 `sha256:e23e5f0a5cf2a1c1b65e0de67f77cb7bd7c15e69bbc3c862f71c42836f8aa20d`；健康状态为 `ok`，运行库保持 V40。启动十秒后的真实 Open-Meteo 同步为 `READY`，缓存有效至 2026-08-28 19:41（Asia/Shanghai），数据库包含 8 月 28/29 两条预报。首次 Compose 调用误用 `stackchan` 项目名，只创建未启动容器并因 8080 占用退出；原服务未中断，误建的空容器、网络和空卷已精确删除，随后以正确项目名完成切换。
 - 2026-08-27 USB 服务地址快捷更新页面发布：部署前新 PostgreSQL 备份与隔离恢复成功，旧镜像保留为 `pre-usb-server-update-902bb95`，只替换 `stackchan-foundation-server-1`。新容器为 `944ed2ceedc3`，镜像为 `sha256:9ff0dce7ae5f17dc048fe341595b9f6dfcc688d576a476fdc3539c56199b3b9f`；PostgreSQL `6d8feaa18623`、Redis `58e31a403637` 和备份容器 `c94b190f0428` 未变化。健康状态为 `ok`，40 条迁移验证成功且运行库保持 V40，本机与 `192.168.1.4:8080` 首页为 200，未认证设备接口为 401，运行配网页资源包含“仅更新服务地址”。未连接或操作 CoreS3。
@@ -61,9 +71,9 @@ CoreS3 已运行 LAN HTTP Quad 固件 `fe95767`，通过 USB `COM3` 安装且保
 - 运行库保持 V39；本机首页、`192.168.1.3:8080` 首页和健康接口均为 200，未认证日历接口为 401，运行静态资源包含“Apple 账号邮箱或手机号”。运行镜像为 `sha256:7a9b2768820206878fe4f3e240736e9d69cf13e39ceb96578898f1b546ccf7a9`，未录入真实 Apple 凭据，CoreS3 未刷写。
 - 2026-08-25 CONN-001/V39 发布前新 PostgreSQL 备份和隔离恢复验证成功；旧 V38 镜像保留为 `pre-v39-9f3b427`，只替换 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。
 - 运行库由 V38 迁移至 V39，共 39 条迁移验证成功；本机首页、`192.168.1.3:8080` 首页和健康接口均为 200，未认证日历接口为 401。运行镜像为 `sha256:47d77048d39d7cfc3f4a4a31de9c93d68ebd4dd997decbdb6abdc75554ef23d7`，未录入真实 Apple 凭据，CoreS3 未刷写。
-- 2026-08-25 WORK-001A/V38 发布前新 PostgreSQL 备份和隔离恢复验证成功；旧 server 镜像保留为 `pre-work001a-v38-e9c3edd`，只替换 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。
+- 2026-08-25 WORK-001 阶段 A/V38 发布前新 PostgreSQL 备份和隔离恢复验证成功；旧 server 镜像保留为 `pre-work001a-v38-e9c3edd`，只替换 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。
 - 运行库由 V37 迁移至 V38；本机首页、LAN 首页和健康接口均为 200，未认证工作日运行态接口为 401。运行镜像为 `sha256:17b863a5dc4fad4ce5d8df7d1869a0c94bbcaf2de3d39f85b6a4f5e462521258`，CoreS3 未刷写。
-- 2026-08-24 WORK-001A 发布前新 PostgreSQL 备份和最新备份隔离恢复验证成功；旧 server 镜像保留为 `pre-work001a-9a9fee0`，只替换 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。
+- 2026-08-24 WORK-001 阶段 A 发布前新 PostgreSQL 备份和最新备份隔离恢复验证成功；旧 server 镜像保留为 `pre-work001a-9a9fee0`，只替换 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。
 - 运行库由 V36 迁移至 V37；本机首页、LAN 首页和健康接口均为 200，未认证工作日设置接口为 401，运行静态资源包含“工作日桌面陪伴”，启动日志无 `ERROR`/`Exception`。本次未连接、测试或刷写 CoreS3。
 - 2026-08-23 部署前工作树服务端 392/392、空库 Flyway V1..V35、前端 81/81/类型检查/生产构建、双固件 profile、三组任务栈预算和文档检查通过；自动化验证阶段未替换运行容器。
 - 2026-08-23 MEDIA-004 发布前新 PostgreSQL 备份及最新备份隔离恢复验证成功；只替换 `stackchan-foundation-server-1`，运行库由 V35 迁移到 V36，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。

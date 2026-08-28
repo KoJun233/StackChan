@@ -27,6 +27,9 @@ esp_err_t voice_control_configure_continuous_conversation(bool enabled,
 /** Cancels the active voice turn and stops any current playback. */
 void voice_control_cancel_active_turn(void);
 
+/** Returns true while a user voice turn must take priority over body movement. */
+bool voice_control_motion_blocked(void);
+
 /** Fetches the fixed same-origin reminder WAV and plays it synchronously. */
 esp_err_t voice_control_play_reminder(const device_identity_t *identity,
                                       const char *reminder_id,

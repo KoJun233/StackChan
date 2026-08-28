@@ -94,6 +94,14 @@ public class VoiceActionCoordinator {
         }
         ActionResult notificationResponse = proposeNotificationResponse(deviceId, conversationId, turnId, text);
         if (notificationResponse != null) return notificationResponse;
+        VoiceActionType workdayAction = workdayAction(text);
+        if (workdayAction != null) {
+            VoiceActionProposalService.ProposalSnapshot proposal = proposalService.propose(
+                    deviceId, conversationId, turnId,
+                    new VoiceActionDraft(workdayAction, true, null, null, null, null,
+                            null, null, null, null, null, null, null));
+            return new ActionResult(proposalService.restatement(proposal), true);
+        }
         Matcher switchRole = SWITCH_ROLE.matcher(text);
         if (switchRole.find()) {
             VoiceActionProposalService.ProposalSnapshot proposal = proposalService.propose(
@@ -178,6 +186,24 @@ public class VoiceActionCoordinator {
         return text.contains("提醒我") || text.contains("稍后提醒") || text.contains("跳过下一次")
                 || text.contains("音量调到") || text.contains("安静到") || text.startsWith("记住")
                 || text.startsWith("请记住") || text.contains("切换到角色");
+    }
+    private VoiceActionType workdayAction(String text) {
+        if (text.matches("^(?:开始|进入|开启)(?:今天的)?工作(?:模式)?[。！!,.，]?$")) {
+            return VoiceActionType.START_WORKDAY;
+        }
+        if (text.matches("^(?:结束|退出|关闭)(?:今天的)?工作(?:模式)?[。！!,.，]?$")) {
+            return VoiceActionType.END_WORKDAY;
+        }
+        if (text.matches("^(?:开始|现在开始)(?:本轮)?休息[。！!,.，]?$")) {
+            return VoiceActionType.START_WORKDAY_REST;
+        }
+        if (text.matches("^(?:稍后|推迟|延后)(?:十|10)分钟(?:再)?休息[。！!,.，]?$")) {
+            return VoiceActionType.SNOOZE_WORKDAY_REST;
+        }
+        if (text.matches("^(?:今天)?(?:跳过|不再)(?:后续)?休息提醒[。！!,.，]?$")) {
+            return VoiceActionType.SKIP_WORKDAY_REST_FOR_DAY;
+        }
+        return null;
     }
     private ActionResult proposeNotificationResponse(UUID deviceId, UUID conversationId, UUID turnId, String text) {
         if (notificationService == null || conversationService == null) return null;

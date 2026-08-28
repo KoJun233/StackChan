@@ -6,6 +6,7 @@
 
 #include "esp_err.h"
 #include "expression_engine.h"
+#include "safety_state.h"
 
 #define DEVICE_PROTOCOL_MAX_MESSAGE_LEN 1024
 #define DEVICE_PROTOCOL_COMMAND_ID_MAX_LEN 96
@@ -48,6 +49,9 @@ typedef enum {
     DEVICE_COMMAND_CONFIGURE_EXPRESSION,
     DEVICE_COMMAND_CONFIGURE_EXPRESSION_FRAME_RATE,
     DEVICE_COMMAND_PREVIEW_EXPRESSION,
+    DEVICE_COMMAND_CONFIGURE_BODY_MOTION,
+    DEVICE_COMMAND_CALIBRATE_BODY_CENTER,
+    DEVICE_COMMAND_PLAY_BODY_MOTION,
     DEVICE_COMMAND_INSTALL_WAKE_MODEL,
     DEVICE_COMMAND_INSTALL_EXPRESSION_PACK,
     DEVICE_COMMAND_CLEAR_EXPRESSION_PACK,
@@ -75,6 +79,29 @@ typedef enum {
     DEVICE_COMMAND_RESULT_CANCELLED,
     DEVICE_COMMAND_RESULT_FAILED,
 } device_command_result_t;
+
+typedef enum {
+    DEVICE_AMBIENT_LIGHT_UNAVAILABLE = 0,
+    DEVICE_AMBIENT_LIGHT_DARK,
+    DEVICE_AMBIENT_LIGHT_DIM,
+    DEVICE_AMBIENT_LIGHT_NORMAL,
+    DEVICE_AMBIENT_LIGHT_BRIGHT,
+} device_ambient_light_t;
+
+typedef struct {
+    bool body_motion_supported;
+    bool body_touch_supported;
+    bool proximity_supported;
+    bool ambient_light_supported;
+    bool servo_feedback_supported;
+    bool calibrated;
+    bool present;
+    device_ambient_light_t ambient_light;
+    safety_state_t safety_state;
+    safety_motion_runtime_t motion_runtime;
+    safety_failure_code_t last_failure;
+    uint32_t failure_count;
+} device_body_diagnostics_t;
 
 typedef enum {
     DEVICE_VOICE_FAILURE_NONE = 0,
@@ -108,6 +135,8 @@ typedef struct {
     int expression_max_fps;
     companion_expression_preview_t expression_preview;
     uint8_t expression_preview_value;
+    bool body_motion_enabled;
+    safety_motion_template_t body_motion_template;
     char wake_model_job_id[DEVICE_PROTOCOL_WAKE_MODEL_JOB_ID_MAX_LEN];
     char wake_model_name[DEVICE_PROTOCOL_WAKE_MODEL_NAME_MAX_LEN];
     char wake_model_sha256[DEVICE_PROTOCOL_SHA256_MAX_LEN];
@@ -134,6 +163,14 @@ esp_err_t device_protocol_encode_heartbeat_with_expression(
     uint32_t dropped_frames, uint32_t audio_underruns, uint32_t minimum_free_heap,
     const char *active_layer, uint8_t degrade_reason, bool dynamic_renderer,
     bool imu_supported);
+esp_err_t device_protocol_encode_heartbeat_with_body(
+    char *output, size_t output_size, uint32_t sequence, int battery_percent, int rssi,
+    const char *firmware_version, uint8_t target_fps, uint8_t actual_fps,
+    uint32_t draw_time_us, uint32_t transfer_time_us, uint32_t display_lock_wait_us,
+    uint32_t dropped_frames, uint32_t audio_underruns, uint32_t minimum_free_heap,
+    const char *active_layer, uint8_t degrade_reason, bool dynamic_renderer,
+    bool imu_supported, const device_body_diagnostics_t *body);
+const char *device_protocol_ambient_light_name(device_ambient_light_t ambient_light);
 
 bool device_protocol_parse_stop_motion(const char *payload, size_t payload_size,
                                        char *command_id, size_t command_id_size);
@@ -160,3 +197,5 @@ esp_err_t device_protocol_encode_voice_turn_stage(char *output, size_t output_si
                                                   device_voice_turn_stage_t stage,
                                                   uint32_t elapsed_ms,
                                                   device_voice_turn_failure_t failure);
+esp_err_t device_protocol_encode_workday_toggle(char *output, size_t output_size,
+                                                uint32_t sequence);
