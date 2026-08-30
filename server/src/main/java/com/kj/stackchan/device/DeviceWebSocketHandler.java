@@ -331,20 +331,10 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
 
     private void processEvent(UUID deviceId, WebSocketSession session, DeviceInboundEvent event) {
         if (event instanceof HeartbeatEvent heartbeat) {
-            if (heartbeat.body() != null) {
-                deviceEventService.recordHeartbeat(
-                        deviceId, heartbeat.safetyState(), heartbeat.firmwareVersion(),
-                        heartbeat.rssi(), heartbeat.applicationOtaSupported(),
-                        heartbeat.expression(), heartbeat.body());
-            } else if (heartbeat.expression() != null) {
-                deviceEventService.recordHeartbeat(
-                        deviceId, heartbeat.safetyState(), heartbeat.firmwareVersion(),
-                        heartbeat.rssi(), heartbeat.applicationOtaSupported(), heartbeat.expression());
-            } else {
-                deviceEventService.recordHeartbeat(
-                        deviceId, heartbeat.safetyState(), heartbeat.firmwareVersion(),
-                        heartbeat.rssi(), heartbeat.applicationOtaSupported());
-            }
+            deviceEventService.recordHeartbeat(
+                    deviceId, heartbeat.sequence(), heartbeat.safetyState(), heartbeat.firmwareVersion(),
+                    heartbeat.rssi(), heartbeat.applicationOtaSupported(),
+                    heartbeat.expression(), heartbeat.body());
             if (heartbeat.expression() != null) {
                 if (deviceExpressionService != null) {
                     if (!Boolean.TRUE.equals(session.getAttributes().get(EXPRESSION_THEME_SYNCED_ATTRIBUTE)) &&

@@ -52,15 +52,23 @@ export interface WorkdayMetricSummary {
   briefFailedCount: number
   briefPartialCount: number
   briefSuccessCount: number
+  calendarFailureCount: number
+  deviceRestartCount: number
+  falseTriggerCount: number
   focusSeconds: number
+  motionFailedCount: number
+  motionRejectedCount: number
   restSkippedCount: number
   restSnoozedCount: number
   restStartedCount: number
   sessionEndCount: number
   sessionStartCount: number
+  weatherFailureCount: number
 }
 
 export interface WorkdayDailyMetric extends Omit<WorkdayMetricSummary, 'activeWorkdays'> {
+  calendarLastFailureCode: string | null
+  weatherLastFailureCode: string | null
   workDate: string
 }
 
@@ -71,6 +79,40 @@ export interface WorkdayMetrics {
   from: string
   summary: WorkdayMetricSummary
   to: string
+}
+
+export type WorkdayPilotStatus = 'NOT_STARTED' | 'COLLECTING' | 'PASS' | 'FAIL'
+
+export interface WorkdayPilotReport {
+  activeDaysPass: boolean
+  activeWorkdays: number
+  activeWorkdayTarget: number
+  briefFrequencyPass: boolean
+  calendarFailureCount: number
+  deviceId: string
+  deviceRestartCount: number
+  elapsedDays: number
+  elapsedPlannedWorkdays: number
+  endsOn: string | null
+  externalFailureAttributionComplete: boolean
+  falseTriggerPass: boolean
+  falseTriggerWeeklyLimit: number
+  firstWeekFalseTriggers: number
+  maximumDailyBriefs: number
+  motionFailedCount: number
+  motionRejectedCount: number
+  motionSafetyPass: boolean
+  plannedWorkdays: number
+  secondWeekFalseTriggers: number
+  stabilityPass: boolean
+  started: boolean
+  startedOn: string | null
+  status: WorkdayPilotStatus
+  updatedAt: string | null
+  weatherFailureCount: number
+  windowComplete: boolean
+  workDaysMask: number | null
+  zoneId: string | null
 }
 
 export type ICloudCalendarConnectionStatus = 'CONFIGURED' | 'CONNECTED' | 'AUTH_FAILED' | 'ERROR'
@@ -216,6 +258,26 @@ export function respondToWorkdayRest(
 
 export function getWorkdayMetrics(deviceId: string, days = 90): Promise<WorkdayMetrics> {
   return apiJson(`/api/v1/workday/${encodeURIComponent(deviceId)}/metrics?days=${days}`)
+}
+
+export function getWorkdayPilot(deviceId: string): Promise<WorkdayPilotReport> {
+  return apiJson(`/api/v1/workday/${encodeURIComponent(deviceId)}/pilot`)
+}
+
+export function startWorkdayPilot(deviceId: string): Promise<WorkdayPilotReport> {
+  return apiJson(`/api/v1/workday/${encodeURIComponent(deviceId)}/pilot:start`, { method: 'POST' })
+}
+
+export function restartWorkdayPilot(deviceId: string): Promise<WorkdayPilotReport> {
+  return apiJson(`/api/v1/workday/${encodeURIComponent(deviceId)}/pilot:restart`, { method: 'POST' })
+}
+
+export function markWorkdayFalseTrigger(deviceId: string): Promise<WorkdayPilotReport> {
+  return apiJson(`/api/v1/workday/${encodeURIComponent(deviceId)}/pilot/false-trigger`, { method: 'POST' })
+}
+
+export function undoWorkdayFalseTrigger(deviceId: string): Promise<WorkdayPilotReport> {
+  return apiJson(`/api/v1/workday/${encodeURIComponent(deviceId)}/pilot/false-trigger`, { method: 'DELETE' })
 }
 
 export function getICloudCalendarConnection(deviceId: string): Promise<ICloudCalendarConnection> {

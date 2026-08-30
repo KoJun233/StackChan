@@ -8,6 +8,7 @@ import com.kj.stackchan.calendar.ICloudCalendarService;
 import com.kj.stackchan.weather.WorkdayWeatherService;
 import com.kj.stackchan.workday.WorkdaySettingsService;
 import com.kj.stackchan.workday.WorkdayCompanionService;
+import com.kj.stackchan.workday.WorkdayPilotService;
 import com.kj.stackchan.workday.WorkdayRestAction;
 import com.kj.stackchan.workday.WorkdayRuntimeService;
 import jakarta.validation.Valid;
@@ -35,6 +36,7 @@ public class WorkdaySettingsController {
     private final WorkdaySettingsService settingsService;
     private final WorkdayRuntimeService runtimeService;
     private final WorkdayCompanionService companionService;
+    private final WorkdayPilotService pilotService;
     private final ICloudCalendarService calendarService;
     private final WorkdayWeatherService weatherService;
 
@@ -43,12 +45,14 @@ public class WorkdaySettingsController {
             WorkdaySettingsService settingsService,
             WorkdayRuntimeService runtimeService,
             WorkdayCompanionService companionService,
+            WorkdayPilotService pilotService,
             ICloudCalendarService calendarService,
             WorkdayWeatherService weatherService
     ) {
         this.settingsService = settingsService;
         this.runtimeService = runtimeService;
         this.companionService = companionService;
+        this.pilotService = pilotService;
         this.calendarService = calendarService;
         this.weatherService = weatherService;
     }
@@ -59,7 +63,7 @@ public class WorkdaySettingsController {
             ICloudCalendarService calendarService,
             WorkdayWeatherService weatherService
     ) {
-        this(settingsService, runtimeService, null, calendarService, weatherService);
+        this(settingsService, runtimeService, null, null, calendarService, weatherService);
     }
 
     @GetMapping("/{deviceId}/settings")
@@ -106,6 +110,31 @@ public class WorkdaySettingsController {
             @RequestParam(defaultValue = "90") @Min(1) @Max(90) int days
     ) {
         return runtimeService.metrics(deviceId, days);
+    }
+
+    @GetMapping("/{deviceId}/pilot")
+    public WorkdayPilotService.PilotReportSnapshot pilot(@PathVariable UUID deviceId) {
+        return pilotService.get(deviceId);
+    }
+
+    @PostMapping("/{deviceId}/pilot:start")
+    public WorkdayPilotService.PilotReportSnapshot startPilot(@PathVariable UUID deviceId) {
+        return pilotService.start(deviceId);
+    }
+
+    @PostMapping("/{deviceId}/pilot:restart")
+    public WorkdayPilotService.PilotReportSnapshot restartPilot(@PathVariable UUID deviceId) {
+        return pilotService.restart(deviceId);
+    }
+
+    @PostMapping("/{deviceId}/pilot/false-trigger")
+    public WorkdayPilotService.PilotReportSnapshot markFalseTrigger(@PathVariable UUID deviceId) {
+        return pilotService.markFalseTrigger(deviceId);
+    }
+
+    @DeleteMapping("/{deviceId}/pilot/false-trigger")
+    public WorkdayPilotService.PilotReportSnapshot undoFalseTrigger(@PathVariable UUID deviceId) {
+        return pilotService.undoFalseTrigger(deviceId);
     }
 
     @GetMapping("/{deviceId}/calendar")

@@ -52,6 +52,30 @@ public class WorkdayDailyMetricEntity {
     @Column(name = "rest_skipped_count", nullable = false)
     private int restSkippedCount;
 
+    @Column(name = "false_trigger_count", nullable = false)
+    private int falseTriggerCount;
+
+    @Column(name = "motion_rejected_count", nullable = false)
+    private int motionRejectedCount;
+
+    @Column(name = "motion_failed_count", nullable = false)
+    private int motionFailedCount;
+
+    @Column(name = "device_restart_count", nullable = false)
+    private int deviceRestartCount;
+
+    @Column(name = "calendar_failure_count", nullable = false)
+    private int calendarFailureCount;
+
+    @Column(name = "calendar_last_failure_code", length = 32)
+    private String calendarLastFailureCode;
+
+    @Column(name = "weather_failure_count", nullable = false)
+    private int weatherFailureCount;
+
+    @Column(name = "weather_last_failure_code", length = 32)
+    private String weatherLastFailureCode;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
@@ -71,6 +95,30 @@ public class WorkdayDailyMetricEntity {
     public void restStarted(Instant now) { restStartedCount++; updatedAt = now; }
     public void restSnoozed(Instant now) { restSnoozedCount++; updatedAt = now; }
     public void restSkipped(Instant now) { restSkippedCount++; updatedAt = now; }
+    public void markFalseTrigger(Instant now) { falseTriggerCount++; updatedAt = now; }
+    public void undoFalseTrigger(Instant now) {
+        falseTriggerCount = Math.max(0, falseTriggerCount - 1);
+        updatedAt = now;
+    }
+    public void recordMotionRejected(long count, Instant now) {
+        motionRejectedCount = addBounded(motionRejectedCount, count);
+        updatedAt = now;
+    }
+    public void recordMotionFailed(long count, Instant now) {
+        motionFailedCount = addBounded(motionFailedCount, count);
+        updatedAt = now;
+    }
+    public void recordDeviceRestart(Instant now) { deviceRestartCount++; updatedAt = now; }
+    public void recordCalendarFailure(String failureCode, Instant now) {
+        if (calendarFailureCount == 0) calendarFailureCount++;
+        calendarLastFailureCode = failureCode;
+        updatedAt = now;
+    }
+    public void recordWeatherFailure(String failureCode, Instant now) {
+        if (weatherFailureCount == 0) weatherFailureCount++;
+        weatherLastFailureCode = failureCode;
+        updatedAt = now;
+    }
 
     public void briefCompleted(WorkdayBriefStatus status, Instant now) {
         switch (status) {
@@ -96,5 +144,18 @@ public class WorkdayDailyMetricEntity {
     public int getRestStartedCount() { return restStartedCount; }
     public int getRestSnoozedCount() { return restSnoozedCount; }
     public int getRestSkippedCount() { return restSkippedCount; }
+    public int getFalseTriggerCount() { return falseTriggerCount; }
+    public int getMotionRejectedCount() { return motionRejectedCount; }
+    public int getMotionFailedCount() { return motionFailedCount; }
+    public int getDeviceRestartCount() { return deviceRestartCount; }
+    public int getCalendarFailureCount() { return calendarFailureCount; }
+    public String getCalendarLastFailureCode() { return calendarLastFailureCode; }
+    public int getWeatherFailureCount() { return weatherFailureCount; }
+    public String getWeatherLastFailureCode() { return weatherLastFailureCode; }
     public Instant getUpdatedAt() { return updatedAt; }
+
+    private int addBounded(int current, long increment) {
+        long positive = Math.max(0, increment);
+        return positive >= Integer.MAX_VALUE - current ? Integer.MAX_VALUE : current + (int) positive;
+    }
 }

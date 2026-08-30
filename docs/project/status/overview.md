@@ -1,11 +1,11 @@
 # 全局工作流总览
 
-- 状态：ACTIVE
+- 状态：READY_FOR_REVIEW
 - 最后更新：2026-08-30
-- 当前分支：`codex/work-001-companion`
-- 实现基准：`3596c80`
-- 最后验证提交：`3596c80`
-- 最后验证范围：当前 WORK-001 任务提交（推送前复核）
+- 当前分支：`codex/work-002-pilot-observability`
+- 实现基准：`c62ccd0`
+- 最后验证提交：`c62ccd0`
+- 最后验证范围：WORK-002 实现、自动化、V43 迁移和 LAN 发布完成，等待人工审核合入
 - 当前部署：LAN HTTP development mode
 - 生产边界：HTTPS-only
 
@@ -13,7 +13,9 @@
 
 `MEDIA-004` 任务提交 `8c28f0a` 已由 `fa093dc` 合入 `master`。V1 PNG 与 V2 EAF 共享互斥 A/B 槽，服务端、页面和固件严格支持 `boot_appear`、`wake`、`role_switch`，原生 LVGL 始终负责连续表情与安全回退。V36 与页面已部署；用户暂无 EAF 素材，因此 V2 实体激活验收延期，CoreS3 保持 `71868da`，本主线不 OTA、不把延期写成通过。
 
-`WORK-001` 私用工作日桌面陪伴 V1 已完成整体交付。V37/V38 设置和持久状态、V39 只读 iCloud、V40 固定地点天气、V41 K151 安全能力及 V42 周期编排均已发布；确定性首次简报、在席 50/10、三种休息回应、返回表现，以及管理页/确认式语音/顶部长按三个显式入口已经闭环。日历与天气独立降级，环境光只调屏幕亮度，真实动作仍受 `motion_armed` 门控。用户自行安装提交绑定固件 `424cb49` 后，实机顶部长按启动和停止均通过，跨调度周期保持 `OFF`，全过程保持 `motion_disabled`。A/B/C 只是内部阶段，最终仍为一个 `WORK-001` 提交和一次推送。产品先服务单用户数月；开源安装、摄像头、NFC、红外、Home Assistant、日历写入、随机主动闲聊和模型运动权限冻结。详细边界见[开发设计](../workday-companion-v1.md)和 [ADR 0041](../decisions/0041-private-first-deterministic-workday-companion.md)。
+`WORK-001` 私用工作日桌面陪伴 V1 已由 `c62ccd0` 合入。V37–V42、确定性首次简报、在席 50/10、三种休息回应、返回表现，以及管理页/确认式语音/顶部长按三个显式入口已经闭环；实机 `424cb49` 顶部长按启停通过且全过程保持 `motion_disabled`。详细边界见[开发设计](../workday-companion-v1.md)和 [ADR 0041](../decisions/0041-private-first-deterministic-workday-companion.md)。
+
+`WORK-002` 已完成十四天私用观察的门槛可观测性：V43 保存误播报、外部服务降级归因、动作安全结果、设备重启和显式观察窗口，管理页提供确定性 `COLLECTING/PASS/FAIL` 报告。只保存本地匿名聚合，不修改固件协议、不启用身体动作。候选已发布到 LAN，等待单提交任务分支人工审核合入；合入后应在首次真实工作使用前由管理员显式开始观察。设计边界见[WORK-002 文档](../workday-pilot-observability.md)和 [ADR 0043](../decisions/0043-explicit-local-workday-pilot-observability.md)。
 
 `BODY-001` 已完成 K151 接近/环境光、顶部触摸、反馈舵机和本地安全状态实现，协议只允许校准、显式开关和五种固定模板，禁止任意角度/速度/循环。V41 和管理页已发布。经用户授权，当前任务固件已通过 COM3 保留 NVS 直刷；严格 USB 本地校准诊断连续两次完成两路反馈中位校准，设备全程保持 `motion_disabled`。根因为按需开启 VM 后 250 ms 不足以覆盖升压轨和两个舵机冷启动，等待延长至 1200 ms 后稳定恢复；INA226 同时确认底座电池源存在。实体动作启用和模板仍未授权、未执行。安全边界见 [ADR 0042](../decisions/0042-local-first-k151-body-safety.md)和[实体冒烟 runbook](../../runbooks/k151-body-motion-smoke-test.md)。
 
@@ -21,10 +23,10 @@
 
 | 工作流 | 状态 | 当前事实 | 下一步 |
 | --- | --- | --- | --- |
-| [服务端](server.md) | STABLE | WORK-001 定向 50/50、非回环整套 417/417，LAN 已运行 V42 | 等待用户审核并合入任务分支 |
-| [前端](frontend.md) | STABLE | 完整控制台 90/90，工作控制已随 V42 发布 | 等待用户审核并合入任务分支 |
+| [服务端](server.md) | READY_FOR_REVIEW | WORK-002 V43、观察服务、采集链、自动化和运行迁移已完成 | 人工审核并合入任务提交 |
+| [前端](frontend.md) | READY_FOR_REVIEW | 十四天观察卡片、API、完整测试、类型检查和生产构建通过 | 人工审核并合入任务提交 |
 | [固件](firmware.md) | STABLE | `424cb49` 已安装，顶部长按启停实机通过且动作保持禁用 | 当前硬件未上报环境光能力，按不支持路径安全降级 |
-| [部署](deployment.md) | STABLE | 新备份与隔离恢复通过，LAN 已运行 V42，设备运行 `424cb49` | 保持 LAN 开发模式，等待用户审核合入 |
+| [部署](deployment.md) | READY_FOR_REVIEW | LAN 已运行 WORK-002/V43 候选，基础容器和 CoreS3 未变化 | 合入后由管理员显式开始十四天观察 |
 
 ## 当前能力地图
 
@@ -41,12 +43,14 @@
 
 ## 版本与运行态
 
-- Git：`master` 合并提交 `3596c80`；`WORK-001` 分支基于该提交，已获一次任务分支推送授权，后续 PR 创建、审核和合并由用户执行。
-- LAN server：WORK-001/V42，当前宿主机地址 `http://192.168.1.4:8080/`；运行镜像和回滚镜像信息见[部署状态](deployment.md)。
+- Git：`master` 合并提交 `c62ccd0`；`WORK-002` 从该提交创建独立任务分支，后续 PR 创建、审核和合并由用户执行。
+- LAN server：WORK-002/V43 候选，当前宿主机地址 `http://192.168.1.4:8080/`；运行镜像和回滚镜像信息见[部署状态](deployment.md)。
 - CoreS3：当前运行 `424cb49` LAN HTTP Quad 固件；Wi-Fi/NVS、语音链路、8192 字节主栈与 `motion_disabled` 已保留，中位校准已连续两次通过，WORK-001 顶部长按启停已实机通过。
 - 实机固件提交只作为运行候选，不能替代 `master` 作为新任务分支基线。
 
 ## 最近验证
+
+- 2026-08-30 WORK-002：服务端最终定向 45/45 通过；排除 8 个已确认受 Windows Java loopback 限制的既有网络测试类后，其余 424/424 通过，空 PostgreSQL 从 V1 应用到 V43。控制台完整 Vitest 28 文件 91/91、类型检查和 production build 通过，最终工作日 API 6/6、类型检查和 build 复跑通过。发布前及边界修正后备份校验成功，只替换 server；最终容器 `e2dcfa2fbe86`、镜像 `sha256:db8e8aca683db95ee1ace9273ae80aac8deb9368f2af15ecfae612e615dd1c72`，运行库迁移至 V43，本机/LAN 健康与首页为 200，未认证观察接口为 401。PostgreSQL、Redis、备份容器及 CoreS3 未替换；设备在线并保持 `424cb49 / motion_disabled / DISABLED`。
 
 - 2026-08-30 WORK-001 实机收口：用户自行安装 `424cb49` LAN HTTP Quad 固件；设备在线上报同版本且保持 `motion_disabled / DISABLED`。临时启用周日后，1500 ms 顶部长按成功创建 `ACTIVE_PRESENT` 运行态；第二次长按切换为 `OFF`，跨十五秒调度周期未自动重启。`VOICE_STOP` 确认为语音交互开始时的安全停动记录，不是身体硬件故障。当前设备未上报接近、环境光和舵机反馈能力，因此这些路径继续按能力缺失安全降级，未宣称实体环境光验收通过。
 
