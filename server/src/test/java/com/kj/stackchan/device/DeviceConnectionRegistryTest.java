@@ -63,6 +63,28 @@ class DeviceConnectionRegistryTest {
     }
 
     @Test
+    void sendsOnlyNamedBodyCommandsWithoutServoParameters() throws Exception {
+        WebSocketSession session = authenticatedSession(1L, FUTURE_EXPIRY);
+        connectionRegistry.register(DEVICE_ID, session);
+
+        assertThat(commandGateway.configureBodyMotion(DEVICE_ID, true)).isTrue();
+        assertThat(commandGateway.calibrateBodyCenter(DEVICE_ID)).isTrue();
+        assertThat(commandGateway.playBodyMotion(DEVICE_ID, "NOD_SMALL")).isTrue();
+
+        ArgumentCaptor<TextMessage> message = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session, times(3)).sendMessage(message.capture());
+        assertThat(message.getAllValues().get(0).getPayload()).matches(
+                "\\{\"type\":\"configure_body_motion\",\"command_id\":\"[0-9a-f-]{36}\",\"enabled\":true}"
+        );
+        assertThat(message.getAllValues().get(1).getPayload()).matches(
+                "\\{\"type\":\"calibrate_body_center\",\"command_id\":\"[0-9a-f-]{36}\"}"
+        );
+        assertThat(message.getAllValues().get(2).getPayload()).matches(
+                "\\{\"type\":\"play_body_motion\",\"command_id\":\"[0-9a-f-]{36}\",\"motion\":\"NOD_SMALL\"}"
+        );
+    }
+
+    @Test
     void sendsStrictVoiceDetectionConfigurationToAnActiveDevice() throws Exception {
         WebSocketSession session = authenticatedSession(1L, FUTURE_EXPIRY);
         connectionRegistry.register(DEVICE_ID, session);

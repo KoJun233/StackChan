@@ -16,9 +16,14 @@
 #include "freertos/task.h"
 
 #include "device_identity.h"
+#include "body_hardware.h"
+#include "companion_hardware.h"
 #include "device_endpoint.h"
 #include "device_transport.h"
+#include "firmware_ota.h"
 #include "strict_json.h"
+#include "voice_control.h"
+#include "wake_model_ota.h"
 
 #define PROVISIONING_TASK_STACK_SIZE 16384
 #define PROVISIONING_TASK_PRIORITY 4
@@ -94,9 +99,16 @@ bool device_provisioning_parse_request(const char *payload,
         return false;
     }
     const cJSON *type = required_string(root, "type");
+    bool valid = type != NULL;
+    if (valid && strcmp(type->valuestring, "calibrate_body_center") == 0 &&
+        cJSON_GetArraySize(root) == 1) {
+        request->kind = DEVICE_PROVISIONING_REQUEST_BODY_CALIBRATION;
+        cJSON_Delete(root);
+        return true;
+    }
     const cJSON *server_base_url = required_string(root, "serverBaseUrl");
     const cJSON *pairing_code = required_string(root, "pairingCode");
-    bool valid = type != NULL &&
+    valid = valid &&
                  copy_string(request->server_base_url, sizeof(request->server_base_url),
                              server_base_url == NULL ? NULL : server_base_url->valuestring, false) &&
                  copy_string(request->pairing_code, sizeof(request->pairing_code),
@@ -269,10 +281,11 @@ static bool wait_for_wifi_connection(void)
     return false;
 }
 
-static void report_result(const char *status)
+static void report_result(const char *type, const char *status)
 {
     char result[96] = {0};
-    int written = snprintf(result, sizeof(result), "{\"type\":\"provisioning\",\"status\":\"%s\"}\n", status);
+    int written = snprintf(result, sizeof(result), "{\"type\":\"%s\",\"status\":\"%s\"}\n",
+                           type, status);
     if (written > 0 && (size_t)written < sizeof(result)) {
         (void)usb_serial_jtag_write_bytes(result, (size_t)written, pdMS_TO_TICKS(1000));
     }
@@ -283,50 +296,75 @@ static void provision(const device_provisioning_request_t *request)
 {
     /* A physical re-provisioning request must never race an old device token. */
     if (device_identity_clear() != ESP_OK) {
-        report_result("identity_clear_failed");
+        report_result("provisioning", "identity_clear_failed");
         return;
     }
     if (device_transport_configure_wifi(request->ssid, request->password) != ESP_OK) {
-        report_result("wifi_configuration_failed");
+        report_result("provisioning", "wifi_configuration_failed");
         return;
     }
     if (!wait_for_wifi_connection()) {
-        report_result("wifi_connection_failed");
+        report_result("provisioning", "wifi_connection_failed");
         return;
     }
     device_identity_t identity = {0};
     if (claim_device(request, &identity) != ESP_OK) {
-        report_result("claim_failed");
+        report_result("provisioning", "claim_failed");
         return;
     }
     if (device_identity_save(&identity) != ESP_OK) {
-        report_result("identity_save_failed");
+        report_result("provisioning", "identity_save_failed");
         return;
     }
     memset(&identity, 0, sizeof(identity));
-    report_result("complete");
+    report_result("provisioning", "complete");
 }
 
 static void update_server(const device_provisioning_request_t *request)
 {
     if (!wait_for_wifi_connection()) {
-        report_result("wifi_connection_failed");
+        report_result("provisioning", "wifi_connection_failed");
         return;
     }
     device_identity_t identity = {0};
     if (claim_device(request, &identity) != ESP_OK) {
-        report_result("claim_failed");
+        report_result("provisioning", "claim_failed");
         return;
     }
     if (device_identity_save(&identity) != ESP_OK) {
         memset(&identity, 0, sizeof(identity));
-        report_result("identity_save_failed");
+        report_result("provisioning", "identity_save_failed");
         return;
     }
     memset(&identity, 0, sizeof(identity));
-    report_result("complete");
+    report_result("provisioning", "complete");
     vTaskDelay(pdMS_TO_TICKS(250));
     esp_restart();
+}
+
+static void calibrate_body_center(void)
+{
+    bool audio_busy = false;
+    bool updating = false;
+    bool device_error = false;
+    companion_hardware_get_motion_guard(&audio_busy, &updating, &device_error);
+    audio_busy = audio_busy || voice_control_motion_blocked();
+    updating = updating || firmware_ota_is_pending() || wake_model_ota_is_pending();
+    if (audio_busy) {
+        report_result("body_calibration", "audio_busy");
+        return;
+    }
+    if (updating) {
+        report_result("body_calibration", "updating");
+        return;
+    }
+    if (device_error) {
+        report_result("body_calibration", "device_error");
+        return;
+    }
+    report_result("body_calibration", "started");
+    report_result("body_calibration",
+                  body_hardware_calibrate_center() == ESP_OK ? "complete" : "failed");
 }
 
 static void provisioning_task(void *argument)
@@ -349,17 +387,20 @@ static void provisioning_task(void *argument)
                     continue;
                 }
                 if (line_overflowed) {
-                    report_result("invalid_request");
+                    report_result("provisioning", "invalid_request");
                 } else {
                     line[line_length] = '\0';
                     device_provisioning_request_t request = {0};
                     if (!device_provisioning_parse_request(line, line_length, &request)) {
-                        report_result("invalid_request");
+                        report_result("provisioning", "invalid_request");
                     } else {
-                        report_result("started");
-                        if (request.kind == DEVICE_PROVISIONING_REQUEST_SERVER_ONLY) {
+                        if (request.kind == DEVICE_PROVISIONING_REQUEST_BODY_CALIBRATION) {
+                            calibrate_body_center();
+                        } else if (request.kind == DEVICE_PROVISIONING_REQUEST_SERVER_ONLY) {
+                            report_result("provisioning", "started");
                             update_server(&request);
                         } else {
+                            report_result("provisioning", "started");
                             provision(&request);
                         }
                     }

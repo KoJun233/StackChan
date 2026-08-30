@@ -1,6 +1,7 @@
 package com.kj.stackchan.workday;
 
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 import jakarta.persistence.LockModeType;
@@ -14,4 +15,6 @@ public interface DeviceWorkdayRuntimeRepository extends JpaRepository<DeviceWork
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select runtime from DeviceWorkdayRuntimeEntity runtime where runtime.deviceId = :deviceId")
     Optional<DeviceWorkdayRuntimeEntity> findForUpdate(@Param("deviceId") UUID deviceId);
+
+    List<DeviceWorkdayRuntimeEntity> findAllByStateNot(WorkdayRuntimeState state);
 }

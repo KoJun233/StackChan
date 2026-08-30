@@ -1,6 +1,7 @@
 set(stackchan_sources
     "audio_wav.c"
     "app_main.c"
+    "body_hardware.cpp"
     "companion_hardware.cpp"
     "continuous_conversation.c"
     "device_credentials.c"
@@ -37,6 +38,11 @@ endif()
 
 if(CONFIG_STACKCHAN_LAN_HTTP_MODE AND CONFIG_STACKCHAN_LAN_TEST_CERT)
     message(FATAL_ERROR "STACKCHAN_LAN_HTTP_MODE and STACKCHAN_LAN_TEST_CERT are mutually exclusive")
+endif()
+
+if(CONFIG_ESP_MAIN_TASK_STACK_SIZE LESS 8192)
+    message(FATAL_ERROR
+        "StackChan requires CONFIG_ESP_MAIN_TASK_STACK_SIZE >= 8192; discard stale generated sdkconfig files and reconfigure from sdkconfig.defaults")
 endif()
 
 idf_component_register(

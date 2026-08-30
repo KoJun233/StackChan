@@ -20,7 +20,7 @@ The accepted heartbeat includes the current firmware version:
 {"type":"heartbeat","sequence":1,"battery_percent":75,"rssi":-58,"safety_state":"motion_disabled","firmware_version":"b954a43"}
 ```
 
-`battery_percent` is an integer from 0 through 100. `rssi` is an integer. `safety_state` must be exactly `motion_disabled` in this phase. `firmware_version` is one through 80 ASCII letters, digits, dots, underscores, or hyphens. A heartbeat records device liveness and cannot enable motion; when a version is present the server persists it as the device's current firmware version.
+`battery_percent` is an integer from 0 through 100. `rssi` is an integer. Legacy firmware reports `motion_disabled`; BODY-001 firmware may also report `motion_armed` only with matching calibrated feedback diagnostics. `firmware_version` is one through 80 ASCII letters, digits, dots, underscores, or hyphens. A heartbeat records device state but never acts as a motion command; when a version is present the server persists it as the device's current firmware version.
 
 OTA-capable firmware adds an explicit capability bit:
 
@@ -31,6 +31,14 @@ OTA-capable firmware adds an explicit capability bit:
 For a rolling server-first upgrade, the server still accepts the original five-field heartbeat and the six-field heartbeat with `firmware_version`. Those legacy forms always record `application_ota_supported=false`; a missing field never implies support. New OTA-capable firmware must send all seven fields.
 
 Dynamic-expression firmware adds `dynamic_expression_supported=true` and one strict `expression` object. The object contains only privacy-safe rendering measurements: `target_fps` (1..60), `actual_fps` (0..120), `draw_time_us` (scene/pose and LVGL object update time), `transfer_time_us` (LVGL render-and-flush time), `display_lock_wait_us`, monotonic `dropped_frames` and `audio_underruns`, `minimum_free_heap`, `active_layer` (`IDLE/EMOTION/INTERACTION/PHYSICAL/SYSTEM`), numeric `degrade_reason` (0 none, 1 draw budget, 2 display lock, 3 audio busy, 4 audio underrun, 5 low-power idle sleep), `dynamic_renderer` (native ball versus active static PNG), and the `imu_supported` / `proximity_supported` capability booleans. MEDIA-004 firmware additionally includes `lifecycle_clips_supported=true`; the legacy exact object without this field remains valid and means unsupported. Total frame cost is approximately `draw_time_us + transfer_time_us`; neither field alone proves that a requested FPS is achievable. The server rejects partial objects, extra fields and out-of-range values. These diagnostics never contain text, audio, credentials or raw sensor samples.
+
+BODY-001 firmware adds five explicit root capability booleans and one strict diagnostic object:
+
+```json
+{"body_motion_supported":true,"body_touch_supported":true,"proximity_supported":true,"ambient_light_supported":true,"servo_feedback_supported":true,"body":{"calibrated":true,"present":true,"ambient_light":"NORMAL","motion_state":"ARMED","last_failure_code":"NONE","failure_count":0}}
+```
+
+This fragment accompanies the complete dynamic-expression heartbeat; it is not a standalone event. `ambient_light` is `UNAVAILABLE`, `DARK`, `DIM`, `NORMAL`, or `BRIGHT`; `motion_state` is `DISABLED`, `ARMED`, or `RUNNING`; `last_failure_code` is one fixed firmware safety code; and `failure_count` is monotonic and nonnegative. Missing capability fields mean unsupported. Capability relationships are validated: unsupported proximity cannot report presence, unsupported ambient light must report `UNAVAILABLE`, and armed/running motion requires motion hardware, feedback, and calibration. Extra fields—including raw proximity, lux, touch channels or servo positions—reject the entire event.
 
 Devices may acknowledge a received command with:
 
@@ -111,6 +119,16 @@ The motion-safety command remains:
 ```json
 {"type":"stop_motion","command_id":"550e8400-e29b-41d4-a716-446655440000"}
 ```
+
+BODY-001 adds three administrator-only, online-only commands:
+
+```json
+{"type":"calibrate_body_center","command_id":"550e8400-e29b-41d4-a716-446655440000"}
+{"type":"configure_body_motion","command_id":"550e8400-e29b-41d4-a716-446655440000","enabled":true}
+{"type":"play_body_motion","command_id":"550e8400-e29b-41d4-a716-446655440000","motion":"NOD_SMALL"}
+```
+
+Calibration records passive feedback after torque is disabled and never includes a target position. Enabling is explicit and is not resent after reconnect or reboot. `motion` is exactly `WAKE`, `LOOK_USER`, `NOD_SMALL`, `THINK`, or `DROWSY`. All three schemas are exact: angle, speed, duration, repeat count, URL or any other field is rejected. The device still rejects a valid command when capability, calibration, feedback, audio, voice, update, connectivity, error, concurrency, soft-limit or watchdog gates fail. `stop_motion` remains idempotent and disables future motion until another explicit enable.
 
 The durable spoken-reminder command is:
 
@@ -233,4 +251,4 @@ The immediate playback stop command is:
 
 The device accepts this command only for its current authenticated WebSocket session, requests interruption of active speaker playback, and returns a normal command acknowledgement. Reminder playback subsequently acknowledges its original `speak_reminder` command as cancelled; a voice turn reports its existing `CANCELLED` stage. If nothing is playing, `stop_audio` is an idempotent no-op. The command never stops safety processing or enables motion.
 
-The server sends `stop_motion` only to a currently live, authenticated session and creates no offline motion-command queue. Voice-detection configuration is persisted centrally and resent on reconnect rather than queued as an actuator command. No inbound event, acknowledgement, voice turn, reminder, voice-detection configuration, or wake-model operation can enable motion or request an actuator action.
+The server sends every body command only to a currently live, authenticated session and creates no offline motion-command queue. Voice-detection configuration is persisted centrally and resent on reconnect; body enable is deliberately not resent. Only the explicit administrator body endpoints can create the three body commands. Inbound events, acknowledgements, voice turns, reminders, Agent tools, voice configuration, resource installation and model operations cannot enable or parameterize motion.

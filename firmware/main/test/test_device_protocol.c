@@ -17,6 +17,7 @@
 #include "interaction_state.h"
 #include "face_animation.h"
 #include "expression_engine.h"
+#include "safety_state.h"
 #include "strict_json.h"
 #include "touch_interaction.h"
 #include "voice_control.h"
@@ -30,6 +31,84 @@
 #define TEST_SERVER_BASE_URL "https://companion.example"
 #define TEST_WEBSOCKET_URL "wss://companion.example/api/v1/ws/device"
 #endif
+
+static unsigned int s_motion_stop_count;
+
+static void test_motion_stop_callback(void *context)
+{
+    (void)context;
+    s_motion_stop_count++;
+}
+
+TEST_CASE("body motion starts disabled and requires capabilities calibration and admin arm", "[body_safety]")
+{
+    safety_state_init();
+    safety_motion_guard_t guard = {
+        .connected = true,
+    };
+
+    TEST_ASSERT_EQUAL_STRING("motion_disabled", safety_state_name(safety_state_current()));
+    TEST_ASSERT_FALSE(safety_state_begin_motion(SAFETY_MOTION_WAKE, &guard, 1000));
+    safety_state_set_motion_capabilities(true, true);
+    TEST_ASSERT_FALSE(safety_state_set_admin_enabled(true));
+    safety_state_set_calibrated(true);
+    TEST_ASSERT_TRUE(safety_state_set_admin_enabled(true));
+    TEST_ASSERT_EQUAL_STRING("motion_armed", safety_state_name(safety_state_current()));
+    TEST_ASSERT_TRUE(safety_state_begin_motion(SAFETY_MOTION_WAKE, &guard, 1000));
+    safety_state_complete_motion();
+    TEST_ASSERT_EQUAL(SAFETY_STATE_MOTION_ARMED, safety_state_current());
+}
+
+TEST_CASE("body motion rejects busy guards and remains armed", "[body_safety]")
+{
+    safety_state_init();
+    safety_state_set_motion_capabilities(true, true);
+    safety_state_set_calibrated(true);
+    TEST_ASSERT_TRUE(safety_state_set_admin_enabled(true));
+    safety_motion_guard_t guard = {
+        .connected = true,
+        .audio_busy = true,
+    };
+
+    TEST_ASSERT_FALSE(safety_state_begin_motion(SAFETY_MOTION_NOD_SMALL, &guard, 2000));
+    safety_diagnostics_t diagnostics = {0};
+    safety_state_get_diagnostics(&diagnostics);
+    TEST_ASSERT_EQUAL(SAFETY_FAILURE_AUDIO_BUSY, diagnostics.last_failure);
+    TEST_ASSERT_EQUAL_UINT32(1, diagnostics.failure_count);
+    TEST_ASSERT_EQUAL(SAFETY_STATE_MOTION_ARMED, diagnostics.state);
+}
+
+TEST_CASE("body motion watchdog stops hardware and disables motion", "[body_safety]")
+{
+    safety_state_init();
+    safety_state_set_motion_capabilities(true, true);
+    safety_state_set_calibrated(true);
+    TEST_ASSERT_TRUE(safety_state_set_admin_enabled(true));
+    s_motion_stop_count = 0;
+    safety_state_register_stop_callback(test_motion_stop_callback, NULL);
+    safety_motion_guard_t guard = {.connected = true};
+
+    TEST_ASSERT_TRUE(safety_state_begin_motion(SAFETY_MOTION_LOOK_USER, &guard, 0));
+    safety_state_tick(2100000);
+    safety_diagnostics_t diagnostics = {0};
+    safety_state_get_diagnostics(&diagnostics);
+    TEST_ASSERT_EQUAL_UINT32(1, s_motion_stop_count);
+    TEST_ASSERT_EQUAL(SAFETY_FAILURE_TIMEOUT, diagnostics.last_failure);
+    TEST_ASSERT_EQUAL(SAFETY_STATE_MOTION_DISABLED, diagnostics.state);
+}
+
+TEST_CASE("body motion accepts only the five fixed template names", "[body_safety]")
+{
+    safety_motion_template_t motion = SAFETY_MOTION_WAKE;
+    TEST_ASSERT_TRUE(safety_motion_template_parse("WAKE", &motion));
+    TEST_ASSERT_EQUAL(SAFETY_MOTION_WAKE, motion);
+    TEST_ASSERT_TRUE(safety_motion_template_parse("LOOK_USER", &motion));
+    TEST_ASSERT_TRUE(safety_motion_template_parse("NOD_SMALL", &motion));
+    TEST_ASSERT_TRUE(safety_motion_template_parse("THINK", &motion));
+    TEST_ASSERT_TRUE(safety_motion_template_parse("DROWSY", &motion));
+    TEST_ASSERT_FALSE(safety_motion_template_parse("DANCE", &motion));
+    TEST_ASSERT_FALSE(safety_motion_template_parse("30", &motion));
+}
 
 TEST_CASE("screensaver pupil motion is cyclic and remains inside the eye", "[screensaver]")
 {
@@ -732,6 +811,67 @@ TEST_CASE("dynamic expression heartbeat exposes bounded diagnostics", "[device_p
         0, 0, 1, "IDLE", 0, true, true));
 }
 
+TEST_CASE("USB accepts only the exact physical body calibration diagnostic", "[device_provisioning]")
+{
+    const char *request_json = "{\"type\":\"calibrate_body_center\"}";
+    const char *extra_field = "{\"type\":\"calibrate_body_center\",\"enabled\":true}";
+    device_provisioning_request_t zero = {0};
+    device_provisioning_request_t request = {0};
+
+    TEST_ASSERT_TRUE(device_provisioning_parse_request(request_json, strlen(request_json), &request));
+    TEST_ASSERT_EQUAL(DEVICE_PROVISIONING_REQUEST_BODY_CALIBRATION, request.kind);
+    TEST_ASSERT_EQUAL_STRING("", request.ssid);
+    TEST_ASSERT_EQUAL_STRING("", request.password);
+    TEST_ASSERT_EQUAL_STRING("", request.server_base_url);
+    TEST_ASSERT_EQUAL_STRING("", request.pairing_code);
+
+    TEST_ASSERT_FALSE(device_provisioning_parse_request(extra_field, strlen(extra_field), &request));
+    TEST_ASSERT_EQUAL_MEMORY(&zero, &request, sizeof(request));
+}
+
+TEST_CASE("body heartbeat exposes explicit capabilities and privacy safe diagnostics", "[device_protocol]")
+{
+    char payload[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
+    safety_state_init();
+    safety_state_set_motion_capabilities(true, true);
+    safety_state_set_calibrated(true);
+    TEST_ASSERT_TRUE(safety_state_set_admin_enabled(true));
+    device_body_diagnostics_t body = {
+        .body_motion_supported = true,
+        .body_touch_supported = true,
+        .proximity_supported = true,
+        .ambient_light_supported = true,
+        .servo_feedback_supported = true,
+        .calibrated = true,
+        .present = true,
+        .ambient_light = DEVICE_AMBIENT_LIGHT_DIM,
+        .safety_state = SAFETY_STATE_MOTION_ARMED,
+        .motion_runtime = SAFETY_MOTION_IDLE,
+        .last_failure = SAFETY_FAILURE_NONE,
+        .failure_count = 0,
+    };
+    TEST_ASSERT_EQUAL(ESP_OK, device_protocol_encode_heartbeat_with_body(
+        payload, sizeof(payload), 4, 82, -49, "body001", 60, 58, 900, 4100,
+        300, 2, 0, 7340032, "PHYSICAL", 0, true, true, &body));
+
+    cJSON *root = cJSON_Parse(payload);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_EQUAL_STRING("motion_armed",
+        cJSON_GetObjectItemCaseSensitive(root, "safety_state")->valuestring);
+    TEST_ASSERT_TRUE(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(
+        root, "body_motion_supported")));
+    TEST_ASSERT_TRUE(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(
+        root, "proximity_supported")));
+    cJSON *diagnostics = cJSON_GetObjectItemCaseSensitive(root, "body");
+    TEST_ASSERT_EQUAL_STRING("DIM",
+        cJSON_GetObjectItemCaseSensitive(diagnostics, "ambient_light")->valuestring);
+    TEST_ASSERT_EQUAL_STRING("ARMED",
+        cJSON_GetObjectItemCaseSensitive(diagnostics, "motion_state")->valuestring);
+    TEST_ASSERT_NULL(cJSON_GetObjectItemCaseSensitive(diagnostics, "proximity_raw"));
+    TEST_ASSERT_NULL(cJSON_GetObjectItemCaseSensitive(diagnostics, "ambient_raw"));
+    cJSON_Delete(root);
+}
+
 TEST_CASE("only a well-formed stop_motion command is accepted", "[device_protocol]")
 {
     char command_id[DEVICE_PROTOCOL_COMMAND_ID_MAX_LEN] = {0};
@@ -739,6 +879,27 @@ TEST_CASE("only a well-formed stop_motion command is accepted", "[device_protoco
 
     TEST_ASSERT_TRUE(device_protocol_parse_stop_motion(valid, strlen(valid), command_id, sizeof(command_id)));
     TEST_ASSERT_EQUAL_STRING("550e8400-e29b-41d4-a716-446655440000", command_id);
+}
+
+TEST_CASE("body commands reject arbitrary servo parameters", "[device_protocol]")
+{
+    const char *enable = "{\"type\":\"configure_body_motion\",\"command_id\":\"cmd-body\",\"enabled\":true}";
+    const char *calibrate = "{\"type\":\"calibrate_body_center\",\"command_id\":\"cmd-calibrate\"}";
+    const char *motion = "{\"type\":\"play_body_motion\",\"command_id\":\"cmd-motion\",\"motion\":\"NOD_SMALL\"}";
+    const char *dance = "{\"type\":\"play_body_motion\",\"command_id\":\"cmd-motion\",\"motion\":\"DANCE\"}";
+    const char *angle = "{\"type\":\"play_body_motion\",\"command_id\":\"cmd-motion\",\"motion\":\"WAKE\",\"angle\":30}";
+    device_command_t command = {0};
+
+    TEST_ASSERT_TRUE(device_protocol_parse_command(enable, strlen(enable), &command));
+    TEST_ASSERT_EQUAL(DEVICE_COMMAND_CONFIGURE_BODY_MOTION, command.type);
+    TEST_ASSERT_TRUE(command.body_motion_enabled);
+    TEST_ASSERT_TRUE(device_protocol_parse_command(calibrate, strlen(calibrate), &command));
+    TEST_ASSERT_EQUAL(DEVICE_COMMAND_CALIBRATE_BODY_CENTER, command.type);
+    TEST_ASSERT_TRUE(device_protocol_parse_command(motion, strlen(motion), &command));
+    TEST_ASSERT_EQUAL(DEVICE_COMMAND_PLAY_BODY_MOTION, command.type);
+    TEST_ASSERT_EQUAL(SAFETY_MOTION_NOD_SMALL, command.body_motion_template);
+    TEST_ASSERT_FALSE(device_protocol_parse_command(dance, strlen(dance), &command));
+    TEST_ASSERT_FALSE(device_protocol_parse_command(angle, strlen(angle), &command));
 }
 
 TEST_CASE("speak_reminder requires the exact fixed command schema", "[device_protocol]")
@@ -1468,4 +1629,22 @@ TEST_CASE("unknown or malformed commands do not produce an action", "[device_pro
     TEST_ASSERT_FALSE(device_protocol_parse_stop_motion(malformed, strlen(malformed), command_id, sizeof(command_id)));
     TEST_ASSERT_FALSE(device_protocol_parse_stop_motion(too_long, sizeof(too_long), command_id,
                                                         sizeof(command_id)));
+}
+
+TEST_CASE("workday top touch event contains only type and sequence", "[device_protocol]")
+{
+    char payload[128] = {0};
+    TEST_ASSERT_EQUAL(ESP_OK,
+                      device_protocol_encode_workday_toggle(payload, sizeof(payload), 17));
+    cJSON *root = cJSON_Parse(payload);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_EQUAL_INT(2, cJSON_GetArraySize(root));
+    TEST_ASSERT_EQUAL_STRING("workday_toggle",
+                             cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(root, "type")));
+    TEST_ASSERT_EQUAL(17,
+                      cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(root, "sequence")));
+    cJSON_Delete(root);
+
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG,
+                      device_protocol_encode_workday_toggle(payload, sizeof(payload), 0));
 }

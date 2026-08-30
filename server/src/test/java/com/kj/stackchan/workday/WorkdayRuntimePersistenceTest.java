@@ -5,16 +5,14 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import com.kj.stackchan.device.DeviceEntity;
-import com.kj.stackchan.device.DeviceCommandGateway;
 import com.kj.stackchan.device.DeviceRepository;
-import com.kj.stackchan.device.DeviceTokenService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -23,7 +21,8 @@ import org.testcontainers.utility.DockerImageName;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(properties = "companion.device-transport-enabled=false")
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Testcontainers
 class WorkdayRuntimePersistenceTest {
 
@@ -46,9 +45,6 @@ class WorkdayRuntimePersistenceTest {
     @Autowired private DeviceWorkdayRuntimeRepository runtimeRepository;
     @Autowired private WorkdayBriefAttemptRepository briefRepository;
     @Autowired private WorkdayDailyMetricRepository metricRepository;
-
-    @MockitoBean private DeviceTokenService deviceTokenService;
-    @MockitoBean private DeviceCommandGateway deviceCommandGateway;
 
     @BeforeEach
     void clearData() {

@@ -113,6 +113,36 @@ public class DeviceConnectionRegistry {
         return sendPayload(deviceId, payload);
     }
 
+    public boolean sendBodyMotionConfiguration(UUID deviceId, boolean enabled) {
+        try {
+            return sendPayload(deviceId, objectMapper.writeValueAsString(
+                    new ConfigureBodyMotionCommand(
+                            "configure_body_motion", UUID.randomUUID().toString(), enabled)));
+        } catch (JsonProcessingException exception) {
+            return false;
+        }
+    }
+
+    public boolean sendBodyCenterCalibration(UUID deviceId) {
+        try {
+            return sendPayload(deviceId, objectMapper.writeValueAsString(
+                    new CalibrateBodyCenterCommand(
+                            "calibrate_body_center", UUID.randomUUID().toString())));
+        } catch (JsonProcessingException exception) {
+            return false;
+        }
+    }
+
+    public boolean sendBodyMotion(UUID deviceId, String motion) {
+        try {
+            return sendPayload(deviceId, objectMapper.writeValueAsString(
+                    new PlayBodyMotionCommand(
+                            "play_body_motion", UUID.randomUUID().toString(), motion)));
+        } catch (JsonProcessingException exception) {
+            return false;
+        }
+    }
+
     public boolean sendInteractionConfiguration(
             UUID deviceId,
             int volumePercent,
@@ -613,6 +643,15 @@ public class DeviceConnectionRegistry {
     }
 
     private record StopAudioCommand(String type, String command_id) {
+    }
+
+    private record ConfigureBodyMotionCommand(String type, String command_id, boolean enabled) {
+    }
+
+    private record CalibrateBodyCenterCommand(String type, String command_id) {
+    }
+
+    private record PlayBodyMotionCommand(String type, String command_id, String motion) {
     }
 
     private record ConfigureInteractionCommand(

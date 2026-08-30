@@ -17,6 +17,8 @@ import com.kj.stackchan.conversation.ConversationService;
 import com.kj.stackchan.role.CompanionRoleService;
 import com.kj.stackchan.notification.InteractiveNotificationService;
 import com.kj.stackchan.notification.NotificationResponseAction;
+import com.kj.stackchan.workday.WorkdayCompanionService;
+import com.kj.stackchan.workday.WorkdayRestAction;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +38,7 @@ public class VoiceActionProposalService {
     private final ConversationService conversationService;
     private final CompanionRoleService roleService;
     private final InteractiveNotificationService notificationService;
+    private final WorkdayCompanionService workdayCompanionService;
 
     @Autowired
     public VoiceActionProposalService(VoiceActionProposalRepository proposalRepository,
@@ -46,7 +49,8 @@ public class VoiceActionProposalService {
                                       DeviceInteractionSettingsCoordinator settingsCoordinator,
                                       Clock clock, ConversationService conversationService,
                                       CompanionRoleService roleService,
-                                      InteractiveNotificationService notificationService) {
+                                      InteractiveNotificationService notificationService,
+                                      WorkdayCompanionService workdayCompanionService) {
         this.proposalRepository = proposalRepository;
         this.auditRepository = auditRepository;
         this.reminderService = reminderService;
@@ -57,6 +61,7 @@ public class VoiceActionProposalService {
         this.conversationService = conversationService;
         this.roleService = roleService;
         this.notificationService = notificationService;
+        this.workdayCompanionService = workdayCompanionService;
     }
 
     public VoiceActionProposalService(VoiceActionProposalRepository proposalRepository,
@@ -65,7 +70,7 @@ public class VoiceActionProposalService {
                                       LongTermMemoryService memoryService,
                                       DeviceInteractionSettingsCoordinator settingsCoordinator, Clock clock) {
         this(proposalRepository, auditRepository, reminderService, settingsService, memoryService,
-                settingsCoordinator, clock, null, null, null);
+                settingsCoordinator, clock, null, null, null, null);
     }
 
     public VoiceActionProposalService(VoiceActionProposalRepository proposalRepository,
@@ -78,7 +83,21 @@ public class VoiceActionProposalService {
                                       ConversationService conversationService,
                                       CompanionRoleService roleService) {
         this(proposalRepository, auditRepository, reminderService, settingsService, memoryService,
-                settingsCoordinator, clock, conversationService, roleService, null);
+                settingsCoordinator, clock, conversationService, roleService, null, null);
+    }
+
+    public VoiceActionProposalService(VoiceActionProposalRepository proposalRepository,
+                                      VoiceActionAuditRepository auditRepository,
+                                      ReminderService reminderService,
+                                      InteractionSettingsService settingsService,
+                                      LongTermMemoryService memoryService,
+                                      DeviceInteractionSettingsCoordinator settingsCoordinator,
+                                      Clock clock,
+                                      ConversationService conversationService,
+                                      CompanionRoleService roleService,
+                                      InteractiveNotificationService notificationService) {
+        this(proposalRepository, auditRepository, reminderService, settingsService, memoryService,
+                settingsCoordinator, clock, conversationService, roleService, notificationService, null);
     }
 
     @Transactional
@@ -172,6 +191,11 @@ public class VoiceActionProposalService {
             case ACKNOWLEDGE_NOTIFICATION -> "要将最近通知标记为已知晓。确认执行吗？";
             case SNOOZE_NOTIFICATION -> "要将最近通知推迟 " + proposal.durationMinutes() + " 分钟再次播报。确认执行吗？";
             case COMPLETE_NOTIFICATION -> "要将最近通知标记为已完成。确认执行吗？";
+            case START_WORKDAY -> "要开始当前设备的工作模式。确认执行吗？";
+            case END_WORKDAY -> "要结束当前设备的工作模式。确认执行吗？";
+            case START_WORKDAY_REST -> "要开始本轮休息。确认执行吗？";
+            case SNOOZE_WORKDAY_REST -> "要将休息提醒推迟十分钟。确认执行吗？";
+            case SKIP_WORKDAY_REST_FOR_DAY -> "要在今天跳过后续休息提醒。确认执行吗？";
         };
     }
 
@@ -209,6 +233,11 @@ public class VoiceActionProposalService {
                         proposal, NotificationResponseAction.SNOOZE, proposal.getDurationMinutes());
                 case COMPLETE_NOTIFICATION -> executeNotificationResponse(
                         proposal, NotificationResponseAction.COMPLETE, null);
+                case START_WORKDAY -> workdayAction(proposal, null, true);
+                case END_WORKDAY -> workdayAction(proposal, null, false);
+                case START_WORKDAY_REST -> workdayAction(proposal, WorkdayRestAction.START_REST, null);
+                case SNOOZE_WORKDAY_REST -> workdayAction(proposal, WorkdayRestAction.SNOOZE, null);
+                case SKIP_WORKDAY_REST_FOR_DAY -> workdayAction(proposal, WorkdayRestAction.SKIP_FOR_DAY, null);
             };
             Instant completed = clock.instant();
             proposal.markExecuted(result, completed);
@@ -289,6 +318,18 @@ public class VoiceActionProposalService {
         notificationService.respond(proposal.getTargetReference(), proposal.getDeviceId(), proposal.getRoleId(),
                 action, snoozeMinutes);
         return proposal.getTargetReference();
+    }
+
+    private UUID workdayAction(
+            VoiceActionProposalEntity proposal,
+            WorkdayRestAction restAction,
+            Boolean start
+    ) {
+        if (workdayCompanionService == null) throw new VoiceActionException("Workday companion is unavailable");
+        if (restAction != null) workdayCompanionService.respondToRest(proposal.getDeviceId(), restAction);
+        else if (Boolean.TRUE.equals(start)) workdayCompanionService.start(proposal.getDeviceId());
+        else workdayCompanionService.stop(proposal.getDeviceId());
+        return proposal.getDeviceId();
     }
 
     private ProposalSnapshot snapshot(VoiceActionProposalEntity proposal) {

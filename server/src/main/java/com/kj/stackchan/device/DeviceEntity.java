@@ -60,6 +60,21 @@ public class DeviceEntity {
     @Column(name = "expression_imu_supported", nullable = false) private boolean expressionImuSupported;
     @Column(name = "expression_proximity_supported", nullable = false) private boolean expressionProximitySupported;
 
+    @Column(name = "body_motion_supported", nullable = false) private boolean bodyMotionSupported;
+    @Column(name = "body_touch_supported", nullable = false) private boolean bodyTouchSupported;
+    @Column(name = "proximity_supported", nullable = false) private boolean proximitySupported;
+    @Column(name = "ambient_light_supported", nullable = false) private boolean ambientLightSupported;
+    @Column(name = "servo_feedback_supported", nullable = false) private boolean servoFeedbackSupported;
+    @Column(name = "body_calibrated", nullable = false) private boolean bodyCalibrated;
+    @Column(name = "body_present", nullable = false) private boolean bodyPresent;
+    @Column(name = "body_ambient_light", nullable = false, length = 16)
+    private String bodyAmbientLight = "UNAVAILABLE";
+    @Column(name = "body_motion_state", nullable = false, length = 16)
+    private String bodyMotionState = "DISABLED";
+    @Column(name = "body_last_failure_code", nullable = false, length = 32)
+    private String bodyLastFailureCode = "NONE";
+    @Column(name = "body_failure_count", nullable = false) private long bodyFailureCount;
+
     @Column(name = "refresh_token_hash")
     private String refreshTokenHash;
 
@@ -127,6 +142,13 @@ public class DeviceEntity {
                 expressionDynamicRenderer, expressionImuSupported, expressionProximitySupported,
                 lifecycleClipSupported);
     }
+    public DeviceBodyDiagnostics getBodyDiagnostics() {
+        return new DeviceBodyDiagnostics(
+                bodyMotionSupported, bodyTouchSupported, proximitySupported,
+                ambientLightSupported, servoFeedbackSupported, bodyCalibrated,
+                bodyPresent, bodyAmbientLight, bodyMotionState,
+                bodyLastFailureCode, bodyFailureCount);
+    }
 
     public String getRefreshTokenHash() {
         return refreshTokenHash;
@@ -146,6 +168,17 @@ public class DeviceEntity {
         this.applicationOtaSupported = false;
         this.dynamicExpressionSupported = false;
         this.lifecycleClipSupported = false;
+        this.bodyMotionSupported = false;
+        this.bodyTouchSupported = false;
+        this.proximitySupported = false;
+        this.ambientLightSupported = false;
+        this.servoFeedbackSupported = false;
+        this.bodyCalibrated = false;
+        this.bodyPresent = false;
+        this.bodyAmbientLight = "UNAVAILABLE";
+        this.bodyMotionState = "DISABLED";
+        this.bodyLastFailureCode = "NONE";
+        this.bodyFailureCount = 0;
     }
 
     void rotateCredentials(String refreshTokenHash, Instant issuedAt) {
@@ -167,6 +200,14 @@ public class DeviceEntity {
     void recordHeartbeat(Instant lastSeenAt, String safetyState, String firmwareVersion,
                          Integer rssi, boolean applicationOtaSupported,
                          DeviceExpressionDiagnostics expression) {
+        recordHeartbeat(lastSeenAt, safetyState, firmwareVersion, rssi,
+                applicationOtaSupported, expression, null);
+    }
+
+    void recordHeartbeat(Instant lastSeenAt, String safetyState, String firmwareVersion,
+                         Integer rssi, boolean applicationOtaSupported,
+                         DeviceExpressionDiagnostics expression,
+                         DeviceBodyDiagnostics body) {
         this.lastSeenAt = lastSeenAt;
         this.safetyState = safetyState;
         this.rssi = rssi;
@@ -187,6 +228,31 @@ public class DeviceEntity {
             this.expressionDynamicRenderer = expression.dynamicRenderer();
             this.expressionImuSupported = expression.imuSupported();
             this.expressionProximitySupported = expression.proximitySupported();
+        }
+        if (body != null) {
+            this.bodyMotionSupported = body.bodyMotionSupported();
+            this.bodyTouchSupported = body.bodyTouchSupported();
+            this.proximitySupported = body.proximitySupported();
+            this.ambientLightSupported = body.ambientLightSupported();
+            this.servoFeedbackSupported = body.servoFeedbackSupported();
+            this.bodyCalibrated = body.calibrated();
+            this.bodyPresent = body.present();
+            this.bodyAmbientLight = body.ambientLight();
+            this.bodyMotionState = body.motionState();
+            this.bodyLastFailureCode = body.lastFailureCode();
+            this.bodyFailureCount = body.failureCount();
+        } else {
+            this.bodyMotionSupported = false;
+            this.bodyTouchSupported = false;
+            this.proximitySupported = false;
+            this.ambientLightSupported = false;
+            this.servoFeedbackSupported = false;
+            this.bodyCalibrated = false;
+            this.bodyPresent = false;
+            this.bodyAmbientLight = "UNAVAILABLE";
+            this.bodyMotionState = "DISABLED";
+            this.bodyLastFailureCode = "NONE";
+            this.bodyFailureCount = 0;
         }
         if (firmwareVersion != null) {
             this.firmwareVersion = firmwareVersion;

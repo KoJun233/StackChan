@@ -102,6 +102,17 @@ class WorkdayRuntimeServiceTest {
     }
 
     @Test
+    void firstArrivalAfterAWaitIsNotReportedAsRearrival() {
+        serviceAt("2026-08-24T01:00:00Z").start(DEVICE_ID, false);
+
+        var arrival = serviceAt("2026-08-24T01:46:00Z")
+                .updatePresenceWithOutcome(DEVICE_ID, true);
+
+        assertThat(arrival.rearrival()).isFalse();
+        assertThat(arrival.runtime().state()).isEqualTo(WorkdayRuntimeState.ACTIVE_PRESENT);
+    }
+
+    @Test
     void claimsTheFirstBriefOnceAndCountsItsTerminalResultOnce() {
         serviceAt("2026-08-24T01:00:00Z").start(DEVICE_ID, true);
 

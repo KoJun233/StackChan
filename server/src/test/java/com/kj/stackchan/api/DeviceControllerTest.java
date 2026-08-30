@@ -25,6 +25,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.json.JsonCompareMode.STRICT;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -77,9 +78,9 @@ class DeviceControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().json("""
                         {"devices":[
-                          {"id":"00000000-0000-0000-0000-000000000001","displayName":"Alpha","firmwareVersion":"1.0.0","safetyState":"motion_disabled","rssi":null,"applicationOtaSupported":false,"dynamicExpressionSupported":false,"lifecycleClipSupported":false,"lastSeenAt":"2026-07-17T14:59:30Z","online":true,"commandAvailable":false},
-                          {"id":"00000000-0000-0000-0000-000000000003","displayName":"Alpha","firmwareVersion":"1.0.1","safetyState":"motion_disabled","rssi":null,"applicationOtaSupported":false,"dynamicExpressionSupported":false,"lifecycleClipSupported":false,"lastSeenAt":"2026-07-17T14:58:29Z","online":false,"commandAvailable":false},
-                          {"id":"00000000-0000-0000-0000-000000000002","displayName":"Zulu","firmwareVersion":"2.0.0","safetyState":"motion_enabled","rssi":null,"applicationOtaSupported":false,"dynamicExpressionSupported":false,"lifecycleClipSupported":false,"lastSeenAt":null,"online":false,"commandAvailable":false}
+                          {"id":"00000000-0000-0000-0000-000000000001","displayName":"Alpha","firmwareVersion":"1.0.0","safetyState":"motion_disabled","rssi":null,"applicationOtaSupported":false,"dynamicExpressionSupported":false,"lifecycleClipSupported":false,"body":{"bodyMotionSupported":false,"bodyTouchSupported":false,"proximitySupported":false,"ambientLightSupported":false,"servoFeedbackSupported":false,"calibrated":false,"present":false,"ambientLight":"UNAVAILABLE","motionState":"DISABLED","lastFailureCode":"NONE","failureCount":0},"lastSeenAt":"2026-07-17T14:59:30Z","online":true,"commandAvailable":false},
+                          {"id":"00000000-0000-0000-0000-000000000003","displayName":"Alpha","firmwareVersion":"1.0.1","safetyState":"motion_disabled","rssi":null,"applicationOtaSupported":false,"dynamicExpressionSupported":false,"lifecycleClipSupported":false,"body":{"bodyMotionSupported":false,"bodyTouchSupported":false,"proximitySupported":false,"ambientLightSupported":false,"servoFeedbackSupported":false,"calibrated":false,"present":false,"ambientLight":"UNAVAILABLE","motionState":"DISABLED","lastFailureCode":"NONE","failureCount":0},"lastSeenAt":"2026-07-17T14:58:29Z","online":false,"commandAvailable":false},
+                          {"id":"00000000-0000-0000-0000-000000000002","displayName":"Zulu","firmwareVersion":"2.0.0","safetyState":"motion_enabled","rssi":null,"applicationOtaSupported":false,"dynamicExpressionSupported":false,"lifecycleClipSupported":false,"body":{"bodyMotionSupported":false,"bodyTouchSupported":false,"proximitySupported":false,"ambientLightSupported":false,"servoFeedbackSupported":false,"calibrated":false,"present":false,"ambientLight":"UNAVAILABLE","motionState":"DISABLED","lastFailureCode":"NONE","failureCount":0},"lastSeenAt":null,"online":false,"commandAvailable":false}
                         ]}
                         """, STRICT));
     }
@@ -106,6 +107,44 @@ class DeviceControllerTest {
         mockMvc.perform(post("/api/v1/devices/{deviceId}/commands/stop-motion", deviceId)
                         .with(user("admin").roles("ADMIN"))
                         .with(csrf()))
+                .andExpect(status().isAccepted());
+    }
+
+    @Test
+    void acceptsOnlyTheFiveNamedBodyMotions() throws Exception {
+        UUID deviceId = UUID.fromString("a88e4a94-8536-4fa1-91ed-8681b597429d");
+        when(deviceCommandGateway.playBodyMotion(deviceId, "NOD_SMALL")).thenReturn(true);
+
+        mockMvc.perform(post("/api/v1/devices/{deviceId}/commands/body-motion", deviceId)
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"motion\":\"NOD_SMALL\"}"))
+                .andExpect(status().isAccepted());
+
+        mockMvc.perform(post("/api/v1/devices/{deviceId}/commands/body-motion", deviceId)
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"motion\":\"DANCE\",\"angle\":90}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void sendsExplicitBodyCalibrationAndEnableCommands() throws Exception {
+        UUID deviceId = UUID.fromString("a88e4a94-8536-4fa1-91ed-8681b597429d");
+        when(deviceCommandGateway.calibrateBodyCenter(deviceId)).thenReturn(true);
+        when(deviceCommandGateway.configureBodyMotion(deviceId, true)).thenReturn(true);
+
+        mockMvc.perform(post("/api/v1/devices/{deviceId}/commands/calibrate-body", deviceId)
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf()))
+                .andExpect(status().isAccepted());
+        mockMvc.perform(put("/api/v1/devices/{deviceId}/body-motion", deviceId)
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"enabled\":true}"))
                 .andExpect(status().isAccepted());
     }
 

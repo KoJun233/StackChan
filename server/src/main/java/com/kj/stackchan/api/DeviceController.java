@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.kj.stackchan.device.DeviceCommandGateway;
+import com.kj.stackchan.device.DeviceBodyDiagnostics;
 import com.kj.stackchan.device.DeviceEntity;
 import com.kj.stackchan.device.DeviceRepository;
 import com.kj.stackchan.role.CompanionRoleService;
@@ -64,6 +65,7 @@ public class DeviceController {
                         device.isApplicationOtaSupported(),
                         device.isDynamicExpressionSupported(),
                         device.isLifecycleClipSupported(),
+                        DeviceBodyResponse.from(device.getBodyDiagnostics()),
                         device.getLastSeenAt(),
                         isOnline(device),
                         deviceCommandGateway.isConnected(device.getId())
@@ -76,6 +78,36 @@ public class DeviceController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public void stopMotion(@PathVariable UUID deviceId) {
         if (!deviceCommandGateway.stopMotion(deviceId)) {
+            throw new DeviceOfflineException();
+        }
+    }
+
+    @PutMapping(path = "/{deviceId}/body-motion", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public void configureBodyMotion(
+            @PathVariable UUID deviceId,
+            @Valid @RequestBody BodyMotionConfigurationRequest request
+    ) {
+        if (!deviceCommandGateway.configureBodyMotion(deviceId, request.enabled())) {
+            throw new DeviceOfflineException();
+        }
+    }
+
+    @PostMapping(path = "/{deviceId}/commands/calibrate-body")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public void calibrateBody(@PathVariable UUID deviceId) {
+        if (!deviceCommandGateway.calibrateBodyCenter(deviceId)) {
+            throw new DeviceOfflineException();
+        }
+    }
+
+    @PostMapping(path = "/{deviceId}/commands/body-motion", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public void playBodyMotion(
+            @PathVariable UUID deviceId,
+            @Valid @RequestBody BodyMotionRequest request
+    ) {
+        if (!deviceCommandGateway.playBodyMotion(deviceId, request.motion().name())) {
             throw new DeviceOfflineException();
         }
     }
@@ -119,10 +151,53 @@ public class DeviceController {
             boolean applicationOtaSupported,
             boolean dynamicExpressionSupported,
             boolean lifecycleClipSupported,
+            DeviceBodyResponse body,
             Instant lastSeenAt,
             boolean online,
             boolean commandAvailable
     ) {
+    }
+
+    public record DeviceBodyResponse(
+            boolean bodyMotionSupported,
+            boolean bodyTouchSupported,
+            boolean proximitySupported,
+            boolean ambientLightSupported,
+            boolean servoFeedbackSupported,
+            boolean calibrated,
+            boolean present,
+            String ambientLight,
+            String motionState,
+            String lastFailureCode,
+            long failureCount
+    ) {
+        static DeviceBodyResponse from(DeviceBodyDiagnostics body) {
+            if (body == null) {
+                return new DeviceBodyResponse(
+                        false, false, false, false, false, false, false,
+                        "UNAVAILABLE", "DISABLED", "NONE", 0);
+            }
+            return new DeviceBodyResponse(
+                    body.bodyMotionSupported(), body.bodyTouchSupported(),
+                    body.proximitySupported(), body.ambientLightSupported(),
+                    body.servoFeedbackSupported(), body.calibrated(), body.present(),
+                    body.ambientLight(), body.motionState(), body.lastFailureCode(),
+                    body.failureCount());
+        }
+    }
+
+    public record BodyMotionConfigurationRequest(@NotNull Boolean enabled) {
+    }
+
+    public record BodyMotionRequest(@NotNull BodyMotion motion) {
+    }
+
+    public enum BodyMotion {
+        WAKE,
+        LOOK_USER,
+        NOD_SMALL,
+        THINK,
+        DROWSY
     }
 
     public record ActiveRoleRequest(@NotNull UUID roleId) {}

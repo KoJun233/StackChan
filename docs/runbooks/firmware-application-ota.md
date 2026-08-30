@@ -18,8 +18,13 @@
 Push-Location firmware
 idf.py -B build-lan-http-quad -D IDF_TARGET=esp32s3 -D SDKCONFIG="sdkconfig.profile-lan-http-quad" -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.lan-http.defaults" build
 if ($LASTEXITCODE -ne 0) { throw 'LAN HTTP Quad firmware build failed' }
+Select-String -Path build-lan-http-quad/config/sdkconfig.h -Pattern '#define CONFIG_ESP_MAIN_TASK_STACK_SIZE 8192' |
+  ForEach-Object { $mainStackVerified = $true }
+if (-not $mainStackVerified) { throw 'Main task stack configuration is stale or unsafe' }
 Pop-Location
 ```
+
+`SDKCONFIG_DEFAULTS` 不会覆盖已有显式 `SDKCONFIG` 中的旧值。复用 profile 文件前必须执行上述生成配置检查；如果检查失败，换用新的任务专属 `SDKCONFIG` 文件重新配置，禁止继续发布旧配置产物。项目 CMake 也会拒绝低于 8192 字节的主任务栈。
 
 在“机器人设备 → 健康中心”选择生成的 `stackchan_firmware.bin`。输入 ESP app descriptor 中的精确版本；服务端会再次验证项目名、嵌入版本、大小和 SHA-256。不要导入 `bootloader.bin`、`partition-table.bin` 或完整 merged image。
 
@@ -43,5 +48,6 @@ Pop-Location
 - `INSTALLING` 超过 15 分钟：服务端会把已接受命令标为安全超时失败；先核对设备实际版本，再决定是否重试。
 - artifact 返回 404：确认请求设备拥有该任务且任务仍为 `READY/INSTALLING`；不要改成公开下载。
 - 新镜像回退：保留旧槽运行，先修复构建或初始化问题；不要清除 NVS 作为首选恢复手段。
+- 串口出现 `A stack overflow in task main`：核对生成的 `config/sdkconfig.h`。`sdkconfig.defaults` 已提高主任务栈并不能证明旧的显式 profile 已更新；低于 8192 字节的配置必须废弃并重新生成。
 
 任何生产 OTA 都必须保持 HTTPS/WSS 边界。LAN HTTP 下的设备 token 可被同网段观察，因此只可用于显式开发环境。

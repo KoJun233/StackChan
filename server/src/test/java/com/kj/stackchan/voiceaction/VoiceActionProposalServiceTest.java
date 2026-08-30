@@ -15,6 +15,8 @@ import com.kj.stackchan.reminder.ReminderService;
 import com.kj.stackchan.reminder.ReminderStatus;
 import com.kj.stackchan.conversation.ConversationService;
 import com.kj.stackchan.role.CompanionRoleService;
+import com.kj.stackchan.workday.WorkdayCompanionService;
+import com.kj.stackchan.workday.WorkdayRestAction;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -155,8 +157,63 @@ class VoiceActionProposalServiceTest {
                 notificationId, deviceId, roleId, NotificationResponseAction.SNOOZE, 15);
     }
 
+    @Test
+    void confirmedWorkdayActionsUseTheBoundDeviceExactlyOnce() {
+        ConversationService conversationService = mock(ConversationService.class);
+        CompanionRoleService roleService = mock(CompanionRoleService.class);
+        InteractiveNotificationService notificationService = mock(InteractiveNotificationService.class);
+        WorkdayCompanionService workdayService = mock(WorkdayCompanionService.class);
+        VoiceActionProposalService workdayActions = new VoiceActionProposalService(
+                proposalRepository, auditRepository, reminderService, settingsService, memoryService,
+                settingsCoordinator, Clock.fixed(NOW, ZoneOffset.UTC), conversationService, roleService,
+                notificationService, workdayService);
+        UUID deviceId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        when(conversationService.roleId(conversationId)).thenReturn(UUID.randomUUID());
+
+        var proposal = workdayActions.propose(deviceId, conversationId, UUID.randomUUID(),
+                workdayDraft(VoiceActionType.START_WORKDAY));
+        VoiceActionProposalEntity entity = capturedProposal();
+        when(proposalRepository.findByIdForUpdate(proposal.id())).thenReturn(java.util.Optional.of(entity));
+
+        assertThat(workdayActions.confirm(proposal.id(), deviceId, conversationId).status())
+                .isEqualTo(VoiceActionStatus.EXECUTED);
+        assertThat(workdayActions.confirm(proposal.id(), deviceId, conversationId).resultReference())
+                .isEqualTo(deviceId);
+        verify(workdayService, times(1)).start(deviceId);
+    }
+
+    @Test
+    void confirmedRestSnoozeMapsToTheDeterministicWorkdayAction() {
+        ConversationService conversationService = mock(ConversationService.class);
+        CompanionRoleService roleService = mock(CompanionRoleService.class);
+        InteractiveNotificationService notificationService = mock(InteractiveNotificationService.class);
+        WorkdayCompanionService workdayService = mock(WorkdayCompanionService.class);
+        VoiceActionProposalService workdayActions = new VoiceActionProposalService(
+                proposalRepository, auditRepository, reminderService, settingsService, memoryService,
+                settingsCoordinator, Clock.fixed(NOW, ZoneOffset.UTC), conversationService, roleService,
+                notificationService, workdayService);
+        UUID deviceId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        when(conversationService.roleId(conversationId)).thenReturn(UUID.randomUUID());
+
+        var proposal = workdayActions.propose(deviceId, conversationId, UUID.randomUUID(),
+                workdayDraft(VoiceActionType.SNOOZE_WORKDAY_REST));
+        VoiceActionProposalEntity entity = capturedProposal();
+        when(proposalRepository.findByIdForUpdate(proposal.id())).thenReturn(java.util.Optional.of(entity));
+
+        assertThat(workdayActions.confirm(proposal.id(), deviceId, conversationId).status())
+                .isEqualTo(VoiceActionStatus.EXECUTED);
+        verify(workdayService).respondToRest(deviceId, WorkdayRestAction.SNOOZE);
+    }
+
     private VoiceActionDraft reminderDraft() {
         return VoiceActionDraft.reminder("喝水", NOW.plusSeconds(600), "Asia/Shanghai", "NONE", 1);
+    }
+
+    private VoiceActionDraft workdayDraft(VoiceActionType actionType) {
+        return new VoiceActionDraft(actionType, true, null, null, null, null,
+                null, null, null, null, null, null, null);
     }
 
     private VoiceActionProposalEntity capturedProposal() {

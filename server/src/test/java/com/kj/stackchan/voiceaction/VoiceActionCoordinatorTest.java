@@ -126,4 +126,22 @@ class VoiceActionCoordinatorTest {
         verify(notificationService).latestActionable(deviceId, roleId, NotificationResponseAction.ACKNOWLEDGE);
         verify(proposalService, never()).propose(any(), any(), any(), any());
     }
+
+    @Test
+    void explicitWorkdayLifecyclePhraseCreatesAConfirmedFixedAction() {
+        UUID proposalId = UUID.randomUUID();
+        when(proposalService.propose(any(), any(), any(), any())).thenReturn(
+                new VoiceActionProposalService.ProposalSnapshot(proposalId, VoiceActionType.START_WORKDAY,
+                        VoiceActionStatus.PENDING, true, null, null, null, null, null, null,
+                        null, null, Instant.parse("2026-08-02T08:02:00Z")));
+        when(proposalService.restatement(any())).thenReturn("要开始当前设备的工作模式。确认执行吗？");
+
+        var result = coordinator.handle(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "开始工作");
+
+        assertThat(result.reply()).contains("确认执行");
+        ArgumentCaptor<VoiceActionDraft> draft = ArgumentCaptor.forClass(VoiceActionDraft.class);
+        verify(proposalService).propose(any(), any(), any(), draft.capture());
+        assertThat(draft.getValue().actionType()).isEqualTo(VoiceActionType.START_WORKDAY);
+        assertThat(draft.getValue().confirmationRequired()).isTrue();
+    }
 }

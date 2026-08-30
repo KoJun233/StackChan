@@ -8,6 +8,12 @@ public interface DeviceCommandGateway {
 
     boolean stopAudio(UUID deviceId);
 
+    boolean configureBodyMotion(UUID deviceId, boolean enabled);
+
+    boolean calibrateBodyCenter(UUID deviceId);
+
+    boolean playBodyMotion(UUID deviceId, String motion);
+
     boolean speakReminder(UUID deviceId, UUID reminderId, String commandId);
 
     boolean installWakeModel(

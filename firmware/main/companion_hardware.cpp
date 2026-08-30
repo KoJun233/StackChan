@@ -35,6 +35,8 @@
 #define TOUCH_EVENT_QUEUE_LENGTH 8
 #define NORMAL_BRIGHTNESS_PERCENT 63
 #define NIGHT_BRIGHTNESS_PERCENT 25
+#define MIN_AMBIENT_BRIGHTNESS_PERCENT 18
+#define MAX_AMBIENT_BRIGHTNESS_PERCENT 78
 #define SCREENSAVER_BRIGHTNESS_PERCENT 9
 #define SCREENSAVER_FRAME_MS 50
 #define BALL_SURFACE_SIZE 160
@@ -59,6 +61,7 @@ static portMUX_TYPE s_activity_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_playback_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_expression_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_imu_lock = portMUX_INITIALIZER_UNLOCKED;
+static int s_ambient_brightness_percent = NORMAL_BRIGHTNESS_PERCENT;
 
 static lv_display_t *s_display;
 static lv_indev_t *s_touch_indev;
@@ -125,6 +128,9 @@ static uint32_t s_window_started_ms;
 static uint32_t s_stable_since_ms;
 static uint8_t s_over_budget_frames;
 static bool s_audio_playback_active;
+static bool s_audio_capture_active;
+static bool s_expression_updating;
+static bool s_hardware_error;
 static float s_last_acceleration_sum;
 static int64_t s_last_shake_us;
 static int64_t s_next_input_poll_us;
@@ -278,9 +284,16 @@ static void set_audio_playback_active(bool active)
     taskEXIT_CRITICAL(&s_playback_lock);
 }
 
+static void set_audio_capture_active(bool active)
+{
+    taskENTER_CRITICAL(&s_playback_lock);
+    s_audio_capture_active = active;
+    taskEXIT_CRITICAL(&s_playback_lock);
+}
+
 static int active_brightness_percent(void)
 {
-    return s_night_mode ? NIGHT_BRIGHTNESS_PERCENT : NORMAL_BRIGHTNESS_PERCENT;
+    return s_night_mode ? NIGHT_BRIGHTNESS_PERCENT : s_ambient_brightness_percent;
 }
 
 static void restore_expression_fps_after_screensaver(void)
@@ -1183,10 +1196,12 @@ extern "C" esp_err_t companion_hardware_record_pcm(int16_t *samples,
         return ESP_ERR_INVALID_ARG;
     }
     if (!take_mutex(s_audio_mutex, portMAX_DELAY)) return ESP_ERR_TIMEOUT;
+    set_audio_capture_active(true);
     esp_err_t err = open_microphone();
     if (err == ESP_OK) {
         err = esp_codec_dev_read(s_microphone_codec, samples, sample_count * sizeof(int16_t));
     }
+    set_audio_capture_active(false);
     xSemaphoreGive(s_audio_mutex);
     return err;
 }
@@ -1278,6 +1293,19 @@ extern "C" esp_err_t companion_hardware_configure_interaction(int volume_percent
     return err;
 }
 
+extern "C" esp_err_t companion_hardware_set_ambient_brightness(int brightness_percent)
+{
+    if (!s_initialized || brightness_percent < MIN_AMBIENT_BRIGHTNESS_PERCENT ||
+        brightness_percent > MAX_AMBIENT_BRIGHTNESS_PERCENT) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!take_mutex(s_board_mutex, pdMS_TO_TICKS(100))) return ESP_ERR_TIMEOUT;
+    s_ambient_brightness_percent = brightness_percent;
+    if (!s_night_mode && !s_screensaver) set_display_brightness(active_brightness_percent());
+    xSemaphoreGive(s_board_mutex);
+    return ESP_OK;
+}
+
 extern "C" bool companion_hardware_wait_touch_event(companion_touch_event_t *event,
                                                        uint32_t timeout_ms)
 {
@@ -1354,8 +1382,24 @@ extern "C" void companion_hardware_get_expression_diagnostics(
     diagnostics->dynamic_renderer = s_dynamic_surface_active;
 }
 
+extern "C" void companion_hardware_get_motion_guard(bool *audio_busy,
+                                                       bool *updating,
+                                                       bool *device_error)
+{
+    taskENTER_CRITICAL(&s_playback_lock);
+    if (audio_busy != nullptr) {
+        *audio_busy = s_audio_playback_active || s_audio_capture_active;
+    }
+    if (updating != nullptr) *updating = s_expression_updating;
+    if (device_error != nullptr) *device_error = s_hardware_error;
+    taskEXIT_CRITICAL(&s_playback_lock);
+}
+
 extern "C" void companion_hardware_set_expression_updating(bool updating)
 {
+    taskENTER_CRITICAL(&s_playback_lock);
+    s_expression_updating = updating;
+    taskEXIT_CRITICAL(&s_playback_lock);
     if (!s_initialized || !take_mutex(s_board_mutex, pdMS_TO_TICKS(250))) return;
     companion_expression_engine_set_updating(
         &s_expression_engine, updating, (uint32_t)(esp_timer_get_time() / 1000LL));

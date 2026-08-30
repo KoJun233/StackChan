@@ -45,6 +45,7 @@ docker compose -f compose.yaml up -d --force-recreate server
 
 - Review the CoreS3 power setup and keep all external motion hardware disconnected.
 - Build the firmware with the ESP-IDF version pinned by `firmware/sdkconfig.defaults`.
+- Verify the generated `config/sdkconfig.h` contains `CONFIG_ESP_MAIN_TASK_STACK_SIZE 8192`; defaults do not override a stale explicit profile, and the build must stop if this value is lower.
 - Select one physical transport profile and keep its firmware configuration, server base URL, and trust model aligned:
   - Default secure firmware requires an `https://` origin whose certificate chains to the ESP-IDF public CA bundle, then derives a same-origin `wss://` device endpoint.
   - Self-signed HTTPS test firmware also requires an `https://` origin and derives `wss://`, but the server must present the test certificate embedded from `firmware/main/lan-test-server.pem`. This profile trusts that certificate instead of the public CA bundle and must not be used as a production image.

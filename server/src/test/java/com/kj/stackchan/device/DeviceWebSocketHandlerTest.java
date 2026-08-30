@@ -151,6 +151,60 @@ class DeviceWebSocketHandlerTest {
     }
 
     @Test
+    void recordsOnlyPrivacySafeBodyCapabilitiesAndDiagnostics() throws Exception {
+        WebSocketSession session = authenticatedSession();
+        handler().afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"heartbeat","sequence":10,"battery_percent":80,"rssi":-54,"safety_state":"motion_armed","firmware_version":"body001","application_ota_supported":true,"dynamic_expression_supported":true,"expression":{"target_fps":20,"actual_fps":20,"draw_time_us":6200,"transfer_time_us":4100,"display_lock_wait_us":300,"dropped_frames":2,"audio_underruns":0,"minimum_free_heap":7340032,"active_layer":"PHYSICAL","degrade_reason":0,"dynamic_renderer":true,"imu_supported":true,"proximity_supported":true,"lifecycle_clips_supported":true},"body_motion_supported":true,"body_touch_supported":true,"proximity_supported":true,"ambient_light_supported":true,"servo_feedback_supported":true,"body":{"calibrated":true,"present":true,"ambient_light":"NORMAL","motion_state":"ARMED","last_failure_code":"NONE","failure_count":0}}
+                """));
+
+        ArgumentCaptor<DeviceBodyDiagnostics> body =
+                ArgumentCaptor.forClass(DeviceBodyDiagnostics.class);
+        verify(deviceEventService).recordHeartbeat(
+                org.mockito.ArgumentMatchers.eq(DEVICE_ID),
+                org.mockito.ArgumentMatchers.eq("motion_armed"),
+                org.mockito.ArgumentMatchers.eq("body001"),
+                org.mockito.ArgumentMatchers.eq(-54),
+                org.mockito.ArgumentMatchers.eq(true),
+                org.mockito.ArgumentMatchers.any(DeviceExpressionDiagnostics.class),
+                body.capture());
+        assertThat(body.getValue().present()).isTrue();
+        assertThat(body.getValue().ambientLight()).isEqualTo("NORMAL");
+        assertThat(body.getValue().motionState()).isEqualTo("ARMED");
+    }
+
+    @Test
+    void rejectsBodyHeartbeatWithRawSensorData() throws Exception {
+        WebSocketSession session = authenticatedSession();
+        handler().afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"heartbeat","sequence":10,"battery_percent":80,"rssi":-54,"safety_state":"motion_disabled","firmware_version":"body001","application_ota_supported":true,"dynamic_expression_supported":true,"expression":{"target_fps":20,"actual_fps":20,"draw_time_us":6200,"transfer_time_us":4100,"display_lock_wait_us":300,"dropped_frames":2,"audio_underruns":0,"minimum_free_heap":7340032,"active_layer":"PHYSICAL","degrade_reason":0,"dynamic_renderer":true,"imu_supported":true,"proximity_supported":true,"lifecycle_clips_supported":true},"body_motion_supported":true,"body_touch_supported":true,"proximity_supported":true,"ambient_light_supported":true,"servo_feedback_supported":false,"body":{"calibrated":false,"present":true,"ambient_light":"NORMAL","motion_state":"DISABLED","last_failure_code":"NONE","failure_count":0,"proximity_raw":622}}
+                """));
+
+        ArgumentCaptor<TextMessage> message = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session).sendMessage(message.capture());
+        assertThat(message.getValue().getPayload()).contains("invalid_event");
+        verifyNoInteractions(deviceEventService);
+    }
+
+    @Test
+    void rejectsBodyHeartbeatWhenRootAndBodyMotionStatesConflict() throws Exception {
+        WebSocketSession session = authenticatedSession();
+        handler().afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"heartbeat","sequence":10,"battery_percent":80,"rssi":-54,"safety_state":"motion_disabled","firmware_version":"body001","application_ota_supported":true,"body_motion_supported":true,"body_touch_supported":true,"proximity_supported":true,"ambient_light_supported":true,"servo_feedback_supported":true,"body":{"calibrated":true,"present":true,"ambient_light":"NORMAL","motion_state":"ARMED","last_failure_code":"NONE","failure_count":0}}
+                """));
+
+        ArgumentCaptor<TextMessage> message = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session).sendMessage(message.capture());
+        assertThat(message.getValue().getPayload()).contains("invalid_event");
+        verifyNoInteractions(deviceEventService);
+    }
+
+    @Test
     void synchronizesFrameRateIndependentlyWhenThemeSynchronizationFails() throws Exception {
         WebSocketSession session = authenticatedSession();
         when(deviceExpressionService.synchronizeActiveRoleTheme(DEVICE_ID)).thenReturn(false);
@@ -374,6 +428,18 @@ class DeviceWebSocketHandlerTest {
         verify(session).sendMessage(message.capture());
         assertThat(message.getValue().getPayload()).contains("invalid_event");
         verifyNoInteractions(voiceTurnDiagnosticsService);
+    }
+
+    @Test
+    void acceptsOnlyTheStrictTopTouchWorkdayToggleEvent() throws Exception {
+        WebSocketSession session = authenticatedSession();
+        handler.afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage(
+                "{\"type\":\"workday_toggle\",\"sequence\":9}"
+        ));
+
+        verify(deviceEventService).toggleWorkday(DEVICE_ID);
     }
 
     private WebSocketSession authenticatedSession() {

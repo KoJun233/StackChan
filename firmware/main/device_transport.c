@@ -22,6 +22,7 @@
 #include "freertos/task.h"
 
 #include "companion_hardware.h"
+#include "body_hardware.h"
 #include "device_identity.h"
 #include "device_credentials.h"
 #include "device_endpoint.h"
@@ -110,6 +111,18 @@ static uint32_t s_wifi_reconnect_delay_seconds = WIFI_RECONNECT_INITIAL_SECONDS;
 static portMUX_TYPE s_wifi_retry_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_server_connection_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool s_server_connected;
+
+static safety_motion_guard_t current_motion_guard(void)
+{
+    safety_motion_guard_t guard = {
+        .connected = device_transport_is_server_connected(),
+    };
+    companion_hardware_get_motion_guard(&guard.audio_busy, &guard.updating,
+                                        &guard.device_error);
+    guard.audio_busy = guard.audio_busy || voice_control_motion_blocked();
+    guard.updating = guard.updating || firmware_ota_is_pending() || wake_model_ota_is_pending();
+    return guard;
+}
 
 static void reset_wifi_reconnect_state(void);
 static void schedule_wifi_reconnect(bool immediate);
@@ -366,11 +379,13 @@ static void websocket_event_handler(void *handler_args,
         return;
     }
     if (command.type == DEVICE_COMMAND_STOP_AUDIO) {
+        safety_state_stop_motion_with_reason(SAFETY_FAILURE_VOICE_STOP);
         voice_control_cancel_active_turn();
         send_command_ack(connection, command.command_id, true, DEVICE_COMMAND_RESULT_NONE);
         return;
     }
     if (command.type == DEVICE_COMMAND_SPEAK_REMINDER) {
+        safety_state_stop_motion_with_reason(SAFETY_FAILURE_VOICE_STOP);
         companion_hardware_mark_activity();
         reminder_command_t reminder = {0};
         memcpy(reminder.command_id, command.command_id, sizeof(reminder.command_id));
@@ -378,6 +393,27 @@ static void websocket_event_handler(void *handler_args,
         if (connection->reminder_queue == NULL || xQueueSend(connection->reminder_queue, &reminder, 0) != pdTRUE) {
             send_command_ack(connection, command.command_id, false, DEVICE_COMMAND_RESULT_FAILED);
         }
+        return;
+    }
+    if (command.type == DEVICE_COMMAND_CONFIGURE_BODY_MOTION) {
+        bool accepted = body_hardware_set_motion_enabled(command.body_motion_enabled);
+        send_command_ack(connection, command.command_id, accepted,
+                         accepted ? DEVICE_COMMAND_RESULT_NONE : DEVICE_COMMAND_RESULT_FAILED);
+        return;
+    }
+    if (command.type == DEVICE_COMMAND_CALIBRATE_BODY_CENTER) {
+        safety_motion_guard_t guard = current_motion_guard();
+        bool accepted = guard.connected && !guard.audio_busy && !guard.updating &&
+                        !guard.device_error && body_hardware_calibrate_center() == ESP_OK;
+        send_command_ack(connection, command.command_id, accepted,
+                         accepted ? DEVICE_COMMAND_RESULT_NONE : DEVICE_COMMAND_RESULT_FAILED);
+        return;
+    }
+    if (command.type == DEVICE_COMMAND_PLAY_BODY_MOTION) {
+        safety_motion_guard_t guard = current_motion_guard();
+        bool accepted = body_hardware_play_motion(command.body_motion_template, &guard);
+        send_command_ack(connection, command.command_id, accepted,
+                         accepted ? DEVICE_COMMAND_RESULT_NONE : DEVICE_COMMAND_RESULT_FAILED);
         return;
     }
     if (command.type == DEVICE_COMMAND_CONFIGURE_VOICE_DETECTION) {
@@ -694,10 +730,12 @@ static bool run_websocket_connection(const device_identity_t *identity)
             uint32_t sequence = connection_next_sequence(&connection);
             const esp_app_desc_t *app_description = esp_app_get_description();
             companion_expression_diagnostics_t expression = {0};
+            device_body_diagnostics_t body = {0};
             companion_hardware_get_expression_diagnostics(&expression);
+            body_hardware_get_diagnostics(&body);
             if (sequence == 0 ||
                 app_description == NULL ||
-                device_protocol_encode_heartbeat_with_expression(
+                device_protocol_encode_heartbeat_with_body(
                     heartbeat, sizeof(heartbeat), sequence, 0, transport_rssi(),
                     app_description->version, expression.target_fps, expression.actual_fps,
                     expression.draw_time_us, expression.transfer_time_us,
@@ -705,7 +743,7 @@ static bool run_websocket_connection(const device_identity_t *identity)
                     expression.audio_underruns, expression.minimum_free_heap,
                     companion_expression_layer_name(expression.active_layer),
                     expression.degrade_reason, expression.dynamic_renderer,
-                    expression.imu_supported) != ESP_OK ||
+                    expression.imu_supported, &body) != ESP_OK ||
                 !connection_send_text(&connection, heartbeat)) {
                 connection.failed = true;
                 safety_state_stop_motion();
@@ -713,6 +751,17 @@ static bool run_websocket_connection(const device_identity_t *identity)
             }
             connection.heartbeat_sent = true;
             next_heartbeat_us = now_us + HEARTBEAT_SEND_INTERVAL_US;
+        }
+        if (connection.connected && body_hardware_take_workday_toggle()) {
+            char payload[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
+            uint32_t sequence = connection_next_sequence(&connection);
+            if (sequence == 0 ||
+                device_protocol_encode_workday_toggle(payload, sizeof(payload), sequence) != ESP_OK ||
+                !connection_send_text(&connection, payload)) {
+                connection.failed = true;
+                safety_state_stop_motion();
+                break;
+            }
         }
         if (connection.connected && !connection.wake_model_report_sent) {
             wake_model_ota_report_t report = {0};
@@ -756,6 +805,7 @@ static bool run_websocket_connection(const device_identity_t *identity)
         firmware_command_t firmware_install = {0};
         if (connection.connected &&
             xQueueReceive(connection.firmware_queue, &firmware_install, 0) == pdTRUE) {
+            safety_state_stop_motion();
             companion_hardware_set_expression_updating(true);
             bool accepted = firmware_ota_install(identity, &firmware_install.request) == ESP_OK;
             if (!accepted) companion_hardware_set_expression_updating(false);
@@ -770,6 +820,7 @@ static bool run_websocket_connection(const device_identity_t *identity)
         wake_model_command_t install = {0};
         if (connection.connected &&
             xQueueReceive(connection.wake_model_queue, &install, 0) == pdTRUE) {
+            safety_state_stop_motion();
             bool accepted = wake_model_ota_install(identity, &install.request) == ESP_OK;
             send_command_ack(&connection,
                              install.command_id,
@@ -784,6 +835,7 @@ static bool run_websocket_connection(const device_identity_t *identity)
         expression_pack_command_t expression_install = {0};
         if (connection.connected &&
             xQueueReceive(connection.expression_pack_queue, &expression_install, 0) == pdTRUE) {
+            safety_state_stop_motion();
             bool accepted = expression_install.clear
                                 ? expression_pack_clear() == ESP_OK
                                 : expression_pack_install(identity, &expression_install.request) == ESP_OK;

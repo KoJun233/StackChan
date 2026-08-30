@@ -81,6 +81,11 @@ public class WorkdayRuntimeService {
 
     @Transactional
     public WorkdayRuntimeSnapshot updatePresence(UUID deviceId, boolean present) {
+        return updatePresenceWithOutcome(deviceId, present).runtime();
+    }
+
+    @Transactional
+    public PresenceUpdateSnapshot updatePresenceWithOutcome(UUID deviceId, boolean present) {
         validateDevice(deviceId);
         Instant now = clock.instant();
         WorkdaySettingsService.WorkdaySettingsSnapshot settings = settingsService.resolve(deviceId);
@@ -90,8 +95,12 @@ public class WorkdayRuntimeService {
             throw new InvalidWorkdayStateException("Workday mode is not active");
         }
         if (runtime.isPresent() == present) {
-            return snapshot(runtime, settings);
+            return new PresenceUpdateSnapshot(snapshot(runtime, settings), false);
         }
+        boolean rearrival = present && runtime.getState() == WorkdayRuntimeState.ACTIVE_ABSENT
+                && runtime.getAbsenceStartedAt() != null
+                && !now.isBefore(runtime.getAbsenceStartedAt().plus(
+                Duration.ofMinutes(settings.rearrivalMinutes())));
         accrueFocus(runtime, now);
         runtime.markPresent(present, now);
         if (present && (runtime.getState() == WorkdayRuntimeState.STARTING
@@ -99,7 +108,14 @@ public class WorkdayRuntimeService {
             runtime.transition(WorkdayRuntimeState.ACTIVE_PRESENT, now);
         }
         runtimeRepository.save(runtime);
-        return snapshot(runtime, settings);
+        return new PresenceUpdateSnapshot(snapshot(runtime, settings), rearrival);
+    }
+
+    @Transactional(readOnly = true)
+    public List<UUID> activeDeviceIds() {
+        return runtimeRepository.findAllByStateNot(WorkdayRuntimeState.OFF).stream()
+                .map(DeviceWorkdayRuntimeEntity::getDeviceId)
+                .toList();
     }
 
     @Transactional
@@ -154,6 +170,7 @@ public class WorkdayRuntimeService {
                 .orElseGet(() -> new DeviceWorkdayRuntimeEntity(deviceId, now));
         if (runtime.getState() != WorkdayRuntimeState.OFF && runtime.getWorkDate() != null) {
             accrueFocus(runtime, now);
+            cancelPendingBrief(runtime, now);
             metric(deviceId, runtime.getWorkDate(), now).sessionEnded(now);
             runtime.stop(now);
             runtimeRepository.save(runtime);
@@ -221,6 +238,7 @@ public class WorkdayRuntimeService {
         Optional<LocalDate> currentWorkDate = settingsService.workDate(settings, now);
         if (currentWorkDate.isEmpty() || !currentWorkDate.get().equals(runtime.getWorkDate())) {
             accrueFocus(runtime, now);
+            cancelPendingBrief(runtime, now);
             metric(runtime.getDeviceId(), runtime.getWorkDate(), now).sessionEnded(now);
             runtime.stop(now);
             runtimeRepository.save(runtime);
@@ -276,6 +294,17 @@ public class WorkdayRuntimeService {
         LocalDate cutoff = today.minusDays(MAX_METRIC_DAYS - 1L);
         metricRepository.deleteByWorkDateBefore(cutoff);
         briefRepository.deleteByWorkDateBefore(cutoff);
+    }
+
+    private void cancelPendingBrief(DeviceWorkdayRuntimeEntity runtime, Instant now) {
+        briefRepository.findForUpdate(runtime.getDeviceId(), runtime.getWorkDate())
+                .filter(attempt -> attempt.getStatus() == WorkdayBriefStatus.PENDING)
+                .ifPresent(attempt -> {
+                    if (attempt.complete(WorkdayBriefStatus.CANCELLED, now)) {
+                        metric(runtime.getDeviceId(), runtime.getWorkDate(), now)
+                                .briefCompleted(WorkdayBriefStatus.CANCELLED, now);
+                    }
+                });
     }
 
     private void validateDevice(UUID deviceId) {
@@ -370,6 +399,8 @@ public class WorkdayRuntimeService {
             Instant completedAt,
             Instant updatedAt
     ) { }
+
+    public record PresenceUpdateSnapshot(WorkdayRuntimeSnapshot runtime, boolean rearrival) { }
 
     public record DailyMetricSnapshot(
             LocalDate workDate,
