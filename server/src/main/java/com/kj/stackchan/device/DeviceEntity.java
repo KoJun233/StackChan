@@ -27,6 +27,9 @@ public class DeviceEntity {
     @Column(name = "last_seen_at")
     private Instant lastSeenAt;
 
+    @Column(name = "last_device_sequence")
+    private Long lastDeviceSequence;
+
     @Column(name = "safety_state", nullable = false)
     private String safetyState = "motion_disabled";
 
@@ -110,6 +113,10 @@ public class DeviceEntity {
 
     public Instant getLastSeenAt() {
         return lastSeenAt;
+    }
+
+    public Long getLastDeviceSequence() {
+        return lastDeviceSequence;
     }
 
     public String getSafetyState() {
@@ -261,5 +268,9 @@ public class DeviceEntity {
 
     void recordHeartbeat(Instant lastSeenAt, String safetyState, String firmwareVersion) {
         recordHeartbeat(lastSeenAt, safetyState, firmwareVersion, null, false);
+    }
+
+    void recordDeviceSequence(long sequence) {
+        this.lastDeviceSequence = sequence;
     }
 }

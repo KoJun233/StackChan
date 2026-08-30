@@ -58,6 +58,7 @@ class WorkdayCompanionServiceTest {
     @Mock private DeviceRepository deviceRepository;
     @Mock private DeviceCommandGateway commandGateway;
     @Mock private CompanionRoleService roleService;
+    @Mock private WorkdayPilotService pilotService;
     @Mock private InteractionSettingsService.InteractionSettingsSnapshot interaction;
     @Mock private CompanionRoleService.RoleSnapshot role;
 
@@ -70,6 +71,7 @@ class WorkdayCompanionServiceTest {
                 weatherService, reminderRepository, voiceTurnRepository, deviceRepository,
                 commandGateway, roleService, Clock.fixed(NOW, ZoneOffset.UTC)
         );
+        service.setPilotService(pilotService);
         lenient().when(commandGateway.isConnected(DEVICE_ID)).thenReturn(true);
         lenient().when(interactionSettingsService.resolve(DEVICE_ID)).thenReturn(interaction);
         lenient().when(interactionSettingsService.isDnd(interaction, NOW)).thenReturn(false);
@@ -173,6 +175,34 @@ class WorkdayCompanionServiceTest {
 
         assertThat(pending.getStatus()).isEqualTo(ReminderStatus.CANCELLED);
         verify(reminderRepository).save(pending);
+    }
+
+    @Test
+    void attributesStaleExternalCachesWhenBuildingTheDailyBrief() {
+        LocalDate date = LocalDate.of(2026, 8, 29);
+        when(runtimeService.tick(DEVICE_ID)).thenReturn(runtime(
+                WorkdayRuntimeState.ACTIVE_PRESENT, date, null, NOW.minusSeconds(60)
+        ));
+        when(reminderRepository.findFirstByDeviceIdAndSourceAndProactiveTopicKeyStartingWithOrderByCreatedAtDesc(
+                eq(DEVICE_ID), eq(ReminderSource.PROACTIVE), any())).thenReturn(Optional.empty());
+        when(runtimeService.claimBrief(DEVICE_ID)).thenReturn(new WorkdayRuntimeService.BriefClaimSnapshot(
+                UUID.randomUUID(), DEVICE_ID, date, WorkdayBriefStatus.PENDING, true, NOW, null, NOW
+        ));
+        when(weatherService.get(DEVICE_ID)).thenReturn(new WorkdayWeatherService.WeatherSnapshot(
+                DEVICE_ID, true, false, "上海", "Asia/Shanghai", WorkdayWeatherStatus.READY,
+                null, NOW.minusSeconds(7200), NOW.minusSeconds(7200), NOW.minusSeconds(3600),
+                null, null, List.of()
+        ));
+        when(calendarService.get(DEVICE_ID)).thenReturn(new ICloudCalendarService.ConnectionSnapshot(
+                DEVICE_ID, true, "a***@example.com", true, ICloudCalendarConnectionStatus.CONNECTED,
+                null, NOW, NOW.minusSeconds(25 * 3600), 1, NOW.minusSeconds(3600), List.of()
+        ));
+
+        service.processActiveDevice(DEVICE_ID);
+
+        verify(pilotService).recordBriefDegradation(
+                DEVICE_ID, date, "STALE_CACHE", "STALE_CACHE"
+        );
     }
 
     private WorkdayRuntimeService.WorkdayRuntimeSnapshot runtime(

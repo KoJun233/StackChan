@@ -1,16 +1,23 @@
 # 部署工作流
 
-- 状态：STABLE
+- 状态：READY_FOR_REVIEW
 - 最后更新：2026-08-30
-- 当前分支：`codex/work-001-companion`（运行态为 WORK-001 server/V42，实机固件为 `424cb49`）
-- 基准提交：`3596c80`
-- 最后验证提交：`3596c80`
-- 最后验证范围：当前 WORK-001 任务提交（推送前复核）
+- 当前分支：`codex/work-002-pilot-observability`（运行态为 WORK-002 server/V43 候选，实机固件为 `424cb49`）
+- 基准提交：`c62ccd0`
+- 最后验证提交：`c62ccd0`
+- 最后验证范围：WORK-002 发布、V43 迁移、健康/鉴权/设备安全状态验证通过
 - 当前模式：LAN HTTP development
 
 ## 当前目标
 
-保持已发布的 WORK-001 LAN server/V42 和实机 `424cb49` 稳定运行；实机继续保持 `motion_disabled`。
+在保持 LAN HTTP 开发模式和 CoreS3 `424cb49 / motion_disabled` 不变的前提下，已完成 WORK-002 发布前备份与校验、V43 迁移和 server/内置管理页面替换。
+
+## 已发布的 WORK-002
+
+- 发布范围只有 server 镜像和内置管理页面，数据库已从 V42 前进到 V43。
+- 发布前在既有备份容器内生成新备份并完成最新备份校验；旧 WORK-001 镜像保留为 `pre-work002-c62ccd0`。
+- 最终 server 容器为 `e2dcfa2fbe86`，镜像为 `sha256:db8e8aca683db95ee1ace9273ae80aac8deb9368f2af15ecfae612e615dd1c72`，并保留标签 `work002-v43-final`。
+- 健康、本机/LAN 首页、Flyway V43、观察 API 鉴权和设备持续在线均通过；PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和固件均未替换。
 
 ## 已完成
 
@@ -23,13 +30,13 @@
 
 ## 正在进行
 
-LAN server 已运行 WORK-001/V42，当前宿主机局域网地址为 `http://192.168.1.4:8080/`，容器为 `51fb6601e52a`，镜像摘要为 `sha256:0e2bc6760001bb4d0304a738e019e5d8d42fc65cf4d6cef3a0bff496df0d4920`；旧 V41 镜像保留为 `pre-work001-v42-6c750ff`。运行态已启用十五秒周期编排、确定性首次简报和休息提醒。
+LAN server 已运行 WORK-002/V43 候选，当前宿主机局域网地址为 `http://192.168.1.4:8080/`，容器为 `e2dcfa2fbe86`，镜像摘要为 `sha256:db8e8aca683db95ee1ace9273ae80aac8deb9368f2af15ecfae612e615dd1c72`；WORK-001 回滚镜像保留为 `pre-work002-c62ccd0`。运行态提供十五秒周期编排、确定性首次简报、休息提醒和显式十四天观察报告。
 
 CoreS3 当前上报 LAN HTTP Quad 固件 `424cb49`，保留 NVS、Wi-Fi、设备身份和 `motion_disabled`；启动、语音、无动作中位校准及 WORK-001 顶部长按启动/停止正常。服务地址仍指向当前宿主机。MEDIA-004 V2 实体激活继续等待 EAF 素材。
 
 ## 下一步操作
 
-保持当前 LAN server/V42 与 `424cb49` 实机运行态；WORK-001 任务分支推送后由用户创建、审核和合并 PR，不改变部署模式，不启用身体动作。
+保持当前 LAN server/V43 候选与 `424cb49` 实机运行态；WORK-002 任务分支推送后由用户创建、审核和合并 PR。合入后由管理员在首次实际工作使用前进入交互设置显式开始十四天观察；该操作不启用身体动作。
 
 ## 阻塞项
 
@@ -45,6 +52,8 @@ CoreS3 当前上报 LAN HTTP Quad 固件 `424cb49`，保留 NVS、Wi-Fi、设备
 - `scripts/verify-lan-compose.ps1`
 
 ## 验证命令与最近结果
+
+- 2026-08-30 WORK-002/V43 发布：发布前及第十四天边界修正后均生成并校验最新备份，旧 WORK-001 镜像保留为 `pre-work002-c62ccd0`，两次均只替换 `stackchan-foundation-server-1`。最终容器为 `e2dcfa2fbe86`，镜像为 `sha256:db8e8aca683db95ee1ace9273ae80aac8deb9368f2af15ecfae612e615dd1c72`，构建版本为 `work002-v43-final`；PostgreSQL `6d8feaa18623`、Redis `58e31a403637` 和备份容器 `c94b190f0428` 未变化。运行库由 V42 迁移到 V43，本机与 LAN 健康/首页为 200，未认证观察接口为 401，运行资源包含最终观察说明。CoreS3 在线上报 `424cb49 / motion_disabled / DISABLED`，未连接串口、未刷写固件、未执行身体动作。
 
 - 2026-08-30 WORK-001 实机收口：用户自行安装 `424cb49`；数据库确认设备在线、固件版本匹配并持续为 `motion_disabled / DISABLED`。顶部长按先切换到 `ACTIVE_PRESENT`，再次长按切换为 `OFF`，跨调度周期保持停止。COM3 仅做授权范围内的只读监听，未下发命令或动作。
 

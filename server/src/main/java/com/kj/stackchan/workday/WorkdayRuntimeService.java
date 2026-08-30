@@ -353,7 +353,10 @@ public class WorkdayRuntimeService {
                 metric.getWorkDate(), metric.getSessionStartCount(), metric.getSessionEndCount(),
                 metric.getFocusSeconds(), metric.getBriefSuccessCount(), metric.getBriefPartialCount(),
                 metric.getBriefFailedCount(), metric.getBriefCancelledCount(), metric.getRestStartedCount(),
-                metric.getRestSnoozedCount(), metric.getRestSkippedCount()
+                metric.getRestSnoozedCount(), metric.getRestSkippedCount(), metric.getFalseTriggerCount(),
+                metric.getMotionRejectedCount(), metric.getMotionFailedCount(), metric.getDeviceRestartCount(),
+                metric.getCalendarFailureCount(), metric.getCalendarLastFailureCode(),
+                metric.getWeatherFailureCount(), metric.getWeatherLastFailureCode()
         );
     }
 
@@ -369,7 +372,13 @@ public class WorkdayRuntimeService {
                 daily.stream().mapToInt(DailyMetricSnapshot::briefCancelledCount).sum(),
                 daily.stream().mapToInt(DailyMetricSnapshot::restStartedCount).sum(),
                 daily.stream().mapToInt(DailyMetricSnapshot::restSnoozedCount).sum(),
-                daily.stream().mapToInt(DailyMetricSnapshot::restSkippedCount).sum()
+                daily.stream().mapToInt(DailyMetricSnapshot::restSkippedCount).sum(),
+                daily.stream().mapToInt(DailyMetricSnapshot::falseTriggerCount).sum(),
+                daily.stream().mapToInt(DailyMetricSnapshot::motionRejectedCount).sum(),
+                daily.stream().mapToInt(DailyMetricSnapshot::motionFailedCount).sum(),
+                daily.stream().mapToInt(DailyMetricSnapshot::deviceRestartCount).sum(),
+                daily.stream().mapToInt(DailyMetricSnapshot::calendarFailureCount).sum(),
+                daily.stream().mapToInt(DailyMetricSnapshot::weatherFailureCount).sum()
         );
     }
 
@@ -413,7 +422,15 @@ public class WorkdayRuntimeService {
             int briefCancelledCount,
             int restStartedCount,
             int restSnoozedCount,
-            int restSkippedCount
+            int restSkippedCount,
+            int falseTriggerCount,
+            int motionRejectedCount,
+            int motionFailedCount,
+            int deviceRestartCount,
+            int calendarFailureCount,
+            String calendarLastFailureCode,
+            int weatherFailureCount,
+            String weatherLastFailureCode
     ) { }
 
     public record MetricSummarySnapshot(
@@ -427,7 +444,13 @@ public class WorkdayRuntimeService {
             int briefCancelledCount,
             int restStartedCount,
             int restSnoozedCount,
-            int restSkippedCount
+            int restSkippedCount,
+            int falseTriggerCount,
+            int motionRejectedCount,
+            int motionFailedCount,
+            int deviceRestartCount,
+            int calendarFailureCount,
+            int weatherFailureCount
     ) { }
 
     public record WorkdayMetricsSnapshot(

@@ -4,6 +4,8 @@ import java.time.LocalTime;
 
 import com.kj.stackchan.calendar.ICloudCalendarService;
 import com.kj.stackchan.weather.WorkdayWeatherService;
+import com.kj.stackchan.workday.WorkdayCompanionService;
+import com.kj.stackchan.workday.WorkdayPilotService;
 import com.kj.stackchan.workday.WorkdaySettingsService;
 import com.kj.stackchan.workday.WorkdayRuntimeService;
 import org.junit.jupiter.api.Test;
@@ -20,6 +22,8 @@ class WorkdaySettingsControllerTest {
     @Mock private WorkdayRuntimeService runtimeService;
     @Mock private ICloudCalendarService calendarService;
     @Mock private WorkdayWeatherService weatherService;
+    @Mock private WorkdayCompanionService companionService;
+    @Mock private WorkdayPilotService pilotService;
 
     @Test
     void mapsBoundedWorkdaySettings() {
@@ -86,5 +90,26 @@ class WorkdaySettingsControllerTest {
         org.mockito.Mockito.verify(weatherService).get(deviceId);
         org.mockito.Mockito.verify(weatherService).test(deviceId, location.toCommand());
         org.mockito.Mockito.verify(weatherService).sync(deviceId);
+    }
+
+    @Test
+    void delegatesExplicitPilotLifecycleAndFalseTriggerCorrection() {
+        var controller = new WorkdaySettingsController(
+                settingsService, runtimeService, companionService, pilotService,
+                calendarService, weatherService
+        );
+        var deviceId = java.util.UUID.randomUUID();
+
+        controller.pilot(deviceId);
+        controller.startPilot(deviceId);
+        controller.restartPilot(deviceId);
+        controller.markFalseTrigger(deviceId);
+        controller.undoFalseTrigger(deviceId);
+
+        org.mockito.Mockito.verify(pilotService).get(deviceId);
+        org.mockito.Mockito.verify(pilotService).start(deviceId);
+        org.mockito.Mockito.verify(pilotService).restart(deviceId);
+        org.mockito.Mockito.verify(pilotService).markFalseTrigger(deviceId);
+        org.mockito.Mockito.verify(pilotService).undoFalseTrigger(deviceId);
     }
 }

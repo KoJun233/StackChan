@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BodyMotion, Device } from '@/api/modules/devices'
 import type { MissedReminderPolicy, ProactiveTopicCooldown, SaveInteractionSettingsInput } from '@/api/modules/interactions'
-import type { ICloudCalendarConnection, SaveWorkdaySettingsInput, WorkdayMetrics, WorkdayRestAction, WorkdayRuntime, WorkdayWeather, WorkdayWeatherLocationInput } from '@/api/modules/workday'
+import type { ICloudCalendarConnection, SaveWorkdaySettingsInput, WorkdayMetrics, WorkdayPilotReport, WorkdayRestAction, WorkdayRuntime, WorkdayWeather, WorkdayWeatherLocationInput } from '@/api/modules/workday'
 import { toTypedSchema } from '@vee-validate/zod'
 import * as z from 'zod'
 import {
@@ -24,17 +24,22 @@ import {
   disconnectICloudCalendar,
   getICloudCalendarConnection,
   getWorkdayMetrics,
+  getWorkdayPilot,
   getWorkdayRuntime,
   getWorkdaySettings,
   getWorkdayWeather,
+  markWorkdayFalseTrigger,
   respondToWorkdayRest,
+  restartWorkdayPilot,
   saveWorkdaySettings,
   startWorkday,
+  startWorkdayPilot,
   stopWorkday,
   syncICloudCalendar,
   syncWorkdayWeather,
   testICloudCalendarConnection,
   testWorkdayWeather,
+  undoWorkdayFalseTrigger,
   updateAllowedICloudCalendars,
 } from '@/api/modules/workday'
 
@@ -73,6 +78,7 @@ const resumingTopic = ref('')
 const model = ref<InteractionFormModel>(defaults())
 const workdayRuntime = ref<WorkdayRuntime | null>(null)
 const workdayMetrics = ref<WorkdayMetrics | null>(null)
+const workdayPilot = ref<WorkdayPilotReport | null>(null)
 const workdayWeather = ref<WorkdayWeather | null>(null)
 const icloudConnection = ref<ICloudCalendarConnection | null>(null)
 const icloudAccountEmail = ref('')
@@ -80,6 +86,7 @@ const icloudAppSpecificPassword = ref('')
 const calendarAction = ref<'connect' | 'disconnect' | 'save' | 'sync' | 'test' | ''>('')
 const weatherAction = ref<'sync' | 'test' | ''>('')
 const workdayAction = ref<'start' | 'stop' | WorkdayRestAction | ''>('')
+const pilotAction = ref<'start' | 'restart' | 'mark' | 'undo' | ''>('')
 const bodyAction = ref<'calibrate' | 'disable' | 'enable' | BodyMotion | ''>('')
 
 const bodyMotions: { label: string, value: BodyMotion }[] = [
@@ -265,16 +272,18 @@ async function loadSettings(deviceId: string) {
   }
   loading.value = true
   try {
-    const [settings, workday, runtime, metrics, calendar, weather] = await Promise.all([
+    const [settings, workday, runtime, metrics, pilot, calendar, weather] = await Promise.all([
       getInteractionSettings(deviceId),
       getWorkdaySettings(deviceId),
       getWorkdayRuntime(deviceId),
       getWorkdayMetrics(deviceId),
+      getWorkdayPilot(deviceId),
       getICloudCalendarConnection(deviceId),
       getWorkdayWeather(deviceId),
     ])
     workdayRuntime.value = runtime
     workdayMetrics.value = metrics
+    workdayPilot.value = pilot
     workdayWeather.value = weather
     icloudConnection.value = calendar
     icloudAccountEmail.value = ''
@@ -668,6 +677,73 @@ async function respondToRest(action: WorkdayRestAction) {
   await runWorkdayAction(action, () => respondToWorkdayRest(model.value.deviceId, action))
 }
 
+async function runPilotAction(
+  action: typeof pilotAction.value,
+  operation: () => Promise<WorkdayPilotReport>,
+  message: string,
+) {
+  if (!model.value.deviceId || pilotAction.value) {
+    return
+  }
+  pilotAction.value = action
+  try {
+    workdayPilot.value = await operation()
+    workdayMetrics.value = await getWorkdayMetrics(model.value.deviceId)
+    useFaToast().success(message)
+  }
+  catch (error) {
+    useFaToast().error('观察记录更新失败', {
+      description: error instanceof Error ? error.message : '暂时无法更新十四天观察记录。',
+    })
+  }
+  finally {
+    pilotAction.value = ''
+  }
+}
+
+function startPilot() {
+  useFaModal().confirm({
+    title: '开始十四天私用观察？',
+    content: '将从设备当前时区的今天开始，并冻结本轮工作日规则快照。建议在当天首次实际使用前开始；同一天已有的聚合计数仍会保留。',
+    confirmButtonText: '开始观察',
+    onConfirm: () => runPilotAction('start', () => startWorkdayPilot(model.value.deviceId), '十四天观察已开始'),
+  })
+}
+
+function restartPilot() {
+  useFaModal().confirm({
+    title: '重新开始十四天观察？',
+    content: '历史聚合不会删除，但本轮门槛窗口会从今天重新计算。',
+    confirmButtonText: '重新开始',
+    onConfirm: () => runPilotAction('restart', () => restartWorkdayPilot(model.value.deviceId), '十四天观察已重新开始'),
+  })
+}
+
+function markFalseTrigger() {
+  useFaModal().confirm({
+    title: '标记一次误播报？',
+    content: '只增加今天的匿名计数，不保存播报正文或原因；标错后可以撤销一次。',
+    confirmButtonText: '确认标记',
+    onConfirm: () => runPilotAction('mark', () => markWorkdayFalseTrigger(model.value.deviceId), '已记录一次误播报'),
+  })
+}
+
+async function undoFalseTrigger() {
+  await runPilotAction('undo', () => undoWorkdayFalseTrigger(model.value.deviceId), '已撤销今天的一次误播报标记')
+}
+
+function pilotStatusText() {
+  if (!workdayPilot.value?.started) {
+    return '尚未开始'
+  }
+  return {
+    COLLECTING: '观察中',
+    FAIL: '门槛未通过',
+    NOT_STARTED: '尚未开始',
+    PASS: '门槛通过',
+  }[workdayPilot.value.status]
+}
+
 async function runBodyAction(action: typeof bodyAction.value, operation: () => Promise<void>, message: string) {
   if (!model.value.deviceId || bodyAction.value) {
     return
@@ -1009,6 +1085,87 @@ onMounted(loadDevices)
                     专注 {{ formatFocus(workdayMetrics?.summary.focusSeconds ?? 0) }} · 休息 {{ workdayMetrics?.summary.restStartedCount ?? 0 }} 次
                   </p>
                 </FaCard>
+              </div>
+              <div class="pt-6 border-t gap-4 grid">
+                <div class="flex flex-wrap gap-3 items-center justify-between">
+                  <div>
+                    <h3 class="text-base font-semibold">
+                      十四天私用观察
+                    </h3>
+                    <p class="text-sm text-muted-foreground mt-1">
+                      十四天内至少八个计划工作日发生显式工作会话；每周误播报不超过两次，且无动作失败或设备重启。
+                    </p>
+                  </div>
+                  <div class="flex flex-wrap gap-2">
+                    <FaButton
+                      v-if="!workdayPilot?.started"
+                      type="button"
+                      :loading="pilotAction === 'start'"
+                      :disabled="Boolean(pilotAction)"
+                      @click="startPilot"
+                    >
+                      开始十四天观察
+                    </FaButton>
+                    <template v-else>
+                      <template v-if="!workdayPilot.windowComplete">
+                        <FaButton type="button" variant="outline" :loading="pilotAction === 'mark'" :disabled="Boolean(pilotAction)" @click="markFalseTrigger">
+                          标记误播报
+                        </FaButton>
+                        <FaButton type="button" variant="outline" :loading="pilotAction === 'undo'" :disabled="Boolean(pilotAction)" @click="undoFalseTrigger">
+                          撤销一次
+                        </FaButton>
+                      </template>
+                      <FaButton type="button" variant="outline" :loading="pilotAction === 'restart'" :disabled="Boolean(pilotAction)" @click="restartPilot">
+                        重新开始
+                      </FaButton>
+                    </template>
+                  </div>
+                </div>
+                <FaAlert
+                  v-if="!workdayPilot?.started"
+                  title="观察尚未开始"
+                  description="开始操作只冻结本轮日期、时区和工作日规则；不会删除已有聚合，也不会启用身体动作。"
+                />
+                <template v-else>
+                  <div class="gap-4 grid lg:grid-cols-4 sm:grid-cols-2">
+                    <FaCard title="当前结论" :description="`${workdayPilot.startedOn} 至 ${workdayPilot.endsOn}`">
+                      <p class="text-lg font-semibold">
+                        {{ pilotStatusText() }}
+                      </p>
+                      <p class="text-sm text-muted-foreground mt-1">
+                        已观察 {{ workdayPilot.elapsedDays }}/14 天
+                      </p>
+                    </FaCard>
+                    <FaCard title="使用进度" :description="`已走过 ${workdayPilot.elapsedPlannedWorkdays}/${workdayPilot.plannedWorkdays} 个计划工作日`">
+                      <p class="text-lg font-semibold">
+                        {{ workdayPilot.activeWorkdays }}/{{ workdayPilot.activeWorkdayTarget }} 个活跃工作日
+                      </p>
+                      <p class="text-sm text-muted-foreground mt-1">
+                        每日最多 {{ workdayPilot.maximumDailyBriefs }} 次简报
+                      </p>
+                    </FaCard>
+                    <FaCard title="打扰质量" :description="`每周上限 ${workdayPilot.falseTriggerWeeklyLimit} 次`">
+                      <p class="text-lg font-semibold">
+                        {{ workdayPilot.firstWeekFalseTriggers }} / {{ workdayPilot.secondWeekFalseTriggers }} 次
+                      </p>
+                      <p class="text-sm text-muted-foreground mt-1">
+                        日历失败 {{ workdayPilot.calendarFailureCount }} · 天气失败 {{ workdayPilot.weatherFailureCount }}
+                      </p>
+                    </FaCard>
+                    <FaCard title="设备安全" description="安全拒绝只记录，不算动作失败。">
+                      <p class="text-lg font-semibold">
+                        失败 {{ workdayPilot.motionFailedCount }} · 重启 {{ workdayPilot.deviceRestartCount }}
+                      </p>
+                      <p class="text-sm text-muted-foreground mt-1">
+                        动作安全拒绝 {{ workdayPilot.motionRejectedCount }} 次
+                      </p>
+                    </FaCard>
+                  </div>
+                  <FaAlert
+                    :title="workdayPilot.status === 'PASS' ? '十四天门槛已通过' : workdayPilot.status === 'FAIL' ? '观察结束，但至少一项门槛未通过' : '正在收集本地匿名聚合'"
+                    :description="workdayPilot.externalFailureAttributionComplete ? '日历和天气失败均保留受控来源与失败码；不保存日程、天气响应或播报正文。' : '存在未归属的外部服务失败，请先排查再判断门槛。'"
+                  />
+                </template>
               </div>
               <FaFormItem name="workdayEnabled" label="启用工作日模式" description="按所选工作日、时段和设备存在状态运行；默认关闭。">
                 <FaSwitch v-model="model.workdayEnabled" />

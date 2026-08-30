@@ -38,6 +38,7 @@
 - [开发环境与命令](development.md)
 - [产品路线图](roadmap.md)
 - [工作日桌面陪伴 V1 开发设计](workday-companion-v1.md)
+- [WORK-002 私用观察与门槛可观测性](workday-pilot-observability.md)
 - [下一阶段可执行任务清单](todo.md)
 - [已完成里程碑](milestones.md)
 - [架构决策记录](decisions/README.md)

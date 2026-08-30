@@ -85,7 +85,9 @@ class DeviceWebSocketHandlerTest {
                 {"type":"heartbeat","sequence":6,"battery_percent":82,"rssi":-56,"safety_state":"motion_disabled"}
                 """));
 
-        verify(deviceEventService).recordHeartbeat(DEVICE_ID, "motion_disabled", null, -54, false);
+        verify(deviceEventService).recordHeartbeat(
+                DEVICE_ID, 7L, "motion_disabled", null, -54, false, null, null
+        );
     }
 
     @Test
@@ -97,7 +99,9 @@ class DeviceWebSocketHandlerTest {
                 {"type":"heartbeat","sequence":7,"battery_percent":80,"rssi":-54,"safety_state":"motion_disabled","firmware_version":"b954a43"}
                 """));
 
-        verify(deviceEventService).recordHeartbeat(DEVICE_ID, "motion_disabled", "b954a43", -54, false);
+        verify(deviceEventService).recordHeartbeat(
+                DEVICE_ID, 7L, "motion_disabled", "b954a43", -54, false, null, null
+        );
     }
 
     @Test
@@ -113,7 +117,7 @@ class DeviceWebSocketHandlerTest {
                 """));
 
         verify(deviceEventService).recordHeartbeat(
-                DEVICE_ID, "motion_disabled", "ops-002", -54, true
+                DEVICE_ID, 7L, "motion_disabled", "ops-002", -54, true, null, null
         );
         verify(firmwareUpdateStatusService).record(
                 DEVICE_ID,
@@ -137,11 +141,13 @@ class DeviceWebSocketHandlerTest {
                 ArgumentCaptor.forClass(DeviceExpressionDiagnostics.class);
         verify(deviceEventService).recordHeartbeat(
                 org.mockito.ArgumentMatchers.eq(DEVICE_ID),
+                org.mockito.ArgumentMatchers.eq(9L),
                 org.mockito.ArgumentMatchers.eq("motion_disabled"),
                 org.mockito.ArgumentMatchers.eq("media002"),
                 org.mockito.ArgumentMatchers.eq(-54),
                 org.mockito.ArgumentMatchers.eq(true),
-                diagnostics.capture());
+                diagnostics.capture(),
+                org.mockito.ArgumentMatchers.isNull());
         assertThat(diagnostics.getValue().targetFps()).isEqualTo(20);
         assertThat(diagnostics.getValue().activeLayer()).isEqualTo("PHYSICAL");
         assertThat(diagnostics.getValue().degradeReason()).isEqualTo("IDLE_SLEEP");
@@ -163,6 +169,7 @@ class DeviceWebSocketHandlerTest {
                 ArgumentCaptor.forClass(DeviceBodyDiagnostics.class);
         verify(deviceEventService).recordHeartbeat(
                 org.mockito.ArgumentMatchers.eq(DEVICE_ID),
+                org.mockito.ArgumentMatchers.eq(10L),
                 org.mockito.ArgumentMatchers.eq("motion_armed"),
                 org.mockito.ArgumentMatchers.eq("body001"),
                 org.mockito.ArgumentMatchers.eq(-54),

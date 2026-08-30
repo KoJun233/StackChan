@@ -4,17 +4,22 @@ import {
   disconnectICloudCalendar,
   getICloudCalendarConnection,
   getWorkdayMetrics,
+  getWorkdayPilot,
   getWorkdayRuntime,
   getWorkdaySettings,
   getWorkdayWeather,
+  markWorkdayFalseTrigger,
   respondToWorkdayRest,
+  restartWorkdayPilot,
   saveWorkdaySettings,
   startWorkday,
+  startWorkdayPilot,
   stopWorkday,
   syncICloudCalendar,
   syncWorkdayWeather,
   testICloudCalendarConnection,
   testWorkdayWeather,
+  undoWorkdayFalseTrigger,
   updateAllowedICloudCalendars,
 } from './workday'
 
@@ -98,6 +103,30 @@ describe('workday settings API', () => {
       body: JSON.stringify({ action: 'SNOOZE' }),
     }))
     expect(fetchMock).toHaveBeenNthCalledWith(3, `/api/v1/workday/${deviceId}/runtime:stop`, expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('uses explicit pilot lifecycle and false-trigger correction endpoints', async () => {
+    const deviceId = 'a88e4a94-8536-4fa1-91ed-8681b597429d'
+    const fetchMock = vi.fn()
+    for (let index = 0; index < 5; index += 1) {
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ deviceId, started: true }), {
+        headers: { 'Content-Type': 'application/json' },
+      }))
+    }
+    vi.stubGlobal('document', { cookie: '' })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getWorkdayPilot(deviceId)
+    await startWorkdayPilot(deviceId)
+    await restartWorkdayPilot(deviceId)
+    await markWorkdayFalseTrigger(deviceId)
+    await undoWorkdayFalseTrigger(deviceId)
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, `/api/v1/workday/${deviceId}/pilot`, expect.any(Object))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, `/api/v1/workday/${deviceId}/pilot:start`, expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, `/api/v1/workday/${deviceId}/pilot:restart`, expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(4, `/api/v1/workday/${deviceId}/pilot/false-trigger`, expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(5, `/api/v1/workday/${deviceId}/pilot/false-trigger`, expect.objectContaining({ method: 'DELETE' }))
   })
 
   it('uses explicit read-only calendar management endpoints', async () => {

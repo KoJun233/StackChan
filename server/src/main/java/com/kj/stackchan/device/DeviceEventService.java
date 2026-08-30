@@ -1,9 +1,11 @@
 package com.kj.stackchan.device;
 
 import java.time.Clock;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.kj.stackchan.workday.WorkdayCompanionService;
+import com.kj.stackchan.workday.WorkdayPilotService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -19,6 +21,7 @@ public class DeviceEventService {
     private final DeviceRepository deviceRepository;
     private final Clock clock;
     private WorkdayCompanionService workdayCompanionService;
+    private WorkdayPilotService workdayPilotService;
 
     public DeviceEventService(DeviceRepository deviceRepository, Clock clock) {
         this.deviceRepository = deviceRepository;
@@ -59,6 +62,11 @@ public class DeviceEventService {
         this.workdayCompanionService = workdayCompanionService;
     }
 
+    @Autowired(required = false)
+    public void setWorkdayPilotService(WorkdayPilotService workdayPilotService) {
+        this.workdayPilotService = workdayPilotService;
+    }
+
     public void toggleWorkday(UUID deviceId) {
         if (workdayCompanionService != null) {
             workdayCompanionService.toggleFromDevice(deviceId);
@@ -67,6 +75,15 @@ public class DeviceEventService {
 
     @Transactional
     public void recordHeartbeat(UUID deviceId, String safetyState, String firmwareVersion,
+                                Integer rssi, boolean applicationOtaSupported,
+                                DeviceExpressionDiagnostics expression,
+                                DeviceBodyDiagnostics body) {
+        recordHeartbeat(deviceId, null, safetyState, firmwareVersion, rssi,
+                applicationOtaSupported, expression, body);
+    }
+
+    @Transactional
+    public void recordHeartbeat(UUID deviceId, Long sequence, String safetyState, String firmwareVersion,
                                 Integer rssi, boolean applicationOtaSupported,
                                 DeviceExpressionDiagnostics expression,
                                 DeviceBodyDiagnostics body) {
@@ -85,12 +102,37 @@ public class DeviceEventService {
             throw new IllegalArgumentException("Disabled motion requires disabled diagnostics");
         }
 
-        deviceRepository.findById(deviceId).ifPresent(device ->
-                device.recordHeartbeat(
-                        clock.instant(), safetyState, firmwareVersion, rssi, applicationOtaSupported,
-                        expression, body
-                )
-        );
+        Optional<DeviceEntity> existing = deviceRepository.findById(deviceId);
+        boolean restarted = false;
+        long motionFailureDelta = 0;
+        String motionFailureCode = null;
+        if (existing.isPresent()) {
+            DeviceEntity device = existing.get();
+            Long previousSequence = device.getLastDeviceSequence();
+            long previousFailureCount = device.getBodyDiagnostics().failureCount();
+            restarted = sequence != null && previousSequence != null && sequence < previousSequence;
+            if (!restarted && body != null && body.failureCount() > previousFailureCount) {
+                motionFailureDelta = body.failureCount() - previousFailureCount;
+                motionFailureCode = body.lastFailureCode();
+            }
+            device.recordHeartbeat(
+                    clock.instant(), safetyState, firmwareVersion, rssi, applicationOtaSupported,
+                    expression, body
+            );
+            if (sequence != null) device.recordDeviceSequence(sequence);
+        }
+        if (workdayPilotService != null) {
+            try {
+                if (restarted) workdayPilotService.recordDeviceRestart(deviceId);
+                if (motionFailureDelta > 0) {
+                    workdayPilotService.recordMotionObservation(
+                            deviceId, motionFailureCode, motionFailureDelta
+                    );
+                }
+            } catch (RuntimeException ignored) {
+                // Pilot metrics are isolated and must never reject a valid heartbeat.
+            }
+        }
         if (workdayCompanionService != null && body != null && body.proximitySupported()) {
             try {
                 workdayCompanionService.presenceChanged(deviceId, body.present());

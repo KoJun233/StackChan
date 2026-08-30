@@ -26,6 +26,7 @@ import com.kj.stackchan.role.CompanionRoleService;
 import com.kj.stackchan.speech.VoiceTurnRepository;
 import com.kj.stackchan.speech.VoiceTurnStatus;
 import com.kj.stackchan.weather.WorkdayWeatherService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,6 +51,7 @@ public class WorkdayCompanionService {
     private final DeviceCommandGateway commandGateway;
     private final CompanionRoleService roleService;
     private final Clock clock;
+    private WorkdayPilotService pilotService;
 
     public WorkdayCompanionService(
             WorkdayRuntimeService runtimeService,
@@ -75,6 +77,11 @@ public class WorkdayCompanionService {
         this.commandGateway = commandGateway;
         this.roleService = roleService;
         this.clock = clock;
+    }
+
+    @Autowired(required = false)
+    public void setPilotService(WorkdayPilotService pilotService) {
+        this.pilotService = pilotService;
     }
 
     public WorkdayRuntimeService.WorkdayRuntimeSnapshot start(UUID deviceId) {
@@ -175,6 +182,16 @@ public class WorkdayCompanionService {
         WorkdayRuntimeService.BriefClaimSnapshot claim = runtimeService.claimBrief(runtime.deviceId());
         if (claim.status() != WorkdayBriefStatus.PENDING) return;
         BriefContent brief = brief(runtime.deviceId());
+        if (pilotService != null) {
+            try {
+                pilotService.recordBriefDegradation(
+                        runtime.deviceId(), runtime.workDate(),
+                        brief.calendarFailureCode(), brief.weatherFailureCode()
+                );
+            } catch (RuntimeException ignored) {
+                // Observability must not suppress an otherwise valid daily brief.
+            }
+        }
         CompanionRoleService.RoleSnapshot role = roleService.getActive(runtime.deviceId());
         WorkdaySettingsService.WorkdaySettingsSnapshot settings = settingsService.resolve(runtime.deviceId());
         reminderRepository.save(new ReminderEntity(
@@ -192,14 +209,20 @@ public class WorkdayCompanionService {
         StringBuilder text = new StringBuilder("主人，").append(role.name()).append("陪您开始今天的工作。");
         boolean weatherAvailable = false;
         boolean calendarAvailable = false;
+        String weatherFailureCode = null;
+        String calendarFailureCode = null;
         try {
             WorkdayWeatherService.WeatherSnapshot weather = weatherService.get(deviceId);
             if (weather.configured() && weather.fresh() && weather.summary() != null) {
                 text.append(weather.summary()).append('。');
                 weatherAvailable = true;
+            } else if (weather.configured()) {
+                weatherFailureCode = weather.lastFailureCode() != null
+                        ? weather.lastFailureCode().name()
+                        : weather.lastSyncedAt() != null ? "STALE_CACHE" : "UNAVAILABLE";
             }
         } catch (RuntimeException ignored) {
-            // Each factual segment degrades independently.
+            weatherFailureCode = "UNAVAILABLE";
         }
         try {
             ICloudCalendarService.ConnectionSnapshot connection = calendarService.get(deviceId);
@@ -220,9 +243,13 @@ public class WorkdayCompanionService {
                     }
                     text.append('。');
                 }
+            } else if (connection.configured()) {
+                calendarFailureCode = connection.lastFailureCode() != null
+                        ? connection.lastFailureCode().name()
+                        : connection.lastSyncedAt() != null ? "STALE_CACHE" : "UNAVAILABLE";
             }
         } catch (RuntimeException ignored) {
-            // Each factual segment degrades independently.
+            calendarFailureCode = "UNAVAILABLE";
         }
         if (!weatherAvailable && !calendarAvailable) {
             text.append("天气和日历信息暂不可用，本次先跳过。");
@@ -233,7 +260,9 @@ public class WorkdayCompanionService {
         }
         WorkdayBriefStatus status = weatherAvailable && calendarAvailable
                 ? WorkdayBriefStatus.SUCCESS : WorkdayBriefStatus.PARTIAL;
-        return new BriefContent(text.toString(), status);
+        return new BriefContent(
+                text.toString(), status, calendarFailureCode, weatherFailureCode
+        );
     }
 
     private void reconcileBrief(WorkdayRuntimeService.WorkdayRuntimeSnapshot runtime) {
@@ -313,5 +342,10 @@ public class WorkdayCompanionService {
         return BRIEF_TOPIC + workDate + ":";
     }
 
-    private record BriefContent(String text, WorkdayBriefStatus status) { }
+    private record BriefContent(
+            String text,
+            WorkdayBriefStatus status,
+            String calendarFailureCode,
+            String weatherFailureCode
+    ) { }
 }
