@@ -1,15 +1,32 @@
 # 服务端工作流
 
-- 状态：READY_FOR_REVIEW
+- 状态：STABLE
 - 最后更新：2026-08-30
-- 当前分支：`codex/work-002-pilot-observability`
-- 基准提交：`c62ccd0`
-- 最后验证提交：`c62ccd0`
-- 最后验证范围：WORK-002 最终定向 45/45、非 loopback 全量 424/424、空库 Flyway V1..V43 与 LAN 运行迁移通过
+- 当前分支：`codex/work-002-pilot-active`
+- 基准提交：`f0bce2d`
+- 最后验证提交：`f0bce2d`
+- 最后验证范围：WORK-004 定向 40/40、非 loopback 全量 448/448、空库 Flyway V1..V45 与 LAN 运行迁移通过
 
 ## 当前目标
 
-完成 `WORK-002`：以 V43 本地匿名聚合和显式十四天窗口验证 WORK-001 门槛，同时保证指标异常不影响心跳、简报和既有设备安全边界。
+保持 WORK-004/V45 的本地个人待办、可靠截止提醒和确认式语音写入稳定运行，同时继续采集 2026-08-30 至 2026-09-12 的十四天本地匿名聚合。人工验收只创建测试待办，不调整观察门槛、分类或采集口径。
+
+## 已完成的 WORK-004
+
+- V45 新增设备与角色隔离的个人待办，支持标题、备注、优先级、完成状态和可选截止时间；设备与角色创建后不可改绑。
+- 未来截止时间复用同角色可靠提醒；修改更新等待中的提醒，完成、删除或移除截止时间会取消关联提醒，过期时间不补播。
+- `current_personal_tasks` 只返回当前设备与角色最多二十条未完成待办的最小字段，明确排除备注；待办问题缺少 Tool 时拒绝猜测。
+- 语音新增和完成复用两分钟确认、范围校验和幂等执行；只读任务问题不会进入动作提案链。
+- 管理 API 提供筛选、CRUD、完成和重新打开；未认证访问保持 401。
+- 定向 40/40、非 loopback 全量 448/448、空库 V1..V45 通过；运行库为 V45，初始待办数为零。
+
+## 已完成的 WORK-003
+
+- V44 为观察记录保存完成通知入队时间，并为每设备、每窗口、每结论的固定主题建立唯一索引。
+- 五分钟调度只处理完整结束的窗口；`COLLECTING` 不创建提醒，当前窗口首次调度后完成提醒仍为零。
+- 提醒正文固定、绑定当前角色并复用免打扰、离线重试、忙碌门禁、TTS 和 ACK，不调用 LLM、不包含指标明细。
+- 调度和重新开始观察争用同一观察行锁；创建提醒与写入标记在同一事务完成，重启和并发不会重复播报。
+- 定向 13/13、非 loopback 全量 433/433、空库 V1..V44 及运行库 V44 通过。
 
 ## 已完成的 WORK-002
 
@@ -106,7 +123,7 @@
 
 ## 下一步操作
 
-将 WORK-002 实现、状态和交接压缩为一个中文任务提交并推送当前任务分支；PR 创建、审核和合并由用户执行。合入后由管理员在首次真实工作使用前显式开始十四天观察。
+按 WORK-004 文档验证机器人待办查询、确认式新增与确认式完成；验收后保持现有服务运行。真实发生误播报时由管理员当日显式标记，2026-09-13 接收一次性结果通知并复核 `PASS/FAIL`。
 
 ## 阻塞项
 
@@ -118,6 +135,9 @@
 - `server/src/main/java/com/kj/stackchan/reminder/`
 - `server/src/main/java/com/kj/stackchan/security/SecurityConfiguration.java`
 - `server/src/main/java/com/kj/stackchan/agent/`
+- `server/src/main/java/com/kj/stackchan/task/`
+- `server/src/main/java/com/kj/stackchan/api/PersonalTaskController.java`
+- `server/src/main/resources/db/migration/V45__personal_tasks.sql`
 - `server/src/main/java/com/kj/stackchan/api/`
 - `server/src/main/resources/db/migration/`
 - `server/src/main/java/com/kj/stackchan/calendar/`
@@ -139,6 +159,12 @@
 - `docs/runbooks/external-notifications.md`
 
 ## 验证命令与最近结果
+
+- 2026-08-30 WORK-004：待办、Agent Tool、确认式语音动作和 PostgreSQL 持久化定向 40/40；完整服务端 480 个用例中 31 个错误全部来自 8 个既有 Windows Java loopback 类，业务断言失败为零，排除后 448/448 通过；空库 V1..V45 和运行库 V45 通过。发布后待办数为零，鉴权、观察窗口和设备安全状态未变化。
+
+- 2026-08-30 WORK-003：完成通知与 V44 持久化定向 13/13；完整服务端运行 465 个用例，31 个错误全部来自 8 个既有 Windows Java loopback 测试类且业务断言失败为零，排除后 433/433 通过。运行库迁移到 V44，当前观察记录未重置、完成通知未提前入队，设备保持 `424cb49 / motion_disabled / DISABLED`。
+
+- 2026-08-30 WORK-002 观察启动：运行库存在唯一当前窗口，日期为 2026-08-30 至 2026-09-12，冻结时区 `Asia/Shanghai`、工作日掩码 31；设备启动后继续在线且动作状态保持禁用。
 
 - 2026-08-30 WORK-002：最终定向 45/45 通过；非 loopback 全量 424/424 通过，`DeviceConnectionRegistryConcurrencyTest` 与 V43 空库迁移均包含在通过范围。运行库由 V42 迁移到 V43，健康和鉴权边界正常；可观测性未抑制心跳，设备继续上报 `424cb49 / motion_disabled / DISABLED`。
 

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { FormExpose } from '@fantastic-admin/components'
+import type { Device } from '@/api/modules/devices'
 import { toTypedSchema } from '@vee-validate/zod'
 import * as z from 'zod'
-import type { Device } from '@/api/modules/devices'
 import { listDevices } from '@/api/modules/devices'
 import {
   createNotificationIntegration,
@@ -10,6 +10,7 @@ import {
   updateNotificationIntegration,
 } from '@/api/modules/notificationIntegrations'
 import { listRoles } from '@/api/modules/roles'
+import { isCompanionRoleId } from '@/utils/roleId'
 
 const props = withDefaults(defineProps<{ id?: string }>(), { id: '' })
 const formRef = useTemplateRef<FormExpose>('formRef')
@@ -21,7 +22,7 @@ const model = ref({ id: props.id, name: '', deviceId: '', roleId: '', digestWind
 const validationSchema = toTypedSchema(z.object({
   name: z.string().trim().min(1, '请输入集成名称').max(120, '名称不能超过 120 个字符'),
   deviceId: z.string().uuid('请选择目标设备'),
-  roleId: z.string().uuid('请选择归属角色'),
+  roleId: z.string().refine(isCompanionRoleId, '请选择归属角色'),
   digestWindowSeconds: z.number().refine(value => value === 0 || (value >= 5 && value <= 300), '请输入 5–300 秒，或填 0 关闭'),
   enabled: z.boolean(),
 }))
@@ -69,7 +70,9 @@ async function resetForRoute(id: string) {
 
 async function submit(): Promise<boolean> {
   const result = await formRef.value?.validate()
-  if (!result?.valid) return false
+  if (!result?.valid) {
+    return false
+  }
   loading.value = true
   try {
     const input = {
@@ -116,7 +119,7 @@ defineExpose({ submit })
 
 <template>
   <div v-loading="loading">
-    <FaForm ref="formRef" :model="model" :validation-schema="validationSchema" :label-width="120" class="grid gap-6" scroll-to-error>
+    <FaForm ref="formRef" :model="model" :validation-schema="validationSchema" :label-width="120" class="gap-6 grid" scroll-to-error>
       <FaFormItem name="name" label="集成名称" required description="例如 Codex、Claude Code 或 CI。">
         <FaInput placeholder="请输入调用方名称" class="w-full" />
       </FaFormItem>

@@ -123,6 +123,14 @@ public class ReminderService {
     }
 
     @Transactional
+    public void cancelLinked(UUID id) {
+        ReminderEntity reminder = reminderRepository.findById(id).orElseThrow(ReminderNotFoundException::new);
+        if (reminder.getStatus() == ReminderStatus.PENDING || reminder.getStatus() == ReminderStatus.DISPATCHED) {
+            reminder.markCancelled(clock.instant());
+        }
+    }
+
+    @Transactional
     public ReminderSnapshot snooze(UUID id, int minutes) {
         if (minutes < 1 || minutes > 1440) {
             throw new InvalidReminderException("Reminder snooze duration is invalid");

@@ -12,6 +12,9 @@ import com.kj.stackchan.notification.InteractiveNotificationService;
 import com.kj.stackchan.notification.NotificationResponseAction;
 import com.kj.stackchan.reminder.ReminderService;
 import com.kj.stackchan.conversation.ConversationService;
+import com.kj.stackchan.task.PersonalTaskPriority;
+import com.kj.stackchan.task.PersonalTaskService;
+import com.kj.stackchan.task.PersonalTaskStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,13 +35,14 @@ class VoiceActionCoordinatorTest {
     @Mock private ProactiveTopicCooldownService topicCooldownService;
     @Mock private InteractiveNotificationService notificationService;
     @Mock private ConversationService conversationService;
+    @Mock private PersonalTaskService personalTaskService;
     private VoiceActionCoordinator coordinator;
 
     @BeforeEach
     void setUp() {
         coordinator = new VoiceActionCoordinator(proposalService, reminderService, memoryService, settingsService,
                 Clock.fixed(Instant.parse("2026-08-02T08:00:00Z"), ZoneOffset.UTC), null, topicCooldownService,
-                notificationService, conversationService);
+                notificationService, conversationService, personalTaskService);
     }
 
     @Test
@@ -46,6 +50,14 @@ class VoiceActionCoordinatorTest {
         assertThat(coordinator.handle(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "今天天气怎么样"))
                 .isNull();
         verify(proposalService, never()).propose(any(), any(), any(), any());
+    }
+
+    @Test
+    void taskListQuestionRemainsAReadOnlyAgentQuery() {
+        assertThat(coordinator.handle(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "我的任务有哪些"))
+                .isNull();
+        verify(proposalService, never()).propose(any(), any(), any(), any());
+        verifyNoInteractions(personalTaskService);
     }
 
     @Test
@@ -143,5 +155,50 @@ class VoiceActionCoordinatorTest {
         verify(proposalService).propose(any(), any(), any(), draft.capture());
         assertThat(draft.getValue().actionType()).isEqualTo(VoiceActionType.START_WORKDAY);
         assertThat(draft.getValue().confirmationRequired()).isTrue();
+    }
+
+    @Test
+    void simpleTaskCreationProducesConfirmationWithoutWritingTask() {
+        UUID proposalId = UUID.randomUUID();
+        when(proposalService.propose(any(), any(), any(), any())).thenReturn(
+                new VoiceActionProposalService.ProposalSnapshot(proposalId, VoiceActionType.CREATE_PERSONAL_TASK,
+                        VoiceActionStatus.PENDING, true, "整理会议材料", null, null, null, null, null,
+                        null, null, Instant.parse("2026-08-02T08:02:00Z")));
+        when(proposalService.restatement(any())).thenReturn("要新增待办。确认执行吗？");
+
+        var result = coordinator.handle(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "添加待办：整理会议材料");
+
+        assertThat(result.reply()).contains("确认执行");
+        ArgumentCaptor<VoiceActionDraft> draft = ArgumentCaptor.forClass(VoiceActionDraft.class);
+        verify(proposalService).propose(any(), any(), any(), draft.capture());
+        assertThat(draft.getValue().actionType()).isEqualTo(VoiceActionType.CREATE_PERSONAL_TASK);
+        verify(personalTaskService, never()).create(any(), any());
+    }
+
+    @Test
+    void matchingTaskCompletionProducesScopedConfirmation() {
+        UUID deviceId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        when(conversationService.roleId(conversationId)).thenReturn(roleId);
+        when(personalTaskService.matchOpenTitle(deviceId, roleId, "整理会议材料")).thenReturn(
+                new PersonalTaskService.TitleMatch(PersonalTaskService.TitleMatchStatus.MATCHED,
+                        new PersonalTaskService.TaskSnapshot(taskId, deviceId, roleId, "整理会议材料", null,
+                                PersonalTaskPriority.NORMAL, PersonalTaskStatus.OPEN, null, "Asia/Shanghai", null,
+                                null, Instant.EPOCH, Instant.EPOCH)));
+        when(proposalService.propose(any(), any(), any(), any())).thenReturn(
+                new VoiceActionProposalService.ProposalSnapshot(UUID.randomUUID(), VoiceActionType.COMPLETE_PERSONAL_TASK,
+                        VoiceActionStatus.PENDING, true, "整理会议材料", null, null, null, null, null,
+                        null, null, Instant.parse("2026-08-02T08:02:00Z")));
+        when(proposalService.restatement(any())).thenReturn("要标记完成。确认执行吗？");
+
+        var result = coordinator.handle(deviceId, conversationId, UUID.randomUUID(), "完成待办：整理会议材料");
+
+        assertThat(result.reply()).contains("确认执行");
+        ArgumentCaptor<VoiceActionDraft> draft = ArgumentCaptor.forClass(VoiceActionDraft.class);
+        verify(proposalService).propose(eq(deviceId), eq(conversationId), any(), draft.capture());
+        assertThat(draft.getValue().targetReference()).isEqualTo(taskId);
+        verify(personalTaskService, never()).complete(any(), any(), any());
     }
 }

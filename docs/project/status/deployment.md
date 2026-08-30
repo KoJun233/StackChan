@@ -1,16 +1,33 @@
 # 部署工作流
 
-- 状态：READY_FOR_REVIEW
+- 状态：STABLE
 - 最后更新：2026-08-30
-- 当前分支：`codex/work-002-pilot-observability`（运行态为 WORK-002 server/V43 候选，实机固件为 `424cb49`）
-- 基准提交：`c62ccd0`
-- 最后验证提交：`c62ccd0`
-- 最后验证范围：WORK-002 发布、V43 迁移、健康/鉴权/设备安全状态验证通过
+- 当前分支：`codex/work-002-pilot-active`（运行态为 WORK-004 server/V45 角色校验修复，实机固件为 `424cb49`）
+- 基准提交：`f0bce2d`
+- 最后验证提交：`f0bce2d`
+- 最后验证范围：WORK-004 默认角色校验修复发布；备份恢复、V45、健康/鉴权/观察窗口/设备安全状态验证通过
 - 当前模式：LAN HTTP development
 
 ## 当前目标
 
-在保持 LAN HTTP 开发模式和 CoreS3 `424cb49 / motion_disabled` 不变的前提下，已完成 WORK-002 发布前备份与校验、V43 迁移和 server/内置管理页面替换。
+在保持 LAN HTTP 开发模式和 CoreS3 `424cb49 / motion_disabled` 不变的前提下，已发布 WORK-004 默认角色校验修复；V45 和运行数据没有迁移变化。
+
+## 已发布的 WORK-004
+
+- 默认角色保留 ID 校验修复只替换 server/内置管理页面；当前容器为 `12ecb4a04de5`，镜像为 `sha256:4c8e3d5348aa2a5ef1381bb6538deff3994b4bb6088ace941b7ff05d44c0792c`，构建版本为 `work004-v45-role-fix`。
+- 13:33 UTC 生成新备份并完成隔离恢复；修复前 V45 镜像保留为 `pre-role-id-fix-a13a30c`。本机/LAN 首页和健康为 200，未认证待办接口为 401，运行资源包含共享角色 ID 校验。
+- 发布范围只有 server 镜像和内置管理页面；数据库由 V44 前进到 V45。
+- 发布前在既有备份卷生成新备份并完成一次性 PostgreSQL 隔离恢复；V44 回滚镜像保留为 `pre-work004-v44`。
+- 最终 server 容器为 `e8f8d03035c8`，镜像为 `sha256:a29d2895a6b9dcdaa1afbc785de6b935e59c335de288c4fe8bc86a9f24da7d54`，构建版本为 `work004-v45-final`。
+- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 均未替换；健康、本机/LAN 首页、V45 和鉴权边界通过。
+- 发布后 `personal_tasks=0`；观察窗口仍为 2026-08-30 至 2026-09-12，完成通知标记为空；设备保持 `424cb49 / motion_disabled / DISABLED`。
+
+## 已发布的 WORK-003
+
+- 发布范围只有 server；数据库由 V43 前进到 V44，内置管理页面代码没有变化。
+- 发布前在独立备份卷生成新备份并完成一次性 PostgreSQL 隔离恢复；V43 回滚镜像保留为 `pre-work003-v43`。
+- 最终 server 容器为 `04816c320b97`，镜像为 `sha256:378005a8996e1d1e5d63a3324336981f81da9f924e2e86145fa1fd2cf25a901f`，构建版本为 `work003-v44-final`。
+- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 均未替换；健康、本机/LAN 首页、V44、鉴权、观察窗口和安全状态通过。
 
 ## 已发布的 WORK-002
 
@@ -30,13 +47,13 @@
 
 ## 正在进行
 
-LAN server 已运行 WORK-002/V43 候选，当前宿主机局域网地址为 `http://192.168.1.4:8080/`，容器为 `e2dcfa2fbe86`，镜像摘要为 `sha256:db8e8aca683db95ee1ace9273ae80aac8deb9368f2af15ecfae612e615dd1c72`；WORK-001 回滚镜像保留为 `pre-work002-c62ccd0`。运行态提供十五秒周期编排、确定性首次简报、休息提醒和显式十四天观察报告。
+LAN server 已运行 WORK-004/V45 默认角色校验修复，当前宿主机局域网地址为 `http://192.168.1.4:8080/`，容器为 `12ecb4a04de5`，镜像摘要为 `sha256:4c8e3d5348aa2a5ef1381bb6538deff3994b4bb6088ace941b7ff05d44c0792c`；修复前 V45 和 V44 回滚镜像均已保留。运行态提供本地个人待办、可靠截止提醒、只读 Agent Tool 和确认式语音新增/完成。
 
 CoreS3 当前上报 LAN HTTP Quad 固件 `424cb49`，保留 NVS、Wi-Fi、设备身份和 `motion_disabled`；启动、语音、无动作中位校准及 WORK-001 顶部长按启动/停止正常。服务地址仍指向当前宿主机。MEDIA-004 V2 实体激活继续等待 EAF 素材。
 
 ## 下一步操作
 
-保持当前 LAN server/V43 候选与 `424cb49` 实机运行态；WORK-002 任务分支推送后由用户创建、审核和合并 PR。合入后由管理员在首次实际工作使用前进入交互设置显式开始十四天观察；该操作不启用身体动作。
+默认角色“小峰”新增已由用户确认通过；继续完成 WORK-004 其余人工验收。之后保持 LAN server/V45 与 `424cb49` 实机运行态至 2026-09-12 完整结束；不切换部署模式、不替换端口或卷、不启用身体动作。
 
 ## 阻塞项
 
@@ -52,6 +69,13 @@ CoreS3 当前上报 LAN HTTP Quad 固件 `424cb49`，保留 NVS、Wi-Fi、设备
 - `scripts/verify-lan-compose.ps1`
 
 ## 验证命令与最近结果
+
+- 2026-08-30 WORK-004 默认角色校验修复发布：13:33 UTC 生成新备份并完成隔离恢复，修复前 V45 镜像保留为 `pre-role-id-fix-a13a30c`，只替换 server。最终容器 `12ecb4a04de5`、镜像 `sha256:4c8e3d5348aa2a5ef1381bb6538deff3994b4bb6088ace941b7ff05d44c0792c`、构建版本 `work004-v45-role-fix`；V45、本机/LAN 首页、健康、401 鉴权和新静态资源通过。待办表仍为空，观察窗口保持 2026-08-30 至 2026-09-12，设备保持 `424cb49 / motion_disabled / DISABLED`。
+- 2026-08-30 用户确认刷新页面后默认角色新增正常，发布修复人工验收通过；无需再次替换服务或操作固件。
+
+- 2026-08-30 WORK-004/V45 发布：21:06 生成新备份并完成隔离恢复，旧 V44 镜像保留为 `pre-work004-v44`，只替换 server。最终容器 `e8f8d03035c8`、镜像 `sha256:a29d2895a6b9dcdaa1afbc785de6b935e59c335de288c4fe8bc86a9f24da7d54`；运行库为 V45，本机/LAN 首页和健康为 200，未认证待办接口为 401。待办表为空，原观察窗口和完成通知标记未变化，设备保持 `424cb49 / motion_disabled / DISABLED`。
+
+- 2026-08-30 WORK-003/V44 发布：新备份和隔离恢复验证成功，旧 V43 镜像保留为 `pre-work003-v43`，只替换 server。最终容器 `04816c320b97`、镜像 `sha256:378005a8996e1d1e5d63a3324336981f81da9f924e2e86145fa1fd2cf25a901f`；运行库为 V44，本机/LAN 首页和健康正常，未认证观察接口为 401。当前观察窗口仍为 2026-08-30 至 2026-09-12，首次调度后入队标记为空且完成提醒数为零；设备保持 `424cb49 / motion_disabled / DISABLED`。
 
 - 2026-08-30 WORK-002/V43 发布：发布前及第十四天边界修正后均生成并校验最新备份，旧 WORK-001 镜像保留为 `pre-work002-c62ccd0`，两次均只替换 `stackchan-foundation-server-1`。最终容器为 `e2dcfa2fbe86`，镜像为 `sha256:db8e8aca683db95ee1ace9273ae80aac8deb9368f2af15ecfae612e615dd1c72`，构建版本为 `work002-v43-final`；PostgreSQL `6d8feaa18623`、Redis `58e31a403637` 和备份容器 `c94b190f0428` 未变化。运行库由 V42 迁移到 V43，本机与 LAN 健康/首页为 200，未认证观察接口为 401，运行资源包含最终观察说明。CoreS3 在线上报 `424cb49 / motion_disabled / DISABLED`，未连接串口、未刷写固件、未执行身体动作。
 

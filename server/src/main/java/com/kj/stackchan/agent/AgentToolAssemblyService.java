@@ -17,6 +17,7 @@ import com.kj.stackchan.calendar.ICloudCalendarService;
 import com.kj.stackchan.config.AppProperties;
 import com.kj.stackchan.memory.LongTermMemoryService;
 import com.kj.stackchan.reminder.ReminderService;
+import com.kj.stackchan.task.PersonalTaskService;
 import com.kj.stackchan.workday.WorkdaySettingsService;
 import com.kj.stackchan.weather.WorkdayWeatherService;
 import org.springframework.ai.support.ToolCallbacks;
@@ -31,6 +32,7 @@ public class AgentToolAssemblyService {
             CapabilityListTool.ID,
             NextReminderTool.ID,
             PendingMemoryCountTool.ID,
+            PersonalTasksTool.ID,
             UpcomingCalendarEventsTool.ID,
             CurrentDeviceWeatherTool.ID
     );
@@ -47,6 +49,7 @@ public class AgentToolAssemblyService {
     private final ICloudCalendarService calendarService;
     private final WorkdaySettingsService workdaySettingsService;
     private final WorkdayWeatherService weatherService;
+    private final PersonalTaskService personalTaskService;
 
     public AgentToolAssemblyService(
             AgentSettingsService settingsService,
@@ -60,7 +63,8 @@ public class AgentToolAssemblyService {
             LongTermMemoryService memoryService,
             ICloudCalendarService calendarService,
             WorkdaySettingsService workdaySettingsService,
-            WorkdayWeatherService weatherService
+            WorkdayWeatherService weatherService,
+            PersonalTaskService personalTaskService
     ) {
         this.settingsService = settingsService;
         this.mcpCatalog = mcpCatalog;
@@ -74,6 +78,7 @@ public class AgentToolAssemblyService {
         this.calendarService = calendarService;
         this.workdaySettingsService = workdaySettingsService;
         this.weatherService = weatherService;
+        this.personalTaskService = personalTaskService;
     }
 
     public AgentToolAssembly assemble(AgentInvocationContext context) {
@@ -102,6 +107,14 @@ public class AgentToolAssemblyService {
         if (context.deviceId() != null && settingsService.isEnabled(
                 AgentCapabilityType.BUILTIN_TOOL, PendingMemoryCountTool.ID)) {
             ToolCallback callback = callback(new PendingMemoryCountTool(context.deviceId(), context.roleId(), memoryService, objectMapper));
+            directTools.add(callback);
+            auditMetadata.put(callback.getToolDefinition().name(), new AgentToolPolicyInterceptor.ToolAuditMetadata(
+                    AgentToolSource.BUILTIN, null, null));
+        }
+        if (context.deviceId() != null && settingsService.isEnabled(
+                AgentCapabilityType.BUILTIN_TOOL, PersonalTasksTool.ID)) {
+            ToolCallback callback = callback(new PersonalTasksTool(
+                    context.deviceId(), context.roleId(), personalTaskService, objectMapper));
             directTools.add(callback);
             auditMetadata.put(callback.getToolDefinition().name(), new AgentToolPolicyInterceptor.ToolAuditMetadata(
                     AgentToolSource.BUILTIN, null, null));

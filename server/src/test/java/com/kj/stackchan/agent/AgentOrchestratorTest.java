@@ -334,6 +334,33 @@ class AgentOrchestratorTest {
     }
 
     @Test
+    void refusesToGuessPersonalTasksWhenTheTaskToolIsUnavailable() {
+        AgentSettingsService settingsService = mock(AgentSettingsService.class);
+        AgentToolAssemblyService assemblyService = mock(AgentToolAssemblyService.class);
+        AgentToolAuditService auditService = mock(AgentToolAuditService.class);
+        LlmRuntimeClientFactory clientFactory = mock(LlmRuntimeClientFactory.class);
+        SkillRegistry skillRegistry = mock(SkillRegistry.class);
+        AgentInvocationContext context = new AgentInvocationContext(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), AgentChannel.VOICE
+        );
+        when(settingsService.runtimeSettings()).thenReturn(new AgentSettingsService.RuntimeSettings(
+                true, true, true, Instant.parse("2026-08-30T00:00:00Z")
+        ));
+        when(assemblyService.assemble(context)).thenReturn(new AgentToolAssemblyService.AgentToolAssembly(
+                List.of(), Map.of(), skillRegistry, List.of(), Map.of(), List.of()
+        ));
+        AgentOrchestrator orchestrator = new AgentOrchestrator(
+                settingsService, assemblyService, auditService, clientFactory, new ObjectMapper(), new AppProperties()
+        );
+
+        List<String> output = orchestrator.stream(new AgentOrchestrator.AgentRequest(
+                context, "你是测试助手。", List.of(), "我还有哪些待办"
+        )).collectList().block();
+
+        assertThat(output).containsExactly("我暂时无法可靠读取当前角色的待办，所以不能猜测。");
+    }
+
+    @Test
     void requiresTheDeviceWeatherToolBeforeAnsweringWeatherQuestions() {
         AgentSettingsService settingsService = mock(AgentSettingsService.class);
         AgentToolAssemblyService assemblyService = mock(AgentToolAssemblyService.class);

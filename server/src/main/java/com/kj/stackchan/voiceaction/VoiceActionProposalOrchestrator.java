@@ -18,9 +18,10 @@ import org.springframework.stereotype.Service;
 public class VoiceActionProposalOrchestrator {
     private static final String INSTRUCTION = """
             你只负责把用户明确提出的语音动作转换为一个结构化提案，并且必须调用一次 submit_voice_action_proposal。
-            允许类型仅为 CREATE_REMINDER、SNOOZE_NEXT_REMINDER、SKIP_NEXT_REMINDER、SET_TEMPORARY_DND、SET_VOLUME、CREATE_MEMORY_SUGGESTION、START_WORKDAY、END_WORKDAY、START_WORKDAY_REST、SNOOZE_WORKDAY_REST、SKIP_WORKDAY_REST_FOR_DAY。
+            允许类型仅为 CREATE_REMINDER、SNOOZE_NEXT_REMINDER、SKIP_NEXT_REMINDER、SET_TEMPORARY_DND、SET_VOLUME、CREATE_MEMORY_SUGGESTION、START_WORKDAY、END_WORKDAY、START_WORKDAY_REST、SNOOZE_WORKDAY_REST、SKIP_WORKDAY_REST_FOR_DAY、CREATE_PERSONAL_TASK。
             只使用用户明确说出的内容；时间不明确、字段不全、类型不在白名单或不是明确动作时，不调用工具。
             单次提醒 recurrenceType=NONE、recurrenceInterval=1；周期仅允许 DAILY 或 WEEKLY。时间必须输出 ISO-8601 UTC Instant。
+            新增待办使用 CREATE_PERSONAL_TASK，content 只包含待办标题；没有明确截止时间时 scheduledAt 和 zoneId 为空，明确截止时间时同时提供 scheduledAt 和当前用户 zoneId。
             不得声称动作已执行，不得生成设备、会话、管理员或回合标识。
             当前时间：%s；用户时区：%s。
             """;

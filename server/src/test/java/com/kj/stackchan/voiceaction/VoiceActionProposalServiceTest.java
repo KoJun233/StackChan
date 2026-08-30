@@ -17,6 +17,9 @@ import com.kj.stackchan.conversation.ConversationService;
 import com.kj.stackchan.role.CompanionRoleService;
 import com.kj.stackchan.workday.WorkdayCompanionService;
 import com.kj.stackchan.workday.WorkdayRestAction;
+import com.kj.stackchan.task.PersonalTaskPriority;
+import com.kj.stackchan.task.PersonalTaskService;
+import com.kj.stackchan.task.PersonalTaskStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -205,6 +208,35 @@ class VoiceActionProposalServiceTest {
         assertThat(workdayActions.confirm(proposal.id(), deviceId, conversationId).status())
                 .isEqualTo(VoiceActionStatus.EXECUTED);
         verify(workdayService).respondToRest(deviceId, WorkdayRestAction.SNOOZE);
+    }
+
+    @Test
+    void confirmedTaskCreationUsesPersistedDeviceAndRoleExactlyOnce() {
+        ConversationService conversationService = mock(ConversationService.class);
+        CompanionRoleService roleService = mock(CompanionRoleService.class);
+        PersonalTaskService taskService = mock(PersonalTaskService.class);
+        VoiceActionProposalService taskActions = new VoiceActionProposalService(
+                proposalRepository, auditRepository, reminderService, settingsService, memoryService,
+                settingsCoordinator, Clock.fixed(NOW, ZoneOffset.UTC), conversationService, roleService,
+                null, null, taskService);
+        UUID deviceId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        when(conversationService.roleId(conversationId)).thenReturn(roleId);
+        when(taskService.create(eq(roleId), any())).thenReturn(new PersonalTaskService.TaskSnapshot(
+                taskId, deviceId, roleId, "整理会议材料", null, PersonalTaskPriority.NORMAL,
+                PersonalTaskStatus.OPEN, null, "Asia/Shanghai", null, null, NOW, NOW));
+
+        var proposal = taskActions.propose(deviceId, conversationId, UUID.randomUUID(),
+                VoiceActionDraft.personalTask("整理会议材料", null, null));
+        VoiceActionProposalEntity entity = capturedProposal();
+        when(proposalRepository.findByIdForUpdate(proposal.id())).thenReturn(java.util.Optional.of(entity));
+
+        assertThat(taskActions.confirm(proposal.id(), deviceId, conversationId).resultReference()).isEqualTo(taskId);
+        assertThat(taskActions.confirm(proposal.id(), deviceId, conversationId).status())
+                .isEqualTo(VoiceActionStatus.EXECUTED);
+        verify(taskService, times(1)).create(eq(roleId), any());
     }
 
     private VoiceActionDraft reminderDraft() {

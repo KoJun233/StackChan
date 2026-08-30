@@ -52,7 +52,7 @@ public class WorkdayPilotService {
         validateDevice(deviceId);
         WorkdaySettingsService.WorkdaySettingsSnapshot settings = settingsService.resolve(deviceId);
         ZoneId zone = ZoneId.of(settings.zoneId());
-        WorkdayPilotObservationEntity observation = observationRepository.findById(deviceId)
+        WorkdayPilotObservationEntity observation = observationRepository.findForUpdate(deviceId)
                 .orElseGet(() -> new WorkdayPilotObservationEntity(
                         deviceId, localToday(zone), zone.getId(), settings.workDaysMask(), clock.instant()
                 ));
