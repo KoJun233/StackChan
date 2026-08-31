@@ -145,6 +145,31 @@ class WorkdayRuntimePersistenceTest {
 
     @Test
     @Transactional
+    void selectsOnlyRoleScopedTasksCompletedInsideTheLocalDay() {
+        DeviceEntity device = deviceRepository.save(new DeviceEntity("task-progress", "1.0.0"));
+        Instant createdAt = Instant.parse("2026-08-29T12:00:00Z");
+        PersonalTaskEntity completedToday = personalTaskRepository.save(new PersonalTaskEntity(
+                device.getId(), CompanionRoleEntity.DEFAULT_ROLE_ID, "今日完成", null,
+                PersonalTaskPriority.NORMAL, null, "Asia/Shanghai", createdAt));
+        completedToday.complete(Instant.parse("2026-08-30T12:00:00Z"));
+        PersonalTaskEntity completedYesterday = personalTaskRepository.save(new PersonalTaskEntity(
+                device.getId(), CompanionRoleEntity.DEFAULT_ROLE_ID, "昨日完成", null,
+                PersonalTaskPriority.NORMAL, null, "Asia/Shanghai", createdAt));
+        completedYesterday.complete(Instant.parse("2026-08-29T15:59:59Z"));
+        personalTaskRepository.flush();
+
+        List<PersonalTaskEntity> result = personalTaskRepository.findCompletedInRange(
+                device.getId(), CompanionRoleEntity.DEFAULT_ROLE_ID, PersonalTaskStatus.COMPLETED,
+                Instant.parse("2026-08-29T16:00:00Z"), Instant.parse("2026-08-30T16:00:00Z"),
+                PageRequest.of(0, 10));
+
+        assertThat(result).extracting(PersonalTaskEntity::getId)
+                .containsExactly(completedToday.getId())
+                .doesNotContain(completedYesterday.getId());
+    }
+
+    @Test
+    @Transactional
     void persistsAndResetsThePilotCompletionNotificationMarker() {
         DeviceEntity device = deviceRepository.save(new DeviceEntity("workday-pilot", "1.0.0"));
         Instant startedAt = Instant.parse("2026-08-30T09:35:33Z");

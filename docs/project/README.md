@@ -42,6 +42,7 @@
 - [WORK-003 观察结果一次性通知](workday-pilot-completion-notification.md)
 - [WORK-004 本地个人待办闭环](personal-task-management.md)
 - [WORK-005 工作日首次简报纳入个人待办](workday-personal-task-brief.md)
+- [WORK-006 今日个人待办进度查询](workday-daily-task-progress.md)
 - [下一阶段可执行任务清单](todo.md)
 - [已完成里程碑](milestones.md)
 - [架构决策记录](decisions/README.md)

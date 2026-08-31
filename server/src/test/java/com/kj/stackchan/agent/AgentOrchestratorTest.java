@@ -361,6 +361,79 @@ class AgentOrchestratorTest {
     }
 
     @Test
+    void refusesToGuessDailyTaskProgressWhenTheTaskToolIsUnavailable() {
+        AgentSettingsService settingsService = mock(AgentSettingsService.class);
+        AgentToolAssemblyService assemblyService = mock(AgentToolAssemblyService.class);
+        AgentToolAuditService auditService = mock(AgentToolAuditService.class);
+        LlmRuntimeClientFactory clientFactory = mock(LlmRuntimeClientFactory.class);
+        SkillRegistry skillRegistry = mock(SkillRegistry.class);
+        AgentInvocationContext context = new AgentInvocationContext(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), AgentChannel.VOICE
+        );
+        when(settingsService.runtimeSettings()).thenReturn(new AgentSettingsService.RuntimeSettings(
+                true, true, true, Instant.parse("2026-08-31T00:00:00Z")
+        ));
+        when(assemblyService.assemble(context)).thenReturn(new AgentToolAssemblyService.AgentToolAssembly(
+                List.of(), Map.of(), skillRegistry, List.of(), Map.of(), List.of()
+        ));
+        AgentOrchestrator orchestrator = new AgentOrchestrator(
+                settingsService, assemblyService, auditService, clientFactory, new ObjectMapper(), new AppProperties()
+        );
+
+        List<String> output = orchestrator.stream(new AgentOrchestrator.AgentRequest(
+                context, "你是测试助手。", List.of(), "我今天完成了什么"
+        )).collectList().block();
+
+        assertThat(output).containsExactly("我暂时无法可靠读取当前角色的待办，所以不能猜测。");
+    }
+
+    @Test
+    void requiresThePersonalTaskToolBeforeAnsweringDailyProgressQuestions() {
+        AgentSettingsService settingsService = mock(AgentSettingsService.class);
+        AgentToolAssemblyService assemblyService = mock(AgentToolAssemblyService.class);
+        AgentToolAuditService auditService = mock(AgentToolAuditService.class);
+        LlmRuntimeClientFactory clientFactory = mock(LlmRuntimeClientFactory.class);
+        ChatModel chatModel = mock(ChatModel.class);
+        SkillRegistry skillRegistry = mock(SkillRegistry.class);
+        AtomicInteger executions = new AtomicInteger();
+        ToolCallback callback = ToolCallbacks.from(new PersonalTaskTestTool(executions))[0];
+        AgentInvocationContext context = new AgentInvocationContext(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), AgentChannel.VOICE
+        );
+        when(settingsService.runtimeSettings()).thenReturn(new AgentSettingsService.RuntimeSettings(
+                true, true, true, Instant.parse("2026-08-31T00:00:00Z")
+        ));
+        when(assemblyService.assemble(context)).thenReturn(new AgentToolAssemblyService.AgentToolAssembly(
+                List.of(callback), Map.of(), skillRegistry, List.of(),
+                Map.of(PersonalTasksTool.ID, new AgentToolPolicyInterceptor.ToolAuditMetadata(
+                        AgentToolSource.BUILTIN, null, null
+                )), List.of()
+        ));
+        when(clientFactory.createAgentChatModel()).thenReturn(chatModel);
+        when(chatModel.getDefaultOptions()).thenReturn(OpenAiChatOptions.builder().model("test-model").build());
+        when(chatModel.call(any(Prompt.class))).thenReturn(
+                response(AssistantMessage.builder()
+                        .content("")
+                        .toolCalls(List.of(new AssistantMessage.ToolCall(
+                                "call-task-progress", "function", PersonalTasksTool.ID, "{}"
+                        )))
+                        .build()),
+                response(new AssistantMessage("今天完成了一项，还剩一项。"))
+        );
+        AgentOrchestrator orchestrator = new AgentOrchestrator(
+                settingsService, assemblyService, auditService, clientFactory,
+                new ObjectMapper(), new AppProperties()
+        );
+
+        List<String> output = orchestrator.stream(new AgentOrchestrator.AgentRequest(
+                context, "你是测试助手。", List.of(), "今天的任务进度怎么样"
+        )).collectList().block();
+
+        assertThat(output).containsExactly("今天完成了一项，还剩一项。");
+        assertThat(executions).hasValue(1);
+    }
+
+    @Test
     void requiresTheDeviceWeatherToolBeforeAnsweringWeatherQuestions() {
         AgentSettingsService settingsService = mock(AgentSettingsService.class);
         AgentToolAssemblyService assemblyService = mock(AgentToolAssemblyService.class);
@@ -513,6 +586,21 @@ class AgentOrchestratorTest {
         public String read() {
             executions.incrementAndGet();
             return "{\"available\":true,\"summary\":\"今天有雨\"}";
+        }
+    }
+
+    public static class PersonalTaskTestTool {
+
+        private final AtomicInteger executions;
+
+        public PersonalTaskTestTool(AtomicInteger executions) {
+            this.executions = executions;
+        }
+
+        @Tool(name = PersonalTasksTool.ID, description = "Return fixed task progress")
+        public String read() {
+            executions.incrementAndGet();
+            return "{\"count\":1,\"completedTodayCount\":1}";
         }
     }
 }

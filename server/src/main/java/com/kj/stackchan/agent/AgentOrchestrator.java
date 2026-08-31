@@ -51,7 +51,10 @@ public class AgentOrchestrator {
             Pattern.CASE_INSENSITIVE
     );
     private static final Pattern PERSONAL_TASK_QUESTION = Pattern.compile(
-            "(?i)(待办|任务清单|要做(?:的)?事|todo|to-do)"
+            "(?i)(待办|任务清单|要做(?:的)?事|todo|to-do"
+                    + "|(?:今天|今日).{0,8}(?:完成|做完|任务进度)"
+                    + "|(?:完成|做完).{0,8}(?:什么|哪些|多少)"
+                    + "|任务.{0,4}进度)"
     );
     private static final String TOOL_LIMIT_REPLY = "本次查询已达到工具调用上限，我不能可靠地继续查询。";
     private static final String AGENT_TIMEOUT_REPLY = "这次工具查询超时了，我暂时无法给出可靠结果。";
@@ -214,7 +217,8 @@ public class AgentOrchestrator {
                 不得用提醒 Tool、历史对话或常识代替日历缓存。缓存不可用时必须如实说明。
                 用户询问天气、气温、降雨或是否需要带伞时，必须调用 current_device_weather；
                 不得用历史对话、常识或模型知识代替天气缓存。缓存不可用时必须如实说明。
-                用户询问待办、任务清单或要做的事时，必须调用 current_personal_tasks；
+                用户询问待办、任务清单、要做的事、今天完成了什么或任务进度时，必须调用
+                current_personal_tasks；
                 不得用提醒、日历或历史对话代替待办数据。Tool 不可用时必须如实说明。
                 """.formatted(directToolNames, skillNames);
     }

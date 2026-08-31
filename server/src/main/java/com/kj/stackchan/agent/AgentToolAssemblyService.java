@@ -114,7 +114,7 @@ public class AgentToolAssemblyService {
         if (context.deviceId() != null && settingsService.isEnabled(
                 AgentCapabilityType.BUILTIN_TOOL, PersonalTasksTool.ID)) {
             ToolCallback callback = callback(new PersonalTasksTool(
-                    context.deviceId(), context.roleId(), personalTaskService, objectMapper));
+                    context.deviceId(), context.roleId(), personalTaskService, workdaySettingsService, objectMapper));
             directTools.add(callback);
             auditMetadata.put(callback.getToolDefinition().name(), new AgentToolPolicyInterceptor.ToolAuditMetadata(
                     AgentToolSource.BUILTIN, null, null));

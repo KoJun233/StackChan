@@ -178,6 +178,38 @@ class PersonalTaskServiceTest {
         assertThat(pageable.getValue().getPageSize()).isEqualTo(2);
     }
 
+    @Test
+    void completedTodayUsesDeviceTimezoneAndReturnsOnlyTitles() {
+        UUID deviceId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        ZoneId zone = ZoneId.of("Asia/Shanghai");
+        allow(deviceId, roleId);
+        PersonalTaskEntity first = entity(deviceId, roleId, "发送周报", null);
+        first.complete(NOW.minusSeconds(60));
+        PersonalTaskEntity second = new PersonalTaskEntity(
+                deviceId, roleId, "整理会议材料", "不应发送给模型的完成备注", PersonalTaskPriority.HIGH,
+                null, zone.getId(), NOW.minusSeconds(7200));
+        second.complete(NOW.minusSeconds(120));
+        when(taskRepository.findCompletedInRange(
+                eq(deviceId), eq(roleId), eq(PersonalTaskStatus.COMPLETED),
+                eq(Instant.parse("2026-08-29T16:00:00Z")),
+                eq(Instant.parse("2026-08-30T16:00:00Z")), any(Pageable.class)))
+                .thenReturn(List.of(first, second));
+
+        List<PersonalTaskService.CompletedTaskItem> result = service.completedTodayForAgent(
+                deviceId, roleId, zone);
+
+        assertThat(result).extracting(PersonalTaskService.CompletedTaskItem::title)
+                .containsExactly("发送周报", "整理会议材料");
+        assertThat(result.toString()).doesNotContain("完成备注");
+        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+        verify(taskRepository).findCompletedInRange(
+                eq(deviceId), eq(roleId), eq(PersonalTaskStatus.COMPLETED),
+                eq(Instant.parse("2026-08-29T16:00:00Z")),
+                eq(Instant.parse("2026-08-30T16:00:00Z")), pageable.capture());
+        assertThat(pageable.getValue().getPageSize()).isEqualTo(10);
+    }
+
     private void allow(UUID deviceId, UUID roleId) {
         when(deviceRepository.existsById(deviceId)).thenReturn(true);
         when(roleRepository.existsById(roleId)).thenReturn(true);
