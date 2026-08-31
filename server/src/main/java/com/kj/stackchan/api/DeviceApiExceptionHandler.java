@@ -28,6 +28,8 @@ import com.kj.stackchan.speech.VoiceInputException;
 import com.kj.stackchan.speech.VoiceTurnCancelledException;
 import com.kj.stackchan.reminder.ReminderNotFoundException;
 import com.kj.stackchan.reminder.InvalidReminderException;
+import com.kj.stackchan.task.InvalidPersonalTaskException;
+import com.kj.stackchan.task.PersonalTaskNotFoundException;
 import com.kj.stackchan.notification.NotificationApiException;
 import com.kj.stackchan.role.InvalidRoleException;
 import com.kj.stackchan.role.RoleConflictException;
@@ -104,6 +106,12 @@ public class DeviceApiExceptionHandler {
     );
     public static final ApiError INVALID_REMINDER = new ApiError(
             "invalid_reminder", "提醒内容、时间、时区或目标设备无效。"
+    );
+    public static final ApiError PERSONAL_TASK_NOT_FOUND = new ApiError(
+            "personal_task_not_found", "未找到指定待办。"
+    );
+    public static final ApiError INVALID_PERSONAL_TASK = new ApiError(
+            "invalid_personal_task", "待办内容、归属或时间设置无效。"
     );
     public static final ApiError INVALID_INTERACTION_SETTINGS = new ApiError(
             "invalid_interaction_settings", "交互设置无效。"
@@ -247,6 +255,16 @@ public class DeviceApiExceptionHandler {
     @ExceptionHandler(InvalidReminderException.class)
     ResponseEntity<ApiError> invalidReminder(InvalidReminderException exception) {
         return response(HttpStatus.BAD_REQUEST, INVALID_REMINDER);
+    }
+
+    @ExceptionHandler(PersonalTaskNotFoundException.class)
+    ResponseEntity<ApiError> personalTaskNotFound(PersonalTaskNotFoundException exception) {
+        return response(HttpStatus.NOT_FOUND, PERSONAL_TASK_NOT_FOUND);
+    }
+
+    @ExceptionHandler(InvalidPersonalTaskException.class)
+    ResponseEntity<ApiError> invalidPersonalTask(InvalidPersonalTaskException exception) {
+        return response(HttpStatus.BAD_REQUEST, INVALID_PERSONAL_TASK);
     }
 
     @ExceptionHandler(InvalidInteractionSettingsException.class)

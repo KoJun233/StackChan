@@ -6,6 +6,11 @@ import java.util.UUID;
 
 import com.kj.stackchan.device.DeviceEntity;
 import com.kj.stackchan.device.DeviceRepository;
+import com.kj.stackchan.role.CompanionRoleEntity;
+import com.kj.stackchan.task.PersonalTaskEntity;
+import com.kj.stackchan.task.PersonalTaskPriority;
+import com.kj.stackchan.task.PersonalTaskRepository;
+import com.kj.stackchan.task.PersonalTaskStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,9 +50,13 @@ class WorkdayRuntimePersistenceTest {
     @Autowired private DeviceWorkdayRuntimeRepository runtimeRepository;
     @Autowired private WorkdayBriefAttemptRepository briefRepository;
     @Autowired private WorkdayDailyMetricRepository metricRepository;
+    @Autowired private WorkdayPilotObservationRepository observationRepository;
+    @Autowired private PersonalTaskRepository personalTaskRepository;
 
     @BeforeEach
     void clearData() {
+        personalTaskRepository.deleteAllInBatch();
+        observationRepository.deleteAllInBatch();
         metricRepository.deleteAllInBatch();
         briefRepository.deleteAllInBatch();
         runtimeRepository.deleteAllInBatch();
@@ -78,5 +87,57 @@ class WorkdayRuntimePersistenceTest {
                 .get()
                 .extracting(WorkdayBriefAttemptEntity::getStatus)
                 .isEqualTo(WorkdayBriefStatus.PENDING);
+    }
+
+    @Test
+    @Transactional
+    void persistsRoleScopedPersonalTaskLifecycle() {
+        DeviceEntity device = deviceRepository.save(new DeviceEntity("personal-task", "1.0.0"));
+        Instant now = Instant.parse("2026-08-30T12:00:00Z");
+        PersonalTaskEntity task = personalTaskRepository.save(new PersonalTaskEntity(
+                device.getId(), CompanionRoleEntity.DEFAULT_ROLE_ID, "整理会议材料", "周一使用",
+                PersonalTaskPriority.HIGH, Instant.parse("2026-08-31T01:00:00Z"), "Asia/Shanghai", now));
+
+        task.complete(now.plusSeconds(60));
+        personalTaskRepository.flush();
+
+        assertThat(personalTaskRepository.findById(task.getId()))
+                .get()
+                .satisfies(saved -> {
+                    assertThat(saved.getStatus()).isEqualTo(PersonalTaskStatus.COMPLETED);
+                    assertThat(saved.getCompletedAt()).isEqualTo(now.plusSeconds(60));
+                    assertThat(saved.getRoleId()).isEqualTo(CompanionRoleEntity.DEFAULT_ROLE_ID);
+                });
+    }
+
+    @Test
+    @Transactional
+    void persistsAndResetsThePilotCompletionNotificationMarker() {
+        DeviceEntity device = deviceRepository.save(new DeviceEntity("workday-pilot", "1.0.0"));
+        Instant startedAt = Instant.parse("2026-08-30T09:35:33Z");
+        Instant queuedAt = Instant.parse("2026-09-13T00:05:00Z");
+        WorkdayPilotObservationEntity observation = observationRepository.save(
+                new WorkdayPilotObservationEntity(
+                        device.getId(), LocalDate.of(2026, 8, 30), "Asia/Shanghai", 31, startedAt
+                )
+        );
+
+        observation.markCompletionNotificationQueued(queuedAt);
+        observationRepository.flush();
+
+        assertThat(observationRepository.findById(device.getId()))
+                .get()
+                .extracting(WorkdayPilotObservationEntity::getCompletionNotificationQueuedAt)
+                .isEqualTo(queuedAt);
+        assertThat(observationRepository
+                .findAllByCompletionNotificationQueuedAtIsNullOrderByEndsOnAsc()).isEmpty();
+
+        observation.reset(LocalDate.of(2026, 9, 14), "Asia/Shanghai", 31, queuedAt.plusSeconds(60));
+        observationRepository.flush();
+
+        assertThat(observationRepository
+                .findAllByCompletionNotificationQueuedAtIsNullOrderByEndsOnAsc())
+                .extracting(WorkdayPilotObservationEntity::getDeviceId)
+                .containsExactly(device.getId());
     }
 }

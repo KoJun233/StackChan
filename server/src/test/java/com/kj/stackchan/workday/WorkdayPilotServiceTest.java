@@ -134,6 +134,23 @@ class WorkdayPilotServiceTest {
                 .hasMessageContaining("not active");
     }
 
+    @Test
+    void restartClearsAQueuedCompletionNotificationForTheNewWindow() {
+        WorkdayPilotObservationEntity observation = observation();
+        observation.markCompletionNotificationQueued(NOW.minusSeconds(60));
+        when(observationRepository.findForUpdate(DEVICE_ID)).thenReturn(Optional.of(observation));
+        when(settingsService.resolve(DEVICE_ID)).thenReturn(settings());
+        when(observationRepository.save(observation)).thenReturn(observation);
+        when(metricRepository.findAllByDeviceIdAndWorkDateBetweenOrderByWorkDateAsc(
+                any(), any(), any())).thenReturn(List.of());
+
+        WorkdayPilotService.PilotReportSnapshot report = service.restart(DEVICE_ID);
+
+        assertThat(report.status()).isEqualTo(WorkdayPilotService.PilotStatus.COLLECTING);
+        assertThat(observation.getCompletionNotificationQueuedAt()).isNull();
+        assertThat(observation.getStartedOn()).isEqualTo(LocalDate.of(2026, 8, 30));
+    }
+
     private List<WorkdayDailyMetricEntity> activeMetrics(int count) {
         List<WorkdayDailyMetricEntity> metrics = new ArrayList<>();
         LocalDate date = STARTED_ON;

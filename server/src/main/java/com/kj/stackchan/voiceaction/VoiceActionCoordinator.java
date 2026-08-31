@@ -16,6 +16,8 @@ import com.kj.stackchan.reminder.ReminderService;
 import com.kj.stackchan.notification.InteractiveNotificationService;
 import com.kj.stackchan.notification.NotificationResponseAction;
 import com.kj.stackchan.conversation.ConversationService;
+import com.kj.stackchan.role.CompanionRoleEntity;
+import com.kj.stackchan.task.PersonalTaskService;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -26,6 +28,18 @@ public class VoiceActionCoordinator {
     private static final Pattern REMINDER_MINUTES = Pattern.compile("提醒我\\s*(.+?)\\s*(\\d{1,5})\\s*分钟后");
     private static final Pattern SNOOZE_MINUTES = Pattern.compile("(?:稍后|推迟|延后)\\s*(\\d{1,4})\\s*分钟");
     private static final Pattern SWITCH_ROLE = Pattern.compile("切换到(?:角色)?[“\"']?([^”\"'，,。！!]+)[”\"']?");
+    private static final Pattern CREATE_TASK = Pattern.compile(
+            "^(?:添加|新增|新建|记下|记个)(?:一个)?(?:待办|任务)[：:,，]?\\s*(.+?)[。！!]?$"
+    );
+    private static final Pattern COMPLETE_TASK = Pattern.compile(
+            "^(?:完成|办完|标记完成)(?:这个|一条)?(?:待办|任务)[：:,，]?\\s*[“\"']?(.+?)[”\"']?[。！!]?$"
+    );
+    private static final Pattern TASK_TIME = Pattern.compile(
+            "(今天|明天|后天|周[一二三四五六日天]|星期|\\d{1,2}[点时]|分钟后|小时后|天后|截止|到期)"
+    );
+    private static final Pattern PERSONAL_TASK_ACTION = Pattern.compile(
+            "(?:添加|新增|新建|创建|记下|记个).*(?:待办|任务)|(?:完成|办完|标记完成).*(?:待办|任务)"
+    );
 
     private final VoiceActionProposalService proposalService;
     private final ReminderService reminderService;
@@ -36,6 +50,7 @@ public class VoiceActionCoordinator {
     private final ProactiveTopicCooldownService topicCooldownService;
     private final InteractiveNotificationService notificationService;
     private final ConversationService conversationService;
+    private final PersonalTaskService personalTaskService;
 
     @Autowired
     public VoiceActionCoordinator(VoiceActionProposalService proposalService, ReminderService reminderService,
@@ -43,7 +58,8 @@ public class VoiceActionCoordinator {
                                   Clock clock, VoiceActionProposalOrchestrator proposalOrchestrator,
                                   ProactiveTopicCooldownService topicCooldownService,
                                   InteractiveNotificationService notificationService,
-                                  ConversationService conversationService) {
+                                  ConversationService conversationService,
+                                  PersonalTaskService personalTaskService) {
         this.proposalService = proposalService;
         this.reminderService = reminderService;
         this.memoryService = memoryService;
@@ -53,6 +69,17 @@ public class VoiceActionCoordinator {
         this.topicCooldownService = topicCooldownService;
         this.notificationService = notificationService;
         this.conversationService = conversationService;
+        this.personalTaskService = personalTaskService;
+    }
+
+    public VoiceActionCoordinator(VoiceActionProposalService proposalService, ReminderService reminderService,
+                                  LongTermMemoryService memoryService, InteractionSettingsService settingsService,
+                                  Clock clock, VoiceActionProposalOrchestrator proposalOrchestrator,
+                                  ProactiveTopicCooldownService topicCooldownService,
+                                  InteractiveNotificationService notificationService,
+                                  ConversationService conversationService) {
+        this(proposalService, reminderService, memoryService, settingsService, clock, proposalOrchestrator,
+                topicCooldownService, notificationService, conversationService, null);
     }
 
     public VoiceActionCoordinator(VoiceActionProposalService proposalService, ReminderService reminderService,
@@ -92,6 +119,8 @@ public class VoiceActionCoordinator {
         if (pending != null) {
             return new ActionResult(proposalService.restatement(pending), true);
         }
+        ActionResult personalTaskAction = proposePersonalTaskAction(deviceId, conversationId, turnId, text);
+        if (personalTaskAction != null) return personalTaskAction;
         ActionResult notificationResponse = proposeNotificationResponse(deviceId, conversationId, turnId, text);
         if (notificationResponse != null) return notificationResponse;
         VoiceActionType workdayAction = workdayAction(text);
@@ -185,7 +214,36 @@ public class VoiceActionCoordinator {
     private boolean isExplicitAction(String text) {
         return text.contains("提醒我") || text.contains("稍后提醒") || text.contains("跳过下一次")
                 || text.contains("音量调到") || text.contains("安静到") || text.startsWith("记住")
-                || text.startsWith("请记住") || text.contains("切换到角色");
+                || text.startsWith("请记住") || text.contains("切换到角色")
+                || PERSONAL_TASK_ACTION.matcher(text).find();
+    }
+    private ActionResult proposePersonalTaskAction(UUID deviceId, UUID conversationId, UUID turnId, String text) {
+        if (personalTaskService == null) return null;
+        UUID roleId = conversationService == null ? CompanionRoleEntity.DEFAULT_ROLE_ID
+                : conversationService.roleId(conversationId);
+        Matcher complete = COMPLETE_TASK.matcher(text);
+        if (complete.matches()) {
+            PersonalTaskService.TitleMatch match = personalTaskService.matchOpenTitle(
+                    deviceId, roleId, complete.group(1).trim());
+            if (match.status() == PersonalTaskService.TitleMatchStatus.NOT_FOUND) {
+                return new ActionResult("没有找到匹配的未完成待办。", true);
+            }
+            if (match.status() == PersonalTaskService.TitleMatchStatus.AMBIGUOUS) {
+                return new ActionResult("找到了多条同名或相似待办，请说出更完整的标题。", true);
+            }
+            VoiceActionProposalService.ProposalSnapshot proposal = proposalService.propose(
+                    deviceId, conversationId, turnId,
+                    VoiceActionDraft.completePersonalTask(match.task().id(), match.task().title()));
+            return new ActionResult(proposalService.restatement(proposal), true);
+        }
+        Matcher create = CREATE_TASK.matcher(text);
+        if (create.matches() && !TASK_TIME.matcher(text).find()) {
+            VoiceActionProposalService.ProposalSnapshot proposal = proposalService.propose(
+                    deviceId, conversationId, turnId,
+                    VoiceActionDraft.personalTask(create.group(1).trim(), null, null));
+            return new ActionResult(proposalService.restatement(proposal), true);
+        }
+        return null;
     }
     private VoiceActionType workdayAction(String text) {
         if (text.matches("^(?:开始|进入|开启)(?:今天的)?工作(?:模式)?[。！!,.，]?$")) {

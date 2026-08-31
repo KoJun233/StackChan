@@ -34,6 +34,9 @@ public class WorkdayPilotObservationEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "completion_notification_queued_at")
+    private Instant completionNotificationQueuedAt;
+
     protected WorkdayPilotObservationEntity() {
     }
 
@@ -55,6 +58,12 @@ public class WorkdayPilotObservationEntity {
         this.workDaysMask = workDaysMask;
         this.startedAt = now;
         this.updatedAt = now;
+        this.completionNotificationQueuedAt = null;
+    }
+
+    public void markCompletionNotificationQueued(Instant now) {
+        this.completionNotificationQueuedAt = now;
+        this.updatedAt = now;
     }
 
     public UUID getDeviceId() { return deviceId; }
@@ -64,4 +73,5 @@ public class WorkdayPilotObservationEntity {
     public int getWorkDaysMask() { return workDaysMask; }
     public Instant getStartedAt() { return startedAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public Instant getCompletionNotificationQueuedAt() { return completionNotificationQueuedAt; }
 }

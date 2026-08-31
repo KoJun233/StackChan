@@ -30,7 +30,8 @@ public class VoiceActionProposalTool {
             draft = new VoiceActionDraft(type, type != VoiceActionType.CREATE_MEMORY_SUGGESTION,
                     input.content(), input.title(), parseInstant(input.scheduledAt()), input.zoneId(),
                     input.recurrenceType(), input.recurrenceInterval(), input.durationMinutes(),
-                    parseInstant(input.targetAt()), input.volumePercent(), input.memoryCategory(), null);
+                    parseInstant(input.targetAt()), input.volumePercent(), input.memoryCategory(),
+                    parseUuid(input.targetReference()));
         } catch (RuntimeException exception) {
             throw new VoiceActionException("Voice action tool input is invalid");
         }
@@ -46,9 +47,17 @@ public class VoiceActionProposalTool {
     public VoiceActionProposalService.ProposalSnapshot submittedProposal() { return submitted; }
 
     private Instant parseInstant(String value) { return value == null || value.isBlank() ? null : Instant.parse(value); }
+    private UUID parseUuid(String value) { return value == null || value.isBlank() ? null : UUID.fromString(value); }
 
     public record Input(String actionType, String content, String title, String scheduledAt, String zoneId,
                         String recurrenceType, Integer recurrenceInterval, Integer durationMinutes,
-                        String targetAt, Integer volumePercent, String memoryCategory) { }
+                        String targetAt, Integer volumePercent, String memoryCategory, String targetReference) {
+        public Input(String actionType, String content, String title, String scheduledAt, String zoneId,
+                     String recurrenceType, Integer recurrenceInterval, Integer durationMinutes,
+                     String targetAt, Integer volumePercent, String memoryCategory) {
+            this(actionType, content, title, scheduledAt, zoneId, recurrenceType, recurrenceInterval,
+                    durationMinutes, targetAt, volumePercent, memoryCategory, null);
+        }
+    }
     private record Result(UUID proposalId, VoiceActionType actionType, VoiceActionStatus status, String expiresAt) { }
 }

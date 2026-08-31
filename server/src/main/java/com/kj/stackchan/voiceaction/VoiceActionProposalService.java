@@ -19,6 +19,8 @@ import com.kj.stackchan.notification.InteractiveNotificationService;
 import com.kj.stackchan.notification.NotificationResponseAction;
 import com.kj.stackchan.workday.WorkdayCompanionService;
 import com.kj.stackchan.workday.WorkdayRestAction;
+import com.kj.stackchan.task.PersonalTaskPriority;
+import com.kj.stackchan.task.PersonalTaskService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +41,7 @@ public class VoiceActionProposalService {
     private final CompanionRoleService roleService;
     private final InteractiveNotificationService notificationService;
     private final WorkdayCompanionService workdayCompanionService;
+    private final PersonalTaskService personalTaskService;
 
     @Autowired
     public VoiceActionProposalService(VoiceActionProposalRepository proposalRepository,
@@ -50,7 +53,8 @@ public class VoiceActionProposalService {
                                       Clock clock, ConversationService conversationService,
                                       CompanionRoleService roleService,
                                       InteractiveNotificationService notificationService,
-                                      WorkdayCompanionService workdayCompanionService) {
+                                      WorkdayCompanionService workdayCompanionService,
+                                      PersonalTaskService personalTaskService) {
         this.proposalRepository = proposalRepository;
         this.auditRepository = auditRepository;
         this.reminderService = reminderService;
@@ -62,6 +66,22 @@ public class VoiceActionProposalService {
         this.roleService = roleService;
         this.notificationService = notificationService;
         this.workdayCompanionService = workdayCompanionService;
+        this.personalTaskService = personalTaskService;
+    }
+
+    public VoiceActionProposalService(VoiceActionProposalRepository proposalRepository,
+                                      VoiceActionAuditRepository auditRepository,
+                                      ReminderService reminderService,
+                                      InteractionSettingsService settingsService,
+                                      LongTermMemoryService memoryService,
+                                      DeviceInteractionSettingsCoordinator settingsCoordinator,
+                                      Clock clock, ConversationService conversationService,
+                                      CompanionRoleService roleService,
+                                      InteractiveNotificationService notificationService,
+                                      WorkdayCompanionService workdayCompanionService) {
+        this(proposalRepository, auditRepository, reminderService, settingsService, memoryService,
+                settingsCoordinator, clock, conversationService, roleService, notificationService,
+                workdayCompanionService, null);
     }
 
     public VoiceActionProposalService(VoiceActionProposalRepository proposalRepository,
@@ -196,6 +216,10 @@ public class VoiceActionProposalService {
             case START_WORKDAY_REST -> "要开始本轮休息。确认执行吗？";
             case SNOOZE_WORKDAY_REST -> "要将休息提醒推迟十分钟。确认执行吗？";
             case SKIP_WORKDAY_REST_FOR_DAY -> "要在今天跳过后续休息提醒。确认执行吗？";
+            case CREATE_PERSONAL_TASK -> proposal.scheduledAt() == null
+                    ? "要新增待办“" + proposal.content() + "”。确认执行吗？"
+                    : "要新增待办“" + proposal.content() + "”，截止时间为 " + proposal.scheduledAt() + "。确认执行吗？";
+            case COMPLETE_PERSONAL_TASK -> "要将待办“" + proposal.content() + "”标记为完成。确认执行吗？";
         };
     }
 
@@ -238,6 +262,17 @@ public class VoiceActionProposalService {
                 case START_WORKDAY_REST -> workdayAction(proposal, WorkdayRestAction.START_REST, null);
                 case SNOOZE_WORKDAY_REST -> workdayAction(proposal, WorkdayRestAction.SNOOZE, null);
                 case SKIP_WORKDAY_REST_FOR_DAY -> workdayAction(proposal, WorkdayRestAction.SKIP_FOR_DAY, null);
+                case CREATE_PERSONAL_TASK -> {
+                    if (personalTaskService == null) throw new VoiceActionException("Personal tasks are unavailable");
+                    yield personalTaskService.create(proposal.getRoleId(), new PersonalTaskService.TaskCommand(
+                            proposal.getDeviceId(), proposal.getContent(), null, PersonalTaskPriority.NORMAL,
+                            proposal.getScheduledAt(), proposal.getZoneId() == null ? "Asia/Shanghai" : proposal.getZoneId())).id();
+                }
+                case COMPLETE_PERSONAL_TASK -> {
+                    if (personalTaskService == null) throw new VoiceActionException("Personal tasks are unavailable");
+                    yield personalTaskService.complete(
+                            proposal.getTargetReference(), proposal.getDeviceId(), proposal.getRoleId()).id();
+                }
             };
             Instant completed = clock.instant();
             proposal.markExecuted(result, completed);
@@ -290,6 +325,15 @@ public class VoiceActionProposalService {
         if (draft.actionType() == VoiceActionType.SWITCH_ROLE
                 && (draft.content() == null || draft.content().isBlank() || draft.content().length() > 80)) {
             throw new VoiceActionException("Voice role switch proposal is invalid");
+        }
+        if (draft.actionType() == VoiceActionType.CREATE_PERSONAL_TASK
+                && (draft.content() == null || draft.content().isBlank() || draft.content().length() > 200
+                || (draft.scheduledAt() != null && (draft.zoneId() == null || draft.zoneId().isBlank())))) {
+            throw new VoiceActionException("Voice personal task proposal is invalid");
+        }
+        if (draft.actionType() == VoiceActionType.COMPLETE_PERSONAL_TASK
+                && (draft.targetReference() == null || draft.content() == null || draft.content().isBlank())) {
+            throw new VoiceActionException("Voice personal task completion is invalid");
         }
         if ((draft.actionType() == VoiceActionType.ACKNOWLEDGE_NOTIFICATION
                 || draft.actionType() == VoiceActionType.COMPLETE_NOTIFICATION)

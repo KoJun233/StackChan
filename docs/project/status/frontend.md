@@ -1,15 +1,24 @@
 # 前端工作流
 
-- 状态：READY_FOR_REVIEW
+- 状态：STABLE
 - 最后更新：2026-08-30
-- 当前分支：`codex/work-002-pilot-observability`
-- 基准提交：`c62ccd0`
-- 最后验证提交：`c62ccd0`
-- 最后验证范围：完整 Vitest 28 文件 91/91、类型检查、production build；最终工作日 API 6/6 复跑
+- 当前分支：`codex/work-002-pilot-active`
+- 基准提交：`f0bce2d`
+- 最后验证提交：`f0bce2d`
+- 最后验证范围：WORK-004 默认角色校验修复；完整 Vitest 30 文件 98/98、类型检查、production build、ESLint 和 Stylelint
 
 ## 当前目标
 
-在既有“交互与主动陪伴”页面完成 WORK-002 十四天观察入口：开始/重新开始、误播报标记与撤销，以及使用、打扰、外部服务和设备安全门槛，不新增重复路由或浏览器持久化。
+WORK-004“个人待办”默认角色新增已由用户确认通过；继续验证编辑、筛选、完成、重新打开、删除和未来截止提醒关联。十四天观察卡片继续按冻结规则运行，人工验收不重新开始观察。
+
+## 已完成的 WORK-004
+
+- “提醒管理”增加“个人待办”入口，使用真实 REST API 和 Fantastic-admin 内建 `FaTable`、`FaSearchBar`、`FaPagination`、`FaForm` 与 `FaFormItem`，未生成 fake/mock 数据。
+- 列表支持标题/备注、状态、优先级和角色筛选，以及完成、重新打开、单条/批量删除；备注只在管理端展示。
+- 详情支持设备、角色、标题、备注、优先级、截止提醒和时区；创建后设备与角色不可编辑。
+- 默认角色使用项目保留 UUID；表单不再用严格 RFC 版本位误判该合法角色，并让普通提醒和通知集成共用相同校验。
+- 列表与详情按框架路由约定配置 active menu 和 keep-alive，保存后刷新原列表。
+- 完整 Vitest 30 文件 98/98、`vue-tsc -b`、production build、ESLint 和 Stylelint 通过；修复页面已发布到 V45 运行态。
 
 ## 已完成的 WORK-002
 
@@ -17,7 +26,7 @@
 - 页面只展示本地聚合，不展示或缓存日程、天气响应、播报正文和传感器原始值。
 - 重新开始不会删除历史聚合；开始确认明确提示同日已有聚合仍会计入。
 - 完整控制台 Vitest 28 文件 91/91、`vue-tsc --noEmit` 和 production build 通过；最终工作日 API 6/6、类型检查和 build 复跑通过。
-- 页面已随 WORK-002/V43 候选发布到 LAN；观察开始前不产生浏览器持久化或隐式启用行为。
+- 页面已随 WORK-002/V43 发布到 LAN，并成功显式开始 2026-08-30 至 2026-09-12 的当前窗口；不产生浏览器持久化或隐式启用行为。
 
 ## 已实现的服务地址快捷更新
 
@@ -99,11 +108,11 @@
 
 ## 下一步操作
 
-页面已随 LAN server/V42 发布并验证运行静态资源；用户通过管理页临时启用周日后完成顶部长按启动/停止验收，并恢复原工作日计划。页面不单独推送，继续随唯一 WORK-001 任务提交交付。
+默认角色“小峰”新增已通过；继续验证编辑、筛选、完成、重新打开、删除和未来截止提醒关联。十四天观察页面继续按冻结窗口运行。
 
 ## 阻塞项
 
-- 自动化实现无阻塞；顶部长按和环境光依赖匹配固件，安装仍需用户单独批准。
+- 自动化实现无阻塞；WORK-004 等待管理员页面与机器人语音人工验收。固件操作仍需用户单独批准。
 
 ## 关键文件
 
@@ -111,12 +120,16 @@
 - `apps/stackchan-console/src/router/modules/`
 - `apps/stackchan-console/src/views/settings/agent/`
 - `apps/stackchan-console/src/views/reminders/`
+- `apps/stackchan-console/src/views/personal_tasks/`
 - `apps/stackchan-console/src/views/companion/`
 - `apps/stackchan-console/src/views/companion/expressions/expressionPackStaging.ts`
 - `apps/stackchan-console/src/views/devices/health/`
 - `apps/stackchan-console/src/views/notifications/`
 
 ## 验证命令与最近结果
+
+- 2026-08-30 WORK-004 默认角色修复：确认默认角色 `00000000-0000-0000-0000-000000000001` 被严格 RFC UUID 版本位误拒绝；共享校验改为与 PostgreSQL UUID 文本边界一致。专项 7/7、完整 Vitest 30 文件 98/98、`vue-tsc -b`、production build、ESLint 和 Stylelint 通过；修复页面已发布，本机/LAN 首页为 200，未认证待办接口为 401。
+- 2026-08-30 用户刷新已发布页面后确认默认角色新增正常，不再出现“请选择角色”，该回归点人工验收通过。
 
 - 2026-08-30 WORK-001 管理入口：管理页保存临时周日规则后，固件顶部长按启动/停止均由运行态确认；工作控制请求互斥与动作禁用边界保持不变。
 

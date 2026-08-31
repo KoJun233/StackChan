@@ -40,6 +40,12 @@ describe('stackChan console routes', () => {
         path: 'detail/:id?',
         meta: expect.objectContaining({ menu: false, activeMenu: '/reminders', noKeepAlive: 'reminderList' }),
       }),
+      expect.objectContaining({ name: 'personalTaskList', path: '', meta: expect.objectContaining({ keepAlive: 'personalTaskDetail' }) }),
+      expect.objectContaining({
+        name: 'personalTaskDetail',
+        path: 'detail/:id?',
+        meta: expect.objectContaining({ menu: false, activeMenu: '/personal-tasks', noKeepAlive: 'personalTaskList' }),
+      }),
     ]))
   })
 
@@ -48,6 +54,7 @@ describe('stackChan console routes', () => {
 
     expect(reminderManagement?.children).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'reminders', path: '/reminders' }),
+      expect.objectContaining({ name: 'personalTasks', path: '/personal-tasks' }),
       expect.objectContaining({ name: 'notificationIntegrations', path: '/notifications' }),
     ]))
     expect((asyncRoutes as any[]).filter(route => route.meta?.title === '外部通知')).toHaveLength(0)

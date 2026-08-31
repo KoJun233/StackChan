@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import type { FormExpose } from '@fantastic-admin/components'
-import { toTypedSchema } from '@vee-validate/zod'
-import * as z from 'zod'
 import type { Device } from '@/api/modules/devices'
 import type { ReminderRecurrence } from '@/api/modules/reminders'
+import { toTypedSchema } from '@vee-validate/zod'
+import * as z from 'zod'
 import { listDevices } from '@/api/modules/devices'
-import { listRoles } from '@/api/modules/roles'
 import {
   createReminder,
   currentTimeZone,
@@ -14,6 +13,8 @@ import {
   toReminderInstant,
   updateReminder,
 } from '@/api/modules/reminders'
+import { listRoles } from '@/api/modules/roles'
+import { isCompanionRoleId } from '@/utils/roleId'
 
 export interface Props {
   id?: string
@@ -65,7 +66,7 @@ const recurrenceOptions = [
 
 const validationSchema = toTypedSchema(z.object({
   deviceId: z.string().uuid('请选择目标设备'),
-  roleId: z.string().uuid('请选择角色'),
+  roleId: z.string().refine(isCompanionRoleId, '请选择角色'),
   content: z.string().trim().min(1, '请输入提醒内容').max(1000, '提醒内容不能超过 1000 个字符'),
   scheduledAtLocal: z.string().min(1, '请选择提醒时间'),
   recurrenceType: z.enum(['NONE', 'DAILY', 'WEEKLY']),
@@ -185,7 +186,7 @@ defineExpose({ submit })
       :validation-schema="validationSchema"
       label-placement="right"
       :label-width="120"
-      class="grid gap-6"
+      class="gap-6 grid"
       scroll-to-error
     >
       <FaFormItem name="deviceId" label="目标设备" required>
