@@ -25,6 +25,7 @@ import com.kj.stackchan.reminder.ReminderStatus;
 import com.kj.stackchan.role.CompanionRoleService;
 import com.kj.stackchan.speech.VoiceTurnRepository;
 import com.kj.stackchan.speech.VoiceTurnStatus;
+import com.kj.stackchan.task.PersonalTaskService;
 import com.kj.stackchan.weather.WorkdayWeatherService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -39,6 +40,7 @@ public class WorkdayCompanionService {
     private static final DateTimeFormatter EVENT_TIME = DateTimeFormatter.ofPattern("M月d日H点mm分", Locale.CHINA);
     private static final String BRIEF_TOPIC = "workday:brief:";
     private static final String REST_TOPIC = "workday:rest:";
+    private static final int SPOKEN_TASK_TITLE_CODE_POINTS = 40;
 
     private final WorkdayRuntimeService runtimeService;
     private final WorkdaySettingsService settingsService;
@@ -50,6 +52,7 @@ public class WorkdayCompanionService {
     private final DeviceRepository deviceRepository;
     private final DeviceCommandGateway commandGateway;
     private final CompanionRoleService roleService;
+    private final PersonalTaskService taskService;
     private final Clock clock;
     private WorkdayPilotService pilotService;
 
@@ -64,6 +67,7 @@ public class WorkdayCompanionService {
             DeviceRepository deviceRepository,
             DeviceCommandGateway commandGateway,
             CompanionRoleService roleService,
+            PersonalTaskService taskService,
             Clock clock
     ) {
         this.runtimeService = runtimeService;
@@ -76,6 +80,7 @@ public class WorkdayCompanionService {
         this.deviceRepository = deviceRepository;
         this.commandGateway = commandGateway;
         this.roleService = roleService;
+        this.taskService = taskService;
         this.clock = clock;
     }
 
@@ -181,7 +186,8 @@ public class WorkdayCompanionService {
 
         WorkdayRuntimeService.BriefClaimSnapshot claim = runtimeService.claimBrief(runtime.deviceId());
         if (claim.status() != WorkdayBriefStatus.PENDING) return;
-        BriefContent brief = brief(runtime.deviceId());
+        CompanionRoleService.RoleSnapshot role = roleService.getActive(runtime.deviceId());
+        BriefContent brief = brief(runtime.deviceId(), runtime.workDate(), role);
         if (pilotService != null) {
             try {
                 pilotService.recordBriefDegradation(
@@ -192,7 +198,6 @@ public class WorkdayCompanionService {
                 // Observability must not suppress an otherwise valid daily brief.
             }
         }
-        CompanionRoleService.RoleSnapshot role = roleService.getActive(runtime.deviceId());
         WorkdaySettingsService.WorkdaySettingsSnapshot settings = settingsService.resolve(runtime.deviceId());
         reminderRepository.save(new ReminderEntity(
                 role.id(), runtime.deviceId(), brief.text(), now, settings.zoneId(),
@@ -201,11 +206,14 @@ public class WorkdayCompanionService {
         ));
     }
 
-    private BriefContent brief(UUID deviceId) {
+    private BriefContent brief(
+            UUID deviceId,
+            LocalDate workDate,
+            CompanionRoleService.RoleSnapshot role
+    ) {
         Instant now = clock.instant();
         WorkdaySettingsService.WorkdaySettingsSnapshot settings = settingsService.resolve(deviceId);
         ZoneId zone = ZoneId.of(settings.zoneId());
-        CompanionRoleService.RoleSnapshot role = roleService.getActive(deviceId);
         StringBuilder text = new StringBuilder("主人，").append(role.name()).append("陪您开始今天的工作。");
         boolean weatherAvailable = false;
         boolean calendarAvailable = false;
@@ -250,6 +258,25 @@ public class WorkdayCompanionService {
             }
         } catch (RuntimeException ignored) {
             calendarFailureCode = "UNAVAILABLE";
+        }
+        try {
+            List<PersonalTaskService.TaskBriefItem> tasks = taskService.dailyBriefItems(
+                    deviceId, role.id(), workDate, zone);
+            if (!tasks.isEmpty()) {
+                text.append("今天优先处理：");
+                for (int index = 0; index < tasks.size(); index++) {
+                    PersonalTaskService.TaskBriefItem task = tasks.get(index);
+                    if (index > 0) text.append("；");
+                    text.append(spokenTaskTitle(task.title())).append(switch (task.timing()) {
+                        case OVERDUE -> "（已逾期）";
+                        case DUE_TODAY -> "（今天到期）";
+                        case HIGH_PRIORITY -> "（高优先级）";
+                    });
+                }
+                text.append('。');
+            }
+        } catch (RuntimeException ignored) {
+            // Local task enrichment is optional and must not suppress the weather/calendar brief.
         }
         if (!weatherAvailable && !calendarAvailable) {
             text.append("天气和日历信息暂不可用，本次先跳过。");
@@ -340,6 +367,11 @@ public class WorkdayCompanionService {
 
     private String briefPrefix(LocalDate workDate) {
         return BRIEF_TOPIC + workDate + ":";
+    }
+
+    private String spokenTaskTitle(String title) {
+        if (title.codePointCount(0, title.length()) <= SPOKEN_TASK_TITLE_CODE_POINTS) return title;
+        return title.substring(0, title.offsetByCodePoints(0, SPOKEN_TASK_TITLE_CODE_POINTS)) + "…";
     }
 
     private record BriefContent(

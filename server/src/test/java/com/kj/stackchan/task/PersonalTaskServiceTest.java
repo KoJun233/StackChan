@@ -2,6 +2,8 @@ package com.kj.stackchan.task;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
@@ -17,6 +19,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -132,6 +135,47 @@ class PersonalTaskServiceTest {
                 deviceId, roleId, PersonalTaskStatus.OPEN, "整理材料")).thenReturn(List.of(exact, duplicate));
         assertThat(service.matchOpenTitle(deviceId, roleId, "整理材料").status())
                 .isEqualTo(PersonalTaskService.TitleMatchStatus.AMBIGUOUS);
+    }
+
+    @Test
+    void dailyBriefReturnsAtMostTwoPrivacySafeRoleScopedItems() {
+        UUID deviceId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        LocalDate workDate = LocalDate.of(2026, 8, 31);
+        ZoneId zone = ZoneId.of("Asia/Shanghai");
+        Instant endExclusive = Instant.parse("2026-08-31T16:00:00Z");
+        allow(deviceId, roleId);
+        PersonalTaskEntity overdue = new PersonalTaskEntity(
+                deviceId, roleId, "补交材料", "不可播报的逾期备注", PersonalTaskPriority.NORMAL,
+                Instant.parse("2026-08-30T15:00:00Z"), zone.getId(), NOW);
+        PersonalTaskEntity dueToday = new PersonalTaskEntity(
+                deviceId, roleId, "发送周报", "不可播报的今日备注", PersonalTaskPriority.NORMAL,
+                Instant.parse("2026-08-31T02:00:00Z"), zone.getId(), NOW);
+        PersonalTaskEntity highPriority = new PersonalTaskEntity(
+                deviceId, roleId, "整理桌面", "不可播报的高优先级备注", PersonalTaskPriority.HIGH,
+                null, zone.getId(), NOW);
+        when(taskRepository.findDailyBriefCandidates(
+                eq(deviceId), eq(roleId), eq(PersonalTaskStatus.OPEN), eq(PersonalTaskPriority.HIGH),
+                eq(endExclusive), any(Pageable.class)))
+                .thenReturn(List.of(overdue, dueToday, highPriority));
+
+        List<PersonalTaskService.TaskBriefItem> result = service.dailyBriefItems(
+                deviceId, roleId, workDate, zone);
+
+        assertThat(result).hasSize(2);
+        assertThat(result).extracting(PersonalTaskService.TaskBriefItem::title)
+                .containsExactly("补交材料", "发送周报");
+        assertThat(result).extracting(PersonalTaskService.TaskBriefItem::timing)
+                .containsExactly(
+                        PersonalTaskService.TaskBriefTiming.OVERDUE,
+                        PersonalTaskService.TaskBriefTiming.DUE_TODAY
+                );
+        assertThat(result.toString()).doesNotContain("不可播报");
+        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+        verify(taskRepository).findDailyBriefCandidates(
+                eq(deviceId), eq(roleId), eq(PersonalTaskStatus.OPEN), eq(PersonalTaskPriority.HIGH),
+                eq(endExclusive), pageable.capture());
+        assertThat(pageable.getValue().getPageSize()).isEqualTo(2);
     }
 
     private void allow(UUID deviceId, UUID roleId) {

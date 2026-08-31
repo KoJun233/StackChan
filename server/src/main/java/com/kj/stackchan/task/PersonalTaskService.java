@@ -3,6 +3,7 @@ package com.kj.stackchan.task;
 import java.time.Clock;
 import java.time.DateTimeException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
@@ -86,6 +87,40 @@ public class PersonalTaskService {
         requireRole(roleId);
         return taskRepository.findTop20ByDeviceIdAndRoleIdAndStatusOrderByDueAtAscCreatedAtDesc(
                 deviceId, roleId, PersonalTaskStatus.OPEN).stream().map(this::snapshot).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<TaskBriefItem> dailyBriefItems(
+            UUID deviceId,
+            UUID roleId,
+            LocalDate workDate,
+            ZoneId zoneId
+    ) {
+        requireDevice(deviceId);
+        requireRole(roleId);
+        if (workDate == null || zoneId == null) {
+            throw new InvalidPersonalTaskException("Task brief date and time zone are required");
+        }
+        Instant startOfDay = workDate.atStartOfDay(zoneId).toInstant();
+        Instant endExclusive = workDate.plusDays(1).atStartOfDay(zoneId).toInstant();
+        return taskRepository.findDailyBriefCandidates(
+                        deviceId,
+                        roleId,
+                        PersonalTaskStatus.OPEN,
+                        PersonalTaskPriority.HIGH,
+                        endExclusive,
+                        PageRequest.of(0, 2)
+                ).stream()
+                .limit(2)
+                .map(task -> new TaskBriefItem(
+                        task.getTitle(),
+                        task.getDueAt() != null && task.getDueAt().isBefore(startOfDay)
+                                ? TaskBriefTiming.OVERDUE
+                                : task.getDueAt() != null && task.getDueAt().isBefore(endExclusive)
+                                        ? TaskBriefTiming.DUE_TODAY
+                                        : TaskBriefTiming.HIGH_PRIORITY
+                ))
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -269,6 +304,8 @@ public class PersonalTaskService {
                                PersonalTaskPriority priority, PersonalTaskStatus status, Instant dueAt, String zoneId,
                                UUID reminderId, Instant completedAt, Instant createdAt, Instant updatedAt) { }
     public record TaskPage(List<TaskSnapshot> list, long total) { }
+    public enum TaskBriefTiming { OVERDUE, DUE_TODAY, HIGH_PRIORITY }
+    public record TaskBriefItem(String title, TaskBriefTiming timing) { }
     public enum TitleMatchStatus { MATCHED, NOT_FOUND, AMBIGUOUS }
     public record TitleMatch(TitleMatchStatus status, TaskSnapshot task) { }
 }

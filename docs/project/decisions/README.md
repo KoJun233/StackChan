@@ -55,3 +55,4 @@
 | [0042](0042-local-first-k151-body-safety.md) | ACCEPTED | K151 动作默认禁用，由本地校准、反馈、固定模板、软限位和停止门控最终裁决。 |
 | [0043](0043-explicit-local-workday-pilot-observability.md) | ACCEPTED | 十四天私用门槛由管理员显式开始，并只使用本地匿名聚合确定性判断。 |
 | [0044](0044-local-first-confirmed-personal-tasks.md) | ACCEPTED | 个人待办保持本地优先、设备与角色隔离，机器人写入必须确认。 |
+| [0045](0045-deterministic-private-task-daily-brief.md) | ACCEPTED | 工作日首次简报确定性播报当前角色最多两项隐私安全的优先待办。 |
