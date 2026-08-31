@@ -1,11 +1,11 @@
 # 全局工作流总览
 
-- 状态：ACTIVE
-- 最后更新：2026-08-30
-- 当前分支：`codex/work-002-pilot-active`
-- 实现基准：`f0bce2d`
-- 最后验证提交：`f0bce2d`
-- 最后验证范围：WORK-004/V45 默认角色校验修复已发布；自动化、备份恢复、健康/鉴权、观察窗口与动作安全边界正常
+- 状态：READY_FOR_REVIEW
+- 最后更新：2026-08-31
+- 当前分支：`codex/work-005-daily-task-brief`
+- 实现基准：`861d26a`
+- 最后验证提交：`861d26a`
+- 最后验证范围：WORK-005 定向 18/18、非 loopback 服务端 452/452、备份恢复、镜像构建与 LAN/V45 发布通过
 - 当前部署：LAN HTTP development mode
 - 生产边界：HTTPS-only
 
@@ -21,16 +21,18 @@
 
 `WORK-004` 已完成自动化并发布为 V45。管理端可按设备与角色管理本地个人待办；未来截止时间复用可靠提醒，机器人通过最小只读 Tool 回答当前待办，语音新增和完成继续要求确认并保持幂等。默认角色保留 ID 的前端误校验已修复并发布，普通提醒和通知集成同步使用同一合法边界；用户已确认默认角色新增正常。Agent 不接收备注，过期任务不补播，设备/角色不可改绑。其余人工验收继续进行；详见[WORK-004 文档](../personal-task-management.md)和 [ADR 0044](../decisions/0044-local-first-confirmed-personal-tasks.md)。
 
+`WORK-005` 已完成并发布。每日首次简报会确定性读取当前设备与活动角色最多两项逾期、今天到期或高优先级待办，只播报截断标题和分类，备注不进入正文；查询失败不抑制天气/日历简报。每天一次去重、`SUCCESS/PARTIAL` 和十四天观察口径均不改变；详见[WORK-005 文档](../workday-personal-task-brief.md)和 [ADR 0045](../decisions/0045-deterministic-private-task-daily-brief.md)。
+
 `BODY-001` 已完成 K151 接近/环境光、顶部触摸、反馈舵机和本地安全状态实现，协议只允许校准、显式开关和五种固定模板，禁止任意角度/速度/循环。V41 和管理页已发布。经用户授权，当前任务固件已通过 COM3 保留 NVS 直刷；严格 USB 本地校准诊断连续两次完成两路反馈中位校准，设备全程保持 `motion_disabled`。根因为按需开启 VM 后 250 ms 不足以覆盖升压轨和两个舵机冷启动，等待延长至 1200 ms 后稳定恢复；INA226 同时确认底座电池源存在。实体动作启用和模板仍未授权、未执行。安全边界见 [ADR 0042](../decisions/0042-local-first-k151-body-safety.md)和[实体冒烟 runbook](../../runbooks/k151-body-motion-smoke-test.md)。
 
 ## 工作流摘要
 
 | 工作流 | 状态 | 当前事实 | 下一步 |
 | --- | --- | --- | --- |
-| [服务端](server.md) | STABLE | WORK-004/V45 已运行，本地待办与观察通知边界均正常 | 完成待办查询和确认式语音写入人工验收 |
+| [服务端](server.md) | READY_FOR_REVIEW | WORK-005 已完成并运行于 LAN/V45 | 下一次合法首次简报完成实体语音验收 |
 | [前端](frontend.md) | STABLE | 个人待办 CRUD 与默认角色校验修复已发布且回归点人工通过 | 完成其余页面和机器人语音验收 |
 | [固件](firmware.md) | STABLE | `424cb49` 已安装，顶部长按启停实机通过且动作保持禁用 | 当前硬件未上报环境光能力，按不支持路径安全降级 |
-| [部署](deployment.md) | STABLE | LAN 运行 WORK-004/V45 角色校验修复，基础容器和 CoreS3 未变化 | 人工验收后保持服务稳定至观察结束 |
+| [部署](deployment.md) | STABLE | LAN 运行 WORK-005/V45，基础容器和 CoreS3 未变化 | 保持运行并完成下一次首次简报验收 |
 
 ## 当前能力地图
 
@@ -48,12 +50,14 @@
 
 ## 版本与运行态
 
-- Git：`master` 合并提交 `f0bce2d`；WORK-003 与 WORK-004 已按用户要求压缩为一个中文任务提交并推送当前任务分支，等待用户创建、审核并合并 PR。
-- LAN server：WORK-004/V45 默认角色校验修复，当前宿主机地址 `http://192.168.1.4:8080/`；运行镜像和回滚镜像信息见[部署状态](deployment.md)。
+- Git：`master` 合并提交 `861d26a`；WORK-005 从该提交创建独立分支，尚未外部推送。
+- LAN server：WORK-005/V45 首次简报待办摘要，当前宿主机地址 `http://192.168.1.4:8080/`；运行镜像和回滚镜像信息见[部署状态](deployment.md)。
 - CoreS3：当前运行 `424cb49` LAN HTTP Quad 固件；Wi-Fi/NVS、语音链路、8192 字节主栈与 `motion_disabled` 已保留，中位校准已连续两次通过，WORK-001 顶部长按启停已实机通过。
 - 实机固件提交只作为运行候选，不能替代 `master` 作为新任务分支基线。
 
 ## 最近验证
+
+- 2026-08-31 WORK-005：最终定向 18/18、真实 PostgreSQL/Flyway V1..V45 查询和持久化通过，排除 8 个既有 Windows loopback 类后服务端 452/452；镜像内服务端与管理端 production build 通过。11:14 UTC 新备份及独立恢复验证成功，只替换 server；容器 `e384ffebb23a`、镜像 `sha256:f9e5db38787621ea85d26d302fc92a0d6b5aee6f4051c85b43c1d460d9675112`、版本 `work005-v45-task-brief`。健康和 LAN 首页为 200，V45、1 条待办、2026-08-30 至 2026-09-12 观察窗口均保留，设备在线并保持 `424cb49 / motion_disabled / DISABLED`。
 
 - 2026-08-30 WORK-004 默认角色校验修复：确认项目保留默认角色 UUID 被严格 RFC 版本位误拒绝，改为与 PostgreSQL UUID 文本边界一致的共享校验。专项 7/7、完整控制台 30 文件 98/98、类型检查、production build、ESLint 和 Stylelint 通过。13:33 UTC 新备份与隔离恢复成功，只替换 server；运行版本 `work004-v45-role-fix`，V45、健康/鉴权、观察窗口和 `424cb49 / motion_disabled / DISABLED` 均正常。
 - 2026-08-30 用户确认默认角色新增不再出现“请选择角色”，该发布回归点人工验收通过。

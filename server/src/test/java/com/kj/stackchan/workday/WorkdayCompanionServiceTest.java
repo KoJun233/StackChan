@@ -24,6 +24,7 @@ import com.kj.stackchan.reminder.ReminderStatus;
 import com.kj.stackchan.reminder.ProactiveGenerationStatus;
 import com.kj.stackchan.role.CompanionRoleService;
 import com.kj.stackchan.speech.VoiceTurnRepository;
+import com.kj.stackchan.task.PersonalTaskService;
 import com.kj.stackchan.weather.WorkdayWeatherService;
 import com.kj.stackchan.weather.WorkdayWeatherStatus;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,6 +59,7 @@ class WorkdayCompanionServiceTest {
     @Mock private DeviceRepository deviceRepository;
     @Mock private DeviceCommandGateway commandGateway;
     @Mock private CompanionRoleService roleService;
+    @Mock private PersonalTaskService taskService;
     @Mock private WorkdayPilotService pilotService;
     @Mock private InteractionSettingsService.InteractionSettingsSnapshot interaction;
     @Mock private CompanionRoleService.RoleSnapshot role;
@@ -69,7 +71,7 @@ class WorkdayCompanionServiceTest {
         service = new WorkdayCompanionService(
                 runtimeService, settingsService, interactionSettingsService, calendarService,
                 weatherService, reminderRepository, voiceTurnRepository, deviceRepository,
-                commandGateway, roleService, Clock.fixed(NOW, ZoneOffset.UTC)
+                commandGateway, roleService, taskService, Clock.fixed(NOW, ZoneOffset.UTC)
         );
         service.setPilotService(pilotService);
         lenient().when(commandGateway.isConnected(DEVICE_ID)).thenReturn(true);
@@ -203,6 +205,61 @@ class WorkdayCompanionServiceTest {
         verify(pilotService).recordBriefDegradation(
                 DEVICE_ID, date, "STALE_CACHE", "STALE_CACHE"
         );
+    }
+
+    @Test
+    void addsOnlyCurrentRoleTaskBriefItemsWithoutPrivateNotes() {
+        LocalDate date = LocalDate.of(2026, 8, 29);
+        String longTitle = "长".repeat(45);
+        when(runtimeService.tick(DEVICE_ID)).thenReturn(runtime(
+                WorkdayRuntimeState.ACTIVE_PRESENT, date, null, NOW.minusSeconds(60)
+        ));
+        when(reminderRepository.findFirstByDeviceIdAndSourceAndProactiveTopicKeyStartingWithOrderByCreatedAtDesc(
+                eq(DEVICE_ID), eq(ReminderSource.PROACTIVE), any())).thenReturn(Optional.empty());
+        when(runtimeService.claimBrief(DEVICE_ID)).thenReturn(new WorkdayRuntimeService.BriefClaimSnapshot(
+                UUID.randomUUID(), DEVICE_ID, date, WorkdayBriefStatus.PENDING, true, NOW, null, NOW
+        ));
+        when(taskService.dailyBriefItems(DEVICE_ID, ROLE_ID, date, java.time.ZoneId.of("Asia/Shanghai")))
+                .thenReturn(List.of(
+                        new PersonalTaskService.TaskBriefItem(
+                                "提交季度复盘", PersonalTaskService.TaskBriefTiming.OVERDUE),
+                        new PersonalTaskService.TaskBriefItem(
+                                longTitle, PersonalTaskService.TaskBriefTiming.HIGH_PRIORITY)
+                ));
+
+        service.processActiveDevice(DEVICE_ID);
+
+        ArgumentCaptor<ReminderEntity> reminder = ArgumentCaptor.forClass(ReminderEntity.class);
+        verify(reminderRepository).save(reminder.capture());
+        assertThat(reminder.getValue().getContent())
+                .contains("今天优先处理：提交季度复盘（已逾期）；" + "长".repeat(40) + "…（高优先级）")
+                .doesNotContain("长".repeat(41))
+                .doesNotContain("备注");
+        verify(taskService).dailyBriefItems(
+                DEVICE_ID, ROLE_ID, date, java.time.ZoneId.of("Asia/Shanghai"));
+    }
+
+    @Test
+    void taskLookupFailureDoesNotSuppressTheOriginalBrief() {
+        LocalDate date = LocalDate.of(2026, 8, 29);
+        when(runtimeService.tick(DEVICE_ID)).thenReturn(runtime(
+                WorkdayRuntimeState.ACTIVE_PRESENT, date, null, NOW.minusSeconds(60)
+        ));
+        when(reminderRepository.findFirstByDeviceIdAndSourceAndProactiveTopicKeyStartingWithOrderByCreatedAtDesc(
+                eq(DEVICE_ID), eq(ReminderSource.PROACTIVE), any())).thenReturn(Optional.empty());
+        when(runtimeService.claimBrief(DEVICE_ID)).thenReturn(new WorkdayRuntimeService.BriefClaimSnapshot(
+                UUID.randomUUID(), DEVICE_ID, date, WorkdayBriefStatus.PENDING, true, NOW, null, NOW
+        ));
+        when(taskService.dailyBriefItems(DEVICE_ID, ROLE_ID, date, java.time.ZoneId.of("Asia/Shanghai")))
+                .thenThrow(new IllegalStateException("task storage unavailable"));
+
+        service.processActiveDevice(DEVICE_ID);
+
+        ArgumentCaptor<ReminderEntity> reminder = ArgumentCaptor.forClass(ReminderEntity.class);
+        verify(reminderRepository).save(reminder.capture());
+        assertThat(reminder.getValue().getContent())
+                .contains("小峰陪您开始今天的工作", "天气和日历信息暂不可用")
+                .doesNotContain("task storage unavailable");
     }
 
     private WorkdayRuntimeService.WorkdayRuntimeSnapshot runtime(

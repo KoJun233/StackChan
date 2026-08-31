@@ -2,6 +2,7 @@ package com.kj.stackchan.workday;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 import com.kj.stackchan.device.DeviceEntity;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Transactional;
@@ -108,6 +110,37 @@ class WorkdayRuntimePersistenceTest {
                     assertThat(saved.getCompletedAt()).isEqualTo(now.plusSeconds(60));
                     assertThat(saved.getRoleId()).isEqualTo(CompanionRoleEntity.DEFAULT_ROLE_ID);
                 });
+    }
+
+    @Test
+    @Transactional
+    void selectsDailyBriefCandidatesInDeterministicPriorityOrder() {
+        DeviceEntity device = deviceRepository.save(new DeviceEntity("task-brief", "1.0.0"));
+        Instant createdAt = Instant.parse("2026-08-30T12:00:00Z");
+        PersonalTaskEntity overdue = personalTaskRepository.save(new PersonalTaskEntity(
+                device.getId(), CompanionRoleEntity.DEFAULT_ROLE_ID, "逾期待办", null,
+                PersonalTaskPriority.NORMAL, Instant.parse("2026-08-30T15:00:00Z"),
+                "Asia/Shanghai", createdAt));
+        PersonalTaskEntity dueToday = personalTaskRepository.save(new PersonalTaskEntity(
+                device.getId(), CompanionRoleEntity.DEFAULT_ROLE_ID, "今日待办", null,
+                PersonalTaskPriority.NORMAL, Instant.parse("2026-08-31T02:00:00Z"),
+                "Asia/Shanghai", createdAt));
+        PersonalTaskEntity highPriority = personalTaskRepository.save(new PersonalTaskEntity(
+                device.getId(), CompanionRoleEntity.DEFAULT_ROLE_ID, "高优先级待办", null,
+                PersonalTaskPriority.HIGH, null, "Asia/Shanghai", createdAt));
+        personalTaskRepository.save(new PersonalTaskEntity(
+                device.getId(), CompanionRoleEntity.DEFAULT_ROLE_ID, "普通未来待办", null,
+                PersonalTaskPriority.NORMAL, Instant.parse("2026-09-02T02:00:00Z"),
+                "Asia/Shanghai", createdAt));
+        personalTaskRepository.flush();
+
+        List<PersonalTaskEntity> result = personalTaskRepository.findDailyBriefCandidates(
+                device.getId(), CompanionRoleEntity.DEFAULT_ROLE_ID, PersonalTaskStatus.OPEN,
+                PersonalTaskPriority.HIGH, Instant.parse("2026-08-31T16:00:00Z"),
+                PageRequest.of(0, 3));
+
+        assertThat(result).extracting(PersonalTaskEntity::getId)
+                .containsExactly(overdue.getId(), dueToday.getId(), highPriority.getId());
     }
 
     @Test
