@@ -31,6 +31,24 @@ public interface PersonalTaskRepository extends JpaRepository<PersonalTaskEntity
             where task.deviceId = :deviceId
               and task.roleId = :roleId
               and task.status = :status
+              and task.completedAt >= :startInclusive
+              and task.completedAt < :endExclusive
+            order by task.completedAt desc, task.id desc
+            """)
+    List<PersonalTaskEntity> findCompletedInRange(
+            @Param("deviceId") UUID deviceId,
+            @Param("roleId") UUID roleId,
+            @Param("status") PersonalTaskStatus status,
+            @Param("startInclusive") Instant startInclusive,
+            @Param("endExclusive") Instant endExclusive,
+            Pageable pageable
+    );
+
+    @Query("""
+            select task from PersonalTaskEntity task
+            where task.deviceId = :deviceId
+              and task.roleId = :roleId
+              and task.status = :status
               and (task.dueAt < :endExclusive or task.priority = :highPriority)
             order by
               case when task.dueAt < :endExclusive then 0 else 1 end,

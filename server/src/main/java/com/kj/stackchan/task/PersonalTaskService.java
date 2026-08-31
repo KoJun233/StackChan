@@ -90,6 +90,29 @@ public class PersonalTaskService {
     }
 
     @Transactional(readOnly = true)
+    public List<CompletedTaskItem> completedTodayForAgent(UUID deviceId, UUID roleId, ZoneId zoneId) {
+        requireDevice(deviceId);
+        requireRole(roleId);
+        if (zoneId == null) {
+            throw new InvalidPersonalTaskException("Task progress time zone is required");
+        }
+        LocalDate today = LocalDate.ofInstant(clock.instant(), zoneId);
+        Instant startInclusive = today.atStartOfDay(zoneId).toInstant();
+        Instant endExclusive = today.plusDays(1).atStartOfDay(zoneId).toInstant();
+        return taskRepository.findCompletedInRange(
+                        deviceId,
+                        roleId,
+                        PersonalTaskStatus.COMPLETED,
+                        startInclusive,
+                        endExclusive,
+                        PageRequest.of(0, 10)
+                ).stream()
+                .limit(10)
+                .map(task -> new CompletedTaskItem(task.getTitle()))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<TaskBriefItem> dailyBriefItems(
             UUID deviceId,
             UUID roleId,
@@ -306,6 +329,7 @@ public class PersonalTaskService {
     public record TaskPage(List<TaskSnapshot> list, long total) { }
     public enum TaskBriefTiming { OVERDUE, DUE_TODAY, HIGH_PRIORITY }
     public record TaskBriefItem(String title, TaskBriefTiming timing) { }
+    public record CompletedTaskItem(String title) { }
     public enum TitleMatchStatus { MATCHED, NOT_FOUND, AMBIGUOUS }
     public record TitleMatch(TitleMatchStatus status, TaskSnapshot task) { }
 }
