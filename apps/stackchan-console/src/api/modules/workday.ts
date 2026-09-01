@@ -156,6 +156,16 @@ export interface ICloudCalendarConnectionTest {
   ok: boolean
 }
 
+export interface ICloudCalendarEvent {
+  allDay: boolean
+  busy: boolean
+  endsAt: string
+  location: string
+  privateEvent: boolean
+  startsAt: string
+  title: string
+}
+
 export type WorkdayWeatherStatus = 'READY' | 'ERROR'
 export type WorkdayWeatherFailureCode = 'REQUEST_FAILED' | 'RESPONSE_TOO_LARGE' | 'INVALID_RESPONSE'
 
@@ -319,6 +329,11 @@ export function updateAllowedICloudCalendars(
 
 export function syncICloudCalendar(deviceId: string): Promise<ICloudCalendarConnection> {
   return apiJson(`/api/v1/workday/${encodeURIComponent(deviceId)}/calendar/sync`, { method: 'POST' })
+}
+
+export function getICloudCalendarEvents(deviceId: string, from: string, to: string): Promise<ICloudCalendarEvent[]> {
+  const query = new URLSearchParams({ from, to })
+  return apiJson(`/api/v1/workday/${encodeURIComponent(deviceId)}/calendar/events?${query.toString()}`)
 }
 
 export function disconnectICloudCalendar(deviceId: string): Promise<void> {

@@ -5,6 +5,7 @@ import CompanionRoutes from './modules/companion'
 import DeviceRoutes from './modules/devices'
 import ReminderRoutes from './modules/reminders'
 import SettingsRoutes from './modules/settings'
+import TodayRoutes from './modules/today'
 
 // 固定路由（默认路由）
 const constantRoutes: RouteRecordRaw[] = [
@@ -54,9 +55,10 @@ const systemRoutes: RouteRecordRaw[] = [
 
 // 动态路由（异步路由、导航菜单路由）
 const asyncRoutes: RouteRecordMainRaw[] = [
-  DeviceRoutes,
+  TodayRoutes,
   CompanionRoutes,
   ReminderRoutes,
+  DeviceRoutes,
   SettingsRoutes,
 ]
 

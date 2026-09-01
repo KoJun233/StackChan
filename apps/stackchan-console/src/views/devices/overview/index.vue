@@ -122,21 +122,21 @@ onMounted(load)
 </script>
 
 <template>
-  <FaPageMain>
-    <template #title>
-      <div>
-        <div>设备总览</div>
-        <p class="mt-1 text-xs text-muted-foreground">在线状态由服务器按最近心跳计算；安全停止只发送停机命令，不会启用任何舵机动作。</p>
-      </div>
-    </template>
+  <AppPageShell title="设备总览" description="在线状态由服务器按最近心跳计算；安全停止只发送停机命令，不会启用任何舵机动作。">
     <FaCard>
       <template #header>
-        <div class="flex items-center justify-between gap-4">
+        <div class="flex gap-4 items-center justify-between">
           <div>
-            <h2 class="text-base font-semibold">设备状态</h2>
-            <p class="text-sm text-muted-foreground">查看设备在线状态、固件与安全状态。</p>
+            <h2 class="text-base font-semibold">
+              设备状态
+            </h2>
+            <p class="text-sm text-muted-foreground">
+              查看设备在线状态、固件与安全状态。
+            </p>
           </div>
-          <FaButton variant="outline" size="sm" :loading="loading" @click="load">刷新</FaButton>
+          <FaButton variant="outline" size="sm" :loading="loading" @click="load">
+            刷新
+          </FaButton>
         </div>
       </template>
       <FaTable
@@ -167,12 +167,18 @@ onMounted(load)
 
     <FaCard v-if="selectedDevice" class="mt-4">
       <template #header>
-        <div class="flex items-center justify-between gap-4">
+        <div class="flex gap-4 items-center justify-between">
           <div>
-            <h2 class="text-base font-semibold">{{ selectedDevice.displayName }} 的最近语音回合</h2>
-            <p class="text-sm text-muted-foreground">仅显示阶段、耗时和安全失败类别；不保存音频、识别文本或机器人回复。</p>
+            <h2 class="text-base font-semibold">
+              {{ selectedDevice.displayName }} 的最近语音回合
+            </h2>
+            <p class="text-sm text-muted-foreground">
+              仅显示阶段、耗时和安全失败类别；不保存音频、识别文本或机器人回复。
+            </p>
           </div>
-          <FaButton variant="outline" size="sm" :loading="voiceTurnsLoading" @click="showVoiceTurns(selectedDevice)">刷新</FaButton>
+          <FaButton variant="outline" size="sm" :loading="voiceTurnsLoading" @click="showVoiceTurns(selectedDevice)">
+            刷新
+          </FaButton>
         </div>
       </template>
 
@@ -181,40 +187,48 @@ onMounted(load)
         <section
           v-for="turn in voiceTurns"
           :key="turn.turnId"
-          class="rounded-lg border border-border p-4"
+          class="p-4 border border-border rounded-lg"
           :data-turn-id="turn.turnId"
         >
-          <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div class="mb-3 flex flex-wrap gap-2 items-center justify-between">
             <div>
-              <div class="font-medium">{{ new Date(turn.startedAt).toLocaleString('zh-CN') }}</div>
-              <div class="mt-1 text-xs text-muted-foreground">回合 {{ turn.turnId.slice(0, 8) }}</div>
+              <div class="font-medium">
+                {{ new Date(turn.startedAt).toLocaleString('zh-CN') }}
+              </div>
+              <div class="text-xs text-muted-foreground mt-1">
+                回合 {{ turn.turnId.slice(0, 8) }}
+              </div>
             </div>
             <div class="text-sm" :class="turn.status === 'FAILED' ? 'text-destructive' : 'text-muted-foreground'">
               {{ statusLabels[turn.status] }}<span v-if="turn.failureCode"> · {{ turn.failureCode }}</span>
             </div>
           </div>
-          <ol class="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            <li v-for="event in turn.events" :key="`${event.source}-${event.stage}`" class="rounded-md bg-muted/50 px-3 py-2 text-sm">
-              <div class="flex items-center justify-between gap-2">
+          <ol class="gap-2 grid md:grid-cols-2 xl:grid-cols-3">
+            <li v-for="event in turn.events" :key="`${event.source}-${event.stage}`" class="text-sm px-3 py-2 rounded-md bg-muted/50">
+              <div class="flex gap-2 items-center justify-between">
                 <span>{{ stageLabels[event.stage] || event.stage }}</span>
                 <span class="text-xs text-muted-foreground">{{ stageElapsed(turn, event) }}</span>
               </div>
-              <div class="mt-1 text-xs text-muted-foreground">
+              <div class="text-xs text-muted-foreground mt-1">
                 {{ event.source === 'DEVICE' ? '设备' : '服务端' }}<span v-if="event.failureCode"> · {{ event.failureCode }}</span>
               </div>
             </li>
           </ol>
-          <div v-if="memoryUsageByTurn[turn.turnId]?.length" class="mt-3 rounded-md border border-dashed p-3">
-            <div class="text-sm font-medium">本回合引用的长期记忆</div>
-            <ul class="mt-2 space-y-1 text-xs text-muted-foreground">
+          <div v-if="memoryUsageByTurn[turn.turnId]?.length" class="mt-3 p-3 border rounded-md border-dashed">
+            <div class="text-sm font-medium">
+              本回合引用的长期记忆
+            </div>
+            <ul class="text-xs text-muted-foreground mt-2 space-y-1">
               <li v-for="memory in memoryUsageByTurn[turn.turnId]" :key="memory.memoryId">
                 {{ memory.title }} · 主题 {{ memory.topicKey }} · {{ memory.scopeType === 'DEVICE' ? '当前设备' : '全局' }} · {{ memory.sourceDetail }}
               </li>
             </ul>
-            <div class="mt-2 text-xs text-muted-foreground">这里只按记忆 ID 查询当前来源说明，使用记录本身不复制记忆正文。</div>
+            <div class="text-xs text-muted-foreground mt-2">
+              这里只按记忆 ID 查询当前来源说明，使用记录本身不复制记忆正文。
+            </div>
           </div>
         </section>
       </div>
     </FaCard>
-  </FaPageMain>
+  </AppPageShell>
 </template>

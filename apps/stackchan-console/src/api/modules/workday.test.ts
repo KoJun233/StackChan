@@ -3,6 +3,7 @@ import {
   connectICloudCalendar,
   disconnectICloudCalendar,
   getICloudCalendarConnection,
+  getICloudCalendarEvents,
   getWorkdayMetrics,
   getWorkdayPilot,
   getWorkdayRuntime,
@@ -134,7 +135,7 @@ describe('workday settings API', () => {
     const credentials = { accountEmail: 'me@icloud.com', appSpecificPassword: 'app-password' }
     const response = { configured: true, deviceId, calendars: [] }
     const fetchMock = vi.fn()
-    for (let index = 0; index < 6; index += 1) {
+    for (let index = 0; index < 7; index += 1) {
       fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(response), {
         headers: { 'Content-Type': 'application/json' },
       }))
@@ -147,6 +148,7 @@ describe('workday settings API', () => {
     await connectICloudCalendar(deviceId, credentials)
     await updateAllowedICloudCalendars(deviceId, ['calendar-id'])
     await syncICloudCalendar(deviceId)
+    await getICloudCalendarEvents(deviceId, '2026-09-01T00:00:00.000Z', '2026-09-08T00:00:00.000Z')
     await disconnectICloudCalendar(deviceId)
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, `/api/v1/workday/${deviceId}/calendar`, expect.any(Object))
@@ -160,7 +162,8 @@ describe('workday settings API', () => {
       body: JSON.stringify({ allowedCalendarIds: ['calendar-id'] }),
     }))
     expect(fetchMock).toHaveBeenNthCalledWith(5, `/api/v1/workday/${deviceId}/calendar/sync`, expect.objectContaining({ method: 'POST' }))
-    expect(fetchMock).toHaveBeenNthCalledWith(6, `/api/v1/workday/${deviceId}/calendar/connection`, expect.objectContaining({ method: 'DELETE' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(6, `/api/v1/workday/${deviceId}/calendar/events?from=2026-09-01T00%3A00%3A00.000Z&to=2026-09-08T00%3A00%3A00.000Z`, expect.any(Object))
+    expect(fetchMock).toHaveBeenNthCalledWith(7, `/api/v1/workday/${deviceId}/calendar/connection`, expect.objectContaining({ method: 'DELETE' }))
   })
 
   it('uses fixed-location read-only weather endpoints', async () => {

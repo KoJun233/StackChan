@@ -1,16 +1,44 @@
 # 部署工作流
 
 - 状态：STABLE
-- 最后更新：2026-08-31
-- 当前分支：`codex/work-006-daily-task-progress`（运行态仍为 WORK-005 server/V45，实机固件为 `424cb49`）
-- 基准提交：`221711f`
-- 最后验证提交：`221711f`
-- 最后验证范围：WORK-006 新备份、独立恢复、server-only 发布、V45、健康、LAN、观察窗口与设备安全状态通过
+- 最后更新：2026-09-03
+- 当前分支：`codex/console-information-architecture`（聊天滚动复修已部署，实机固件保持 `424cb49`）
+- 基准提交：`227b369`
+- 最后验证提交：`d7dc00d`
+- 最后验证范围：聊天滚动复修的新备份、隔离恢复、server-only 发布、V46、健康、LAN 与最终静态资源通过
 - 当前模式：LAN HTTP development
 
 ## 当前目标
 
-保持已发布的 WORK-006/V45 今日待办进度查询稳定运行并完成实体语音验收；CoreS3 继续保持 `424cb49 / motion_disabled`。
+保持已发布的 WORK-006/V46 业务能力稳定运行，并由用户在 LAN 环境验收真实二级菜单、无黑块输入区及窄屏消息滚动；天气、只读日程与角色删除冷静期继续保持。CoreS3 保持 `424cb49 / motion_disabled`。
+
+## 已发布的聊天滚动复修
+
+- 2026-09-03 发布前生成新备份并完成隔离恢复；旧镜像保留为 `pre-chat-scroll-v46`。
+- 只替换 `stackchan-foundation-server-1`；当前容器为 `f12a4040770c`，镜像为 `sha256:0042f143a832aa8d5315dd902876db0dcb8c1f125e68f76ab3c4a6c1224cf165`，构建版本为 `console-feedback-v46-chat-scroll-final`。
+- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；运行库保持 V46。
+- 健康、本机与 LAN 首页为 200；聊天 CSS/JS 为 200，运行 CSS 确认固定工作区高度、内部纵向滚动、滚轮边界与触摸滚动，启动日志无应用错误。
+
+## 已发布的二级菜单与聊天复修
+
+- 2026-09-03 发布前生成新备份并完成隔离恢复；旧镜像保留为 `pre-menu-chat-fix-v46`。
+- 只替换 `stackchan-foundation-server-1`；当前容器为 `044b01b409d3`，镜像为 `sha256:6c9d7ff0a125abf8103a440cac94b64b902e65a19b0bd5b7a0cf9e437342b83d`，构建版本为 `console-feedback-v46-menu-chat-final`。
+- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；运行库保持 V46。
+- 健康、本机与 LAN 首页为 200；新菜单、聊天 JS/CSS 均为 200，运行资源确认“今日陪伴/事务管理”、主动关心、Enter 发送、停止生成和 OKLCH 主题映射。
+
+## 已发布的六项后台反馈
+
+- 新备份和最新备份内置隔离恢复通过；旧 V45 镜像保留为 `pre-console-feedback-v45`。
+- 只替换 `stackchan-foundation-server-1`；当前容器为 `afefeaf5884f`，镜像为 `sha256:a4066d42cb3eb5e8f5655c0648cac8009e559c577ac9d6767f7edcc919712328`，构建版本为 `console-feedback-v46-final`。
+- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；数据库由 V45 迁移至 V46。
+- 健康、本机与 LAN 首页为 200；未认证角色和只读日程接口为 401，最终聊天、工作日和角色静态资源为 200。
+
+## 已发布的后台信息架构与 UI 重整
+
+- 11:53 UTC 生成新备份并完成内置隔离恢复，11:53 UTC 再次独立验证最新备份成功；旧 WORK-006/V45 镜像保留为 `pre-console-ia-3697be8`。
+- 只替换 `stackchan-foundation-server-1`；当前容器为 `c580d0855c3c`，镜像为 `sha256:a3b015c36bc17db419b87993081badf3b744527b50627ac6f527f86c0649e85d`，构建版本为 `console-ia-3697be8`。
+- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；数据库继续为 V45。
+- 本机与 LAN 首页为 200，未认证设备接口为 401；运行资源包含新的今日概览与隔离 TDesign Chat chunk。运行库保留 1 条未完成待办和 2026-08-30 至 2026-09-12 观察窗口；设备在线并保持 `424cb49 / motion_disabled / DISABLED`。
 
 ## 已发布的 WORK-006
 
@@ -61,13 +89,13 @@
 
 ## 正在进行
 
-LAN server 已运行 WORK-006/V45，当前宿主机局域网地址为 `http://192.168.1.4:8080/`，容器为 `9617c52a48db`，镜像摘要为 `sha256:6b120ef75ae32845b679d2ce976cf91260928a0dde3304b0ca63db61b19c79cb`。运行态在保留首次简报待办摘要的同时，支持主动查询当前角色的今日完成进度。
+LAN server 已运行聊天滚动复修版本，当前宿主机局域网地址为 `http://192.168.1.4:8080/`，容器为 `f12a4040770c`，镜像摘要为 `sha256:0042f143a832aa8d5315dd902876db0dcb8c1f125e68f76ab3c4a6c1224cf165`。运行态继续保留 WORK-006/V46，并提供真实侧栏分组、Fantastic-admin 聊天输入区、独立可滚动消息区、天气图标、未来七天只读日程和受七天冷静期保护的角色永久删除。
 
 CoreS3 当前上报 LAN HTTP Quad 固件 `424cb49`，保留 NVS、Wi-Fi、设备身份和 `motion_disabled`；启动、语音、无动作中位校准及 WORK-001 顶部长按启动/停止正常。服务地址仍指向当前宿主机。MEDIA-004 V2 实体激活继续等待 EAF 素材。
 
 ## 下一步操作
 
-完成一项当前角色待办后询问机器人“我今天完成了什么”，确认回答包含今日完成项和剩余待办且不包含备注或精确完成时间；Git 外部推送仍需用户授权。
+由用户强制刷新 LAN 页面，在当前窄屏宽度下复核聊天消息区的鼠标滚轮和触摸滚动；另完成一项当前角色待办后询问机器人“我今天完成了什么”，确认回答包含今日完成项和剩余待办且不包含备注或精确完成时间。Git 外部推送仍需用户授权。
 
 ## 阻塞项
 
@@ -83,6 +111,14 @@ CoreS3 当前上报 LAN HTTP Quad 固件 `424cb49`，保留 NVS、Wi-Fi、设备
 - `scripts/verify-lan-compose.ps1`
 
 ## 验证命令与最近结果
+
+- 2026-09-03 聊天滚动复修发布：新备份与隔离恢复成功，旧镜像保留为 `pre-chat-scroll-v46`，只替换 server。当前容器 `f12a4040770c`、镜像 `sha256:0042f143a832aa8d5315dd902876db0dcb8c1f125e68f76ab3c4a6c1224cf165`、版本 `console-feedback-v46-chat-scroll-final`；V46、本机/LAN 首页和健康 200，聊天 CSS/JS 200，运行 CSS 包含最终高度与滚动边界。PostgreSQL、Redis、备份容器和 CoreS3 未替换。
+
+- 2026-09-03 二级菜单与聊天复修发布：新备份与隔离恢复成功，旧镜像保留为 `pre-menu-chat-fix-v46`，只替换 server。当前容器 `044b01b409d3`、镜像 `sha256:6c9d7ff0a125abf8103a440cac94b64b902e65a19b0bd5b7a0cf9e437342b83d`、版本 `console-feedback-v46-menu-chat-final`；V46、本机/LAN 首页和健康 200，新菜单与聊天资源 200，运行资源包含最终分组、发送/停止动作和 OKLCH 主题映射。PostgreSQL、Redis、备份容器和 CoreS3 未替换。
+
+- 2026-09-01 六项后台反馈发布：新备份与最新备份内置隔离恢复成功，旧镜像保留为 `pre-console-feedback-v45`，只替换 server。当前容器 `afefeaf5884f`、镜像 `sha256:a4066d42cb3eb5e8f5655c0648cac8009e559c577ac9d6767f7edcc919712328`、版本 `console-feedback-v46-final`；V46、本机/LAN 首页 200、健康 200、角色与日程未认证接口 401、最终聊天/工作日/角色静态资源 200。PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 及 CoreS3 未替换。离线组装镜像第一次继承临时启动命令导致健康检查无响应，未触及数据库；修正入口后立即重建，并在最终资源格式化后再次精确替换为上述镜像。
+
+- 2026-09-01 后台信息架构与 UI 重整发布：11:53 UTC 新备份及内置隔离恢复成功，随后最新备份独立恢复成功；旧 WORK-006/V45 镜像保留为 `pre-console-ia-3697be8`，只替换 server。当前容器 `c580d0855c3c`、镜像 `sha256:a3b015c36bc17db419b87993081badf3b744527b50627ac6f527f86c0649e85d`、构建版本 `console-ia-3697be8`；V45、本机/LAN 首页 200、未认证设备接口 401、新 dashboard/chat 静态资源、1 条未完成待办、观察窗口和设备在线安全状态通过。PostgreSQL、Redis、备份容器及 CoreS3 未替换。
 
 - 2026-08-31 WORK-006/V45 发布：12:30 UTC 新备份、12:31 UTC 独立恢复验证成功；旧镜像保留为 `pre-work006-v45`，只替换 server。当前容器 `9617c52a48db`、镜像 `sha256:6b120ef75ae32845b679d2ce976cf91260928a0dde3304b0ca63db61b19c79cb`、构建版本 `work006-v45-task-progress`；V45、健康、LAN 首页、1 条未完成待办、观察窗口和设备在线安全状态通过。
 

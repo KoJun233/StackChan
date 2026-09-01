@@ -87,11 +87,11 @@ onMounted(load)
 </script>
 
 <template>
-  <FaPageMain title="AI 配置" description="使用 OpenAI 兼容接口连接你自己的模型服务。API 密钥仅在服务器端加密保存。">
+  <AppPageShell title="AI 配置" description="使用 OpenAI 兼容接口连接你自己的模型服务；API 密钥仅在服务器端加密保存。">
     <FaLoading :loading="loading">
       <FaCard class="max-w-3xl">
         <FaForm :model="model" :validation-schema="validationSchema" scroll-to-error @submit="submit">
-          <div class="grid gap-6 md:grid-cols-2">
+          <div class="gap-6 grid md:grid-cols-2">
             <FaFormItem name="baseUrl" label="接口地址" required class="md:col-span-2" description="例如 https://dashscope.aliyuncs.com/compatible-mode/v1">
               <FaInput v-model="model.baseUrl" placeholder="https://..." />
             </FaFormItem>
@@ -105,7 +105,7 @@ onMounted(load)
               <FaTextarea v-model="model.systemPrompt" rows="8" align="block" />
             </FaFormItem>
           </div>
-          <div class="mt-6 gap-3 flex justify-end">
+          <div class="mt-6 flex gap-3 justify-end">
             <FaButton type="button" variant="outline" :loading="testing" @click="testConnection">
               测试连接
             </FaButton>
@@ -116,5 +116,5 @@ onMounted(load)
         </FaForm>
       </FaCard>
     </FaLoading>
-  </FaPageMain>
+  </AppPageShell>
 </template>

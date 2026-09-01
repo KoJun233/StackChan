@@ -10,7 +10,7 @@ const settingsRoute: RouteRecordRaw = {
   component: Layout,
   name: 'settings',
   meta: {
-    title: '系统设置',
+    title: '能力配置',
     icon: 'i-ri:settings-3-line',
   },
   children: [
@@ -33,15 +33,6 @@ const settingsRoute: RouteRecordRaw = {
       },
     },
     {
-      path: 'interaction',
-      name: 'interactionSettings',
-      component: () => import('@/views/settings/interaction/index.vue'),
-      meta: {
-        title: '交互与主动陪伴',
-        icon: 'i-ri:chat-smile-3-line',
-      },
-    },
-    {
       path: 'agent',
       name: 'agentCapabilities',
       component: () => import('@/views/settings/agent/index.vue'),
@@ -55,7 +46,7 @@ const settingsRoute: RouteRecordRaw = {
 
 const routes: RouteRecordMainRaw = {
   meta: {
-    title: '系统设置',
+    title: '系统与能力',
     icon: 'i-ri:settings-3-line',
   },
   children: [settingsRoute],

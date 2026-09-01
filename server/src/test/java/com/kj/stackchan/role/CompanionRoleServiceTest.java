@@ -92,6 +92,44 @@ class CompanionRoleServiceTest {
         verify(integrations).disableAllByRoleId(role.getId(), NOW);
     }
 
+    @Test
+    void permanentlyDeletesOnlyAfterSevenArchivedDays() {
+        var roles = mock(CompanionRoleRepository.class);
+        var active = mock(DeviceActiveRoleRepository.class);
+        var devices = mock(DeviceRepository.class);
+        var turns = mock(VoiceTurnRepository.class);
+        var reminders = mock(ReminderRepository.class);
+        var integrations = mock(NotificationIntegrationRepository.class);
+        CompanionRoleEntity role = role("旧角色");
+        role.archive(NOW.minusSeconds(8 * 24 * 60 * 60));
+        when(roles.findByIdForUpdate(role.getId())).thenReturn(Optional.of(role));
+        CompanionRoleService service = new CompanionRoleService(roles, active, devices, turns, reminders,
+                Clock.fixed(NOW, ZoneOffset.UTC), integrations);
+
+        service.delete(role.getId());
+
+        verify(roles).delete(role);
+        verify(roles).flush();
+    }
+
+    @Test
+    void refusesPermanentDeleteBeforeCoolingOffCompletes() {
+        var roles = mock(CompanionRoleRepository.class);
+        CompanionRoleEntity role = role("刚归档角色");
+        role.archive(NOW.minusSeconds(6 * 24 * 60 * 60));
+        when(roles.findByIdForUpdate(role.getId())).thenReturn(Optional.of(role));
+        CompanionRoleService service = new CompanionRoleService(
+                roles, mock(DeviceActiveRoleRepository.class), mock(DeviceRepository.class),
+                mock(VoiceTurnRepository.class), mock(ReminderRepository.class),
+                Clock.fixed(NOW, ZoneOffset.UTC), mock(NotificationIntegrationRepository.class)
+        );
+
+        assertThatThrownBy(() -> service.delete(role.getId()))
+                .isInstanceOf(RoleConflictException.class)
+                .hasMessageContaining("seven days");
+        verify(roles, never()).delete(any());
+    }
+
     private CompanionRoleEntity role(String name) {
         return new CompanionRoleEntity(name, PersonaTone.WARM, PersonaReplyLength.BALANCED,
                 PersonaProactivity.BALANCED, "", "", "", NOW.minusSeconds(60));

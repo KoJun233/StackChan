@@ -1,6 +1,7 @@
 package com.kj.stackchan.role;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -19,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class CompanionRoleService {
+    private static final Duration PERMANENT_DELETE_DELAY = Duration.ofDays(7);
     private static final List<VoiceTurnStatus> ACTIVE_TURNS = List.of(
             VoiceTurnStatus.IN_PROGRESS, VoiceTurnStatus.RESPONSE_READY
     );
@@ -132,6 +134,18 @@ public class CompanionRoleService {
         CompanionRoleEntity role = roleRepository.findByIdForUpdate(id).orElseThrow(RoleNotFoundException::new);
         role.restore(clock.instant());
         return toSnapshot(role);
+    }
+
+    @Transactional
+    public void delete(UUID id) {
+        CompanionRoleEntity role = roleRepository.findByIdForUpdate(id).orElseThrow(RoleNotFoundException::new);
+        if (role.isDefaultRole()) throw new RoleConflictException("Default role cannot be deleted");
+        if (role.getArchivedAt() == null) throw new RoleConflictException("Role must be archived before deletion");
+        if (role.getArchivedAt().plus(PERMANENT_DELETE_DELAY).isAfter(clock.instant())) {
+            throw new RoleConflictException("Archived role can be deleted after seven days");
+        }
+        roleRepository.delete(role);
+        roleRepository.flush();
     }
 
     private CompanionRoleEntity find(UUID id) {

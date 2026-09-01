@@ -239,18 +239,7 @@ onUnmounted(stopCountdown)
 </script>
 
 <template>
-  <FaPageMain>
-    <template #title>
-      <div class="space-y-1">
-        <div class="text-lg text-foreground font-semibold">
-          设备配网与配对
-        </div>
-        <div class="text-sm text-muted-foreground">
-          通过物理 USB 在浏览器中配置 Wi-Fi；密码只发送给机器人，不经过服务端。
-        </div>
-      </div>
-    </template>
-
+  <AppPageShell title="设备配网与配对" description="通过物理 USB 在浏览器中配置 Wi-Fi；密码只发送给机器人，不经过服务端。">
     <div class="space-y-4">
       <FaCard>
         <template #header>
@@ -393,5 +382,5 @@ onUnmounted(stopCountdown)
         </FaCard>
       </div>
     </div>
-  </FaPageMain>
+  </AppPageShell>
 </template>

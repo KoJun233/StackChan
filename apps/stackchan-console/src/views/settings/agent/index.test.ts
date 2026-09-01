@@ -1,5 +1,7 @@
-import { createApp, defineComponent, h } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createApp, defineComponent, h } from 'vue'
+
+import AgentCapabilities from './index.vue'
 
 const agentApi = vi.hoisted(() => ({
   createMcpConnection: vi.fn(),
@@ -56,6 +58,12 @@ vi.mock('@fantastic-admin/components', () => {
     }),
     FaPageHeader: container,
     FaPageMain: container,
+    FaTabs: defineComponent({
+      props: { list: { type: Array, default: () => [] } },
+      setup(props, { slots }) {
+        return () => h('div', (props.list as Array<{ value: string }>).flatMap(item => slots[item.value]?.() ?? []))
+      },
+    }),
     FaSelect: defineComponent({
       props: { modelValue: String },
       emits: ['update:modelValue'],
@@ -86,8 +94,6 @@ vi.mock('@fantastic-admin/components', () => {
     useFaModal: () => ({ confirm: vi.fn() }),
   }
 })
-
-import AgentCapabilities from './index.vue'
 
 const capabilities = {
   framework: 'spring-ai-alibaba-react-agent',
@@ -125,7 +131,7 @@ const capabilities = {
   },
 }
 
-describe('Agent capability management page', () => {
+describe('agent capability management page', () => {
   afterEach(() => {
     document.body.innerHTML = ''
     vi.clearAllMocks()
