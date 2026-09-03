@@ -1,6 +1,7 @@
 package com.kj.stackchan.api;
 
 import java.time.LocalTime;
+import java.time.Instant;
 
 import com.kj.stackchan.calendar.ICloudCalendarService;
 import com.kj.stackchan.weather.WorkdayWeatherService;
@@ -56,6 +57,8 @@ class WorkdaySettingsControllerTest {
         var deviceId = java.util.UUID.randomUUID();
         var calendarId = java.util.UUID.randomUUID();
         var connection = new WorkdaySettingsController.ICloudCalendarConnectionRequest("me@icloud.com", "secret");
+        var from = Instant.parse("2026-09-01T00:00:00Z");
+        var to = Instant.parse("2026-09-08T00:00:00Z");
 
         controller.calendar(deviceId);
         controller.testCalendarConnection(deviceId, connection);
@@ -65,6 +68,7 @@ class WorkdaySettingsControllerTest {
                 new WorkdaySettingsController.AllowedCalendarsRequest(java.util.Set.of(calendarId))
         );
         controller.syncCalendar(deviceId);
+        controller.calendarEvents(deviceId, from, to);
         controller.disconnectCalendar(deviceId);
 
         org.mockito.Mockito.verify(calendarService).get(deviceId);
@@ -72,6 +76,7 @@ class WorkdaySettingsControllerTest {
         org.mockito.Mockito.verify(calendarService).connect(deviceId, connection.toCommand());
         org.mockito.Mockito.verify(calendarService).updateAllowed(deviceId, java.util.Set.of(calendarId));
         org.mockito.Mockito.verify(calendarService).sync(deviceId);
+        org.mockito.Mockito.verify(calendarService).cachedEvents(deviceId, from, to);
         org.mockito.Mockito.verify(calendarService).disconnect(deviceId);
     }
 

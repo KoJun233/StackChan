@@ -57,3 +57,5 @@
 | [0044](0044-local-first-confirmed-personal-tasks.md) | ACCEPTED | 个人待办保持本地优先、设备与角色隔离，机器人写入必须确认。 |
 | [0045](0045-deterministic-private-task-daily-brief.md) | ACCEPTED | 工作日首次简报确定性播报当前角色最多两项隐私安全的优先待办。 |
 | [0046](0046-private-read-only-daily-task-progress.md) | ACCEPTED | 今日待办进度复用现有最小只读 Tool，并按设备时区和活动角色隔离完成项。 |
+| [0047](0047-isolated-tdesign-chat-ui.md) | ACCEPTED | TDesign Chat 仅用于陪伴聊天展示层，业务状态和其他管理页面继续使用既有 Fantastic-admin 边界。 |
+| [0048](0048-guarded-archived-role-deletion.md) | ACCEPTED | 非默认角色归档满七天后仅由管理员二次确认手动永久删除，不设置无人值守自动清理。 |

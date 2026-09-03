@@ -170,7 +170,7 @@ onBeforeUnmount(() => eventBus.off('get-personal-task-list'))
 
 <template>
   <div :class="{ 'absolute flex flex-col size-full': tableAutoHeight }">
-    <FaPageHeader title="个人待办" class="mb-0" />
+    <FaPageHeader title="个人待办" description="集中安排个人事项、截止时间与优先级；完成状态会保留在本地服务端。" class="mb-0" />
     <FaPageMain :class="{ 'flex-1 overflow-auto': tableAutoHeight }" :main-class="{ 'flex-1 flex flex-col overflow-auto': tableAutoHeight }">
       <FaSearchBar :show-toggle="false">
         <template #default="{ fold, toggle }">

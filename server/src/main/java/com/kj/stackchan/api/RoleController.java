@@ -14,6 +14,7 @@ import jakarta.validation.constraints.Pattern;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -43,6 +44,8 @@ public class RoleController {
     @PostMapping("/{id}:restore") public CompanionRoleService.RoleSnapshot restore(@PathVariable UUID id) {
         return roleService.restore(id);
     }
+    @DeleteMapping("/{id}") @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable UUID id) { roleService.delete(id); }
     public record RoleRequest(@NotBlank @Size(max = 80) String name, @NotNull PersonaTone tone,
                               @NotNull PersonaReplyLength replyLength, @NotNull PersonaProactivity proactivity,
                               @Size(max = 4000) String backgroundInstructions,

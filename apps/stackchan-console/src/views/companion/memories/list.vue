@@ -7,6 +7,7 @@ import type {
   MemoryConfirmationStatus,
   MemoryScopeType,
 } from '@/api/modules/personaMemory'
+import type { CompanionRole } from '@/api/modules/roles'
 import { listDevices } from '@/api/modules/devices'
 import {
   clearMemories,
@@ -16,9 +17,8 @@ import {
   rejectMemory,
   setMemoryEnabled,
 } from '@/api/modules/personaMemory'
-import eventBus from '@/utils/eventBus'
-import type { CompanionRole } from '@/api/modules/roles'
 import { listRoles } from '@/api/modules/roles'
+import eventBus from '@/utils/eventBus'
 
 defineOptions({ name: 'CompanionMemoryList' })
 
@@ -142,7 +142,9 @@ async function loadDevices() {
   }
 }
 
-async function loadRoles() { roles.value = await listRoles() }
+async function loadRoles() {
+  roles.value = await listRoles()
+}
 
 function sizeChange(size: number) {
   onSizeChange(size).then(() => getDataList())
@@ -225,7 +227,7 @@ onBeforeUnmount(() => eventBus.off('get-memory-list'))
 
 <template>
   <div :class="{ 'absolute flex flex-col size-full': tableAutoHeight }">
-    <FaPageHeader title="长期记忆" class="mb-0" />
+    <FaPageHeader title="长期记忆" description="审核和管理机器人可长期使用的确认记忆，并控制是否允许主动提及。" class="mb-0" />
     <FaPageMain :class="{ 'flex-1 overflow-auto': tableAutoHeight }" :main-class="{ 'flex-1 flex flex-col overflow-auto': tableAutoHeight }">
       <FaAlert
         title="只有已确认且启用的记忆会进入对话"
@@ -329,7 +331,9 @@ onBeforeUnmount(() => eventBus.off('get-memory-list'))
         <template #cell-category="{ row }">
           {{ categoryLabel(row.original.category) }}
         </template>
-        <template #cell-role="{ row }">{{ roleNames.get(row.original.roleId) || row.original.roleId }}</template>
+        <template #cell-role="{ row }">
+          {{ roleNames.get(row.original.roleId) || row.original.roleId }}
+        </template>
         <template #cell-scope="{ row }">
           <span v-if="row.original.scopeType === 'GLOBAL'">全局共享</span>
           <span v-else>{{ deviceNames.get(row.original.deviceId || '') || '指定设备' }}</span>

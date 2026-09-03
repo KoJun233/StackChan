@@ -1,6 +1,8 @@
 import type { App, Component } from 'vue'
-import { createApp, defineComponent, h, nextTick, Teleport } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createApp, defineComponent, h, nextTick, Teleport } from 'vue'
+
+import SpeechSettings from './index.vue'
 
 const settingsApi = vi.hoisted(() => ({
   getSpeechSettings: vi.fn(),
@@ -60,7 +62,7 @@ vi.mock('@fantastic-admin/components', () => {
         return () => h('form', {
           ...attrs,
           'data-keep-values-on-unmount': String(props.keepValuesOnUnmount),
-          onSubmit: (event: Event) => {
+          'onSubmit': (event: Event) => {
             event.preventDefault()
             emit('submit', { ...props.model })
           },
@@ -96,6 +98,12 @@ vi.mock('@fantastic-admin/components', () => {
     }),
     FaPageHeader: passthrough,
     FaPageMain: passthrough,
+    FaTabs: defineComponent({
+      props: { list: { type: Array, default: () => [] } },
+      setup(props, { slots }) {
+        return () => h('div', (props.list as Array<{ value: string }>).flatMap(item => slots[item.value]?.() ?? []))
+      },
+    }),
     FaRadioGroup: defineComponent({
       props: {
         modelValue: { type: String, required: true },
@@ -105,8 +113,8 @@ vi.mock('@fantastic-admin/components', () => {
       setup(props, { emit }) {
         return () => h('select', {
           'data-radio-group': 'true',
-          value: props.modelValue,
-          onChange: (event: Event) => emit('update:modelValue', (event.target as HTMLSelectElement).value),
+          'value': props.modelValue,
+          'onChange': (event: Event) => emit('update:modelValue', (event.target as HTMLSelectElement).value),
         }, (props.options as Array<{ label: string, value: string }>).map(option => h(
           'option',
           { value: option.value },
@@ -134,8 +142,6 @@ vi.mock('@fantastic-admin/components', () => {
     useFaToast: () => toast,
   }
 })
-
-import SpeechSettings from './index.vue'
 
 describe('speech settings form', () => {
   let app: App<Element> | undefined
@@ -322,5 +328,4 @@ describe('speech settings form', () => {
       'wn9_xiao3feng1xiao3feng1_tts3',
     ))
   })
-
 })

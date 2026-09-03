@@ -1,6 +1,8 @@
 package com.kj.stackchan.api;
 
 import java.time.LocalTime;
+import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -169,6 +171,15 @@ public class WorkdaySettingsController {
     @PostMapping("/{deviceId}/calendar/sync")
     public ICloudCalendarService.ConnectionSnapshot syncCalendar(@PathVariable UUID deviceId) {
         return calendarService.sync(deviceId);
+    }
+
+    @GetMapping("/{deviceId}/calendar/events")
+    public List<ICloudCalendarService.CachedEventSnapshot> calendarEvents(
+            @PathVariable UUID deviceId,
+            @RequestParam Instant from,
+            @RequestParam Instant to
+    ) {
+        return calendarService.cachedEvents(deviceId, from, to);
     }
 
     @DeleteMapping("/{deviceId}/calendar/connection")
