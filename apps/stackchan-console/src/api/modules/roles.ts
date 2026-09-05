@@ -1,5 +1,5 @@
-import { apiJson } from '../client'
 import type { PersonaProactivity, PersonaReplyLength, PersonaTone } from './personaMemory'
+import { apiJson } from '../client'
 
 export interface CompanionRole {
   archivedAt: string | null
@@ -18,8 +18,7 @@ export interface CompanionRole {
   updatedAt: string
 }
 
-export type CompanionRoleInput = Pick<CompanionRole,
-  'name' | 'tone' | 'replyLength' | 'proactivity' | 'backgroundInstructions' | 'topicBoundaries' | 'taboos' | 'ttsVoiceOverride' | 'expressionThemeColor'>
+export type CompanionRoleInput = Pick<CompanionRole, 'name' | 'tone' | 'replyLength' | 'proactivity' | 'backgroundInstructions' | 'topicBoundaries' | 'taboos' | 'ttsVoiceOverride' | 'expressionThemeColor'>
 
 export function listRoles(): Promise<CompanionRole[]> {
   return apiJson('/api/v1/roles')
@@ -45,12 +44,18 @@ export function restoreRole(id: string): Promise<CompanionRole> {
   return apiJson(`/api/v1/roles/${encodeURIComponent(id)}:restore`, { method: 'POST' })
 }
 
+export function deleteRole(id: string): Promise<void> {
+  return apiJson(`/api/v1/roles/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
 export function getDeviceActiveRole(deviceId: string): Promise<CompanionRole> {
   return apiJson(`/api/v1/devices/${encodeURIComponent(deviceId)}/active-role`)
 }
 
 export function setDeviceActiveRole(deviceId: string, roleId: string): Promise<CompanionRole> {
   return apiJson(`/api/v1/devices/${encodeURIComponent(deviceId)}/active-role`, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roleId }),
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ roleId }),
   })
 }

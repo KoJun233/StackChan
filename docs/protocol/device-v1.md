@@ -85,6 +85,27 @@ The body must be between 44 bytes and 512 KiB. The server authenticates the devi
 
 Error responses use safe JSON and do not include provider responses, provider keys, device credentials, or authorization payloads.
 
+### Live capture upload
+
+New firmware overlaps capture and upload through a server-first endpoint:
+
+```http
+POST /api/v1/device/voice/turn/live
+Authorization: Bearer <device-token>
+X-StackChan-Turn-Id: 550e8400-e29b-41d4-a716-446655440000
+Content-Type: audio/wav
+Accept: application/vnd.stackchan.voice-turn-stream
+Transfer-Encoding: chunked
+```
+
+The turn ID is required on this endpoint. The device must not open the request or send microphone audio before local VAD detects speech, except that an explicit held press-to-talk is itself user authorization to begin. After that local gate, the request may include the bounded audio already captured for the current turn and subsequent 100 ms PCM windows. The eight-second capture limit and 512 KiB decoded-body limit remain unchanged.
+
+The first transfer chunk is a 44-byte mono PCM WAV header. Both its RIFF size and final `data` chunk length are little-endian `0xffffffff`, meaning their final values are not known until the HTTP body ends. Following transfer chunks contain signed 16-bit little-endian, mono, 16 kHz PCM. The device writes a normal zero-length HTTP chunk after the last PCM bytes. The server dechunks the request, validates the bounded complete body, and replaces the two sentinel lengths with the actual canonical lengths before calling the existing ASR path. Neither the sentinel nor HTTP chunk framing is forwarded to the speech provider.
+
+Capture uses 100 ms windows while retaining the existing one-second minimum and approximately 800 ms local trailing-silence decision. Trailing silence is withheld until the decision is known, then all but the final 100 ms window is discarded. `capture_tail_ms` measures from the local capture decision to the completed HTTP request body; approximately 100 ms is a LAN target, not a protocol deadline or a promise for ASR, Agent, TTS, or full-turn latency.
+
+If the live request cannot be opened or written before the terminal HTTP chunk, firmware may use its bounded PSRAM copy to retry once through the legacy `/api/v1/device/voice/turn` endpoint. It must not retry after terminating the live request or while the outcome is ambiguous, because doing so could duplicate a conversation turn. Old firmware remains compatible with the legacy endpoint. Deploy the live server endpoint before installing live-upload firmware.
+
 New firmware prefers ordered streaming while retaining the same URL, authentication, turn ID and upload limits:
 
 ```http

@@ -98,6 +98,26 @@ final class WavPcmAudio {
         return normalized;
     }
 
+    static byte[] normalizeUploadedMono16KhzWav(byte[] wav) {
+        byte[] pcm = extractMono16KhzPcm(wav);
+        byte[] normalized = new byte[CANONICAL_WAV_HEADER_SIZE + pcm.length];
+        writeAscii(normalized, 0, "RIFF");
+        writeLittleEndianInt(normalized, 4, normalized.length - 8);
+        writeAscii(normalized, 8, "WAVE");
+        writeAscii(normalized, 12, "fmt ");
+        writeLittleEndianInt(normalized, 16, 16);
+        writeLittleEndianShort(normalized, 20, 1);
+        writeLittleEndianShort(normalized, 22, 1);
+        writeLittleEndianInt(normalized, 24, REQUIRED_SAMPLE_RATE);
+        writeLittleEndianInt(normalized, 28, REQUIRED_SAMPLE_RATE * 2);
+        writeLittleEndianShort(normalized, 32, 2);
+        writeLittleEndianShort(normalized, 34, 16);
+        writeAscii(normalized, 36, "data");
+        writeLittleEndianInt(normalized, 40, pcm.length);
+        System.arraycopy(pcm, 0, normalized, CANONICAL_WAV_HEADER_SIZE, pcm.length);
+        return normalized;
+    }
+
     private static byte[] resampleMono16BitPcm(byte[] input, int sourceRate, int targetRate) {
         int inputSamples = input.length / 2;
         int outputSamples = Math.toIntExact((long) inputSamples * targetRate / sourceRate);

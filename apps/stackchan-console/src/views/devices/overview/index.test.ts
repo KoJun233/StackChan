@@ -1,5 +1,7 @@
-import { createApp, defineComponent, h } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createApp, defineComponent, h } from 'vue'
+
+import DeviceOverview from './index.vue'
 
 const deviceApi = vi.hoisted(() => ({
   listDevices: vi.fn(),
@@ -35,6 +37,7 @@ vi.mock('@fantastic-admin/components', () => {
     }),
     FaCard: passthrough,
     FaEmpty: passthrough,
+    FaPageHeader: passthrough,
     FaPageMain: passthrough,
     FaTable: defineComponent({
       props: { data: { type: Array, default: () => [] } },
@@ -49,8 +52,6 @@ vi.mock('@fantastic-admin/components', () => {
     useFaToast: () => ({ error: vi.fn(), success: vi.fn() }),
   }
 })
-
-import DeviceOverview from './index.vue'
 
 describe('device overview command availability', () => {
   afterEach(() => {

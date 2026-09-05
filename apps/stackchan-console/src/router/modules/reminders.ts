@@ -11,7 +11,7 @@ const reminderRoute: RouteRecordRaw = {
   component: Layout,
   name: 'reminders',
   meta: {
-    title: '提醒管理',
+    title: '提醒',
     icon: 'i-ri:notification-3-line',
   },
   children: [
@@ -76,12 +76,22 @@ const personalTaskRoute: RouteRecordRaw = {
   ],
 }
 
-const routes: RouteRecordMainRaw = {
+const taskManagementRoute: RouteRecordRaw = {
+  path: '/task-management',
+  name: 'taskManagement',
   meta: {
-    title: '提醒管理',
+    title: '事务管理',
     icon: 'i-ri:notification-3-line',
   },
   children: [reminderRoute, personalTaskRoute, ...(NotificationRoutes.children ?? [])],
+}
+
+const routes: RouteRecordMainRaw = {
+  meta: {
+    title: '事务与通知',
+    icon: 'i-ri:notification-3-line',
+  },
+  children: [taskManagementRoute],
 }
 
 export default routes

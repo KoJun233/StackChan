@@ -6,24 +6,27 @@ function flattenRoutes(routes: any[]): any[] {
 }
 
 describe('stackChan console routes', () => {
-  it('redirects the root route to the configured device overview home', () => {
+  it('redirects the root route to the daily overview', () => {
     const rootRoute = (systemRoutes as any[]).find(route => route.path === '/')
     const indexRoute = rootRoute?.children?.find((route: any) => route.path === '')
 
-    expect(indexRoute?.redirect).toBe('/devices/overview')
+    expect(indexRoute?.redirect).toBe('/dashboard')
   })
 
-  it('exposes the Chinese device, companion, speech settings and reminder pages', () => {
+  it('exposes the daily, companion, device, task and capability pages', () => {
     const routes = flattenRoutes(asyncRoutes as any[])
 
     expect(routes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'dashboardHome', path: '', meta: expect.objectContaining({ title: '今日概览' }) }),
+      expect.objectContaining({ name: 'companionChat', path: '', meta: expect.objectContaining({ title: '陪伴聊天', keepAlive: true }) }),
+      expect.objectContaining({ name: 'workdayCompanion', path: '', meta: expect.objectContaining({ title: '工作陪伴' }) }),
+      expect.objectContaining({ name: 'interactionSettings', path: '', meta: expect.objectContaining({ title: '主动关心' }) }),
       expect.objectContaining({ name: 'deviceOverview', path: 'overview' }),
-      expect.objectContaining({ name: 'devicePairing', path: 'pairing', meta: expect.objectContaining({ title: '设备配网' }) }),
-      expect.objectContaining({ name: 'deviceHealth', path: 'health', meta: expect.objectContaining({ title: '健康中心' }) }),
-      expect.objectContaining({ name: 'companionChat', path: 'chat', meta: expect.objectContaining({ title: '陪伴聊天', keepAlive: true }) }),
+      expect.objectContaining({ name: 'devicePairing', path: 'pairing', meta: expect.objectContaining({ title: '配网与配对' }) }),
+      expect.objectContaining({ name: 'deviceHealth', path: 'health', meta: expect.objectContaining({ title: '运行健康' }) }),
       expect.objectContaining({ name: 'companionPersona', path: 'persona', meta: expect.objectContaining({ title: '角色管理' }) }),
       expect.objectContaining({ name: 'companionRoleDetail', path: 'roles/detail/:id?', meta: expect.objectContaining({ menu: false, activeMenu: '/companion/persona' }) }),
-      expect.objectContaining({ name: 'companionExpressionPacks', path: 'expressions', meta: expect.objectContaining({ title: '宠物表情包' }) }),
+      expect.objectContaining({ name: 'companionExpressionPacks', path: 'expressions', meta: expect.objectContaining({ title: '表情与形象' }) }),
       expect.objectContaining({ name: 'companionPersonalData', path: 'personal-data', meta: expect.objectContaining({ title: '对话与个人数据' }) }),
       expect.objectContaining({ name: 'companionMemoryList', path: 'memories', meta: expect.objectContaining({ title: '长期记忆', keepAlive: 'companionMemoryDetail' }) }),
       expect.objectContaining({
@@ -49,10 +52,41 @@ describe('stackChan console routes', () => {
     ]))
   })
 
-  it('groups external notifications under reminder management', () => {
-    const reminderManagement = (asyncRoutes as any[]).find(route => route.meta?.title === '提醒管理')
+  it('places proactive care in the daily group', () => {
+    const daily = (asyncRoutes as any[]).find(route => route.meta?.title === '今日')
+    const companion = (asyncRoutes as any[]).find(route => route.meta?.title === '陪伴')
+    const dailyCompanion = daily?.children?.find((route: any) => route.name === 'todayCompanion')
 
-    expect(reminderManagement?.children).toEqual(expect.arrayContaining([
+    expect(daily?.children).toEqual([
+      expect.objectContaining({ name: 'todayCompanion', meta: expect.objectContaining({ title: '今日陪伴', expand: true }) }),
+    ])
+    expect(dailyCompanion?.children).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'workdayCompanionMenu' }),
+      expect.objectContaining({ name: 'interactionSettingsMenu' }),
+    ]))
+    expect(companion?.children).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'interactionSettingsMenu' }),
+    ]))
+  })
+
+  it('uses the recommended top-level information architecture', () => {
+    expect((asyncRoutes as any[]).map(route => route.meta?.title)).toEqual([
+      '今日',
+      '陪伴',
+      '事务与通知',
+      '设备与运行',
+      '系统与能力',
+    ])
+  })
+
+  it('groups external notifications under tasks and notifications', () => {
+    const reminderManagement = (asyncRoutes as any[]).find(route => route.meta?.title === '事务与通知')
+    const taskManagement = reminderManagement?.children?.find((route: any) => route.name === 'taskManagement')
+
+    expect(reminderManagement?.children).toEqual([
+      expect.objectContaining({ name: 'taskManagement', meta: expect.objectContaining({ title: '事务管理' }) }),
+    ])
+    expect(taskManagement?.children).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'reminders', path: '/reminders' }),
       expect.objectContaining({ name: 'personalTasks', path: '/personal-tasks' }),
       expect.objectContaining({ name: 'notificationIntegrations', path: '/notifications' }),

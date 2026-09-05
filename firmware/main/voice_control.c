@@ -11,6 +11,8 @@
 #include "esp_wn_iface.h"
 #include "esp_wn_models.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/idf_additions.h"
+#include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "model_path.h"
@@ -31,16 +33,24 @@
 #define VOICE_TASK_STACK_SIZE 32768
 #define VOICE_TASK_PRIORITY 6
 #define VOICE_TASK_CORE 0
+#define VOICE_UPLOAD_TASK_STACK_SIZE 24576
+#define VOICE_UPLOAD_TASK_PRIORITY 5
+#define VOICE_UPLOAD_TASK_CORE 1
+#define VOICE_PLAYBACK_TASK_STACK_SIZE 24576
+#define VOICE_PLAYBACK_TASK_PRIORITY 5
+#define VOICE_PLAYBACK_TASK_CORE 1
+#define VOICE_PLAYBACK_QUEUE_DEPTH 1
 #define VOICE_TOUCH_TASK_STACK_SIZE 4096
 #define VOICE_TOUCH_TASK_PRIORITY 4
 #define VOICE_TOUCH_POLL_MS 50
 #define VOICE_SAMPLE_RATE 16000
 #define VOICE_CAPTURE_MAX_SECONDS 8
 #define VOICE_CAPTURE_MAX_SAMPLES (VOICE_SAMPLE_RATE * VOICE_CAPTURE_MAX_SECONDS)
-#define VOICE_CAPTURE_WINDOW_MS 250
+#define VOICE_CAPTURE_WINDOW_MS 100
 #define VOICE_CAPTURE_WINDOW_SAMPLES (VOICE_SAMPLE_RATE * VOICE_CAPTURE_WINDOW_MS / 1000)
-#define VOICE_MIN_CAPTURE_WINDOWS 4
-#define VOICE_SILENCE_WINDOWS 3
+#define VOICE_START_CONFIRM_WINDOWS 2
+#define VOICE_MIN_CAPTURE_WINDOWS 10
+#define VOICE_SILENCE_WINDOWS 8
 #define VOICE_DEFAULT_START_ENERGY_THRESHOLD 350
 #define VOICE_DEFAULT_SILENCE_ENERGY_THRESHOLD 200
 #define VOICE_START_ENERGY_THRESHOLD_MIN 100
@@ -373,6 +383,13 @@ static voice_detection_settings_t current_detection_settings(void)
 }
 
 typedef struct {
+    uint8_t *payload;
+    size_t payload_size;
+    uint32_t sequence;
+    int64_t received_us;
+} streaming_audio_item_t;
+
+typedef struct {
     const char *turn_id;
     int64_t started_us;
     bool detect_end_phrase;
@@ -384,22 +401,160 @@ typedef struct {
     uint32_t expected_sequence;
     voice_stream_error_t error;
     esp_err_t playback_error;
+    QueueHandle_t playback_queue;
+    TaskHandle_t playback_task;
+    TaskHandle_t playback_owner_task;
+    volatile bool playback_abort_requested;
+    volatile bool playback_worker_done;
+    bool playback_terminal_queued;
     voice_turn_response_t response;
 } streaming_turn_context_t;
 
+static void streaming_playback_worker(void *argument)
+{
+    streaming_turn_context_t *context = (streaming_turn_context_t *)argument;
+    int64_t previous_completed_us = 0;
+    while (true) {
+        streaming_audio_item_t item = {0};
+        if (xQueueReceive(context->playback_queue, &item, portMAX_DELAY) != pdTRUE) {
+            context->playback_error = ESP_ERR_TIMEOUT;
+            break;
+        }
+        if (item.payload == NULL) {
+            break;
+        }
+        if (context->playback_abort_requested || cancellation_requested()) {
+            heap_caps_free(item.payload);
+            continue;
+        }
+
+        const uint8_t *wav = NULL;
+        size_t wav_size = 0;
+        if (!voice_protocol_parse_stream_audio(
+                item.payload, item.payload_size, item.sequence, &wav, &wav_size)) {
+            context->playback_error = ESP_ERR_INVALID_RESPONSE;
+            context->playback_abort_requested = true;
+            heap_caps_free(item.payload);
+            continue;
+        }
+        if (!context->playback_started) {
+            set_interaction_phase(TOUCH_INTERACTION_PLAYING);
+            companion_hardware_set_state(COMPANION_FACE_SPEAKING);
+            report_turn_stage(
+                context->turn_id, context->started_us, DEVICE_VOICE_STAGE_PLAYBACK_STARTED);
+            context->playback_started = true;
+        }
+
+        int64_t playback_started_us = esp_timer_get_time();
+        bool cancelled = false;
+        esp_err_t err = companion_hardware_play_wav_interruptible(wav, wav_size, &cancelled);
+        int64_t playback_completed_us = esp_timer_get_time();
+        ESP_LOGI(TAG,
+                 "Voice stream playback: sequence=%lu bytes=%u buffered_ms=%llu gap_ms=%llu "
+                 "playback_ms=%llu stack_free=%u psram_free=%u",
+                 (unsigned long)item.sequence,
+                 (unsigned)wav_size,
+                 (unsigned long long)((playback_started_us - item.received_us) / 1000),
+                 (unsigned long long)(previous_completed_us == 0
+                     ? 0
+                     : (playback_started_us - previous_completed_us) / 1000),
+                 (unsigned long long)((playback_completed_us - playback_started_us) / 1000),
+                 (unsigned)uxTaskGetStackHighWaterMark(NULL),
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        previous_completed_us = playback_completed_us;
+        heap_caps_free(item.payload);
+
+        if (cancelled || cancellation_requested()) {
+            context->playback_cancelled = true;
+            context->playback_abort_requested = true;
+        } else if (err != ESP_OK) {
+            context->playback_error = err;
+            context->playback_abort_requested = true;
+        }
+    }
+    ESP_LOGI(TAG,
+             "Voice playback worker stopped: segments=%lu stack_free=%u result=%s",
+             (unsigned long)context->expected_sequence,
+             (unsigned)uxTaskGetStackHighWaterMark(NULL),
+             esp_err_to_name(context->playback_error));
+    context->playback_worker_done = true;
+    xTaskNotifyGive(context->playback_owner_task);
+    vTaskSuspend(NULL);
+}
+
+static esp_err_t start_streaming_playback(streaming_turn_context_t *context)
+{
+    if (context->playback_task != NULL) return ESP_OK;
+    // Bound prefetch to the frame being played plus one queued PSRAM frame.
+    context->playback_queue = xQueueCreate(
+        VOICE_PLAYBACK_QUEUE_DEPTH, sizeof(streaming_audio_item_t));
+    if (context->playback_queue == NULL) return ESP_ERR_NO_MEM;
+    context->playback_owner_task = xTaskGetCurrentTaskHandle();
+    if (xTaskCreatePinnedToCoreWithCaps(streaming_playback_worker,
+                                        "voice_playback",
+                                        VOICE_PLAYBACK_TASK_STACK_SIZE,
+                                        context,
+                                        VOICE_PLAYBACK_TASK_PRIORITY,
+                                        &context->playback_task,
+                                        VOICE_PLAYBACK_TASK_CORE,
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
+        vQueueDelete(context->playback_queue);
+        context->playback_queue = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t queue_streaming_playback_terminal(streaming_turn_context_t *context,
+                                                   bool abort_playback)
+{
+    if (abort_playback) {
+        context->playback_abort_requested = true;
+        companion_hardware_request_playback_stop();
+    }
+    if (context->playback_task == NULL || context->playback_terminal_queued) return ESP_OK;
+    streaming_audio_item_t terminal = {0};
+    if (xQueueSend(context->playback_queue, &terminal, portMAX_DELAY) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    context->playback_terminal_queued = true;
+    return ESP_OK;
+}
+
+static void finish_streaming_playback(streaming_turn_context_t *context, bool abort_playback)
+{
+    if (context == NULL || context->playback_task == NULL) return;
+    esp_err_t terminal_err = queue_streaming_playback_terminal(context, abort_playback);
+    if (terminal_err != ESP_OK && context->playback_error == ESP_OK) {
+        context->playback_error = terminal_err;
+    }
+    while (!context->playback_worker_done) {
+        (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    }
+    vTaskDeleteWithCaps(context->playback_task);
+    context->playback_task = NULL;
+    vQueueDelete(context->playback_queue);
+    context->playback_queue = NULL;
+}
+
 static esp_err_t handle_streaming_turn_frame(uint8_t frame_type,
-                                             const uint8_t *payload,
+                                             uint8_t *payload,
                                              size_t payload_size,
+                                             bool *retain_payload,
                                              void *context_value)
 {
     streaming_turn_context_t *context = context_value;
-    if (context == NULL || context->completed || context->error != VOICE_STREAM_ERROR_NONE) {
+    if (context == NULL || retain_payload == NULL || context->completed ||
+        context->error != VOICE_STREAM_ERROR_NONE) {
         return ESP_ERR_INVALID_RESPONSE;
     }
+    *retain_payload = false;
     if (frame_type == VOICE_STREAM_FRAME_ERROR) {
-        return voice_protocol_parse_stream_error(payload, payload_size, &context->error)
-                   ? ESP_OK
-                   : ESP_ERR_INVALID_RESPONSE;
+        if (!voice_protocol_parse_stream_error(payload, payload_size, &context->error)) {
+            return ESP_ERR_INVALID_RESPONSE;
+        }
+        esp_err_t stop_err = queue_streaming_playback_terminal(context, true);
+        return stop_err == ESP_OK ? ESP_OK : stop_err;
     }
     if (frame_type == VOICE_STREAM_FRAME_START) {
         if (context->started || !voice_protocol_parse_stream_start(
@@ -416,39 +571,233 @@ static esp_err_t handle_streaming_turn_frame(uint8_t frame_type,
     if (frame_type == VOICE_STREAM_FRAME_AUDIO) {
         const uint8_t *wav = NULL;
         size_t wav_size = 0;
+        uint32_t sequence = context->expected_sequence;
         if (!voice_protocol_parse_stream_audio(
-                payload, payload_size, context->expected_sequence, &wav, &wav_size)) {
+                payload, payload_size, sequence, &wav, &wav_size)) {
             return ESP_ERR_INVALID_RESPONSE;
         }
-        context->expected_sequence++;
-        if (context->expected_sequence > VOICE_PROTOCOL_STREAM_MAX_SEGMENTS) {
+        if (sequence >= VOICE_PROTOCOL_STREAM_MAX_SEGMENTS) {
             return ESP_ERR_INVALID_RESPONSE;
         }
         if (context->explicit_end) return ESP_OK;
         if (cancellation_requested()) return ESP_ERR_NOT_FINISHED;
-        if (!context->playback_started) {
-            set_interaction_phase(TOUCH_INTERACTION_PLAYING);
-            companion_hardware_set_state(COMPANION_FACE_SPEAKING);
-            report_turn_stage(
-                context->turn_id, context->started_us, DEVICE_VOICE_STAGE_PLAYBACK_STARTED);
-            context->playback_started = true;
+        esp_err_t err = start_streaming_playback(context);
+        if (err != ESP_OK) return err;
+        streaming_audio_item_t item = {
+            .payload = payload,
+            .payload_size = payload_size,
+            .sequence = sequence,
+            .received_us = esp_timer_get_time(),
+        };
+        if (xQueueSend(context->playback_queue, &item, portMAX_DELAY) != pdTRUE) {
+            return ESP_ERR_TIMEOUT;
         }
-        bool cancelled = false;
-        esp_err_t err = companion_hardware_play_wav_interruptible(wav, wav_size, &cancelled);
-        if (cancelled || cancellation_requested()) {
-            context->playback_cancelled = true;
-            return ESP_ERR_NOT_FINISHED;
-        }
-        if (err != ESP_OK) context->playback_error = err;
-        return err;
+        *retain_payload = true;
+        context->expected_sequence++;
+        return ESP_OK;
     }
     if (frame_type == VOICE_STREAM_FRAME_COMPLETE && context->expected_sequence > 0 &&
         voice_protocol_parse_stream_complete(
             payload, payload_size, context->expected_sequence)) {
+        esp_err_t terminal_err = queue_streaming_playback_terminal(context, false);
+        if (terminal_err != ESP_OK) return terminal_err;
         context->completed = true;
         return ESP_OK;
     }
     return ESP_ERR_INVALID_RESPONSE;
+}
+
+typedef struct {
+    const device_identity_t *identity;
+    const char *turn_id;
+    int64_t started_us;
+    streaming_turn_context_t *stream_context;
+    voice_service_live_upload_t *upload;
+    const int16_t *samples;
+    size_t uploaded_samples;
+    size_t committed_samples;
+    int64_t capture_finished_us;
+    TaskHandle_t worker_task;
+    TaskHandle_t owner_task;
+    portMUX_TYPE state_lock;
+    esp_err_t error;
+    bool start_attempted;
+    bool upload_stage_reported;
+    bool capture_finished;
+    bool abort_requested;
+    bool worker_done;
+} live_capture_upload_t;
+
+static void live_capture_upload_worker(void *argument)
+{
+    live_capture_upload_t *live_upload = (live_capture_upload_t *)argument;
+    while (true) {
+        (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        taskENTER_CRITICAL(&live_upload->state_lock);
+        bool abort_requested = live_upload->abort_requested;
+        size_t committed_samples = live_upload->committed_samples;
+        taskEXIT_CRITICAL(&live_upload->state_lock);
+        if (abort_requested) {
+            break;
+        }
+        if (committed_samples > live_upload->uploaded_samples &&
+            live_upload->error == ESP_OK) {
+            if (!live_upload->start_attempted) {
+                live_upload->start_attempted = true;
+                live_upload->error = voice_service_live_upload_begin(
+                    live_upload->identity,
+                    live_upload->turn_id,
+                    VOICE_SAMPLE_RATE,
+                    handle_streaming_turn_frame,
+                    live_upload->stream_context,
+                    &live_upload->upload);
+                if (live_upload->error == ESP_OK) {
+                    report_turn_stage(live_upload->turn_id,
+                                      live_upload->started_us,
+                                      DEVICE_VOICE_STAGE_UPLOAD_STARTED);
+                    live_upload->upload_stage_reported = true;
+                } else {
+                    ESP_LOGW(TAG,
+                             "Live voice upload unavailable; retaining bounded WAV fallback: %s",
+                             esp_err_to_name(live_upload->error));
+                }
+            }
+            if (live_upload->error == ESP_OK) {
+                live_upload->error = voice_service_live_upload_write(
+                    live_upload->upload,
+                    live_upload->samples + live_upload->uploaded_samples,
+                    committed_samples - live_upload->uploaded_samples);
+                if (live_upload->error == ESP_OK) {
+                    live_upload->uploaded_samples = committed_samples;
+                } else {
+                    ESP_LOGW(TAG,
+                             "Live voice upload write failed; retaining bounded WAV fallback: %s",
+                             esp_err_to_name(live_upload->error));
+                    voice_service_live_upload_abort(live_upload->upload);
+                    live_upload->upload = NULL;
+                }
+            }
+        }
+        taskENTER_CRITICAL(&live_upload->state_lock);
+        bool capture_finished = live_upload->capture_finished;
+        committed_samples = live_upload->committed_samples;
+        abort_requested = live_upload->abort_requested;
+        taskEXIT_CRITICAL(&live_upload->state_lock);
+        if (live_upload->error != ESP_OK || abort_requested ||
+            (capture_finished && live_upload->uploaded_samples >= committed_samples)) {
+            break;
+        }
+    }
+    taskENTER_CRITICAL(&live_upload->state_lock);
+    bool abort_requested = live_upload->abort_requested;
+    int64_t capture_finished_us = live_upload->capture_finished_us;
+    taskEXIT_CRITICAL(&live_upload->state_lock);
+    if (abort_requested && live_upload->upload != NULL) {
+        voice_service_live_upload_abort(live_upload->upload);
+        live_upload->upload = NULL;
+    } else if (live_upload->upload != NULL && capture_finished_us > 0) {
+        voice_service_live_upload_mark_capture_finished_at(
+            live_upload->upload, capture_finished_us);
+    }
+    ESP_LOGI(TAG,
+             "Live upload worker stopped: uploaded_samples=%lu stack_free=%u result=%s",
+             (unsigned long)live_upload->uploaded_samples,
+             (unsigned)uxTaskGetStackHighWaterMark(NULL),
+             esp_err_to_name(live_upload->error));
+    taskENTER_CRITICAL(&live_upload->state_lock);
+    live_upload->worker_done = true;
+    taskEXIT_CRITICAL(&live_upload->state_lock);
+    xTaskNotifyGive(live_upload->owner_task);
+    vTaskSuspend(NULL);
+}
+
+static void start_live_capture_upload(live_capture_upload_t *live_upload,
+                                      const int16_t *samples)
+{
+    if (live_upload == NULL || samples == NULL || live_upload->worker_task != NULL) {
+        return;
+    }
+    live_upload->samples = samples;
+    live_upload->owner_task = xTaskGetCurrentTaskHandle();
+    if (xTaskCreatePinnedToCoreWithCaps(live_capture_upload_worker,
+                                        "voice_upload",
+                                        VOICE_UPLOAD_TASK_STACK_SIZE,
+                                        live_upload,
+                                        VOICE_UPLOAD_TASK_PRIORITY,
+                                        &live_upload->worker_task,
+                                        VOICE_UPLOAD_TASK_CORE,
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
+        live_upload->error = ESP_ERR_NO_MEM;
+        taskENTER_CRITICAL(&live_upload->state_lock);
+        live_upload->worker_done = true;
+        taskEXIT_CRITICAL(&live_upload->state_lock);
+        ESP_LOGW(TAG, "Live upload worker unavailable; retaining bounded WAV fallback");
+    }
+}
+
+static void publish_live_capture_upload(live_capture_upload_t *live_upload,
+                                        size_t committed_samples,
+                                        bool capture_finished)
+{
+    if (live_upload == NULL || live_upload->worker_task == NULL) {
+        return;
+    }
+    taskENTER_CRITICAL(&live_upload->state_lock);
+    if (live_upload->worker_done) {
+        taskEXIT_CRITICAL(&live_upload->state_lock);
+        return;
+    }
+    live_upload->committed_samples = committed_samples;
+    if (capture_finished) {
+        if (!live_upload->capture_finished) {
+            live_upload->capture_finished_us = esp_timer_get_time();
+        }
+        live_upload->capture_finished = true;
+    }
+    taskEXIT_CRITICAL(&live_upload->state_lock);
+    xTaskNotifyGive(live_upload->worker_task);
+}
+
+static void wait_live_capture_upload(live_capture_upload_t *live_upload)
+{
+    if (live_upload == NULL || live_upload->worker_task == NULL) {
+        return;
+    }
+    while (true) {
+        taskENTER_CRITICAL(&live_upload->state_lock);
+        bool worker_done = live_upload->worker_done;
+        taskEXIT_CRITICAL(&live_upload->state_lock);
+        if (worker_done) {
+            break;
+        }
+        (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    }
+    vTaskDeleteWithCaps(live_upload->worker_task);
+    live_upload->worker_task = NULL;
+}
+
+static void abort_live_capture_upload(live_capture_upload_t *live_upload)
+{
+    if (live_upload == NULL) {
+        return;
+    }
+    if (live_upload->worker_task != NULL) {
+        taskENTER_CRITICAL(&live_upload->state_lock);
+        bool worker_done = live_upload->worker_done;
+        if (!worker_done) {
+            live_upload->abort_requested = true;
+        }
+        taskEXIT_CRITICAL(&live_upload->state_lock);
+        if (!worker_done) {
+            xTaskNotifyGive(live_upload->worker_task);
+            (void)voice_service_cancel_active_turn();
+        }
+    }
+    wait_live_capture_upload(live_upload);
+    if (live_upload->upload != NULL) {
+        voice_service_live_upload_abort(live_upload->upload);
+        live_upload->upload = NULL;
+    }
 }
 
 static esp_err_t capture_user_speech(int16_t *samples,
@@ -457,15 +806,17 @@ static esp_err_t capture_user_speech(int16_t *samples,
                                      const voice_detection_settings_t *settings,
                                      uint32_t *peak_energy,
                                      bool press_to_talk,
-                                     bool require_server_connection)
+                                     bool require_server_connection,
+                                     live_capture_upload_t *live_upload)
 {
     if (samples == NULL || captured_samples == NULL || settings == NULL || peak_energy == NULL ||
-        capacity < VOICE_CAPTURE_WINDOW_SAMPLES) {
+        capacity < VOICE_CAPTURE_WINDOW_SAMPLES || live_upload == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
     *captured_samples = 0;
     *peak_energy = 0;
     bool speech_started = false;
+    size_t start_windows = 0;
     size_t silent_windows = 0;
     while (*captured_samples + VOICE_CAPTURE_WINDOW_SAMPLES <= capacity) {
         if (require_server_connection && !device_transport_is_server_connected()) {
@@ -491,10 +842,17 @@ static esp_err_t capture_user_speech(int16_t *samples,
         if (energy > *peak_energy) {
             *peak_energy = energy;
         }
-        if (press_to_talk || (!speech_started && energy >= settings->speech_start_threshold)) {
+        if (!speech_started && !press_to_talk) {
+            start_windows = energy >= settings->speech_start_threshold
+                                ? start_windows + 1
+                                : 0;
+        }
+        if (press_to_talk || start_windows >= VOICE_START_CONFIRM_WINDOWS) {
             speech_started = true;
+            start_live_capture_upload(live_upload, samples);
         }
         if (press_to_talk) {
+            publish_live_capture_upload(live_upload, *captured_samples, false);
             if (!press_to_talk_held()) {
                 break;
             }
@@ -504,13 +862,20 @@ static esp_err_t capture_user_speech(int16_t *samples,
             ++silent_windows;
         } else {
             silent_windows = 0;
+            if (speech_started) {
+                publish_live_capture_upload(live_upload, *captured_samples, false);
+            }
         }
         if (speech_started && *captured_samples >=
                                   VOICE_MIN_CAPTURE_WINDOWS * VOICE_CAPTURE_WINDOW_SAMPLES &&
             silent_windows >= VOICE_SILENCE_WINDOWS) {
-            *captured_samples -= (VOICE_SILENCE_WINDOWS - 1) * VOICE_CAPTURE_WINDOW_SAMPLES;
+            *captured_samples -= (silent_windows - 1) * VOICE_CAPTURE_WINDOW_SAMPLES;
+            publish_live_capture_upload(live_upload, *captured_samples, true);
             break;
         }
+    }
+    if (speech_started) {
+        publish_live_capture_upload(live_upload, *captured_samples, true);
     }
     return speech_started ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
@@ -550,6 +915,25 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
         report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_OUT_OF_MEMORY);
         return ESP_ERR_NO_MEM;
     }
+    streaming_turn_context_t *stream_context = heap_caps_calloc(
+        1, sizeof(*stream_context), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (stream_context == NULL) {
+        heap_caps_free(samples);
+        memset(&identity, 0, sizeof(identity));
+        report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_OUT_OF_MEMORY);
+        return ESP_ERR_NO_MEM;
+    }
+    stream_context->turn_id = turn_id;
+    stream_context->started_us = started_us;
+    stream_context->detect_end_phrase = detect_end_phrase;
+    live_capture_upload_t live_upload = {
+        .identity = &identity,
+        .turn_id = turn_id,
+        .started_us = started_us,
+        .stream_context = stream_context,
+        .state_lock = portMUX_INITIALIZER_UNLOCKED,
+        .error = ESP_OK,
+    };
     set_interaction_phase(TOUCH_INTERACTION_LISTENING);
     companion_hardware_set_state(COMPANION_FACE_LISTENING);
     report_turn_stage(
@@ -559,7 +943,8 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
     size_t captured_samples = 0;
     uint32_t peak_energy = 0;
     esp_err_t err = capture_user_speech(samples, capture_capacity, &captured_samples,
-                                        settings, &peak_energy, press_to_talk, follow_up);
+                                        settings, &peak_energy, press_to_talk, follow_up,
+                                        &live_upload);
     if (err != ESP_OK) {
         if (err == ESP_ERR_NOT_FOUND) {
             *failure_face = COMPANION_FACE_NO_SPEECH;
@@ -571,7 +956,9 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
         } else if (follow_up && err == ESP_ERR_INVALID_STATE) {
             *failure_face = COMPANION_FACE_OFFLINE;
         }
+        abort_live_capture_upload(&live_upload);
         heap_caps_free(samples);
+        heap_caps_free(stream_context);
         memset(&identity, 0, sizeof(identity));
         if (err == ESP_ERR_NOT_FINISHED || cancellation_requested()) {
             return ESP_ERR_NOT_FINISHED;
@@ -588,9 +975,12 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
         }
         return err;
     }
+    wait_live_capture_upload(&live_upload);
     if (follow_up && turn_elapsed_ms(conversation_started_us) >=
                          CONTINUOUS_CONVERSATION_MAX_DURATION_MS) {
+        abort_live_capture_upload(&live_upload);
         heap_caps_free(samples);
+        heap_caps_free(stream_context);
         memset(&identity, 0, sizeof(identity));
         return ESP_ERR_NOT_FOUND;
     }
@@ -598,104 +988,131 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
              (unsigned long)captured_samples, (unsigned long)peak_energy);
     report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_SPEECH_CAPTURED);
 
-    size_t wav_capacity = AUDIO_WAV_HEADER_SIZE + captured_samples * sizeof(int16_t);
-    uint8_t *wav = heap_caps_malloc(wav_capacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (wav == NULL) {
-        heap_caps_free(samples);
-        memset(&identity, 0, sizeof(identity));
-        report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_OUT_OF_MEMORY);
-        return ESP_ERR_NO_MEM;
-    }
-    size_t wav_size = 0;
-    err = audio_wav_build_pcm16_mono(wav, wav_capacity, samples, captured_samples,
-                                     VOICE_SAMPLE_RATE, &wav_size);
-    heap_caps_free(samples);
-    if (err != ESP_OK) {
-        heap_caps_free(wav);
-        memset(&identity, 0, sizeof(identity));
-        report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_INTERNAL_ERROR);
-        return err;
-    }
-
     if (cancellation_requested()) {
-        heap_caps_free(wav);
+        abort_live_capture_upload(&live_upload);
+        heap_caps_free(samples);
+        heap_caps_free(stream_context);
         memset(&identity, 0, sizeof(identity));
         return ESP_ERR_NOT_FINISHED;
     }
     set_interaction_phase(TOUCH_INTERACTION_PROCESSING);
     companion_hardware_set_state(COMPANION_FACE_PROCESSING);
-    report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_UPLOAD_STARTED);
     voice_service_buffer_t response_buffer = {0};
-    streaming_turn_context_t stream_context = {
-        .turn_id = turn_id,
-        .started_us = started_us,
-        .detect_end_phrase = detect_end_phrase,
-    };
     bool streamed = false;
-    err = voice_service_send_turn_streaming(
-        &identity, turn_id, wav, wav_size, handle_streaming_turn_frame,
-        &stream_context, &response_buffer, &streamed);
-    heap_caps_free(wav);
+    if (live_upload.upload != NULL && live_upload.error == ESP_OK) {
+        heap_caps_free(samples);
+        samples = NULL;
+        err = voice_service_live_upload_finish(
+            live_upload.upload, &response_buffer, &streamed);
+        live_upload.upload = NULL;
+    } else {
+        abort_live_capture_upload(&live_upload);
+        size_t wav_capacity = AUDIO_WAV_HEADER_SIZE + captured_samples * sizeof(int16_t);
+        uint8_t *wav = heap_caps_malloc(wav_capacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        size_t wav_size = 0;
+        if (wav == NULL) {
+            heap_caps_free(samples);
+            memset(&identity, 0, sizeof(identity));
+            heap_caps_free(stream_context);
+            report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_OUT_OF_MEMORY);
+            return ESP_ERR_NO_MEM;
+        }
+        err = audio_wav_build_pcm16_mono(wav, wav_capacity, samples, captured_samples,
+                                         VOICE_SAMPLE_RATE, &wav_size);
+        heap_caps_free(samples);
+        samples = NULL;
+        if (err == ESP_OK && !live_upload.upload_stage_reported) {
+            report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_UPLOAD_STARTED);
+        }
+        if (err == ESP_OK) {
+            err = voice_service_send_turn_streaming(
+                &identity, turn_id, wav, wav_size, handle_streaming_turn_frame,
+                stream_context, &response_buffer, &streamed);
+        }
+        heap_caps_free(wav);
+    }
     memset(&identity, 0, sizeof(identity));
+    finish_streaming_playback(
+        stream_context,
+        err != ESP_OK || stream_context->error != VOICE_STREAM_ERROR_NONE ||
+            !stream_context->completed || cancellation_requested());
     if (cancellation_requested()) {
         voice_service_release(&response_buffer);
+        heap_caps_free(stream_context);
         return ESP_ERR_NOT_FINISHED;
     }
     if (streamed) {
         voice_service_release(&response_buffer);
-        if (stream_context.playback_cancelled) return ESP_ERR_NOT_FINISHED;
-        if (stream_context.playback_error != ESP_OK) {
+        if (stream_context->playback_cancelled) {
+            heap_caps_free(stream_context);
+            return ESP_ERR_NOT_FINISHED;
+        }
+        if (stream_context->playback_error != ESP_OK) {
             report_turn_failure(
                 turn_id,
                 started_us,
-                stream_context.playback_error == ESP_ERR_INVALID_STATE
+                stream_context->playback_error == ESP_ERR_INVALID_STATE
                     ? DEVICE_VOICE_FAILURE_MICROPHONE_RECOVERY_FAILED
                     : DEVICE_VOICE_FAILURE_PLAYBACK_FAILED);
-            return stream_context.playback_error;
+            esp_err_t playback_error = stream_context->playback_error;
+            heap_caps_free(stream_context);
+            return playback_error;
         }
         if (err != ESP_OK) {
             report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_INVALID_RESPONSE);
+            heap_caps_free(stream_context);
             return err;
         }
-        if (stream_context.error != VOICE_STREAM_ERROR_NONE) {
-            if (stream_context.error == VOICE_STREAM_ERROR_CANCELLED) return ESP_ERR_NOT_FINISHED;
-            if (stream_context.error == VOICE_STREAM_ERROR_NO_SPEECH) {
+        if (stream_context->error != VOICE_STREAM_ERROR_NONE) {
+            if (stream_context->error == VOICE_STREAM_ERROR_CANCELLED) {
+                heap_caps_free(stream_context);
+                return ESP_ERR_NOT_FINISHED;
+            }
+            if (stream_context->error == VOICE_STREAM_ERROR_NO_SPEECH) {
                 *failure_face = COMPANION_FACE_NO_SPEECH;
                 report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_NO_SPEECH);
+                heap_caps_free(stream_context);
                 return ESP_ERR_NOT_FOUND;
             }
             report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_UPLOAD_FAILED);
+            heap_caps_free(stream_context);
             return ESP_FAIL;
         }
-        if (!stream_context.started || !stream_context.completed ||
-            stream_context.expected_sequence == 0) {
+        if (!stream_context->started || !stream_context->completed ||
+            stream_context->expected_sequence == 0) {
             report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_INVALID_RESPONSE);
+            heap_caps_free(stream_context);
             return ESP_ERR_INVALID_RESPONSE;
         }
-        *explicit_end = stream_context.explicit_end;
-        if (stream_context.playback_started) {
+        *explicit_end = stream_context->explicit_end;
+        if (stream_context->playback_started) {
             report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_PLAYBACK_COMPLETED);
         }
+        heap_caps_free(stream_context);
         return ESP_OK;
     }
     if (err != ESP_OK) {
         report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_UPLOAD_FAILED);
+        heap_caps_free(stream_context);
         return err;
     }
 
-    voice_turn_response_t response = {0};
-    if (!voice_protocol_parse_turn_response(response_buffer.data, response_buffer.size, &response)) {
+    voice_turn_response_t *response = &stream_context->response;
+    if (!voice_protocol_parse_turn_response(response_buffer.data, response_buffer.size, response)) {
         voice_service_release(&response_buffer);
         report_turn_failure(turn_id, started_us, DEVICE_VOICE_FAILURE_INVALID_RESPONSE);
+        heap_caps_free(stream_context);
         return ESP_ERR_INVALID_RESPONSE;
     }
-    if (detect_end_phrase && continuous_conversation_transcript_requests_end(response.transcript)) {
+    if (detect_end_phrase && continuous_conversation_transcript_requests_end(response->transcript)) {
         *explicit_end = true;
         voice_service_release(&response_buffer);
+        heap_caps_free(stream_context);
         return ESP_OK;
     }
     if (cancellation_requested()) {
         voice_service_release(&response_buffer);
+        heap_caps_free(stream_context);
         return ESP_ERR_NOT_FINISHED;
     }
     set_interaction_phase(TOUCH_INTERACTION_PLAYING);
@@ -703,8 +1120,9 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
     report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_PLAYBACK_STARTED);
     bool playback_cancelled = false;
     err = companion_hardware_play_wav_interruptible(
-        response.wav, response.wav_size, &playback_cancelled);
+        response->wav, response->wav_size, &playback_cancelled);
     voice_service_release(&response_buffer);
+    heap_caps_free(stream_context);
     if (playback_cancelled || cancellation_requested()) {
         return ESP_ERR_NOT_FINISHED;
     }

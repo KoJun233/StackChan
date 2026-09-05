@@ -10,20 +10,10 @@ const companionRoute: RouteRecordRaw = {
   component: Layout,
   name: 'companion',
   meta: {
-    title: 'AI 陪伴',
+    title: '角色与内容',
     icon: 'i-ri:heart-3-line',
   },
   children: [
-    {
-      path: 'chat',
-      name: 'companionChat',
-      component: () => import('@/views/companion/chat/index.vue'),
-      meta: {
-        title: '陪伴聊天',
-        icon: 'i-ri:chat-smile-3-line',
-        keepAlive: true,
-      },
-    },
     {
       path: 'persona',
       name: 'companionPersona',
@@ -66,7 +56,7 @@ const companionRoute: RouteRecordRaw = {
       name: 'companionExpressionPacks',
       component: () => import('@/views/companion/expressions/index.vue'),
       meta: {
-        title: '宠物表情包',
+        title: '表情与形象',
         icon: 'i-ri:emotion-happy-line',
       },
     },
@@ -84,7 +74,7 @@ const companionRoute: RouteRecordRaw = {
 
 const routes: RouteRecordMainRaw = {
   meta: {
-    title: 'AI 陪伴',
+    title: '陪伴',
     icon: 'i-ri:heart-3-line',
   },
   children: [companionRoute],

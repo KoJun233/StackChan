@@ -139,12 +139,28 @@ public class VoiceTurnService {
         handle(deviceId, turnId, wavAudio, segmentSink);
     }
 
+    public void handleLiveStreaming(
+            UUID deviceId,
+            UUID turnId,
+            byte[] streamingWavAudio,
+            VoiceTurnSegmentSink segmentSink
+    ) {
+        if (segmentSink == null) throw new IllegalArgumentException("Voice turn segment sink is required");
+        handle(
+                deviceId,
+                turnId,
+                WavPcmAudio.normalizeUploadedMono16KhzWav(streamingWavAudio),
+                segmentSink
+        );
+    }
+
     private VoiceTurnResult handle(
             UUID deviceId,
             UUID turnId,
             byte[] wavAudio,
             VoiceTurnSegmentSink segmentSink
     ) {
+        long requestStartedNanos = System.nanoTime();
         try (VoiceTurnCancellationService.CancellationHandle cancellation =
                      cancellationService.register(deviceId, turnId)) {
             cancellation.throwIfCancelled();
@@ -156,12 +172,19 @@ public class VoiceTurnService {
             boolean extractMemorySuggestion = false;
             boolean generationCompleted = false;
             try {
+                long asrStartedNanos = System.nanoTime();
                 String transcript = speechRuntimeClient.transcribe(wavAudio).trim();
                 cancellation.throwIfCancelled();
                 if (transcript.isBlank()) {
                     throw new VoiceInputException("没有识别到清晰语音");
                 }
                 recordStage(deviceId, turnId, VoiceTurnStage.ASR_COMPLETED, null);
+                logger.info(
+                        "Voice turn timing: turn_id={} stage=ASR_COMPLETED stage_ms={} request_ms={}",
+                        turnId,
+                        elapsedMillis(asrStartedNanos),
+                        elapsedMillis(requestStartedNanos)
+                );
                 lastCompletedStage = VoiceTurnStage.ASR_COMPLETED;
                 if (segmentSink != null) {
                     segmentSink.start(transcript);
@@ -195,9 +218,20 @@ public class VoiceTurnService {
                         : voiceActionCoordinator.handle(deviceId, conversationId, turnId, transcript);
                 if (actionResult != null && actionResult.handled()) {
                     reply = actionResult.reply();
+                    logger.info(
+                            "Voice turn timing: turn_id={} stage=ACTION_COMPLETED request_ms={}",
+                            turnId,
+                            elapsedMillis(requestStartedNanos)
+                    );
                 } else {
                     usedMemoryIds = promptAssembly.memoryIds();
                     extractMemorySuggestion = true;
+                    long agentStartedNanos = System.nanoTime();
+                    logger.info(
+                            "Voice turn timing: turn_id={} stage=AGENT_STARTED request_ms={}",
+                            turnId,
+                            elapsedMillis(requestStartedNanos)
+                    );
                     reply = agentOrchestrator.stream(new AgentOrchestrator.AgentRequest(
                                     new AgentInvocationContext(
                                             turnId,
@@ -216,6 +250,12 @@ public class VoiceTurnService {
                             .timeout(VOICE_LLM_TIMEOUT)
                             .onErrorMap(TimeoutException.class, ignored -> new LlmProviderUnavailableException())
                             .block();
+                    logger.info(
+                            "Voice turn timing: turn_id={} stage=AGENT_COMPLETED stage_ms={} request_ms={}",
+                            turnId,
+                            elapsedMillis(agentStartedNanos),
+                            elapsedMillis(requestStartedNanos)
+                    );
                 }
                 cancellation.throwIfCancelled();
                 if (reply == null || reply.isBlank()) {
@@ -232,19 +272,44 @@ public class VoiceTurnService {
                 recordStage(deviceId, turnId, VoiceTurnStage.LLM_COMPLETED, null);
                 lastCompletedStage = VoiceTurnStage.LLM_COMPLETED;
                 cancellation.throwIfCancelled();
+                long ttsStartedNanos = System.nanoTime();
                 byte[] audio = null;
                 int segmentCount = 0;
                 if (segmentSink == null) {
+                    long segmentStartedNanos = System.nanoTime();
                     audio = speechRuntimeClient.synthesize(reply, roleId);
                     cancellation.throwIfCancelled();
+                    logger.info(
+                            "Voice turn timing: turn_id={} stage=TTS_AUDIO_READY sequence=0 characters={} "
+                                    + "bytes={} stage_ms={} request_ms={}",
+                            turnId,
+                            reply.codePointCount(0, reply.length()),
+                            audio.length,
+                            elapsedMillis(segmentStartedNanos),
+                            elapsedMillis(requestStartedNanos)
+                    );
                 } else {
                     List<String> segments = replySegmenter.segment(reply);
                     if (segments.isEmpty()) throw new LlmProviderUnavailableException();
                     for (int index = 0; index < segments.size(); index++) {
                         cancellation.throwIfCancelled();
-                        byte[] segmentAudio = speechRuntimeClient.synthesize(segments.get(index), roleId);
+                        String segment = segments.get(index);
+                        long segmentStartedNanos = System.nanoTime();
+                        byte[] segmentAudio = speechRuntimeClient.synthesize(segment, roleId);
                         cancellation.throwIfCancelled();
+                        long frameStartedNanos = System.nanoTime();
                         segmentSink.audio(index, segmentAudio);
+                        logger.info(
+                                "Voice turn timing: turn_id={} stage=TTS_SEGMENT_FLUSHED sequence={} "
+                                        + "characters={} bytes={} synth_ms={} flush_ms={} request_ms={}",
+                                turnId,
+                                index,
+                                segment.codePointCount(0, segment.length()),
+                                segmentAudio.length,
+                                elapsedMillis(segmentStartedNanos),
+                                elapsedMillis(frameStartedNanos),
+                                elapsedMillis(requestStartedNanos)
+                        );
                         segmentCount++;
                         cancellation.throwIfCancelled();
                     }
@@ -260,6 +325,13 @@ public class VoiceTurnService {
                 }
                 if (segmentSink != null) segmentSink.complete(segmentCount);
                 recordStage(deviceId, turnId, VoiceTurnStage.TTS_COMPLETED, null);
+                logger.info(
+                        "Voice turn timing: turn_id={} stage=TTS_COMPLETED segments={} stage_ms={} request_ms={}",
+                        turnId,
+                        segmentSink == null ? 1 : segmentCount,
+                        elapsedMillis(ttsStartedNanos),
+                        elapsedMillis(requestStartedNanos)
+                );
                 return new VoiceTurnResult(transcript, reply, audio);
             } catch (VoiceTurnCancelledException | VoiceTurnClientDisconnectedException exception) {
                 if (start != null && !generationCompleted) {
@@ -284,6 +356,10 @@ public class VoiceTurnService {
                 throw exception;
             }
         }
+    }
+
+    private long elapsedMillis(long startedNanos) {
+        return Duration.ofNanos(System.nanoTime() - startedNanos).toMillis();
     }
 
     private VoiceTurnFailureCode failureCode(RuntimeException exception, VoiceTurnStage lastCompletedStage) {

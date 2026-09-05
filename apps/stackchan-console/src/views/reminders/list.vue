@@ -4,8 +4,8 @@ import type { Device } from '@/api/modules/devices'
 import type { Reminder, ReminderStatus } from '@/api/modules/reminders'
 import { listDevices } from '@/api/modules/devices'
 import { deleteReminder, listReminders, skipNextReminder, snoozeReminder } from '@/api/modules/reminders'
-import eventBus from '@/utils/eventBus'
 import { listRoles } from '@/api/modules/roles'
+import eventBus from '@/utils/eventBus'
 
 defineOptions({ name: 'ReminderList' })
 
@@ -149,7 +149,9 @@ async function loadDevices() {
   }
 }
 
-async function loadRoles() { roles.value = await listRoles() }
+async function loadRoles() {
+  roles.value = await listRoles()
+}
 
 function sizeChange(size: number) {
   onSizeChange(size).then(() => getDataList())
@@ -204,7 +206,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div :class="{ 'absolute flex flex-col size-full': tableAutoHeight }">
-    <FaPageHeader title="提醒管理" class="mb-0" />
+    <FaPageHeader title="提醒管理" description="创建和跟踪可靠提醒；离线或免打扰时按已配置策略延后处理。" class="mb-0" />
     <FaPageMain :class="{ 'flex-1 overflow-auto': tableAutoHeight }" :main-class="{ 'flex-1 flex flex-col overflow-auto': tableAutoHeight }">
       <FaSearchBar :show-toggle="false">
         <template #default="{ fold, toggle }">
@@ -280,7 +282,9 @@ onBeforeUnmount(() => {
         <template #cell-device="{ row }">
           {{ deviceNames.get(row.original.deviceId) || row.original.deviceId }}
         </template>
-        <template #cell-role="{ row }">{{ roleNames.get(row.original.roleId) || row.original.roleId }}</template>
+        <template #cell-role="{ row }">
+          {{ roleNames.get(row.original.roleId) || row.original.roleId }}
+        </template>
         <template #cell-scheduledAt="{ row }">
           <div>{{ formatTime(row.original.scheduledAt) }}</div>
           <div class="text-xs text-muted-foreground">
@@ -308,15 +312,17 @@ onBeforeUnmount(() => {
             <FaButton variant="outline" size="icon-sm" @click="onEdit(row.original)">
               <FaIcon name="i-ri:edit-line" />
             </FaButton>
-            <FaDropdown :items="[
-              row.original.status === 'PENDING'
-                ? [
+            <FaDropdown
+              :items="[
+                row.original.status === 'PENDING'
+                  ? [
                     { label: '10 分钟后提醒', handle: () => snooze(row.original) },
                     { label: row.original.recurrenceType === 'NONE' ? '跳过提醒' : '跳过下一次', handle: () => skipNext(row.original) },
                   ]
-                : [],
-              [{ label: '删除', variant: 'destructive', handle: () => confirmDelete([row.original]) }],
-            ]">
+                  : [],
+                [{ label: '删除', variant: 'destructive', handle: () => confirmDelete([row.original]) }],
+              ]"
+            >
               <FaButton variant="outline" size="icon-sm">
                 <FaIcon name="i-ri:more-line" />
               </FaButton>

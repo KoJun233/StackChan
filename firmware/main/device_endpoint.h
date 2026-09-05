@@ -12,6 +12,7 @@
 #define DEVICE_ENDPOINT_TOKEN_REFRESH_PATH "/api/v1/devices/token:refresh"
 #define DEVICE_ENDPOINT_WEBSOCKET_PATH "/api/v1/ws/device"
 #define DEVICE_ENDPOINT_VOICE_TURN_PATH "/api/v1/device/voice/turn"
+#define DEVICE_ENDPOINT_LIVE_VOICE_TURN_PATH "/api/v1/device/voice/turn/live"
 
 bool device_endpoint_build_http_url(const char *server_base_url,
                                     const char *path,

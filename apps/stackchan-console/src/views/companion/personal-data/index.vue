@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import type { TableColumn } from '@fantastic-admin/components'
-import type { Device } from '@/api/modules/devices'
 import type { ConversationMessage } from '@/api/modules/companion'
+import type { Device } from '@/api/modules/devices'
 import type { BackupStatus, PersonalDataConversation } from '@/api/modules/personalData'
 import { listDevices } from '@/api/modules/devices'
-import { listRoles } from '@/api/modules/roles'
 import {
   deletePersonalDataConversation,
   deletePersonalDataMessage,
@@ -13,6 +12,7 @@ import {
   getPersonalDataMessages,
   listPersonalDataConversations,
 } from '@/api/modules/personalData'
+import { listRoles } from '@/api/modules/roles'
 
 defineOptions({ name: 'CompanionPersonalData' })
 
@@ -55,9 +55,15 @@ function formatTime(value: string | null) {
 }
 
 function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MiB`
+  if (bytes < 1024) {
+    return `${bytes} B`
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KiB`
+  }
+  if (bytes < 1024 * 1024 * 1024) {
+    return `${(bytes / 1024 / 1024).toFixed(1)} MiB`
+  }
   return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GiB`
 }
 
@@ -178,7 +184,9 @@ function confirmDeleteConversation(conversation: PersonalDataConversation) {
 
 function confirmDeleteMessage(message: ConversationMessage) {
   const conversation = selectedConversation.value
-  if (!conversation) return
+  if (!conversation) {
+    return
+  }
   useFaModal().confirm({
     title: '删除单条消息',
     content: '确认永久删除这条消息吗？它将立即从搜索、导出和后续聊天上下文中消失，其他消息会保留。',
@@ -207,7 +215,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <FaPageMain title="对话与个人数据" description="查找、导出或永久删除保存在 StackChan 中的对话正文。">
+  <AppPageShell title="对话与个人数据" description="查找、导出或永久删除保存在 StackChan 中的对话正文。">
     <FaAlert
       title="删除会立即影响后续对话"
       description="删除后的正文不会再进入聊天上下文、搜索或导出。历史备份在保留期内仍可能包含删除前的数据；网页不提供恢复操作。"
@@ -216,28 +224,44 @@ onMounted(() => {
 
     <FaCard title="备份与恢复状态" class="mb-4">
       <template #action>
-        <FaButton variant="outline" size="sm" @click="loadStatus">刷新状态</FaButton>
+        <FaButton variant="outline" size="sm" @click="loadStatus">
+          刷新状态
+        </FaButton>
       </template>
       <FaEmpty v-if="!backupStatus?.available" description="尚无成功备份或状态暂不可用" />
       <div v-else class="gap-4 grid md:grid-cols-2 xl:grid-cols-4">
-        <div class="rounded-lg border p-4">
-          <div class="text-sm text-muted-foreground">最近成功备份</div>
-          <div class="mt-1 font-medium">{{ formatTime(backupStatus.lastSuccessfulBackupAt) }}</div>
+        <div class="p-4 border rounded-lg">
+          <div class="text-sm text-muted-foreground">
+            最近成功备份
+          </div>
+          <div class="font-medium mt-1">
+            {{ formatTime(backupStatus.lastSuccessfulBackupAt) }}
+          </div>
         </div>
-        <div class="rounded-lg border p-4">
-          <div class="text-sm text-muted-foreground">最近恢复验证</div>
-          <div class="mt-1 font-medium">
+        <div class="p-4 border rounded-lg">
+          <div class="text-sm text-muted-foreground">
+            最近恢复验证
+          </div>
+          <div class="font-medium mt-1">
             {{ formatTime(backupStatus.lastRestoreVerificationAt) }} ·
             {{ backupStatus.lastRestoreVerificationSuccessful ? '通过' : '失败' }}
           </div>
         </div>
-        <div class="rounded-lg border p-4">
-          <div class="text-sm text-muted-foreground">保留数量</div>
-          <div class="mt-1 font-medium">日备份 {{ backupStatus.dailyBackupCount }}/{{ backupStatus.dailyRetention }} · 周备份 {{ backupStatus.weeklyBackupCount }}/{{ backupStatus.weeklyRetention }}</div>
+        <div class="p-4 border rounded-lg">
+          <div class="text-sm text-muted-foreground">
+            保留数量
+          </div>
+          <div class="font-medium mt-1">
+            日备份 {{ backupStatus.dailyBackupCount }}/{{ backupStatus.dailyRetention }} · 周备份 {{ backupStatus.weeklyBackupCount }}/{{ backupStatus.weeklyRetention }}
+          </div>
         </div>
-        <div class="rounded-lg border p-4">
-          <div class="text-sm text-muted-foreground">备份存储占用</div>
-          <div class="mt-1 font-medium">{{ formatBytes(backupStatus.storageBytes) }}</div>
+        <div class="p-4 border rounded-lg">
+          <div class="text-sm text-muted-foreground">
+            备份存储占用
+          </div>
+          <div class="font-medium mt-1">
+            {{ formatBytes(backupStatus.storageBytes) }}
+          </div>
         </div>
       </div>
       <FaAlert
@@ -258,17 +282,25 @@ onMounted(() => {
           <FaLabel label="设备来源">
             <FaSelect v-model="search.deviceId" :options="deviceOptions" class="w-full" />
           </FaLabel>
-          <FaLabel label="角色"><FaSelect v-model="search.roleId" :options="roleOptions" class="w-full" /></FaLabel>
+          <FaLabel label="角色">
+            <FaSelect v-model="search.roleId" :options="roleOptions" class="w-full" />
+          </FaLabel>
           <FaLabel label="更新时间起点">
             <FaInput v-model="search.fromTime" type="datetime-local" />
           </FaLabel>
           <FaLabel label="更新时间终点">
             <FaInput v-model="search.toTime" type="datetime-local" />
           </FaLabel>
-          <div class="flex gap-2 col-end--1 justify-end items-end">
-            <FaButton variant="outline" @click="resetSearch">重置</FaButton>
-            <FaButton @click="changePage()"><FaIcon name="i-ri:search-line" />筛选</FaButton>
-            <FaButton variant="secondary" :loading="exporting" @click="downloadExport()"><FaIcon name="i-ri:download-line" />导出当前范围</FaButton>
+          <div class="flex gap-2 col-end--1 items-end justify-end">
+            <FaButton variant="outline" @click="resetSearch">
+              重置
+            </FaButton>
+            <FaButton @click="changePage()">
+              <FaIcon name="i-ri:search-line" />筛选
+            </FaButton>
+            <FaButton variant="secondary" :loading="exporting" @click="downloadExport()">
+              <FaIcon name="i-ri:download-line" />导出当前范围
+            </FaButton>
           </div>
         </div>
       </template>
@@ -278,20 +310,34 @@ onMounted(() => {
       <FaTable v-loading="loading" :columns="conversationColumns" :data="conversations" row-key="id" stripe border>
         <template #cell-title="{ row }">
           <div class="max-w-100">
-            <div class="font-medium truncate">{{ row.original.title }}</div>
-            <div class="text-xs text-muted-foreground">{{ row.original.id }}</div>
+            <div class="font-medium truncate">
+              {{ row.original.title }}
+            </div>
+            <div class="text-xs text-muted-foreground">
+              {{ row.original.id }}
+            </div>
           </div>
         </template>
-        <template #cell-device="{ row }">{{ row.original.deviceName || '网页聊天' }}</template>
-        <template #cell-updatedAt="{ row }">{{ formatTime(row.original.updatedAt) }}</template>
+        <template #cell-device="{ row }">
+          {{ row.original.deviceName || '网页聊天' }}
+        </template>
+        <template #cell-updatedAt="{ row }">
+          {{ formatTime(row.original.updatedAt) }}
+        </template>
         <template #cell-operation="{ row }">
           <div class="flex-center gap-2">
-            <FaButton size="sm" variant="outline" @click="loadMessages(row.original)">查看</FaButton>
-            <FaDropdown :items="[[
-              { label: '导出此对话', handle: () => downloadExport(row.original.id) },
-              { label: '删除整段对话', variant: 'destructive', handle: () => confirmDeleteConversation(row.original) },
-            ]]">
-              <FaButton size="icon-sm" variant="outline"><FaIcon name="i-ri:more-line" /></FaButton>
+            <FaButton size="sm" variant="outline" @click="loadMessages(row.original)">
+              查看
+            </FaButton>
+            <FaDropdown
+              :items="[[
+                { label: '导出此对话', handle: () => downloadExport(row.original.id) },
+                { label: '删除整段对话', variant: 'destructive', handle: () => confirmDeleteConversation(row.original) },
+              ]]"
+            >
+              <FaButton size="icon-sm" variant="outline">
+                <FaIcon name="i-ri:more-line" />
+              </FaButton>
             </FaDropdown>
           </div>
         </template>
@@ -308,15 +354,23 @@ onMounted(() => {
 
     <FaCard v-if="selectedConversation" :title="`消息：${selectedConversation.title}`" class="mt-4">
       <FaTable v-loading="messagesLoading" :columns="messageColumns" :data="messages" row-key="id" stripe border>
-        <template #cell-role="{ row }">{{ row.original.role === 'USER' ? '用户' : row.original.role === 'ASSISTANT' ? '机器人' : '系统' }}</template>
-        <template #cell-content="{ row }">
-          <div class="max-w-180 whitespace-pre-wrap break-words">{{ row.original.content || '（空消息）' }}</div>
+        <template #cell-role="{ row }">
+          {{ row.original.role === 'USER' ? '用户' : row.original.role === 'ASSISTANT' ? '机器人' : '系统' }}
         </template>
-        <template #cell-createdAt="{ row }">{{ formatTime(row.original.createdAt) }}</template>
+        <template #cell-content="{ row }">
+          <div class="max-w-180 whitespace-pre-wrap break-words">
+            {{ row.original.content || '（空消息）' }}
+          </div>
+        </template>
+        <template #cell-createdAt="{ row }">
+          {{ formatTime(row.original.createdAt) }}
+        </template>
         <template #cell-operation="{ row }">
-          <FaButton size="sm" variant="destructive" :disabled="row.original.generationStatus === 'STREAMING'" @click="confirmDeleteMessage(row.original)">删除</FaButton>
+          <FaButton size="sm" variant="destructive" :disabled="row.original.generationStatus === 'STREAMING'" @click="confirmDeleteMessage(row.original)">
+            删除
+          </FaButton>
         </template>
       </FaTable>
     </FaCard>
-  </FaPageMain>
+  </AppPageShell>
 </template>

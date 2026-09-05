@@ -1,15 +1,33 @@
 # 前端工作流
 
-- 状态：STABLE
-- 最后更新：2026-08-30
-- 当前分支：`codex/work-002-pilot-active`
-- 基准提交：`f0bce2d`
-- 最后验证提交：`f0bce2d`
-- 最后验证范围：WORK-004 默认角色校验修复；完整 Vitest 30 文件 98/98、类型检查、production build、ESLint 和 Stylelint
+- 状态：READY_FOR_REVIEW
+- 最后更新：2026-09-03
+- 当前分支：`codex/console-information-architecture`
+- 基准提交：`227b369`
+- 最后验证提交：`d7dc00d`
+- 最后验证范围：二级菜单与聊天滚动复修；控制台 Vitest 32 文件 102/102、类型检查、production build、定向 ESLint/Stylelint 与 LAN 静态资源验证通过
 
 ## 当前目标
 
-WORK-004“个人待办”默认角色新增已由用户确认通过；继续验证编辑、筛选、完成、重新打开、删除和未来截止提醒关联。十四天观察卡片继续按冻结规则运行，人工验收不重新开始观察。
+后台信息架构与六项页面反馈已完成并发布；针对用户复核发现的菜单仍平铺、聊天输入区黑块和窄屏消息区无法滚动，已完成结构性修正。Fantastic-admin 保持单侧栏，但“今日陪伴”和“事务管理”现在是实际可展开的中间菜单节点；TDesign 仅负责聊天消息展示，输入区回归 Fantastic-admin 组件，窄屏工作区使用受约束高度并由消息列表独立滚动。十四天观察窗口保持原边界，未重新开始观察。
+
+## 已完成的六项后台反馈
+
+- 菜单改为单侧栏二级结构；“今日陪伴”包含今日概览、陪伴聊天、工作陪伴和主动关心，“事务管理”包含提醒、个人待办和外部通知，其他角色、设备与能力分组保持可展开。
+- 1024px 宽度下聊天使用 220px 会话栏与弹性消息区；TDesign 只渲染消息、Markdown 和复制动作，输入区改用 `FaTextarea`/`FaButton`，并把错误的 HSL 主题映射修正为项目实际使用的 OKLCH，消除黑块和表单 CSS 冲突。
+- 小于 1024px 的上下布局为聊天工作区设置 `clamp(520px, 70dvh, 680px)` 高度；TDesign 根节点只占剩余空间，`.t-chat__list` 独立启用纵向、触摸和受控惯性滚动，输入区始终位于消息区下方。
+- 天气缓存增加天气、状态、温度、体感和降水图标；iCloud 区增加未来七天只读日程列表、时间、忙碌状态和地点。
+- 角色页解释归档语义并展示最早删除日期；归档满七天的非默认角色可在二次确认后手动永久删除。
+- 控制台完整 Vitest 32 文件 102/102、类型检查、production build 和定向 ESLint/Stylelint 通过；新增菜单 Store 用例直接验证真实侧栏输出，不再只验证路由数组归属。
+
+## 已完成的后台信息架构与 UI 重整
+
+- 一级导航按“今日 / 陪伴 / 事务与通知 / 设备与运行 / 系统与能力”重新归类，保留既有业务 URL，并把 `/dashboard` 设为新的“今日概览”首页。
+- 新增统一 `AppPageShell` 和 `AppMetricCard`，补齐设备、提醒、待办、记忆、角色、个人数据、AI 与语音配置的页面说明；今日概览聚合在线设备、开放待办、待投递提醒、风险和工作陪伴状态。
+- 原“交互与主动陪伴”按入口拆成“主动关心”和“工作陪伴”；前者只显示设备交互/打扰策略，后者按当前概览、工作规则、日历天气和十四天观察分区。
+- 外部通知、Agent 能力、语音配置和健康中心使用任务导向标签页，减少低频高级设置挤占首屏；通知回执复选改用框架 `FaCheckboxGroup`。
+- 陪伴聊天改用 TDesign Chat 的列表、Markdown 内容、复制和发送器展示组件；现有 Pinia store 继续负责 SSE、取消、重试与会话持久化。依赖只在聊天路由懒加载，并由局部主题变量与 Fantastic-admin 明暗主题对齐。
+- 新增 [ADR 0047](../decisions/0047-isolated-tdesign-chat-ui.md) 固化 TDesign Chat 的隔离边界；未引入附件、好评/差评、推理过程、分享或 TDesign Chatbot 传输层。
 
 ## 已完成的 WORK-004
 
@@ -108,16 +126,19 @@ WORK-004“个人待办”默认角色新增已由用户确认通过；继续验
 
 ## 下一步操作
 
-默认角色“小峰”新增已通过；继续验证编辑、筛选、完成、重新打开、删除和未来截止提醒关联。十四天观察页面继续按冻结窗口运行。
+由用户强制刷新本地页面，复核“今日陪伴/事务管理”展开结构与聊天输入区；如需外部推送，只推送当前任务分支并由用户自行创建 PR。十四天观察继续按冻结窗口运行。
 
 ## 阻塞项
 
-- 自动化实现无阻塞；WORK-004 等待管理员页面与机器人语音人工验收。固件操作仍需用户单独批准。
+- 自动化实现无阻塞；用户补充权限后再次连接应用内浏览器，仍因插件缓存引用不存在的宿主版本而无法执行视觉冒烟。production build、菜单 Store 测试与 LAN 静态资源检查已通过；WORK-004 其余机器人语音人工验收和固件操作边界不变。
 
 ## 关键文件
 
 - `apps/stackchan-console/src/api/modules/`
+- `apps/stackchan-console/src/components/AppPageShell/`
+- `apps/stackchan-console/src/components/AppMetricCard/`
 - `apps/stackchan-console/src/router/modules/`
+- `apps/stackchan-console/src/views/dashboard/`
 - `apps/stackchan-console/src/views/settings/agent/`
 - `apps/stackchan-console/src/views/reminders/`
 - `apps/stackchan-console/src/views/personal_tasks/`
@@ -128,6 +149,11 @@ WORK-004“个人待办”默认角色新增已由用户确认通过；继续验
 
 ## 验证命令与最近结果
 
+- 2026-09-03 聊天滚动复修：控制台 Vitest 32 文件 102/102、`vue-tsc -b`、production build、定向 ESLint/Stylelint 通过；LAN 聊天 CSS/JS 为 200，运行 CSS 同时包含固定工作区高度、`overflow-y:auto`、`overscroll-behavior:contain` 和 `touch-action:pan-y`，本机/LAN 首页及健康均为 200。
+
+- 2026-09-03 二级菜单与聊天输入区复修：控制台 Vitest 32 文件 102/102、`vue-tsc -b`、production build、定向 ESLint/Stylelint 通过；菜单 Store 用例确认“今日陪伴/事务管理”是真实一级分组，主动关心是“今日陪伴”二级项。LAN 运行资源包含新分组、Enter 发送、停止生成和 OKLCH 主题映射，本机/LAN 首页及健康均为 200。
+
+- 2026-09-01 后台信息架构与 UI 重整：控制台 Vitest 30 文件 99/99 通过；`vue-tsc -b && vite build` production build 通过；本任务文件定向 ESLint 与聊天页 Stylelint 通过；`git diff --check` 和 `pnpm docs:check` 通过。测试保留既有 3000 端口拒绝连接和 Vite 关闭超时提示，但 Vitest 成功退出。TDesign Chat 为独立懒加载资源，构建提示该聊天 chunk 超过 500 kB，已由 ADR 0047 限制到单一路由。
 - 2026-08-30 WORK-004 默认角色修复：确认默认角色 `00000000-0000-0000-0000-000000000001` 被严格 RFC UUID 版本位误拒绝；共享校验改为与 PostgreSQL UUID 文本边界一致。专项 7/7、完整 Vitest 30 文件 98/98、`vue-tsc -b`、production build、ESLint 和 Stylelint 通过；修复页面已发布，本机/LAN 首页为 200，未认证待办接口为 401。
 - 2026-08-30 用户刷新已发布页面后确认默认角色新增正常，不再出现“请选择角色”，该回归点人工验收通过。
 
@@ -170,6 +196,7 @@ WORK-004“个人待办”默认角色新增已由用户确认通过；继续验
 - [工作日桌面陪伴 V1 开发设计](../workday-companion-v1.md)
 - [0041：私用优先的确定性工作日陪伴闭环](../decisions/0041-private-first-deterministic-workday-companion.md)
 - [0001：Fantastic-admin 前端](../decisions/0001-fantastic-admin-frontend.md)
+- [0047：TDesign Chat 隔离展示层](../decisions/0047-isolated-tdesign-chat-ui.md)
 - [0020：确认且有范围的长期记忆](../decisions/0020-confirmed-scoped-long-term-memory.md)
 - [0025：页面管理 MCP 连接](../decisions/0025-managed-mcp-connections.md)
 - [0026：个人数据生命周期](../decisions/0026-personal-data-lifecycle-and-isolated-backups.md)

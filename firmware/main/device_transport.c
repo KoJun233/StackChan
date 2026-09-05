@@ -33,11 +33,15 @@
 #include "voice_control.h"
 #include "wake_model_ota.h"
 
+#ifndef CONFIG_ESP_WS_CLIENT_ENABLE_DYNAMIC_BUFFER
+#error "WebSocket dynamic buffers are required to preserve contiguous internal SRAM for its task stack"
+#endif
+
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_MONITOR_READY_BIT BIT1
 #define TRANSPORT_TASK_STACK_SIZE 32768
 #define TRANSPORT_TASK_PRIORITY 5
-#define WEBSOCKET_TASK_STACK_SIZE 8192
+#define WEBSOCKET_TASK_STACK_SIZE 7168
 #define WEBSOCKET_NETWORK_TIMEOUT_MS 10000
 #define TRANSPORT_IDLE_POLL_MS 100
 /* Five seconds of headroom covers the 100 ms poll plus bounded send work before the v1 30 s deadline. */
@@ -87,6 +91,7 @@ typedef struct {
     uint32_t next_sequence;
     volatile bool connected;
     volatile bool failed;
+    volatile bool command_queues_ready;
     bool heartbeat_sent;
     bool wake_model_report_sent;
     bool firmware_report_sent;
@@ -347,7 +352,8 @@ static void websocket_event_handler(void *handler_args,
         connection->connected = true;
         set_server_connected(true);
         companion_hardware_set_connected(true);
-        ESP_LOGI(TAG, "Device WebSocket connected");
+        ESP_LOGI(TAG, "Device WebSocket connected: stack_free=%u",
+                 (unsigned)uxTaskGetStackHighWaterMark(NULL));
         return;
     }
     if (event_id == WEBSOCKET_EVENT_DISCONNECTED || event_id == WEBSOCKET_EVENT_ERROR) {
@@ -359,7 +365,8 @@ static void websocket_event_handler(void *handler_args,
         ESP_LOGW(TAG, "Device WebSocket unavailable: event=%ld", (long)event_id);
         return;
     }
-    if (event_id != WEBSOCKET_EVENT_DATA || event_data == NULL) {
+    if (event_id != WEBSOCKET_EVENT_DATA || event_data == NULL ||
+        !connection->command_queues_ready) {
         return;
     }
 
@@ -676,41 +683,9 @@ static bool run_websocket_connection(const device_identity_t *identity)
         .sequence_lock = portMUX_INITIALIZER_UNLOCKED,
         .next_sequence = 1,
     };
-    connection.reminder_queue = xQueueCreate(REMINDER_QUEUE_LENGTH, sizeof(reminder_command_t));
-    connection.wake_model_queue = xQueueCreate(1, sizeof(wake_model_command_t));
-    connection.expression_pack_queue = xQueueCreate(1, sizeof(expression_pack_command_t));
-    connection.firmware_queue = xQueueCreate(1, sizeof(firmware_command_t));
-    connection.send_mutex = xSemaphoreCreateMutex();
-    if (connection.reminder_queue == NULL || connection.wake_model_queue == NULL ||
-        connection.expression_pack_queue == NULL || connection.firmware_queue == NULL ||
-        connection.send_mutex == NULL) {
-        if (connection.reminder_queue != NULL) {
-            vQueueDelete(connection.reminder_queue);
-        }
-        if (connection.wake_model_queue != NULL) {
-            vQueueDelete(connection.wake_model_queue);
-        }
-        if (connection.expression_pack_queue != NULL) {
-            vQueueDelete(connection.expression_pack_queue);
-        }
-        if (connection.firmware_queue != NULL) {
-            vQueueDelete(connection.firmware_queue);
-        }
-        if (connection.send_mutex != NULL) {
-            vSemaphoreDelete(connection.send_mutex);
-        }
-        memset(authorization_header, 0, sizeof(authorization_header));
-        memset(uri, 0, sizeof(uri));
-        return false;
-    }
     connection.client = esp_websocket_client_init(&config);
     if (connection.client == NULL) {
         ESP_LOGE(TAG, "WebSocket client allocation failed");
-        vQueueDelete(connection.reminder_queue);
-        vQueueDelete(connection.wake_model_queue);
-        vQueueDelete(connection.expression_pack_queue);
-        vQueueDelete(connection.firmware_queue);
-        vSemaphoreDelete(connection.send_mutex);
         memset(authorization_header, 0, sizeof(authorization_header));
         memset(uri, 0, sizeof(uri));
         return false;
@@ -719,7 +694,37 @@ static bool run_websocket_connection(const device_identity_t *identity)
     esp_err_t err = esp_websocket_register_events(connection.client, WEBSOCKET_EVENT_ANY, websocket_event_handler,
                                                    &connection);
     if (err == ESP_OK) {
+        ESP_LOGI(TAG,
+                 "WebSocket task reservation: stack=%u dynamic_buffers=yes internal_free=%u "
+                 "internal_largest=%u",
+                 (unsigned)WEBSOCKET_TASK_STACK_SIZE,
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                 (unsigned)heap_caps_get_largest_free_block(
+                     MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
         err = esp_websocket_client_start(connection.client);
+    }
+    if (err == ESP_OK) {
+        // Reserve the contiguous WebSocket stack before smaller queues fragment internal SRAM.
+        connection.reminder_queue = xQueueCreate(
+            REMINDER_QUEUE_LENGTH, sizeof(reminder_command_t));
+        connection.wake_model_queue = xQueueCreate(1, sizeof(wake_model_command_t));
+        connection.expression_pack_queue = xQueueCreate(
+            1, sizeof(expression_pack_command_t));
+        connection.firmware_queue = xQueueCreate(1, sizeof(firmware_command_t));
+        connection.send_mutex = xSemaphoreCreateMutex();
+        if (connection.reminder_queue == NULL || connection.wake_model_queue == NULL ||
+            connection.expression_pack_queue == NULL || connection.firmware_queue == NULL ||
+            connection.send_mutex == NULL) {
+            ESP_LOGE(TAG,
+                     "WebSocket command queue allocation failed: internal_free=%u "
+                     "internal_largest=%u",
+                     (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                     (unsigned)heap_caps_get_largest_free_block(
+                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+            err = ESP_ERR_NO_MEM;
+        } else {
+            connection.command_queues_ready = true;
+        }
     }
     int64_t next_heartbeat_us = esp_timer_get_time();
     while (err == ESP_OK && !connection.failed &&
@@ -884,14 +889,25 @@ static bool run_websocket_connection(const device_identity_t *identity)
 
     safety_state_stop_motion();
     set_server_connected(false);
+    connection.command_queues_ready = false;
     companion_hardware_set_connected(false);
     (void)esp_websocket_client_stop(connection.client);
     (void)esp_websocket_client_destroy(connection.client);
-    vQueueDelete(connection.reminder_queue);
-    vQueueDelete(connection.wake_model_queue);
-    vQueueDelete(connection.expression_pack_queue);
-    vQueueDelete(connection.firmware_queue);
-    vSemaphoreDelete(connection.send_mutex);
+    if (connection.reminder_queue != NULL) {
+        vQueueDelete(connection.reminder_queue);
+    }
+    if (connection.wake_model_queue != NULL) {
+        vQueueDelete(connection.wake_model_queue);
+    }
+    if (connection.expression_pack_queue != NULL) {
+        vQueueDelete(connection.expression_pack_queue);
+    }
+    if (connection.firmware_queue != NULL) {
+        vQueueDelete(connection.firmware_queue);
+    }
+    if (connection.send_mutex != NULL) {
+        vSemaphoreDelete(connection.send_mutex);
+    }
     memset(authorization_header, 0, sizeof(authorization_header));
     memset(uri, 0, sizeof(uri));
     return connection.heartbeat_sent;

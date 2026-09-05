@@ -1,5 +1,6 @@
 package com.kj.stackchan.api;
 
+import java.io.IOException;
 import java.util.UUID;
 
 import com.kj.stackchan.device.DeviceHttpAuthenticator;
@@ -76,6 +77,38 @@ public class DeviceVoiceController {
             VoiceTurnStreamEnvelope.Writer writer = streamEnvelope.writer(output);
             try {
                 voiceTurnService.handleStreaming(deviceToken.deviceId(), turnId, wavAudio, writer);
+            } catch (VoiceTurnClientDisconnectedException ignored) {
+                return;
+            } catch (RuntimeException exception) {
+                try {
+                    writer.error(streamErrorCode(exception));
+                } catch (VoiceTurnClientDisconnectedException ignored) {
+                    // The device already closed this turn; a late error frame must be discarded.
+                }
+            }
+        };
+        return ResponseEntity.ok()
+                .contentType(VOICE_TURN_STREAM_MEDIA_TYPE)
+                .header(VOICE_TURN_ID_HEADER, turnId.toString())
+                .body(body);
+    }
+
+    @PostMapping(
+            path = "/voice/turn/live",
+            consumes = "audio/wav",
+            produces = "application/vnd.stackchan.voice-turn-stream"
+    )
+    public ResponseEntity<StreamingResponseBody> liveStreamingVoiceTurn(
+            HttpServletRequest request,
+            @RequestHeader(name = VOICE_TURN_ID_HEADER) UUID turnId
+    ) throws IOException {
+        DeviceTokenService.DeviceToken deviceToken = authenticator.authenticate(request);
+        byte[] wavAudio = request.getInputStream().readNBytes(MAX_WAV_BYTES + 1);
+        validateAudio(deviceToken.deviceId(), turnId, wavAudio);
+        StreamingResponseBody body = output -> {
+            VoiceTurnStreamEnvelope.Writer writer = streamEnvelope.writer(output);
+            try {
+                voiceTurnService.handleLiveStreaming(deviceToken.deviceId(), turnId, wavAudio, writer);
             } catch (VoiceTurnClientDisconnectedException ignored) {
                 return;
             } catch (RuntimeException exception) {

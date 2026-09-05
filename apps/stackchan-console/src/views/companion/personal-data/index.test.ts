@@ -1,5 +1,7 @@
-import { createApp, defineComponent, h, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createApp, defineComponent, h, nextTick } from 'vue'
+
+import PersonalDataPage from './index.vue'
 
 const personalDataApi = vi.hoisted(() => ({
   deletePersonalDataConversation: vi.fn(),
@@ -49,6 +51,7 @@ vi.mock('@fantastic-admin/components', () => {
       },
     }),
     FaLabel: container,
+    FaPageHeader: container,
     FaPageMain: container,
     FaPagination: defineComponent({ setup: () => () => h('nav') }),
     FaSearchBar: container,
@@ -61,8 +64,6 @@ vi.mock('@fantastic-admin/components', () => {
     useFaToast: () => ({ error: vi.fn(), success: vi.fn() }),
   }
 })
-
-import PersonalDataPage from './index.vue'
 
 describe('personal data management page', () => {
   afterEach(() => {

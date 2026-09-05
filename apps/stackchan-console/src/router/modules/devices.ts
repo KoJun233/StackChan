@@ -28,7 +28,7 @@ const deviceRoute: RouteRecordRaw = {
       name: 'devicePairing',
       component: () => import('@/views/devices/pairing/index.vue'),
       meta: {
-        title: '设备配网',
+        title: '配网与配对',
         icon: 'i-ri:wifi-line',
       },
     },
@@ -37,7 +37,7 @@ const deviceRoute: RouteRecordRaw = {
       name: 'deviceHealth',
       component: () => import('@/views/devices/health/index.vue'),
       meta: {
-        title: '健康中心',
+        title: '运行健康',
         icon: 'i-ri:heart-pulse-line',
       },
     },
@@ -46,7 +46,7 @@ const deviceRoute: RouteRecordRaw = {
 
 const routes: RouteRecordMainRaw = {
   meta: {
-    title: '机器人设备',
+    title: '设备与运行',
     icon: 'i-ri:robot-2-line',
   },
   children: [deviceRoute],
