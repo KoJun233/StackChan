@@ -16,7 +16,8 @@ static bool is_supported_http_path(const char *path)
     return path != NULL &&
            (strcmp(path, DEVICE_ENDPOINT_PAIRING_CLAIM_PATH) == 0 ||
             strcmp(path, DEVICE_ENDPOINT_TOKEN_REFRESH_PATH) == 0 ||
-            strcmp(path, DEVICE_ENDPOINT_VOICE_TURN_PATH) == 0);
+            strcmp(path, DEVICE_ENDPOINT_VOICE_TURN_PATH) == 0 ||
+            strcmp(path, DEVICE_ENDPOINT_LIVE_VOICE_TURN_PATH) == 0);
 }
 
 static bool is_canonical_uuid(const char *value)

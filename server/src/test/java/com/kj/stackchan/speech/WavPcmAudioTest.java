@@ -35,6 +35,20 @@ class WavPcmAudioTest {
     }
 
     @Test
+    void normalizesLiveUploadLengthSentinelsBeforeProviderDispatch() {
+        byte[] pcm = new byte[] {1, 2, 3, 4};
+        byte[] streamingWav = wav(pcm, 16000, 1, 16);
+        writeInt(streamingWav, 4, -1);
+        writeInt(streamingWav, 40, -1);
+
+        byte[] normalized = WavPcmAudio.normalizeUploadedMono16KhzWav(streamingWav);
+
+        assertThat(readInt(normalized, 4)).isEqualTo(normalized.length - 8);
+        assertThat(readInt(normalized, 40)).isEqualTo(pcm.length);
+        assertThat(WavPcmAudio.extractMono16KhzPcm(normalized)).isEqualTo(pcm);
+    }
+
+    @Test
     void describesOversizedChunksWithoutIncludingAudioContent() {
         byte[] wav = wav(new byte[] {1, 2, 3, 4}, 16000, 1, 16);
         writeInt(wav, 40, 1024);

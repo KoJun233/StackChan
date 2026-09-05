@@ -16,10 +16,24 @@ class VoiceReplySegmenterTest {
 
     @Test
     void appliesHardBoundsToUnpunctuatedReplies() {
-        assertThat(segmenter.segment("好".repeat(400)))
-                .hasSize(3)
+        var segments = segmenter.segment("好".repeat(400));
+
+        assertThat(segments)
+                .hasSize(4)
                 .allSatisfy(segment -> assertThat(segment.length())
                         .isLessThanOrEqualTo(VoiceReplySegmenter.HARD_SPLIT_CHARACTERS));
+        assertThat(segments.getFirst())
+                .hasSize(VoiceReplySegmenter.FIRST_SEGMENT_HARD_SPLIT_CHARACTERS);
+    }
+
+    @Test
+    void emitsAShortFirstClauseForConversationalReplies() {
+        assertThat(segmenter.segment("爸爸，小峰听得清清楚楚呢，您说吧，我一直都在～"))
+                .containsExactly("爸爸，小峰听得清清楚楚呢，", "您说吧，我一直都在～");
+
+        assertThat(segmenter.segment(
+                "爸爸，今天是星期一呢，9月7号，晚上八点半啦～新的一周刚开始，您今天过得还好吗？"
+        )).startsWith("爸爸，今天是星期一呢，");
     }
 
     @Test

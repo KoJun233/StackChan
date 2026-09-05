@@ -293,6 +293,7 @@ TEST_CASE("fixed endpoints stay same-origin and credentials stay out of URIs", "
     char claim[256] = {0};
     char refresh[256] = {0};
     char voice[256] = {0};
+    char live_voice[256] = {0};
     char reminder[256] = {0};
     char wake_model[256] = {0};
     char expression_pack[256] = {0};
@@ -307,6 +308,9 @@ TEST_CASE("fixed endpoints stay same-origin and credentials stay out of URIs", "
     TEST_ASSERT_TRUE(device_endpoint_build_http_url(identity.server_base_url,
                                                     DEVICE_ENDPOINT_VOICE_TURN_PATH,
                                                     voice, sizeof(voice)));
+    TEST_ASSERT_TRUE(device_endpoint_build_http_url(identity.server_base_url,
+                                                    DEVICE_ENDPOINT_LIVE_VOICE_TURN_PATH,
+                                                    live_voice, sizeof(live_voice)));
     TEST_ASSERT_TRUE(device_endpoint_build_reminder_audio_url(
         identity.server_base_url,
         "f20b6177-3f7a-466a-9eae-70120bbf1912",
@@ -331,6 +335,7 @@ TEST_CASE("fixed endpoints stay same-origin and credentials stay out of URIs", "
     TEST_ASSERT_NOT_NULL(strstr(claim, "/api/v1/pairing/claim"));
     TEST_ASSERT_NOT_NULL(strstr(refresh, "/api/v1/devices/token:refresh"));
     TEST_ASSERT_NOT_NULL(strstr(voice, "/api/v1/device/voice/turn"));
+    TEST_ASSERT_NOT_NULL(strstr(live_voice, "/api/v1/device/voice/turn/live"));
     TEST_ASSERT_NOT_NULL(strstr(reminder,
                                  "/api/v1/device/reminders/f20b6177-3f7a-466a-9eae-70120bbf1912/audio"));
     TEST_ASSERT_NOT_NULL(strstr(wake_model,
@@ -1609,6 +1614,22 @@ TEST_CASE("WAV parsing rejects a RIFF size beyond the supplied buffer", "[audio_
     wav[6] = 0xff;
     wav[7] = 0x7f;
     TEST_ASSERT_FALSE(audio_wav_parse(wav, wav_size, &view));
+}
+
+TEST_CASE("live WAV header uses open RIFF and data lengths", "[audio_wav]")
+{
+    uint8_t header[AUDIO_WAV_HEADER_SIZE] = {0};
+    TEST_ASSERT_EQUAL(
+        ESP_OK,
+        audio_wav_build_pcm16_mono_stream_header(header, sizeof(header), 16000));
+    TEST_ASSERT_EQUAL_MEMORY("RIFF", header, 4);
+    TEST_ASSERT_EQUAL_MEMORY("WAVE", header + 8, 4);
+    TEST_ASSERT_EQUAL_HEX8(0xff, header[4]);
+    TEST_ASSERT_EQUAL_HEX8(0xff, header[7]);
+    TEST_ASSERT_EQUAL_HEX8(0xff, header[40]);
+    TEST_ASSERT_EQUAL_HEX8(0xff, header[43]);
+    TEST_ASSERT_EQUAL_HEX8(0x80, header[24]);
+    TEST_ASSERT_EQUAL_HEX8(0x3e, header[25]);
 }
 
 TEST_CASE("unknown or malformed commands do not produce an action", "[device_protocol]")

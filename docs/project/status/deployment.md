@@ -1,16 +1,31 @@
 # 部署工作流
 
-- 状态：STABLE
-- 最后更新：2026-09-03
-- 当前分支：`codex/console-information-architecture`（聊天滚动复修已部署，实机固件保持 `424cb49`）
-- 基准提交：`227b369`
-- 最后验证提交：`d7dc00d`
-- 最后验证范围：聊天滚动复修的新备份、隔离恢复、server-only 发布、V46、健康、LAN 与最终静态资源通过
+- 状态：READY_FOR_REVIEW
+- 最后更新：2026-09-08
+- 当前分支：`codex/live-voice-v46-integration`（V46/live 与首播延迟优化已发布，段间播放固件已安装）
+- 基准提交：`f32386a`
+- 最后验证提交：`4444860`
+- 最后验证范围：server 运行态正常；段间播放固件保留 NVS 安装、WebSocket 在线与版本心跳通过
 - 当前模式：LAN HTTP development
 
 ## 当前目标
 
-保持已发布的 WORK-006/V46 业务能力稳定运行，并由用户在 LAN 环境验收真实二级菜单、无黑块输入区及窄屏消息滚动；天气、只读日程与角色删除冷静期继续保持。CoreS3 保持 `424cb49 / motion_disabled`。
+保持已发布的 WORK-006/V46、真实二级菜单、无黑块输入区、窄屏消息滚动、天气、只读日程与角色删除冷静期；当前 live 服务端和 `628acd0` CoreS3 识别正常。短首段发布后用户确认响应变快，但两轮设备播放相对 PCM 多出 5.123/24.159 秒；已确认固件同步播放阻塞同一 HTTP 响应继续收帧。server、数据库和容器无需替换，本轮只安装有界 PSRAM 预取固件并继续保持 `motion_disabled`。
+
+## 已发布的首播延迟优化
+
+- 2026-09-07 13:07 UTC 生成新备份并完成最新备份隔离恢复验证；旧镜像保留为 `pre-voice-latency-v46`。
+- 只替换 `stackchan-foundation-server-1`；当前容器为 `d126dfa8432d`，镜像为 `sha256:a72c6b97bf9fc8c9617dabe79bce5723787c56dc13b44ddbb51e836e4b76218b`，构建版本为 `voice-latency-v46-final`。
+- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；运行库保持 V46。
+- 应用约 7 秒启动，MCP 目录后台预热 895 ms；容器无 OOM、无重启，内存约 471 MiB/3.825 GiB。本机和 `192.168.1.4` 健康接口为 200，设备继续在线上报 `628acd0 / motion_disabled`。
+
+## 已发布的边录边传
+
+- V46 与边录边传合并为一个任务提交；运行构建版本固定为 `live-voice-v46-final`，只替换 server，不新增迁移，数据库保持 V46。
+- 2026-09-05 08:20 UTC 生成新备份，08:20 UTC 完成最新备份隔离恢复验证；旧 `console-feedback-v46-chat-scroll-final` 镜像保留用于回滚。
+- 发布后健康、本机与 LAN 首页、新 live 端点鉴权边界和旧完整 WAV 入口通过；PostgreSQL、Redis 和备份容器未替换。
+- 匹配的 LAN HTTP Quad 固件通过 COM3 保留 NVS 安装到当前 CoreS3；Wi-Fi、设备身份、服务地址和 `motion_disabled` 保留，等待两轮独立唤醒测量 `capture_tail_ms`。
+- 首轮两次主请求虽达到 136/17 ms 尾部，但同步 HTTP 写入让 I2S 采样出现约 1–1.8 秒缺口并误识别；服务端无需回滚。纠正候选将写入迁到独立 24 KiB PSRAM 任务并增加双窗口语音确认，待替换当前实机固件。
 
 ## 已发布的聊天滚动复修
 
@@ -39,6 +54,13 @@
 - 只替换 `stackchan-foundation-server-1`；当前容器为 `c580d0855c3c`，镜像为 `sha256:a3b015c36bc17db419b87993081badf3b744527b50627ac6f527f86c0649e85d`，构建版本为 `console-ia-3697be8`。
 - PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；数据库继续为 V45。
 - 本机与 LAN 首页为 200，未认证设备接口为 401；运行资源包含新的今日概览与隔离 TDesign Chat chunk。运行库保留 1 条未完成待办和 2026-08-30 至 2026-09-12 观察窗口；设备在线并保持 `424cb49 / motion_disabled / DISABLED`。
+
+## 边录边传发布记录
+
+- LAN server 实际运行 `console-feedback-v46-chat-scroll-final`，容器 `f12a4040770c`，镜像 `sha256:0042f143a832aa8d5315dd902876db0dcb8c1f125e68f76ab3c4a6c1224cf165`，数据库为 V46；原 WORK-006/V45 状态记录已过期。
+- V46 源码 `a12dd3f` 与边录边传 `e6c3f6f` 已整合到 `codex/live-voice-v46-integration`；直接从旧候选发布造成回退的风险已解除。
+- 2026-09-04 15:25 UTC 的发布前预备备份和恢复验证通过；2026-09-05 08:20 UTC 又在实际发布窗口生成新备份并完成隔离恢复验证。
+- V46 保留 ADR 0047/0048，边录边传使用 ADR 0049；发布顺序保持 server 先、固件后。
 
 ## 已发布的 WORK-006
 
@@ -89,17 +111,17 @@
 
 ## 正在进行
 
-LAN server 已运行聊天滚动复修版本，当前宿主机局域网地址为 `http://192.168.1.4:8080/`，容器为 `f12a4040770c`，镜像摘要为 `sha256:0042f143a832aa8d5315dd902876db0dcb8c1f125e68f76ab3c4a6c1224cf165`。运行态继续保留 WORK-006/V46，并提供真实侧栏分组、Fantastic-admin 聊天输入区、独立可滚动消息区、天气图标、未来七天只读日程和受七天冷静期保护的角色永久删除。
+LAN server 已运行 V46 `voice-latency-v46-final`，当前宿主机局域网地址为 `http://192.168.1.4:8080/`。运行态保留 WORK-006/V46、真实侧栏分组、Fantastic-admin 聊天输入区、独立可滚动消息区、天气图标、未来七天只读日程、受七天冷静期保护的角色永久删除和固定同源 `/api/v1/device/voice/turn/live`，并新增短首段、MCP 后台预热和隐私安全时序日志。
 
-CoreS3 当前上报 LAN HTTP Quad 固件 `424cb49`，保留 NVS、Wi-Fi、设备身份和 `motion_disabled`；启动、语音、无动作中位校准及 WORK-001 顶部长按启动/停止正常。服务地址仍指向当前宿主机。MEDIA-004 V2 实体激活继续等待 EAF 素材。
+CoreS3 已保留 NVS 安装 `4444860` LAN HTTP Quad；Wi-Fi、身份、WakeNet、LAN HTTP、8 MiB PSRAM 和 `motion_disabled` 正常。7168 字节 WebSocket 栈在 7680 字节最大连续块下成功创建，连接时仍余 4000 字节栈并稳定在线超过一分钟；服务端数据库已收到新版本心跳。MEDIA-004 V2 实体激活继续等待 EAF 素材。
 
 ## 下一步操作
 
-由用户强制刷新 LAN 页面，在当前窄屏宽度下复核聊天消息区的鼠标滚轮和触摸滚动；另完成一项当前角色待办后询问机器人“我今天完成了什么”，确认回答包含今日完成项和剩余待办且不包含备注或精确完成时间。Git 外部推送仍需用户授权。
+当前任务分支已变基到最新 `master@f32386a`，重复的 V46 页面改动由主线继承；更新远端任务分支后等待人工审核。实体语音测试延期到用户有时间时进行，届时对比每段 `gap_ms`、PCM 播放时长和总播放阶段。
 
 ## 阻塞项
 
-- 当前运行态无部署阻塞。用户于 2026-08-25 明确长期授权服务端及其内置管理页面可直接部署；Git 外部推送、固件刷写/OTA、凭据轮换、部署模式切换以及卷或端口变更仍需分别显式授权。
+- 当前无已知部署阻塞；只剩用户两轮实体语音验收。Git 外部推送、凭据轮换、部署模式切换以及卷或端口变更仍需分别显式授权。
 
 ## 关键文件
 
@@ -112,6 +134,15 @@ CoreS3 当前上报 LAN HTTP Quad 固件 `424cb49`，保留 NVS、Wi-Fi、设备
 
 ## 验证命令与最近结果
 
+- 2026-09-08 主线冲突修复：任务分支变基到 `master@f32386a` 后，Git 合并模拟无冲突且相对主线恰好一个提交；重复 V46 页面改动已由主线继承。服务端语音专项 20/20、三组固件栈预算、`git diff --check` 与 `pnpm docs:check` 通过；未修改运行部署或重新刷写 CoreS3。
+
+- 2026-09-08 WebSocket 启动纠正与安装：`4444860` LAN HTTP Quad 为 1,650,016 字节，SHA-256 `23E94ACCF3CC72CC2D95B5DE6408E372924D61A72675FC38AE2A1A8853826536`。COM3 保留 NVS 写后哈希通过；启动确认 WebSocket 栈余量 4000 字节、设备稳定在线超过一分钟并上报 `4444860 / motion_disabled`。server 健康为 `ok`，容器无重启、无 OOM；未替换 server、数据库、Redis 或备份容器。
+
+- 2026-09-07 段间播放预取候选：server 继续运行 `voice-latency-v46-final`，无数据库或容器变更。ESP-IDF 5.5.5 LAN HTTP Quad 应用 1,649,632 字节（`0x192be0`）、分区余量 48%，镜像校验和验证哈希有效；三组任务栈回归与真实语音栈预算通过。尚未连接 COM3 或写入设备。
+
+- 2026-09-07 首播延迟优化发布：专项 20/20、非 loopback 服务端 462/462 和 Docker production build 通过；13:07 UTC 新备份与隔离恢复验证成功，旧镜像保留为 `pre-voice-latency-v46`。只替换 server；容器 `d126dfa8432d`、镜像 `sha256:a72c6b97bf9fc8c9617dabe79bce5723787c56dc13b44ddbb51e836e4b76218b`、版本 `voice-latency-v46-final`。MCP 目录预热 895 ms，本机/LAN 健康为 200，V46、PostgreSQL、Redis、备份容器和 `628acd0 / motion_disabled` CoreS3 均正常。
+
+- 2026-09-05 边录边传整合发布：服务端 live 定向 18/18、排除既有 Windows loopback 类后的 460/460、控制台 102/102 和 production build、三组固件栈回归与真实语音栈预算通过。08:20 UTC 新备份和隔离恢复成功；只替换 server，数据库保持 V46；随后通过 COM3 保留 NVS 安装当前任务 LAN HTTP Quad 固件，等待用户两轮唤醒。
 - 2026-09-03 聊天滚动复修发布：新备份与隔离恢复成功，旧镜像保留为 `pre-chat-scroll-v46`，只替换 server。当前容器 `f12a4040770c`、镜像 `sha256:0042f143a832aa8d5315dd902876db0dcb8c1f125e68f76ab3c4a6c1224cf165`、版本 `console-feedback-v46-chat-scroll-final`；V46、本机/LAN 首页和健康 200，聊天 CSS/JS 200，运行 CSS 包含最终高度与滚动边界。PostgreSQL、Redis、备份容器和 CoreS3 未替换。
 
 - 2026-09-03 二级菜单与聊天复修发布：新备份与隔离恢复成功，旧镜像保留为 `pre-menu-chat-fix-v46`，只替换 server。当前容器 `044b01b409d3`、镜像 `sha256:6c9d7ff0a125abf8103a440cac94b64b902e65a19b0bd5b7a0cf9e437342b83d`、版本 `console-feedback-v46-menu-chat-final`；V46、本机/LAN 首页和健康 200，新菜单与聊天资源 200，运行资源包含最终分组、发送/停止动作和 OKLCH 主题映射。PostgreSQL、Redis、备份容器和 CoreS3 未替换。
@@ -120,6 +151,7 @@ CoreS3 当前上报 LAN HTTP Quad 固件 `424cb49`，保留 NVS、Wi-Fi、设备
 
 - 2026-09-01 后台信息架构与 UI 重整发布：11:53 UTC 新备份及内置隔离恢复成功，随后最新备份独立恢复成功；旧 WORK-006/V45 镜像保留为 `pre-console-ia-3697be8`，只替换 server。当前容器 `c580d0855c3c`、镜像 `sha256:a3b015c36bc17db419b87993081badf3b744527b50627ac6f527f86c0649e85d`、构建版本 `console-ia-3697be8`；V45、本机/LAN 首页 200、未认证设备接口 401、新 dashboard/chat 静态资源、1 条未完成待办、观察窗口和设备在线安全状态通过。PostgreSQL、Redis、备份容器及 CoreS3 未替换。
 
+- 2026-09-04 V46 运行态复核：当前 server 容器 `f12a4040770c`、镜像 `sha256:0042f143a832aa8d5315dd902876db0dcb8c1f125e68f76ab3c4a6c1224cf165`、构建版本 `console-feedback-v46-chat-scroll-final`，数据库为 V46，健康正常，设备为 `a70fb9c / motion_disabled / DISABLED`。15:25 UTC 新备份和独立恢复验证成功；识别同级分支冲突后停止，未替换任何容器或固件。
 - 2026-08-31 WORK-006/V45 发布：12:30 UTC 新备份、12:31 UTC 独立恢复验证成功；旧镜像保留为 `pre-work006-v45`，只替换 server。当前容器 `9617c52a48db`、镜像 `sha256:6b120ef75ae32845b679d2ce976cf91260928a0dde3304b0ca63db61b19c79cb`、构建版本 `work006-v45-task-progress`；V45、健康、LAN 首页、1 条未完成待办、观察窗口和设备在线安全状态通过。
 
 - 2026-08-31 WORK-005/V45 发布：11:14 UTC 新备份及内置恢复成功，11:15 UTC 最新备份独立恢复成功；旧镜像保留为 `pre-work005-v45`，只替换 server。当前容器 `e384ffebb23a`、镜像 `sha256:f9e5db38787621ea85d26d302fc92a0d6b5aee6f4051c85b43c1d460d9675112`、构建版本 `work005-v45-task-brief`；V45、健康、LAN 首页、1 条待办、观察窗口和设备在线安全状态通过。

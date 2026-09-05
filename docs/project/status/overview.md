@@ -1,17 +1,17 @@
 # 全局工作流总览
 
-- 状态：ACTIVE
-- 最后更新：2026-09-03
-- 当前分支：`codex/console-information-architecture`
-- 实现基准：`227b369`
-- 最后验证提交：`d7dc00d`
-- 最后验证范围：六项后台反馈与聊天滚动复修；控制台 102/102、production build、备份隔离恢复和 server-only LAN/V46 静态资源发布通过
+- 状态：READY_FOR_REVIEW
+- 最后更新：2026-09-08
+- 当前分支：`codex/live-voice-v46-integration`
+- 实现基准：`f32386a`
+- 最后验证提交：`4444860`
+- 最后验证范围：段间播放预取 LAN HTTP Quad 保留 NVS 安装、WebSocket 启动/在线稳定性、服务端心跳和三组任务栈回归通过
 - 当前部署：LAN HTTP development mode
 - 生产边界：HTTPS-only
 
 ## 当前结论
 
-后台信息架构与六项页面反馈已在 `codex/console-information-architecture` 完成并发布到 LAN，基于 `227b369` 且尚未外部推送。用户复核发现 single 菜单仍平铺、TDesign 发送器出现黑块及窄屏消息区无法滚动后，已改为真实的“今日陪伴/事务管理”中间菜单节点，以 Fantastic-admin 输入区替代冲突的 TDesign Sender，并为消息区建立独立的固定高度滚动边界；主动关心现在是“今日陪伴”二级项。天气图标、未来七天只读日程和归档七天后手动删除保持不变；边界见 [ADR 0047](../decisions/0047-isolated-tdesign-chat-ui.md) 与 [ADR 0048](../decisions/0048-guarded-archived-role-deletion.md)。部署模式、固件状态和十四天观察窗口均未改变。
+V46 后台信息架构、真实二级菜单、无黑块聊天输入区、窄屏消息滚动、天气图标、未来七天只读日程和归档七天后手动删除已经发布并在当前整合分支完整保留；边界见 [ADR 0047](../decisions/0047-isolated-tdesign-chat-ui.md) 与 [ADR 0048](../decisions/0048-guarded-archived-role-deletion.md)。语音整块上传阻塞已由 `a70fb9c` 实机修复；为把 286/436 ms 的完整 WAV 上传进一步压缩，用户确认采用 [ADR 0049](../decisions/0049-local-vad-gated-live-voice-upload.md) 的本地 VAD 门控边录边传。首个 `b2303e8` 固件两轮尾部达到 136/17 ms，但同步 HTTP 写入阻断 I2S；`628acd0` 已把采集与 24 KiB PSRAM 上传任务分离，用户确认两轮识别恢复正常。短首段和 MCP 预热发布后响应已变快，但最新两轮的设备播放阶段比 PCM 时长额外增加约 5.12/24.16 秒；服务端在设备播放期间已经发完后续段，确认是固件在 HTTP 回调内同步播放、暂停继续收帧，而不是机器人或服务端内存不足。当前候选把收帧与播放拆开，使用深度 1 的 PSRAM 预取队列和独立 24 KiB 播放任务。首次刷入 `4aa700a` 暴露 WebSocket 8 KiB 栈超出启动时 7680 字节最大内部连续块；最终纠正使用官方动态缓冲、7168 字节实测可容纳栈、WebSocket 优先启动和队列就绪门控，静态 DRAM 未增长，问题不是总内存或 PSRAM 不足。
 
 `MEDIA-004` 任务提交 `8c28f0a` 已由 `fa093dc` 合入 `master`。V1 PNG 与 V2 EAF 共享互斥 A/B 槽，服务端、页面和固件严格支持 `boot_appear`、`wake`、`role_switch`，原生 LVGL 始终负责连续表情与安全回退。V36 与页面已部署；用户暂无 EAF 素材，因此 V2 实体激活验收延期，CoreS3 保持 `71868da`，本主线不 OTA、不把延期写成通过。
 
@@ -33,10 +33,10 @@
 
 | 工作流 | 状态 | 当前事实 | 下一步 |
 | --- | --- | --- | --- |
-| [服务端](server.md) | READY_FOR_REVIEW | WORK-006 今日待办进度已完成并运行于 LAN/V45 | 完成实体语音查询验收 |
-| [前端](frontend.md) | READY_FOR_REVIEW | 真实二级分组和 Fantastic-admin 聊天输入区已发布，菜单 Store 与 102/102 回归通过 | 用户强制刷新后复核；外部推送仍需明确授权 |
-| [固件](firmware.md) | STABLE | `424cb49` 已安装，顶部长按启停实机通过且动作保持禁用 | 当前硬件未上报环境光能力，按不支持路径安全降级 |
-| [部署](deployment.md) | STABLE | 二级菜单与聊天复修已运行于 LAN/V46，PostgreSQL、Redis、备份容器和 CoreS3 未变化 | 用户审阅页面并继续今日进度语音验收 |
+| [服务端](server.md) | READY_FOR_REVIEW | 短首段、MCP 后台预热和隐私安全时序日志已发布 | 用户复测两轮实体语音 |
+| [前端](frontend.md) | READY_FOR_REVIEW | 真实二级分组和 Fantastic-admin 聊天输入区已发布，V46 页面能力在整合中保持 | 用户强制刷新后复核 |
+| [固件](firmware.md) | READY_FOR_REVIEW | `4444860` 已保留 NVS 安装且 WebSocket 稳定在线 | 用户唤醒两轮并监听段间日志 |
+| [部署](deployment.md) | READY_FOR_REVIEW | server 保持 `voice-latency-v46-final`；CoreS3 已上报 `4444860` | 用户两轮实体语音验收 |
 
 ## 当前能力地图
 
@@ -54,13 +54,26 @@
 
 ## 版本与运行态
 
-- Git：当前任务分支 `codex/console-information-architecture`，基于 `master@227b369`，尚未外部推送。
-- LAN server：后台信息架构与 UI 重整及 WORK-006/V45 能力运行于 `http://192.168.1.4:8080/`；运行镜像和回滚镜像信息见[部署状态](deployment.md)。
-- CoreS3：当前运行 `424cb49` LAN HTTP Quad 固件；Wi-Fi/NVS、语音链路、8192 字节主栈与 `motion_disabled` 已保留，中位校准已连续两次通过，WORK-001 顶部长按启停已实机通过。
+- Git：当前整合分支 `codex/live-voice-v46-integration` 已变基到 `master@f32386a`；V46 页面改动由主线继承，任务提交只保留语音上传、首播延迟和段间播放优化，等待人工审核。
+- LAN server：V46 `voice-latency-v46-final` 运行于 `http://192.168.1.4:8080/`；运行库保持 V46，详情见[部署状态](deployment.md)。
+- CoreS3：当前运行 `4444860` LAN HTTP Quad；经 COM3 保留 NVS 安装，Wi-Fi、设备身份、8192 字节主栈、WakeNet 和 `motion_disabled` 保留，WebSocket 已稳定在线并向服务端上报新版本。
 - 实机固件提交只作为运行候选，不能替代 `master` 作为新任务分支基线。
 
 ## 最近验证
 
+- 2026-09-08 主线冲突修复：当前任务分支已变基到 `master@f32386a`，Git 合并模拟无冲突，相对主线恰好一个任务提交；已合入主线的 V46 前端文件不再重复出现在差异中。服务端语音专项 20/20、三组固件栈预算、`git diff --check` 和 `pnpm docs:check` 均通过。
+
+- 2026-09-08 WebSocket 启动回归纠正与安装：最终 `4444860` 使用官方动态缓冲、7168 字节 WebSocket 栈、优先启动和队列就绪门控。LAN HTTP Quad 为 1,650,016 字节、SHA-256 `23E94ACCF3CC72CC2D95B5DE6408E372924D61A72675FC38AE2A1A8853826536`；COM3 保留 NVS 写后哈希通过。启动确认 8 MiB PSRAM、Wi-Fi/身份、WakeNet、LAN HTTP 与 `motion_disabled`，WebSocket 在 7680 字节最大连续块下成功启动，连接时栈余量 4000 字节并稳定在线超过一分钟；服务端健康为 `ok`、无 OOM/重启，数据库已收到 `4444860 / motion_disabled` 心跳。
+
+- 2026-09-07 段间播放预取候选：两轮服务端音频在设备播放期间已全部 flush，但设备播放 17.123/76.379 秒相对 PCM 12.000/52.220 秒额外增加 5.123/24.159 秒。固件将完整 SCV2 音频帧所有权移交给深度 1 的 PSRAM 队列和独立 24 KiB 播放任务，网络解析不再被同步播放阻塞。ESP-IDF 5.5.5 protocol/LAN HTTP Quad 完整构建通过，LAN 应用 1,649,632 字节（`0x192be0`）、分区余量 48%；三组栈回归通过，真实语音/上传/播放外部调用余量为 28,000/22,320/24,416 字节。候选尚未连接或刷写。
+
+- 2026-09-07 首播延迟优化发布：首段目标 16 字、硬上限 24 字，MCP 目录在应用就绪后后台预热，语音链路新增隐私安全阶段日志。专项 20/20、排除既有 8 个 Windows loopback 类后 462/462 通过；发布前 13:07 UTC 新备份和隔离恢复验证成功。只替换 server，容器 `d126dfa8432d`、镜像 `sha256:a72c6b97bf9fc8c9617dabe79bce5723787c56dc13b44ddbb51e836e4b76218b`、版本 `voice-latency-v46-final`；MCP 目录预热 895 ms，服务无 OOM/重启，本机与 `192.168.1.4` 健康为 200，运行库 V46，设备继续在线上报 `628acd0 / motion_disabled`。PostgreSQL、Redis、备份容器和 CoreS3 未替换。
+
+- 2026-09-07 实机语音复核：用户确认 `628acd0` 两轮识别恢复正常。隐私安全事件显示 ASR 为 562/303 ms；第一轮 Agent 为 12,153 ms、第二轮为 2,586 ms；完整 TTS 后到设备首播仍为 3,371/5,290 ms。主机剩余 12.29 GiB，server 容器 681 MiB、无 OOM、无重启，排除内存不足。
+
+- 2026-09-05 实机语音纠正：两轮主请求的 PCM 为 9,600/32,000 字节、尾部为 136/17 ms，ASR 分别为“嗯”/“No”；同步网络写入造成约 1–1.8 秒采样缺口，PSRAM 约 7.7–8.0 MiB 可用且无复位，排除内存不足。纠正候选使用独立 24 KiB PSRAM 上传任务和双 100 ms 起始确认；protocol/LAN HTTP Quad 为 `0x3a140`/`0x1927a0`，分区余量 92%/48%，语音/上传任务外部栈余量分别 28,016/22,320 字节。
+
+- 2026-09-05 V46 边录边传整合：服务端语音定向 18/18，排除既有 8 个 Windows loopback 类后的完整回归 460/460；控制台 32 文件 102/102、类型检查和 production build；三组任务栈负例/正例与真实语音栈预算通过。08:20 UTC 新备份和隔离恢复成功，只替换 server，数据库保持 V46；匹配 LAN HTTP Quad 固件通过 COM3 保留 NVS 安装，等待用户两轮独立唤醒。
 - 2026-09-03 聊天滚动复修发布：发布前新备份与隔离恢复成功，只替换 server；容器 `f12a4040770c`、镜像 `sha256:0042f143a832aa8d5315dd902876db0dcb8c1f125e68f76ab3c4a6c1224cf165`、版本 `console-feedback-v46-chat-scroll-final`。V46、本机/LAN 首页与健康均为 200，聊天 CSS/JS 为 200，运行 CSS 确认固定视口高度、内部纵向滚动、滚轮边界和触摸滚动；基础数据容器和 CoreS3 未替换。
 
 - 2026-09-03 二级菜单与聊天复修发布：发布前新备份与隔离恢复成功，只替换 server；容器 `044b01b409d3`、镜像 `sha256:6c9d7ff0a125abf8103a440cac94b64b902e65a19b0bd5b7a0cf9e437342b83d`、版本 `console-feedback-v46-menu-chat-final`。V46、本机/LAN 首页与健康均为 200，运行资源确认“今日陪伴/事务管理”、主动关心、Enter 发送、停止生成及 OKLCH 主题映射；基础数据容器和 CoreS3 未替换。
@@ -75,6 +88,9 @@
 
 - 2026-09-01 后台信息架构与 UI 重整：控制台 Vitest 30 文件 99/99、类型检查与 production build 通过，本任务文件定向 ESLint 和聊天页 Stylelint 通过，`git diff --check` 与文档检查通过。测试中既有 3000 端口拒绝连接与 Vite 关闭超时提示不影响成功退出；TDesign Chat 独立懒加载 chunk 的体积告警已记录在 ADR 0047，未扩散到普通管理页。
 
+- 2026-09-04 边录边传候选：服务端语音定向 18/18，完整 490 个用例中 31 个错误全部来自既有 8 个 Windows loopback 类且失败断言为 0，排除后 458/458；ESP-IDF 5.5.5 protocol 与 LAN HTTP Quad 完整构建通过，应用分别为 237,888 和 1,647,712 字节、分区余量 92%/48%。三组任务栈回归通过；真实语音本地最坏路径 4,752 字节、32 KiB 栈外部调用余量 28,016 字节。文档检查通过；未发布服务端、未连接或刷写 CoreS3。
+
+- 2026-09-04 运行态复核：LAN server 实际为 V46 `console-feedback-v46-chat-scroll-final`，容器 `f12a4040770c`、镜像 `sha256:0042f143a832aa8d5315dd902876db0dcb8c1f125e68f76ab3c4a6c1224cf165`，数据库为 V46。15:25 UTC 新备份和独立恢复验证成功；识别到当前边录边传分支缺少未合入的 V46 后停止发布，未替换任何容器、未操作 CoreS3。
 - 2026-08-31 WORK-006：单元定向 20/20、真实 PostgreSQL 5/5、完整 488 个用例中 31 个错误全部来自 8 个既有 Windows loopback 类且业务断言失败为零，排除后其余 456/456 通过；镜像内服务端和管理端 production build 通过。12:30 UTC 新备份、12:31 UTC 独立恢复验证成功，只替换 server；容器 `9617c52a48db`、镜像 `sha256:6b120ef75ae32845b679d2ce976cf91260928a0dde3304b0ca63db61b19c79cb`、版本 `work006-v45-task-progress`。健康和 LAN 首页为 200，V45、1 条未完成待办、观察窗口均保留，设备在线并保持 `424cb49 / motion_disabled / DISABLED`。
 
 - 2026-08-31 WORK-005：最终定向 18/18、真实 PostgreSQL/Flyway V1..V45 查询和持久化通过，排除 8 个既有 Windows loopback 类后服务端 452/452；镜像内服务端与管理端 production build 通过。11:14 UTC 新备份及独立恢复验证成功，只替换 server；容器 `e384ffebb23a`、镜像 `sha256:f9e5db38787621ea85d26d302fc92a0d6b5aee6f4051c85b43c1d460d9675112`、版本 `work005-v45-task-brief`。健康和 LAN 首页为 200，V45、1 条待办、2026-08-30 至 2026-09-12 观察窗口均保留，设备在线并保持 `424cb49 / motion_disabled / DISABLED`。

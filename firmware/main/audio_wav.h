@@ -27,6 +27,11 @@ esp_err_t audio_wav_build_pcm16_mono(uint8_t *output,
                                      uint32_t sample_rate,
                                      size_t *wav_size);
 
+/** Builds a canonical PCM header whose RIFF/data lengths remain open until EOF. */
+esp_err_t audio_wav_build_pcm16_mono_stream_header(uint8_t *output,
+                                                   size_t output_size,
+                                                   uint32_t sample_rate);
+
 bool audio_wav_parse(const uint8_t *wav, size_t wav_size, audio_wav_view_t *view);
 
 #ifdef __cplusplus
