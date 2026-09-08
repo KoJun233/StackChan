@@ -64,6 +64,29 @@ class DashScopeHttpProtocolTest {
     }
 
     @Test
+    void recognizesOnlyExplicitNoSpeechBadRequests() {
+        WebClientResponseException noSpeech = WebClientResponseException.create(
+                400,
+                "Bad Request",
+                HttpHeaders.EMPTY,
+                "{\"code\":\"ASR_RESPONSE_HAVE_NO_WORDS\",\"message\":\"no words\"}"
+                        .getBytes(StandardCharsets.UTF_8),
+                StandardCharsets.UTF_8
+        );
+        WebClientResponseException invalidParameter = WebClientResponseException.create(
+                400,
+                "Bad Request",
+                HttpHeaders.EMPTY,
+                "{\"code\":\"InvalidParameter\",\"message\":\"model is invalid\"}"
+                        .getBytes(StandardCharsets.UTF_8),
+                StandardCharsets.UTF_8
+        );
+
+        assertThat(DashScopeAsrHttpClient.isNoSpeechResponse(noSpeech)).isTrue();
+        assertThat(DashScopeAsrHttpClient.isNoSpeechResponse(invalidParameter)).isFalse();
+    }
+
+    @Test
     void buildsNonRealtimeTtsPayloadWithTheExactConfiguredModel() {
         Map<String, ?> request = DashScopeTtsHttpClient.request(
                 "future-tts-model", "custom-voice", "你好"

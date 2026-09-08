@@ -45,7 +45,7 @@ class LlmRuntimeClientFactoryTest {
     }
 
     @Test
-    void disablesDeepSeekV4ThinkingOnlyForAgentToolInvocations() {
+    void disablesDeepSeekV4ThinkingForAgentAndLowLatencyVoiceInvocations() {
         LlmSettingsService settingsService = mock(LlmSettingsService.class);
         when(settingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings(
                 "https://api.deepseek.com", "deepseek-v4-flash", "companion prompt", "sk-secret"
@@ -54,9 +54,14 @@ class LlmRuntimeClientFactoryTest {
 
         OpenAiChatOptions normalOptions = (OpenAiChatOptions) factory.createChatModel().getDefaultOptions();
         OpenAiChatOptions agentOptions = (OpenAiChatOptions) factory.createAgentChatModel().getDefaultOptions();
+        OpenAiChatOptions voiceOptions = (OpenAiChatOptions) factory.createLowLatencyChatModel()
+                .getDefaultOptions();
 
         assertThat(normalOptions.getExtraBody()).isNullOrEmpty();
         assertThat(agentOptions.getExtraBody()).containsEntry(
+                "thinking", Map.of("type", "disabled")
+        );
+        assertThat(voiceOptions.getExtraBody()).containsEntry(
                 "thinking", Map.of("type", "disabled")
         );
     }

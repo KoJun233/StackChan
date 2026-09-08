@@ -29,15 +29,21 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
+import reactor.core.scheduler.Schedulers;
 
 @Service
 public class VoiceTurnService {
 
     private static final Logger logger = LoggerFactory.getLogger(VoiceTurnService.class);
     private static final Duration VOICE_LLM_TIMEOUT = Duration.ofSeconds(30);
+    private static final int MAX_SPOKEN_REPLY_CODE_POINTS = 160;
     private static final String VOICE_SYSTEM_INSTRUCTION = """
 
             当前是机器人语音对话。请直接使用简体中文回答，不要使用 Markdown。
+            对随口吐槽、输赢分享和简短闲聊，默认只回应一到两句、整个回答尽量不超过四十个汉字，先自然接住用户的情绪或话题；
+            用户没有请求建议时不要主动说教，也不要为了延续对话而每次反问。只有用户明确要求解释、
+            分析、步骤或完整事实时才展开，必要的 Tool 查询结果必须完整准确。即使展开，语音正文也必须
+            控制在一百六十个汉字以内，并优先给出适合直接听取的摘要。
             回答正文末尾另起一行追加且只追加一个隐藏表情标记：
             [[emotion:情绪:强度:秒数]]。情绪只能是 NEUTRAL、HAPPY、LOVING、SAD、ANGRY、
             SURPRISED、CONFUSED、SHY、TIRED、FOCUSED、NERVOUS、CONTENT；强度只能是
@@ -54,7 +60,6 @@ public class VoiceTurnService {
     private final VoiceTurnCancellationService cancellationService;
     private final VoiceActionCoordinator voiceActionCoordinator;
     private final CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator;
-    private final VoiceReplySegmenter replySegmenter;
     private DeviceExpressionService deviceExpressionService;
 
     @Autowired(required = false)
@@ -73,8 +78,7 @@ public class VoiceTurnService {
             VoiceTurnDiagnosticsService diagnosticsService,
             VoiceTurnCancellationService cancellationService,
             VoiceActionCoordinator voiceActionCoordinator,
-            CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator,
-            VoiceReplySegmenter replySegmenter
+            CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator
     ) {
         this.speechRuntimeClient = speechRuntimeClient;
         this.deviceVoiceConversationService = deviceVoiceConversationService;
@@ -86,7 +90,6 @@ public class VoiceTurnService {
         this.cancellationService = cancellationService;
         this.voiceActionCoordinator = voiceActionCoordinator;
         this.completedTurnMemoryCoordinator = completedTurnMemoryCoordinator;
-        this.replySegmenter = replySegmenter;
     }
 
     public VoiceTurnService(
@@ -101,24 +104,7 @@ public class VoiceTurnService {
     ) {
         this(speechRuntimeClient, deviceVoiceConversationService, conversationService, agentOrchestrator,
                 llmSettingsService, companionPromptService, diagnosticsService, cancellationService,
-                null, null, new VoiceReplySegmenter());
-    }
-
-    public VoiceTurnService(
-            SpeechRuntimeClient speechRuntimeClient,
-            DeviceVoiceConversationService deviceVoiceConversationService,
-            ConversationService conversationService,
-            AgentOrchestrator agentOrchestrator,
-            LlmSettingsService llmSettingsService,
-            CompanionPromptService companionPromptService,
-            VoiceTurnDiagnosticsService diagnosticsService,
-            VoiceTurnCancellationService cancellationService,
-            VoiceActionCoordinator voiceActionCoordinator,
-            CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator
-    ) {
-        this(speechRuntimeClient, deviceVoiceConversationService, conversationService, agentOrchestrator,
-                llmSettingsService, companionPromptService, diagnosticsService, cancellationService,
-                voiceActionCoordinator, completedTurnMemoryCoordinator, new VoiceReplySegmenter());
+                null, null);
     }
 
     public VoiceTurnResult handle(UUID deviceId, byte[] wavAudio) {
@@ -168,6 +154,7 @@ public class VoiceTurnService {
             VoiceTurnStage lastCompletedStage = VoiceTurnStage.REQUEST_RECEIVED;
             GenerationStart start = null;
             String reply = "";
+            StringBuilder streamedReply = new StringBuilder();
             List<UUID> usedMemoryIds = List.of();
             boolean extractMemorySuggestion = false;
             boolean generationCompleted = false;
@@ -246,9 +233,11 @@ public class VoiceTurnService {
                             ))
                             .takeUntilOther(cancellation.cancellationSignal())
                             .filter(chunk -> chunk != null && !chunk.isEmpty())
-                            .collect(Collectors.joining())
                             .timeout(VOICE_LLM_TIMEOUT)
                             .onErrorMap(TimeoutException.class, ignored -> new LlmProviderUnavailableException())
+                            .publishOn(Schedulers.boundedElastic(), 32)
+                            .doOnNext(streamedReply::append)
+                            .collect(Collectors.joining())
                             .block();
                     logger.info(
                             "Voice turn timing: turn_id={} stage=AGENT_COMPLETED stage_ms={} request_ms={}",
@@ -262,7 +251,7 @@ public class VoiceTurnService {
                     throw new LlmProviderUnavailableException();
                 }
                 ExpressionSuggestionParser.Suggestion expression = ExpressionSuggestionParser.parse(reply);
-                reply = expression.reply();
+                reply = boundSingleSpokenReply(expression.reply());
                 if (reply.isBlank()) {
                     throw new LlmProviderUnavailableException();
                 }
@@ -289,30 +278,23 @@ public class VoiceTurnService {
                             elapsedMillis(requestStartedNanos)
                     );
                 } else {
-                    List<String> segments = replySegmenter.segment(reply);
-                    if (segments.isEmpty()) throw new LlmProviderUnavailableException();
-                    for (int index = 0; index < segments.size(); index++) {
-                        cancellation.throwIfCancelled();
-                        String segment = segments.get(index);
-                        long segmentStartedNanos = System.nanoTime();
-                        byte[] segmentAudio = speechRuntimeClient.synthesize(segment, roleId);
-                        cancellation.throwIfCancelled();
-                        long frameStartedNanos = System.nanoTime();
-                        segmentSink.audio(index, segmentAudio);
-                        logger.info(
-                                "Voice turn timing: turn_id={} stage=TTS_SEGMENT_FLUSHED sequence={} "
-                                        + "characters={} bytes={} synth_ms={} flush_ms={} request_ms={}",
-                                turnId,
-                                index,
-                                segment.codePointCount(0, segment.length()),
-                                segmentAudio.length,
-                                elapsedMillis(segmentStartedNanos),
-                                elapsedMillis(frameStartedNanos),
-                                elapsedMillis(requestStartedNanos)
-                        );
-                        segmentCount++;
-                        cancellation.throwIfCancelled();
-                    }
+                    long segmentStartedNanos = System.nanoTime();
+                    byte[] segmentAudio = speechRuntimeClient.synthesize(reply, roleId);
+                    cancellation.throwIfCancelled();
+                    long frameStartedNanos = System.nanoTime();
+                    segmentSink.audio(0, segmentAudio);
+                    segmentCount = 1;
+                    logger.info(
+                            "Voice turn timing: turn_id={} stage=TTS_SEGMENT_FLUSHED sequence=0 "
+                                    + "characters={} bytes={} synth_ms={} flush_ms={} request_ms={}",
+                            turnId,
+                            reply.codePointCount(0, reply.length()),
+                            segmentAudio.length,
+                            elapsedMillis(segmentStartedNanos),
+                            elapsedMillis(frameStartedNanos),
+                            elapsedMillis(requestStartedNanos)
+                    );
+                    cancellation.throwIfCancelled();
                 }
                 conversationService.completeGeneration(start.assistantMessageId(), reply);
                 generationCompleted = true;
@@ -335,7 +317,9 @@ public class VoiceTurnService {
                 return new VoiceTurnResult(transcript, reply, audio);
             } catch (VoiceTurnCancelledException | VoiceTurnClientDisconnectedException exception) {
                 if (start != null && !generationCompleted) {
-                    conversationService.interruptGeneration(start.assistantMessageId(), reply);
+                    conversationService.interruptGeneration(
+                            start.assistantMessageId(), partialReply(reply, streamedReply)
+                    );
                 }
                 recordStage(deviceId, turnId, VoiceTurnStage.CANCELLED, null);
                 throw exception;
@@ -344,7 +328,7 @@ public class VoiceTurnService {
                     conversationService.failGeneration(
                             start.assistantMessageId(),
                             exception instanceof LlmProviderUnavailableException ? "provider_unavailable" : "voice_turn_failed",
-                            reply
+                            partialReply(reply, streamedReply)
                     );
                 }
                 recordStage(
@@ -356,6 +340,36 @@ public class VoiceTurnService {
                 throw exception;
             }
         }
+    }
+
+    private String boundSingleSpokenReply(String reply) {
+        String normalized = reply == null ? "" : reply.trim();
+        if (normalized.codePointCount(0, normalized.length()) <= MAX_SPOKEN_REPLY_CODE_POINTS) {
+            return normalized;
+        }
+        int limit = normalized.offsetByCodePoints(0, MAX_SPOKEN_REPLY_CODE_POINTS);
+        String bounded = normalized.substring(0, limit).stripTrailing();
+        int boundary = lastStrongBoundary(bounded);
+        if (boundary >= 0 && bounded.codePointCount(0, boundary + 1)
+                >= MAX_SPOKEN_REPLY_CODE_POINTS / 2) {
+            return bounded.substring(0, boundary + 1).stripTrailing();
+        }
+        return bounded + "。";
+    }
+
+    private int lastStrongBoundary(String value) {
+        for (int index = value.length() - 1; index >= 0; index--) {
+            char current = value.charAt(index);
+            if (current == '。' || current == '！' || current == '？'
+                    || current == '!' || current == '?' || current == '\n') {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private String partialReply(String completedReply, StringBuilder streamedReply) {
+        return completedReply.isEmpty() ? streamedReply.toString() : completedReply;
     }
 
     private long elapsedMillis(long startedNanos) {

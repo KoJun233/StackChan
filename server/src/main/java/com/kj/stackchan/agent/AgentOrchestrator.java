@@ -1,5 +1,9 @@
 package com.kj.stackchan.agent;
 
+import java.nio.charset.StandardCharsets;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -17,6 +21,7 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -56,6 +61,17 @@ public class AgentOrchestrator {
                     + "|(?:完成|做完).{0,8}(?:什么|哪些|多少)"
                     + "|任务.{0,4}进度)"
     );
+    private static final Pattern NEXT_REMINDER_QUESTION = Pattern.compile(
+            "(?i)(下一(?:个|条).{0,6}提醒|最近.{0,4}提醒|什么时候提醒|next reminder)"
+    );
+    private static final Pattern PENDING_MEMORY_QUESTION = Pattern.compile(
+            "(?i)(待确认.{0,6}记忆|记忆.{0,6}待确认|pending memor)"
+    );
+    private static final Pattern EXPLICIT_AGENT_REQUEST = Pattern.compile(
+            "(?i)(查一下|查询|搜索|检索|联网|使用.{0,8}(?:tool|工具|skill|技能|mcp)"
+                    + "|(?:tool|skill|mcp)|最新.{0,12}(?:消息|新闻|进展|发布|更新)"
+                    + "|最近.{0,12}(?:消息|新闻|进展|发布|更新))"
+    );
     private static final String TOOL_LIMIT_REPLY = "本次查询已达到工具调用上限，我不能可靠地继续查询。";
     private static final String AGENT_TIMEOUT_REPLY = "这次工具查询超时了，我暂时无法给出可靠结果。";
     private static final String REQUIRED_TIME_TOOL_REPLY = "我暂时无法可靠读取当前日期和时间，所以不能猜测。";
@@ -63,6 +79,8 @@ public class AgentOrchestrator {
     private static final String REQUIRED_CALENDAR_TOOL_REPLY = "我暂时无法可靠读取当前设备的日历缓存，所以不能猜测。";
     private static final String REQUIRED_WEATHER_TOOL_REPLY = "我暂时无法可靠读取当前设备的天气缓存，所以不能猜测。";
     private static final String REQUIRED_PERSONAL_TASK_TOOL_REPLY = "我暂时无法可靠读取当前角色的待办，所以不能猜测。";
+    private static final String REQUIRED_REMINDER_TOOL_REPLY = "我暂时无法可靠读取当前角色的下一条提醒，所以不能猜测。";
+    private static final String REQUIRED_MEMORY_TOOL_REPLY = "我暂时无法可靠读取当前角色的待确认记忆，所以不能猜测。";
 
     private final AgentSettingsService settingsService;
     private final AgentToolAssemblyService toolAssemblyService;
@@ -89,6 +107,13 @@ public class AgentOrchestrator {
 
     public Flux<String> stream(AgentRequest request) {
         String requiredToolName = requiredToolName(request.userMessage());
+        if (usesLowLatencyVoiceConversation(request, requiredToolName)) {
+            return lowLatencyConversation(request);
+        }
+        if (usesDeterministicVoiceTime(request, requiredToolName)
+                && settingsService.runtimeSettings().enabled()) {
+            return deterministicVoiceTime(request);
+        }
         if (!settingsService.runtimeSettings().enabled()) {
             if (requiredToolName != null) {
                 return Flux.just(requiredToolReply(requiredToolName));
@@ -177,6 +202,12 @@ public class AgentOrchestrator {
         if (PERSONAL_TASK_QUESTION.matcher(userMessage).find()) {
             return PersonalTasksTool.ID;
         }
+        if (NEXT_REMINDER_QUESTION.matcher(userMessage).find()) {
+            return NextReminderTool.ID;
+        }
+        if (PENDING_MEMORY_QUESTION.matcher(userMessage).find()) {
+            return PendingMemoryCountTool.ID;
+        }
         return null;
     }
 
@@ -193,7 +224,121 @@ public class AgentOrchestrator {
         if (PersonalTasksTool.ID.equals(toolName)) {
             return REQUIRED_PERSONAL_TASK_TOOL_REPLY;
         }
+        if (NextReminderTool.ID.equals(toolName)) {
+            return REQUIRED_REMINDER_TOOL_REPLY;
+        }
+        if (PendingMemoryCountTool.ID.equals(toolName)) {
+            return REQUIRED_MEMORY_TOOL_REPLY;
+        }
         return REQUIRED_CAPABILITY_TOOL_REPLY;
+    }
+
+    private boolean usesLowLatencyVoiceConversation(AgentRequest request, String requiredToolName) {
+        if (request.context().channel() != AgentChannel.VOICE || requiredToolName != null) {
+            return false;
+        }
+        String message = request.userMessage();
+        return message.codePointCount(0, message.length()) <= 80
+                && !EXPLICIT_AGENT_REQUEST.matcher(message).find();
+    }
+
+    private Flux<String> lowLatencyConversation(AgentRequest request) {
+        return Flux.defer(() -> llmRuntimeClientFactory.createLowLatencyChatClient()
+                        .prompt()
+                        .system(request.systemPrompt())
+                        .messages(request.history())
+                        .user(request.userMessage())
+                        .stream()
+                        .content())
+                .timeout(appProperties.getAgent().getTimeout())
+                .filter(text -> !text.isEmpty());
+    }
+
+    private boolean usesDeterministicVoiceTime(AgentRequest request, String requiredToolName) {
+        return request.context().channel() == AgentChannel.VOICE
+                && CurrentTimeTool.ID.equals(requiredToolName);
+    }
+
+    private Flux<String> deterministicVoiceTime(AgentRequest request) {
+        return Flux.defer(() -> {
+            AgentToolAssemblyService.AgentToolAssembly tools = toolAssemblyService.assemble(request.context());
+            ToolCallback callback = tools.directTools().stream()
+                    .filter(tool -> CurrentTimeTool.ID.equals(tool.getToolDefinition().name()))
+                    .findFirst()
+                    .orElse(null);
+            if (callback == null) {
+                return Flux.just(REQUIRED_TIME_TOOL_REPLY);
+            }
+            long started = System.nanoTime();
+            try {
+                String result = callback.call("{}");
+                int resultBytes = result == null ? 0 : result.getBytes(StandardCharsets.UTF_8).length;
+                if (result == null || result.isBlank()
+                        || resultBytes > appProperties.getAgent().getMaxToolResultBytes()) {
+                    throw new RequiredToolUnavailableException();
+                }
+                String reply = spokenCurrentTime(result);
+                recordFastTimeTool(request.context(), AgentToolOutcome.SUCCESS, started, resultBytes);
+                return Flux.just(reply);
+            } catch (RuntimeException exception) {
+                recordFastTimeTool(request.context(), AgentToolOutcome.TOOL_FAILED, started, 0);
+                return Flux.just(REQUIRED_TIME_TOOL_REPLY);
+            }
+        });
+    }
+
+    private String spokenCurrentTime(String result) {
+        try {
+            var value = objectMapper.readTree(result);
+            LocalDate date = LocalDate.parse(value.path("date").asText());
+            LocalTime time = LocalTime.parse(value.path("time").asText());
+            return "现在是%d月%d日%s，%s%d点%02d分。".formatted(
+                    date.getMonthValue(), date.getDayOfMonth(), chineseWeekday(date.getDayOfWeek()),
+                    dayPeriod(time.getHour()), displayHour(time.getHour()), time.getMinute()
+            );
+        } catch (RuntimeException | java.io.IOException exception) {
+            throw new RequiredToolUnavailableException();
+        }
+    }
+
+    private String chineseWeekday(DayOfWeek dayOfWeek) {
+        return switch (dayOfWeek) {
+            case MONDAY -> "星期一";
+            case TUESDAY -> "星期二";
+            case WEDNESDAY -> "星期三";
+            case THURSDAY -> "星期四";
+            case FRIDAY -> "星期五";
+            case SATURDAY -> "星期六";
+            case SUNDAY -> "星期日";
+        };
+    }
+
+    private String dayPeriod(int hour) {
+        if (hour < 6) return "凌晨";
+        if (hour < 12) return "上午";
+        if (hour < 18) return "下午";
+        return "晚上";
+    }
+
+    private int displayHour(int hour) {
+        int value = hour % 12;
+        return value == 0 ? 12 : value;
+    }
+
+    private void recordFastTimeTool(
+            AgentInvocationContext context,
+            AgentToolOutcome outcome,
+            long started,
+            int resultBytes
+    ) {
+        try {
+            auditService.record(
+                    context, null, CurrentTimeTool.ID, AgentToolSource.BUILTIN, null, outcome,
+                    Math.max(0, (System.nanoTime() - started) / 1_000_000), resultBytes, false
+            );
+        } catch (RuntimeException ignored) {
+            // Auditing must not block a deterministic read-only result.
+        }
     }
 
     private String capabilityInstruction(AgentToolAssemblyService.AgentToolAssembly tools) {
@@ -220,6 +365,8 @@ public class AgentOrchestrator {
                 用户询问待办、任务清单、要做的事、今天完成了什么或任务进度时，必须调用
                 current_personal_tasks；
                 不得用提醒、日历或历史对话代替待办数据。Tool 不可用时必须如实说明。
+                用户询问下一条或最近的提醒时，必须调用 next_device_reminder；用户询问待确认记忆数量时，
+                必须调用 pending_device_memory_count。两者均不得用历史对话猜测，Tool 不可用时必须如实说明。
                 """.formatted(directToolNames, skillNames);
     }
 

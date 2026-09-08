@@ -57,10 +57,10 @@ class VoiceTurnStreamEnvelopeTest {
         VoiceTurnStreamEnvelope.Writer writer = new VoiceTurnStreamEnvelope(new ObjectMapper())
                 .writer(new ByteArrayOutputStream());
         writer.start("你好");
-        for (int sequence = 0; sequence < VoiceReplySegmenter.MAX_SEGMENTS; sequence++) {
+        for (int sequence = 0; sequence < VoiceTurnStreamEnvelope.MAX_SEGMENTS; sequence++) {
             writer.audio(sequence, new byte[44]);
         }
-        assertThatThrownBy(() -> writer.audio(VoiceReplySegmenter.MAX_SEGMENTS, new byte[44]))
+        assertThatThrownBy(() -> writer.audio(VoiceTurnStreamEnvelope.MAX_SEGMENTS, new byte[44]))
                 .isInstanceOf(IllegalStateException.class);
     }
 

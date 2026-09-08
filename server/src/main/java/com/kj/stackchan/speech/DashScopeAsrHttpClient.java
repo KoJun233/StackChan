@@ -43,6 +43,9 @@ class DashScopeAsrHttpClient {
                     .bodyToMono(JsonNode.class)
                     .block(PROVIDER_TIMEOUT);
         } catch (WebClientResponseException exception) {
+            if (isNoSpeechResponse(exception)) {
+                throw new VoiceInputException("没有识别到清晰语音");
+            }
             throw new SpeechProviderUnavailableException(
                     SpeechProviderUnavailableException.httpDiagnosticCode(
                             "dashscope_asr_http_request", exception.getStatusCode().value()
@@ -94,5 +97,19 @@ class DashScopeAsrHttpClient {
             return sentence;
         }
         return response.path("output").path("text").asText("").trim();
+    }
+
+    static boolean isNoSpeechResponse(WebClientResponseException exception) {
+        if (exception == null || exception.getStatusCode().value() != 400) return false;
+        String body = exception.getResponseBodyAsString();
+        if (body == null || body.isBlank()) return false;
+        String normalized = body.toLowerCase(java.util.Locale.ROOT);
+        return normalized.contains("success_with_no_valid_fragment")
+                || normalized.contains("asr_response_have_no_words")
+                || normalized.contains("no valid speech")
+                || normalized.contains("no speech")
+                || normalized.contains("no words")
+                || normalized.contains("silent audio")
+                || normalized.contains("audio is silent");
     }
 }
