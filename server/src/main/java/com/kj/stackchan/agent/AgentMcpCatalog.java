@@ -21,16 +21,22 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.kj.stackchan.agent.AgentMcpConnectionEntity.AuthType;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.mcp.SyncMcpToolCallback;
 import org.springframework.ai.mcp.client.common.autoconfigure.properties.McpStreamableHttpClientProperties;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.util.StringUtils;
+import reactor.core.scheduler.Schedulers;
 
 @Component
 public class AgentMcpCatalog {
 
+    private static final Logger logger = LoggerFactory.getLogger(AgentMcpCatalog.class);
     private static final Duration DISCOVERY_CACHE_TTL = Duration.ofSeconds(30);
     private static final int MAX_TOOL_PAGES = 10;
 
@@ -124,6 +130,30 @@ public class AgentMcpCatalog {
         synchronized (this) {
             cache = null;
             managedClients.invalidate();
+        }
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void scheduleWarmUp() {
+        Schedulers.boundedElastic().schedule(this::warmUp);
+    }
+
+    void warmUp() {
+        long startedNanos = System.nanoTime();
+        try {
+            DiscoverySnapshot snapshot = snapshot(false);
+            logger.info(
+                    "Agent MCP catalog warm-up completed: connections={} tools={} elapsed_ms={}",
+                    snapshot.connections().size(),
+                    snapshot.tools().size(),
+                    Duration.ofNanos(System.nanoTime() - startedNanos).toMillis()
+            );
+        } catch (RuntimeException exception) {
+            logger.warn(
+                    "Agent MCP catalog warm-up failed safely: elapsed_ms={} error={}",
+                    Duration.ofNanos(System.nanoTime() - startedNanos).toMillis(),
+                    exception.getClass().getSimpleName()
+            );
         }
     }
 

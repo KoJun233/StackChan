@@ -17,9 +17,36 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AgentMcpCatalogTest {
+
+    @Test
+    void warmUpPopulatesDiscoveryBeforeTheFirstConversation() {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<List<McpSyncClient>> clientsProvider = mock(ObjectProvider.class);
+        AgentSettingsService settingsService = mock(AgentSettingsService.class);
+        ManagedMcpClientRegistry managedClients = mock(ManagedMcpClientRegistry.class);
+        when(clientsProvider.getIfAvailable(
+                org.mockito.ArgumentMatchers.<java.util.function.Supplier<List<McpSyncClient>>>any()
+        )).thenReturn(List.of());
+        when(managedClients.connections(false)).thenReturn(List.of());
+
+        AgentMcpCatalog catalog = new AgentMcpCatalog(
+                clientsProvider,
+                settingsService,
+                new McpStreamableHttpClientProperties(),
+                managedClients,
+                new ObjectMapper(),
+                Clock.fixed(Instant.parse("2026-09-07T00:00:00Z"), ZoneOffset.UTC)
+        );
+
+        catalog.warmUp();
+        catalog.authorizedTools();
+
+        verify(managedClients).connections(false);
+    }
 
     @Test
     void exposesOnlyToolsWhoseConnectionIdentityAndSchemaAreStillAuthorized() {

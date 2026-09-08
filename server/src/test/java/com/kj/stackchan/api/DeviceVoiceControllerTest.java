@@ -112,4 +112,41 @@ class DeviceVoiceControllerTest {
                 org.mockito.ArgumentMatchers.eq(deviceId), org.mockito.ArgumentMatchers.eq(turnId),
                 org.mockito.ArgumentMatchers.eq(input), org.mockito.ArgumentMatchers.any());
     }
+
+    @Test
+    void acceptsBoundedLiveUploadAndStreamsTheScv2Envelope() throws Exception {
+        UUID deviceId = UUID.randomUUID();
+        UUID turnId = UUID.randomUUID();
+        byte[] input = new byte[64];
+        when(authenticator.authenticate(org.mockito.ArgumentMatchers.any())).thenReturn(
+                new DeviceTokenService.DeviceToken(deviceId, 1, Instant.parse("2026-07-20T00:00:00Z"))
+        );
+        doAnswer(invocation -> {
+            com.kj.stackchan.speech.VoiceTurnSegmentSink sink = invocation.getArgument(3);
+            sink.start("你好");
+            sink.audio(0, new byte[44]);
+            sink.complete(1);
+            return null;
+        }).when(voiceTurnService).handleLiveStreaming(
+                org.mockito.ArgumentMatchers.eq(deviceId), org.mockito.ArgumentMatchers.eq(turnId),
+                org.mockito.ArgumentMatchers.eq(input), org.mockito.ArgumentMatchers.any());
+
+        var pending = mockMvc.perform(post("/api/v1/device/voice/turn/live")
+                        .header("Authorization", "Bearer token")
+                        .header(DeviceVoiceController.VOICE_TURN_ID_HEADER, turnId)
+                        .contentType("audio/wav")
+                        .header("Accept", "application/vnd.stackchan.voice-turn-stream")
+                        .content(input))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        mockMvc.perform(asyncDispatch(pending))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(DeviceVoiceController.VOICE_TURN_STREAM_MEDIA_TYPE))
+                .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray())
+                        .startsWith(VoiceTurnStreamEnvelope.MAGIC));
+        verify(voiceTurnService).handleLiveStreaming(
+                org.mockito.ArgumentMatchers.eq(deviceId), org.mockito.ArgumentMatchers.eq(turnId),
+                org.mockito.ArgumentMatchers.eq(input), org.mockito.ArgumentMatchers.any());
+    }
 }

@@ -1,14 +1,24 @@
 # 固件工作流
 
-- 状态：STABLE
-- 最后更新：2026-08-30
-- 当前分支：`codex/work-002-pilot-active`
-- 基准提交：`f0bce2d`
-- 最后验证提交：`f0bce2d`
-- 最后验证范围：`424cb49` WORK-001 实机镜像；WORK-002/003/004 均不修改固件
-- 当前实机镜像：`424cb49` LAN HTTP Quad
+- 状态：READY_FOR_REVIEW
+- 最后更新：2026-09-08
+- 当前分支：`codex/live-voice-v46-integration`
+- 基准提交：`f32386a`
+- 最后验证提交：`4444860`
+- 最后验证范围：段间播放预取 LAN HTTP Quad 保留 NVS 安装、WebSocket 启动与一分钟在线稳定性、三组任务栈回归通过
+- 当前实机镜像：`4444860` LAN HTTP Quad（NVS 保留、WebSocket 在线、保持 `motion_disabled`）
 
 ## 当前目标
+
+`a70fb9c` 已解决整块 WAV 上传阻塞，但两轮 80,044/72,044 字节请求仍需 286/436 ms。用户确认采用本地 VAD 门控的边录边传：新固件把录音窗口改为 100 ms，只在本地检测到语音或显式按住说话后打开固定同源 `/api/v1/device/voice/turn/live`，以 HTTP chunked WAV 在录音期间发送 PCM；约 800 ms 静音判定只保留最后 100 ms 静音，目标是把停录后的请求体尾部降到约 100 ms。1 KiB HTTP 写入、Wi-Fi/LwIP 优先 PSRAM、上传期关闭省电、八秒 PSRAM 兼容缓存和 32 KiB 语音任务栈保持不变；实时请求在终止前无法打开/写入时才回退完整 WAV，终止后不重试以免重复对话。服务端会按实际长度规范化开放 WAV 头后再进入既有 ASR/SCV2，因此 ASR、Agent、TTS 延迟不在该 100 ms 目标内。
+
+首轮 `b2303e8` 实机验证确认请求体尾部已降至 17–136 ms，但同步 HTTP 写入与 I2S 采集位于同一任务，网络写入让两轮采集墙钟时间比有效样本多约 1–1.8 秒；主请求最终只有 9,600/32,000 PCM 字节（0.3/1.0 秒），ASR 分别误识别为“嗯”和“No”。PSRAM 全程约 7.7–8.0 MiB 可用，无分配失败、崩溃或复位，因此不是机器人内存不足。
+
+`628acd0` 已把 HTTP 打开/写入迁到 Core 1 的 24 KiB PSRAM 上传任务，Core 0 语音任务只连续采集并发布已完成窗口；起始 VAD 同时要求连续两个 100 ms 窗口。用户确认两轮识别恢复正常。短首段发布后用户确认初始响应变快，但最新两轮播放阶段分别为 17.123/76.379 秒，实际 PCM 只有 12.000/52.220 秒，额外停顿为 5.123/24.159 秒。服务端已在设备播完前 flush 后续段，根因是 `handle_streaming_turn_frame` 在 HTTP 解析回调内同步播放 WAV，播放时不能继续读取响应；不是内存不足。
+
+当前候选让 SCV2 解析器把完整帧的 PSRAM 所有权移交给深度 1 的队列，由 Core 1 独立 24 KiB PSRAM 播放任务顺序播放；网络任务可并行预取下一帧。完成、错误与触摸取消均有终止/释放路径，日志新增每段缓冲、间隔、播放、栈和 PSRAM 数值，不含正文或音频。HTTP RX/TX 缓冲继续保持 1 KiB；最多只预取一个待播帧，不扩大协议单帧或总段数上限。
+
+首次将 `4aa700a` 保留 NVS 刷入后，8 MiB PSRAM、Wi-Fi、身份、WakeNet、LAN HTTP 和 `motion_disabled` 均正常，但 WebSocket 的 8 KiB 内部栈申请失败。第一版纠正把命令队列移到任务启动之后，实机进一步证明 WebSocket 初始化期预分配的 RX/TX 缓冲仍会把最大内部连续块压到 6.5–7.5 KiB；启用组件官方动态缓冲后可用总量增加约 8 KiB，但连续块稳定为 7680 字节。静态 DRAM 与旧镜像相同，播放任务和队列此时尚未创建，故不是 PSRAM 或总内存不足；最终纠正使用 7168 字节 WebSocket 栈落入实测连续块，同时保持动态 1 KiB 缓冲、WebSocket 先启动、命令队列后建和初始化数据门控，并在连接事件记录真实最低剩余栈。
 
 保持实机 CoreS3 默认 `motion_disabled`；WORK-001 顶部长按显式启停已通过实机验收，环境光按能力位工作，当前设备未上报该能力时保持安全默认亮度。未经独立授权不启用或执行身体动作。
 
@@ -78,9 +88,11 @@ WORK-004 只增加服务端个人待办、管理页面、只读 Agent Tool 和�
 
 ## 下一步操作
 
-保持当前 `424cb49`、NVS 和 `motion_disabled`；真实动作模板仍按 runbook 另行授权。当前硬件未上报 LTR-553 能力，后续接入对应辅助硬件时再单独验证环境光档位，不阻止 WORK-001 软件闭环。
+请用户完成两轮独立唤醒；串口继续监听每段 `buffered_ms/gap_ms/playback_ms`，并与 PCM 时长和服务端总播放阶段对比。
 
 ## 阻塞项
+
+- 当前无实现或安装阻塞；只剩用户两轮实机段间停顿验收。既有 I2S 重复停用告警继续作为单独观察项保留。
 
 - MEDIA-004 V2 实体激活因用户暂无 EAF 素材延期，不能视为失败或通过。
 - BODY-001 无动作中位校准已连续两次实机通过；真实运动方向、模板限位和动作停止尚未实机验证，继续受实体动作独立授权边界约束。
@@ -110,6 +122,22 @@ WORK-004 只增加服务端个人待办、管理页面、只读 Agent Tool 和�
 - `firmware/sdkconfig.defaults.*`
 
 ## 验证命令与最近结果
+
+- 2026-09-08 WebSocket 启动内存纠正与安装：`4444860` LAN HTTP Quad 为 1,650,016 字节（`0x192d60`）、SHA-256 `23E94ACCF3CC72CC2D95B5DE6408E372924D61A72675FC38AE2A1A8853826536`、分区余量 48%，镜像校验有效。经 COM3 保留 NVS 覆盖后，8 MiB PSRAM、Wi-Fi/身份、LAN HTTP、WakeNet 和 `motion_disabled` 保留；7168 字节 WebSocket 栈在 7680 字节最大连续块下成功创建，连接事件实测仍余 4000 字节栈并稳定在线超过一分钟。服务端数据库收到 `4444860 / motion_disabled` 新心跳。
+
+- 2026-09-07 段间播放预取候选：ESP-IDF 5.5.5 protocol 和 LAN HTTP Quad 完整构建通过；LAN 应用 1,649,632 字节（`0x192be0`）、SHA-256 `C4865B29FA43CB8DEC0DE7B65E18A25CCB6B9D220681C73DB36EB994316395C0`、分区余量 48%。配网、传输、语音三组栈负例/正例通过；带 `-fstack-usage` 的真实 protocol 编译确认语音、上传、播放任务外部调用余量分别为 28,000、22,320、24,416 字节。工作树制品为 `ddc2c30-dirty`，只作提交前构建证据，尚未连接或刷写。
+
+- 2026-09-05 边录边传实机纠正：`b2303e8` 两轮主请求分别为 9,600/32,000 PCM 字节，尾部 136/17 ms，ASR 分别为“嗯”和“No”；另有 9,600/6,400 字节连续对话短请求被供应商以 HTTP 400 拒绝。设备 PSRAM 始终约 7.7–8.0 MiB 可用且无复位，排除内存耗尽。根因是每次同步 HTTP 打开/写入暂停同任务 I2S 采样。纠正候选以独立 24 KiB PSRAM 上传任务并发写入，并要求两个连续 100 ms 起始窗口；protocol 为 `0x3a140`、余量 92%，LAN HTTP Quad 为 `0x1927a0`、余量 48%。双任务栈负例/正例及真实预算通过：语音 32,768 字节栈外部余量 28,016，上传 24,576 字节栈外部余量 22,320。待 COM3 安装和纠正复测。
+
+- 2026-09-04 边录边传候选：新增本地 VAD 命中后的 chunked WAV 实时上传、100 ms 录音窗口、约 800 ms 静音判定、100 ms 尾部保留、开放长度 WAV 头和终止前有界回退；服务端新增固定同源 live 端点并在 ASR 前规范化实际长度。语音相关定向 18/18、排除既有 8 个 Windows loopback 类后的服务端 458/458、三组任务栈负例/正例和文档检查通过。带 `-fstack-usage` 的 protocol build 为 237,888 字节（`0x3a140`，92% 余量），实时采集最坏本地路径 4,752 字节、外部调用余量 28,016 字节；LAN HTTP Quad 工作树 build 为 1,647,712 字节（`0x192460`，48% 余量）。首次并行 LAN build 在第三方 esp-dsp 编译单元触发 GCC 内部错误，改用 `ninja -j1` 后完整通过；未连接或刷写 CoreS3。
+
+- 2026-09-04 `a70fb9c` 实机收口：从干净提交构建的 LAN HTTP Quad app descriptor 为 `a70fb9c`，应用 1,644,400 字节（`0x191770`）、SHA-256 `966101854AF06D3089C174F9619D625F2D326FACD7AE3C03A0D3C5E594C2FEA0`。经用户明确授权通过 COM3 写入 bootloader、分区表、factory app、OTA data 和 srmodels，全部写后哈希通过；未擦除或写入 `0x9000` NVS。启动确认 ESP-IDF 5.5.5、8 MiB PSRAM、`WiFi/LWIP prefer SPIRAM`、LAN HTTP、保留的 Wi-Fi/身份、WakeNet 和 `motion_disabled`。第一轮主请求 80,044/80,044 字节，连接 18 ms、上传 286 ms；第二轮主请求 72,044/72,044 字节，连接 17 ms、上传 436 ms；两轮均约在上传完成后 6.3 秒开始正常回复播放，无写超时、崩溃或复位。期间连续对话附加请求 16,044 字节/106 ms 和 80,044 字节/345 ms 也完整上传。内部 SRAM 历史最低值为 36 字节，说明水位仍紧但未再阻塞上传；末尾一次短附加请求上传后在回复阶段 `ESP_FAIL`，设备安全恢复并重新监听 WakeNet，另有既有 I2S 重复停用告警，均作为独立观察项。全程未启用或执行身体动作。
+
+- 2026-09-04 内部 SRAM 第二轮修复：启用 ESP-IDF 5.5.5 官方 `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP`，语音 HTTP RX/TX 缓冲和上传块均限制为 1 KiB，保留 15 秒写超时并增加 `opened` 内存快照；回归脚本新增配置与上限门禁。三组负例/正例栈预算全部通过；带 `-fstack-usage` 的真实分析构建确认配网、语音、传输任务外部调用余量分别为 8,704、28,112、23,904 字节。生成的 protocol 与 LAN HTTP Quad 配置均包含 PSRAM 网络分配和 8,192 字节主任务栈；工作树构建分别为 237,888 字节（`0x3a140`，92% 余量，SHA-256 `5745737569EF4184DFE717C06E392C02F90F1A0271BBFAE6AAFF267BBDB6CC33`）和 1,644,400 字节（`0x191770`，48% 余量，SHA-256 `9E4C1C403265D4D47F3467F2480AF1C27B6E58EE0588A5617F2CB1A687F9F4F3`）。制品版本为 `e9f5916-dirty`，只作提交前构建证据，未连接或刷写设备。
+
+- 2026-09-04 语音上传实机验证：从干净 `0e7c641` 构建 LAN HTTP Quad，app descriptor 为 `0e7c641`，应用 1,644,000 字节（`0x1915e0`）、SHA-256 `F1AB679ECBF72534EE83769162FA5E2F33F2FAEABA0AE19DA8BF80409C35C543`。经用户明确授权通过 COM3 写入 bootloader、分区表、factory app、OTA data 和 srmodels，全部写后哈希通过；未擦除或写入 `0x9000` NVS。启动确认 ESP-IDF 5.5.5、8 MiB PSRAM、LAN HTTP、保留的 Wi-Fi/身份、WakeNet 和 `motion_disabled`。第一轮捕获 88,044 字节，在 49,152 字节处于 59.676 秒后 `ESP_ERR_HTTP_WRITE_DATA`；第二轮捕获 64,044 字节，在 8,192 字节处于 30.729 秒后同错。两轮内部 SRAM 历史最低值均为 32 字节，服务端均未进入语音控制器日志。主机尚余 7.76/31.84 GiB，服务容器 576.6 MiB/3.825 GiB、CPU 0.42%、未 OOM，排除主机或 JVM 总内存不足。
+
+- 2026-09-03 语音上传延迟修复：移除语音路径的整块 `esp_http_client_set_post_field`，改用 `open/write/fetch/flush` 的 4 KiB 显式分块流程；上传期间临时使用 `WIFI_PS_NONE` 和 15 秒单次发送超时，结束后恢复原状态。日志覆盖内部 SRAM 当前空闲、最大连续块、历史最低值、PSRAM 空闲、发送字节和耗时。流式上下文迁到 PSRAM后，`-fstack-usage` 实测语音本地调用链为 4,656 字节、32,768 字节任务栈外部库余量 28,112 字节；12,288 字节负例拒绝、32,768 字节正例接受。ESP-IDF 5.5.5 protocol 为 237,888 字节（`0x3a140`）、余量 92%、SHA-256 `18D3F3564272A891B69ABB935333C9B33757600819E31A9FE093FD32FA7157F7`；LAN HTTP Quad 为 1,644,000 字节（`0x1915e0`）、余量 48%、SHA-256 `6FB1E81C38A331397DFBB599BBC68CFEDE2A159E47A0E8281A20A2FCEE7C60F4`。未连接设备、未刷写、未发起 OTA。
 
 - 2026-08-30 WORK-001 实机入口：用户自行安装 `424cb49` LAN HTTP Quad，设备持续在线并保持 `motion_disabled / DISABLED`。临时启用周日后，1500 ms 顶部长按成功启动 `ACTIVE_PRESENT`，第二次长按停止为 `OFF`，跨调度周期稳定。COM3 经授权只读监听 30 秒无异常输出，未发送串口命令；当前心跳未上报接近、环境光和舵机反馈能力，固件按能力缺失路径降级。全程未启用或执行身体动作。
 
@@ -164,6 +192,7 @@ WORK-004 只增加服务端个人待办、管理页面、只读 Agent Tool 和�
 - [0027：有界连续对话](../decisions/0027-bounded-continuous-conversation.md)
 - [0031：应用固件 OTA](../decisions/0031-safe-application-firmware-ota-and-health-center.md)
 - [0037：有序分段语音播放](../decisions/0037-ordered-streaming-voice-playback.md)
+- [0049：本地 VAD 门控的边录边传](../decisions/0049-local-vad-gated-live-voice-upload.md)
 - [0038：分层动态球形表情与兼容资源包](../decisions/0038-layered-expression-rendering-and-resident-appearance-catalog.md)
 - [0039：原生连续渲染与有限 EAF 生命周期片段](../decisions/0039-native-renderer-with-bounded-eaf-lifecycle-clips.md)
 - [0040：版本化表情资源容器与互斥活动槽](../decisions/0040-versioned-expression-pack-container.md)

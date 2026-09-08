@@ -1,15 +1,24 @@
 # 服务端工作流
 
 - 状态：READY_FOR_REVIEW
-- 最后更新：2026-09-01
-- 当前分支：`codex/console-information-architecture`
-- 基准提交：`227b369`
-- 最后验证提交：`d67a421`
-- 最后验证范围：角色删除与日程接口定向 14/14、空库 Flyway V1..V46、LAN/V46 发布与鉴权边界通过
+- 最后更新：2026-09-08
+- 当前分支：`codex/live-voice-v46-integration`
+- 基准提交：`f32386a`
+- 最后验证提交：`628acd0`
+- 最后验证范围：首段延迟优化专项 20/20、排除既有 8 个 Windows loopback 类后的服务端 462/462 通过；新镜像已发布并通过运行态核对
 
 ## 当前目标
 
-在保留 WORK-006 待办能力和十四天本地匿名聚合的同时，为管理端提供只读缓存日程查询，并允许归档满七天的非默认角色经管理员确认后安全永久删除。
+在保留 V46、live 上传、SCV2 顺序/取消和隐私边界的同时，缩短首个 TTS 音频帧：第一段使用 16 字目标、24 字硬上限并优先自然标点，后续仍保持 80/160 字边界。服务启动后后台预热既有 MCP 目录，不调用 LLM 或 Tool；语音链路增加不含正文和音频的 ASR、Agent、逐段 TTS/flush 耗时日志。用户确认响应变快；后续两轮显示 server 已在设备播放期间发完后续段，剩余长停顿定位为固件同步播放阻塞收帧，server 无需再次发布。
+
+## 已发布的首播延迟优化
+
+- 两轮实机基线中 ASR 仅为 562/303 ms；第一轮 Agent 冷初始化为 12,153 ms，第二轮预热后为 2,586 ms。
+- 完整 TTS 后到设备首播仍为 3,371/5,290 ms，并与单个完整 WAV 帧大小线性吻合；根因是短回复未达到原 40 字逗号边界，常被保留为单段。
+- 新分段器让实测样例分别从一段变为两段，第一段为 13/11 字；无标点首段不超过 24 字，最多八段与全文保持不变。
+- `AgentMcpCatalog` 在应用就绪后使用有界弹性线程后台完成既有连接和 Tool 发现；失败只记录安全类型并保持后续降级。
+- `VoiceTurnService` 记录 ASR、Agent、首段合成与 flush、完整 TTS 的安全耗时和大小，便于下一轮实机直接区分供应商、服务 flush 和设备收帧。
+- 新镜像以 `voice-latency-v46-final` 只替换 LAN server；启动后 MCP 目录预热 895 ms，健康、V46、LAN 和设备在线状态正常，无 OOM 或重启。
 
 ## 已完成的角色删除与日程展示接口
 
@@ -17,6 +26,13 @@
 - 新增 `DELETE /api/v1/roles/{id}`；服务端时钟强制七天冷静期，拒绝默认、未归档和冷静期未满角色。
 - V46 让角色所属的会话、记忆、提醒、通知、语音会话、主动冷却、动作记录和待办跟随角色清理，同时保留设备活动角色限制外键作为安全门。
 - 定向单元 14/14 通过；Testcontainers 已从空库成功应用 V1..V46。完整 490 个用例中 31 个错误均为既有 Windows Java `Unable to establish loopback connection` 基础设施限制，业务断言失败为零。
+
+## 已发布的边录边传
+
+- 新增 `POST /api/v1/device/voice/turn/live`，要求设备 Bearer、回合 UUID、`audio/wav` 和 SCV2；认证发生在读取请求体之前，解码后正文仍限制为 44 字节至 512 KiB。
+- 接受 RIFF/data 长度为 `0xffffffff` 的开放 WAV 头，在调用 ASR 前重建实际长度；HTTP chunk framing 和长度占位符不会进入语音供应商。
+- 原 `/api/v1/device/voice/turn`、SCV1/SCV2 回复、取消和旧固件兼容保持不变；新端点必须先于固件发布。
+- V46 整合后定向 18/18、排除既有 8 个 Windows loopback 类后的 460/460、控制台 102/102 与 production build 通过；以 `live-voice-v46-final` 只替换 server，数据库保持 V46。
 
 ## 已完成的 WORK-006
 
@@ -148,11 +164,11 @@
 
 ## 下一步操作
 
-按 WORK-004 文档验证机器人待办查询、确认式新增与确认式完成；验收后保持现有服务运行。真实发生误播报时由管理员当日显式标记，2026-09-13 接收一次性结果通知并复核 `PASS/FAIL`。
+保持当前 server 不变；`4444860` 段间预取固件已安装并稳定在线，监听用户两轮实体唤醒，以设备每段 `gap_ms` 验证收帧与播放已重叠。发布没有改变数据库、个人待办或十四天观察窗口。
 
 ## 阻塞项
 
-- 当前无服务端代码阻塞；固件安装与实体动作仍需独立授权。
+- 当前无实现或部署阻塞；等待用户两轮实体语音验收。
 - 公网生产入口必须保持 HTTPS-only；不得复用管理员会话或设备 JWT 作为集成令牌。
 
 ## 关键文件
@@ -184,6 +200,10 @@
 - `docs/runbooks/external-notifications.md`
 
 ## 验证命令与最近结果
+
+- 2026-09-07 首播延迟优化：`VoiceReplySegmenterTest`、`VoiceTurnStreamEnvelopeTest`、`VoiceTurnServiceTest`、`DeviceVoiceControllerTest`、`AgentMcpCatalogTest` 共 20/20；完整 494 个用例中 31 个错误均来自既有 8 个 Windows loopback 类且业务断言失败为零，排除后 462/462 通过。Docker 镜像生产构建成功；发布前新备份和隔离恢复通过，只替换 server。运行镜像 `sha256:a72c6b97bf9fc8c9617dabe79bce5723787c56dc13b44ddbb51e836e4b76218b`、版本 `voice-latency-v46-final`，MCP 目录预热 895 ms，健康、V46、LAN 和设备安全状态正常。
+
+- 2026-09-04 边录边传服务端：`DeviceVoiceControllerTest`、`VoiceTurnServiceTest`、`WavPcmAudioTest` 定向 18/18；完整 490 个用例中 31 个错误均为既有 8 个 Windows loopback 类且失败断言为 0，排除这些类后 458/458 通过。新增端点保持设备先认证、512 KiB 上限、开放 WAV 头归一化与既有 SCV2 响应；无迁移、未发布、未操作 CoreS3。
 
 - 2026-08-31 WORK-005：待办查询、时区分类、两项上限、备注隔离、标题截断、失败开放和简报拼接定向 18/18；真实 PostgreSQL 查询与 V1..V45 迁移通过，排除既有 8 个 Windows loopback 类后 452/452 通过。新备份和独立恢复验证后只替换 server；运行版本 `work005-v45-task-brief`，V45、1 条待办、观察窗口和 `424cb49 / motion_disabled / DISABLED` 均正常。
 
@@ -252,6 +272,7 @@
 - [0035：互动通知回执](../decisions/0035-interactive-notification-responses.md)
 - [0036：确定性通知摘要](../decisions/0036-deterministic-notification-digests.md)
 - [0037：有序分段语音播放](../decisions/0037-ordered-streaming-voice-playback.md)
+- [0049：本地 VAD 门控的边录边传](../decisions/0049-local-vad-gated-live-voice-upload.md)
 - [Agent/Skill/Tool/MCP runbook](../../runbooks/agent-tools-mcp.md)
 
 ## 安全与兼容性约束

@@ -30,6 +30,32 @@ static void write_le32(uint8_t *output, uint32_t value)
     output[3] = (uint8_t)(value >> 24);
 }
 
+static esp_err_t build_pcm16_mono_header(uint8_t *output,
+                                         size_t output_size,
+                                         uint32_t sample_rate,
+                                         uint32_t riff_size,
+                                         uint32_t data_size)
+{
+    if (output == NULL || output_size < AUDIO_WAV_HEADER_SIZE ||
+        sample_rate < 8000 || sample_rate > 48000) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memcpy(output, "RIFF", 4);
+    write_le32(output + 4, riff_size);
+    memcpy(output + 8, "WAVE", 4);
+    memcpy(output + 12, "fmt ", 4);
+    write_le32(output + 16, 16);
+    write_le16(output + 20, 1);
+    write_le16(output + 22, 1);
+    write_le32(output + 24, sample_rate);
+    write_le32(output + 28, sample_rate * sizeof(int16_t));
+    write_le16(output + 32, sizeof(int16_t));
+    write_le16(output + 34, 16);
+    memcpy(output + 36, "data", 4);
+    write_le32(output + 40, data_size);
+    return ESP_OK;
+}
+
 esp_err_t audio_wav_build_pcm16_mono(uint8_t *output,
                                      size_t output_size,
                                      const int16_t *samples,
@@ -46,22 +72,22 @@ esp_err_t audio_wav_build_pcm16_mono(uint8_t *output,
         return ESP_ERR_NO_MEM;
     }
 
-    memcpy(output, "RIFF", 4);
-    write_le32(output + 4, (uint32_t)(36 + data_size));
-    memcpy(output + 8, "WAVE", 4);
-    memcpy(output + 12, "fmt ", 4);
-    write_le32(output + 16, 16);
-    write_le16(output + 20, 1);
-    write_le16(output + 22, 1);
-    write_le32(output + 24, sample_rate);
-    write_le32(output + 28, sample_rate * sizeof(int16_t));
-    write_le16(output + 32, sizeof(int16_t));
-    write_le16(output + 34, 16);
-    memcpy(output + 36, "data", 4);
-    write_le32(output + 40, (uint32_t)data_size);
+    esp_err_t err = build_pcm16_mono_header(
+        output, output_size, sample_rate, (uint32_t)(36 + data_size), (uint32_t)data_size);
+    if (err != ESP_OK) {
+        return err;
+    }
     memcpy(output + AUDIO_WAV_HEADER_SIZE, samples, data_size);
     *wav_size = AUDIO_WAV_HEADER_SIZE + data_size;
     return ESP_OK;
+}
+
+esp_err_t audio_wav_build_pcm16_mono_stream_header(uint8_t *output,
+                                                   size_t output_size,
+                                                   uint32_t sample_rate)
+{
+    return build_pcm16_mono_header(
+        output, output_size, sample_rate, UINT32_MAX, UINT32_MAX);
 }
 
 bool audio_wav_parse(const uint8_t *wav, size_t wav_size, audio_wav_view_t *view)
