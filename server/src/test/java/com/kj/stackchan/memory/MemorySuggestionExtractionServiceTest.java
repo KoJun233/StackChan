@@ -61,4 +61,26 @@ class MemorySuggestionExtractionServiceTest {
 
         verify(memoryService, never()).suggest(any());
     }
+
+    @Test
+    void marksAnExplicitInterestForProactiveUseAfterConfirmation() {
+        LlmRuntimeClientFactory factory = mock(LlmRuntimeClientFactory.class);
+        LongTermMemoryService memoryService = mock(LongTermMemoryService.class);
+        ChatClient chatClient = mock(ChatClient.class, RETURNS_DEEP_STUBS);
+        when(factory.createChatClient()).thenReturn(chatClient);
+        when(chatClient.prompt().system(anyString()).user(anyString()).call().content()).thenReturn("""
+                {"suggest":true,"category":"USER_PROFILE","title":"AI 兴趣","content":"用户喜欢关注 AI 技术","topicKey":"AI 技术","importance":4,"reason":"用户明确表达兴趣","allowProactiveMention":true}
+                """);
+        MemorySuggestionExtractionService service = new MemorySuggestionExtractionService(
+                Runnable::run, factory, memoryService, new ObjectMapper()
+        );
+
+        service.schedule(new MemorySuggestionExtractionService.SuggestionTurn(
+                UUID.randomUUID(), UUID.randomUUID(), "我平时挺关注 AI 技术", "记住了"
+        ));
+
+        var captor = org.mockito.ArgumentCaptor.forClass(LongTermMemoryService.MemorySuggestionCommand.class);
+        verify(memoryService).suggest(captor.capture());
+        assertThat(captor.getValue().memory().allowProactiveMention()).isTrue();
+    }
 }

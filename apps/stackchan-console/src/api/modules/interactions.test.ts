@@ -20,9 +20,9 @@ describe('interaction settings API', () => {
       proactiveEnabled: false,
       proactiveStart: '09:00',
       proactiveEnd: '21:00',
-      proactiveMinIntervalMinutes: 240,
+      proactiveMinIntervalMinutes: 60,
       proactivePersonalizationEnabled: false,
-      proactiveDailyLimit: 2,
+      proactiveDailyLimit: 3,
       proactiveContent: '你好',
     }
     const fetchMock = vi.fn()

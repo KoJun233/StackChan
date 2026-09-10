@@ -3,6 +3,7 @@ package com.kj.stackchan.interaction;
 import com.kj.stackchan.llm.LlmRuntimeClientFactory;
 import com.kj.stackchan.memory.LongTermMemoryService;
 import com.kj.stackchan.reminder.ProactiveGenerationStatus;
+import com.kj.stackchan.role.CompanionRoleService;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 
@@ -38,6 +39,28 @@ class ProactiveMessageGeneratorTest {
     }
 
     @Test
+    void generatesFromTheCurrentPersonaEvenWithoutAnInterestMemory() {
+        LlmRuntimeClientFactory factory = mock(LlmRuntimeClientFactory.class);
+        ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
+        CompanionRoleService.RoleSnapshot role = mock(CompanionRoleService.RoleSnapshot.class);
+        when(role.name()).thenReturn("小栈");
+        when(role.tone()).thenReturn(com.kj.stackchan.persona.PersonaTone.LIVELY);
+        when(role.replyLength()).thenReturn(com.kj.stackchan.persona.PersonaReplyLength.SHORT);
+        when(role.proactivity()).thenReturn(com.kj.stackchan.persona.PersonaProactivity.BALANCED);
+        when(role.backgroundInstructions()).thenReturn("像熟悉游戏的桌面伙伴");
+        when(role.topicBoundaries()).thenReturn("");
+        when(role.taboos()).thenReturn("不要说教");
+        when(factory.createChatClient()).thenReturn(client);
+        when(client.prompt().system(anyString()).user(anyString()).call().content()).thenReturn("我来冒个泡，想聊两句就叫我呀。");
+
+        var result = new ProactiveMessageGenerator(Runnable::run, factory)
+                .generate("固定问候", null, role);
+
+        assertThat(result.content()).isEqualTo("我来冒个泡，想聊两句就叫我呀。");
+        assertThat(result.status()).isEqualTo(ProactiveGenerationStatus.GENERATED);
+    }
+
+    @Test
     void fallsBackWhenProviderOutputViolatesPolicy() {
         var fixture = fixture("你可能有抑郁症，请访问 https://example.com", false);
 
@@ -50,6 +73,16 @@ class ProactiveMessageGeneratorTest {
     @Test
     void fallsBackForMarkdownEvenWithoutAUrl() {
         var fixture = fixture("**今天记得喝水**", false);
+
+        var result = fixture.generator.generate("固定问候", fixture.memory);
+
+        assertThat(result.content()).isEqualTo("固定问候");
+        assertThat(result.status()).isEqualTo(ProactiveGenerationStatus.FALLBACK);
+    }
+
+    @Test
+    void rejectsCurrentEventClaimsWhenNoExternalSourceWasProvided() {
+        var fixture = fixture("最近又发布了一个最新 AI 模型，我们来聊聊吧。", false);
 
         var result = fixture.generator.generate("固定问候", fixture.memory);
 

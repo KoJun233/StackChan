@@ -12,6 +12,7 @@ import com.kj.stackchan.device.DeviceCommandGateway;
 import com.kj.stackchan.memory.LongTermMemoryService;
 import com.kj.stackchan.reminder.ReminderRepository;
 import com.kj.stackchan.reminder.ProactiveGenerationStatus;
+import com.kj.stackchan.role.CompanionRoleService;
 import com.kj.stackchan.speech.VoiceTurnRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +39,7 @@ class ProactiveInteractionServiceTest {
     @Mock private LongTermMemoryService memoryService;
     @Mock private ProactiveTopicCooldownService topicCooldownService;
     @Mock private ProactiveMessageGenerator messageGenerator;
+    @Mock private CompanionRoleService roleService;
 
     @Test
     void blocksOnlyOnRecentlyUpdatedVoiceTurns() {
@@ -66,31 +68,36 @@ class ProactiveInteractionServiceTest {
     @Test
     void generatesFromOneAllowedMemoryOnlyAfterAllRulesPass() {
         UUID deviceId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
         var settings = new InteractionSettingsService.InteractionSettingsSnapshot(
                 deviceId, 50, false, false, 8, false, LocalTime.of(22, 0), LocalTime.of(7, 0), "UTC",
                 MissedReminderPolicy.PLAY_NOW, 10, true, LocalTime.MIN, LocalTime.MAX,
                 30, 2, "hello", null, LocalDate.of(2026, 7, 27), 0, NOW, null, true
         );
         LongTermMemoryService.MemorySnapshot memory = org.mockito.Mockito.mock(LongTermMemoryService.MemorySnapshot.class);
+        CompanionRoleService.RoleSnapshot role = org.mockito.Mockito.mock(CompanionRoleService.RoleSnapshot.class);
+        when(role.id()).thenReturn(roleId);
         when(memory.topicKey()).thenReturn("coffee");
+        when(roleService.getActive(deviceId)).thenReturn(role);
         when(settingsService.proactiveCandidates()).thenReturn(List.of(settings));
         when(settingsService.isProactiveEligible(settings, NOW)).thenReturn(true);
         when(settingsService.recordProactiveIfEligible(deviceId, NOW)).thenReturn(true);
         when(commandGateway.isConnected(deviceId)).thenReturn(true);
-        when(memoryService.loadProactiveCandidates(deviceId, 8)).thenReturn(List.of(memory));
-        when(topicCooldownService.isEligible(deviceId, "coffee", NOW)).thenReturn(true);
-        when(messageGenerator.generate("hello", memory)).thenReturn(
+        when(memoryService.loadProactiveCandidates(roleId, deviceId, 8)).thenReturn(List.of(memory));
+        when(topicCooldownService.isEligible(deviceId, roleId, "coffee", NOW)).thenReturn(true);
+        when(messageGenerator.generate("hello", memory, role)).thenReturn(
                 new ProactiveMessageGenerator.GenerationResult("来杯美式，也别忘了休息一下。", ProactiveGenerationStatus.GENERATED)
         );
 
-        assertThat(service().generateDueGreetings()).isEqualTo(1);
+        assertThat(serviceWithRole().generateDueGreetings()).isEqualTo(1);
 
         ArgumentCaptor<com.kj.stackchan.reminder.ReminderEntity> reminder =
                 ArgumentCaptor.forClass(com.kj.stackchan.reminder.ReminderEntity.class);
         verify(reminderRepository).save(reminder.capture());
+        assertThat(reminder.getValue().getRoleId()).isEqualTo(roleId);
         assertThat(reminder.getValue().getProactiveTopicKey()).isEqualTo("coffee");
         assertThat(reminder.getValue().getProactiveGenerationStatus()).isEqualTo(ProactiveGenerationStatus.GENERATED);
-        verify(topicCooldownService).recordMention(deviceId, "coffee", NOW);
+        verify(topicCooldownService).recordMention(deviceId, roleId, "coffee", NOW);
     }
 
     private ProactiveInteractionService service() {
@@ -103,6 +110,20 @@ class ProactiveInteractionServiceTest {
                 topicCooldownService,
                 messageGenerator,
                 Clock.fixed(NOW, ZoneOffset.UTC)
+        );
+    }
+
+    private ProactiveInteractionService serviceWithRole() {
+        return new ProactiveInteractionService(
+                settingsService,
+                reminderRepository,
+                voiceTurnRepository,
+                commandGateway,
+                memoryService,
+                topicCooldownService,
+                messageGenerator,
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                roleService
         );
     }
 }

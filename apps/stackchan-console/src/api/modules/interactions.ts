@@ -19,6 +19,7 @@ export interface InteractionSettings {
   proactiveEnabled: boolean
   proactiveEnd: string
   proactiveLastAt: string | null
+  proactiveNextAt: string | null
   proactiveMinIntervalMinutes: number
   proactivePersonalizationEnabled: boolean
   proactiveStart: string
@@ -36,7 +37,7 @@ export interface ProactiveTopicCooldown {
 
 export type SaveInteractionSettingsInput = Omit<
   InteractionSettings,
-  'deviceId' | 'proactiveCounter' | 'proactiveCounterDate' | 'proactiveLastAt' | 'updatedAt'
+  'deviceId' | 'proactiveCounter' | 'proactiveCounterDate' | 'proactiveLastAt' | 'proactiveNextAt' | 'updatedAt'
 >
 
 export function getInteractionSettings(deviceId: string): Promise<InteractionSettings> {

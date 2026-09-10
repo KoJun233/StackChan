@@ -2,15 +2,22 @@
 
 - 状态：READY_FOR_REVIEW
 - 最后更新：2026-09-10
-- 当前分支：`codex/voice-natural-conversation`
-- 基准提交：`c2b0fde`
-- 最后验证提交：`ac6f386`
-- 最后验证范围：VOICE-001 严格单 WAV server 镜像构建、发布前备份恢复、本机与 LAN 健康、V46、MCP 预热、设备在线和容器隔离通过
+- 当前分支：`codex/interest-aware-proactive-chat`
+- 基准提交：`efcb85d`
+- 最后验证提交：`efcb85d`
+- 最后验证范围：COMPANION-001 定向 22/22、非 loopback 服务端 470/470、控制台 102/102/类型检查/production build、V47、备份恢复和 LAN 发布通过
 - 当前模式：LAN HTTP development
 
 ## 当前目标
 
-VOICE-001 当前运行 `voice-single-wav-v5`；全部语音回复固定为一次 TTS 和一个 WAV，明确无人续聊按 `NO_SPEECH` 安静结束。CoreS3 保持 `4444860` 和 `motion_disabled`，下一步复核标点自然停顿和结束表情。
+LAN 当前运行 `companion-random-v47` 和数据库 V47。主动开关仍保持关闭，待用户从页面显式启用；CoreS3 保持 `4444860` 和 `motion_disabled`。
+
+## 已发布的 COMPANION-001
+
+- 发布前通过现有备份容器生成新 PostgreSQL 备份，并把最新备份恢复到一次性隔离实例验证成功；旧镜像保留为 `pre-companion-random-v47`。
+- 只替换 `stackchan-foundation-server-1`；当前容器为 `0a388ac7217c`，镜像为 `sha256:691d99e0f6756df2cba153a5e73facde96f4f3e4cf94df9ee868a2fb7f6a15ca`，构建版本为 `companion-random-v47`。
+- 运行库由 V46 迁移到 V47，本机和 `192.168.1.4` 健康状态均为 `ok`，MCP 目录预热完成；当前交互设置为主动开关关闭、最小间隔 90 分钟、每日上限 3 次、个性化关闭，因此没有待触发候选。
+- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；设备继续保持 `4444860 / motion_disabled / DISABLED`，本轮未连接或刷写固件。
 
 ## 已发布的自然低延迟短语音
 
