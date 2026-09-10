@@ -1,15 +1,17 @@
 # 全局工作流总览
 
 - 状态：READY_FOR_REVIEW
-- 最后更新：2026-09-08
-- 当前分支：`codex/live-voice-v46-integration`
-- 实现基准：`f32386a`
-- 最后验证提交：`4444860`
-- 最后验证范围：段间播放预取 LAN HTTP Quad 保留 NVS 安装、WebSocket 启动/在线稳定性、服务端心跳和三组任务栈回归通过
+- 最后更新：2026-09-10
+- 当前分支：`codex/voice-natural-conversation`
+- 实现基准：`c2b0fde`
+- 最后验证提交：`ac6f386`
+- 最后验证范围：VOICE-001 严格单 WAV 相关 44/44；排除既有 8 个 Windows loopback 类后的服务端 463/463；镜像构建、备份恢复与 LAN 发布健康检查通过
 - 当前部署：LAN HTTP development mode
 - 生产边界：HTTPS-only
 
 ## 当前结论
+
+`VOICE-001` 已完成代码、自动化与 LAN 发布。八十码点以内且没有外部查询意图的设备语音使用关闭推理的直接流式模型。用户纠正本轮问题是两段音频之间等待，而非整体调用慢；日志确认首段同步 TTS 会阻塞后续模型文本消费，余句随后才单独合成。当前实现让每个语音回合只进行一次 TTS、只下发一个 WAV，所有标点语气停顿由语音服务生成；正文优先摘要到 160 码点以内，模型超限时在自然句界安全收束。当前时间语音直接执行已授权的本地 Tool 并确定性生成单句，不经过 ReactAgent；其他事实能力仍保持受控 Tool。非实时 ASR 明确返回“无有效语音/无词”时按 `NO_SPEECH` 安静结束，不再显示语音服务错误。详见 [ADR 0050](../decisions/0050-low-latency-natural-voice-conversation.md)。
 
 V46 后台信息架构、真实二级菜单、无黑块聊天输入区、窄屏消息滚动、天气图标、未来七天只读日程和归档七天后手动删除已经发布并在当前整合分支完整保留；边界见 [ADR 0047](../decisions/0047-isolated-tdesign-chat-ui.md) 与 [ADR 0048](../decisions/0048-guarded-archived-role-deletion.md)。语音整块上传阻塞已由 `a70fb9c` 实机修复；为把 286/436 ms 的完整 WAV 上传进一步压缩，用户确认采用 [ADR 0049](../decisions/0049-local-vad-gated-live-voice-upload.md) 的本地 VAD 门控边录边传。首个 `b2303e8` 固件两轮尾部达到 136/17 ms，但同步 HTTP 写入阻断 I2S；`628acd0` 已把采集与 24 KiB PSRAM 上传任务分离，用户确认两轮识别恢复正常。短首段和 MCP 预热发布后响应已变快，但最新两轮的设备播放阶段比 PCM 时长额外增加约 5.12/24.16 秒；服务端在设备播放期间已经发完后续段，确认是固件在 HTTP 回调内同步播放、暂停继续收帧，而不是机器人或服务端内存不足。当前候选把收帧与播放拆开，使用深度 1 的 PSRAM 预取队列和独立 24 KiB 播放任务。首次刷入 `4aa700a` 暴露 WebSocket 8 KiB 栈超出启动时 7680 字节最大内部连续块；最终纠正使用官方动态缓冲、7168 字节实测可容纳栈、WebSocket 优先启动和队列就绪门控，静态 DRAM 未增长，问题不是总内存或 PSRAM 不足。
 
@@ -33,10 +35,10 @@ V46 后台信息架构、真实二级菜单、无黑块聊天输入区、窄屏�
 
 | 工作流 | 状态 | 当前事实 | 下一步 |
 | --- | --- | --- | --- |
-| [服务端](server.md) | READY_FOR_REVIEW | 短首段、MCP 后台预热和隐私安全时序日志已发布 | 用户复测两轮实体语音 |
+| [服务端](server.md) | READY_FOR_REVIEW | `voice-single-wav-v5` 固定每回合一次 TTS、一个 WAV；时间 Tool 快路径与无人续聊安静收尾已发布 | 用户复测标点自然停顿及无人续聊 |
 | [前端](frontend.md) | READY_FOR_REVIEW | 真实二级分组和 Fantastic-admin 聊天输入区已发布，V46 页面能力在整合中保持 | 用户强制刷新后复核 |
 | [固件](firmware.md) | READY_FOR_REVIEW | `4444860` 已保留 NVS 安装且 WebSocket 稳定在线 | 用户唤醒两轮并监听段间日志 |
-| [部署](deployment.md) | READY_FOR_REVIEW | server 保持 `voice-latency-v46-final`；CoreS3 已上报 `4444860` | 用户两轮实体语音验收 |
+| [部署](deployment.md) | READY_FOR_REVIEW | server 运行 `voice-single-wav-v5`；CoreS3 保持 `4444860` | 用户复核两句话连续播放和结束表情 |
 
 ## 当前能力地图
 

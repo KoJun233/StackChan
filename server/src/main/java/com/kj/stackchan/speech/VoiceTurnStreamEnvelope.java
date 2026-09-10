@@ -18,6 +18,7 @@ public class VoiceTurnStreamEnvelope {
     public static final int FRAME_COMPLETE = 3;
     public static final int FRAME_ERROR = 4;
     static final int MAX_AUDIO_BYTES = 2 * 1024 * 1024;
+    static final int MAX_SEGMENTS = 8;
     static final int MAX_METADATA_BYTES = 8192;
     private static final Set<String> ERROR_CODES = Set.of(
             "no_speech", "cancelled", "llm_unavailable", "speech_unavailable", "internal_error"
@@ -58,7 +59,7 @@ public class VoiceTurnStreamEnvelope {
         @Override
         public void audio(int sequence, byte[] wavAudio) {
             if (!started || finished || sequence != nextSequence
-                    || sequence >= VoiceReplySegmenter.MAX_SEGMENTS || wavAudio == null
+                    || sequence >= MAX_SEGMENTS || wavAudio == null
                     || wavAudio.length < 44 || wavAudio.length > MAX_AUDIO_BYTES) {
                 throw new IllegalStateException("Voice stream audio frame is invalid");
             }
@@ -78,7 +79,7 @@ public class VoiceTurnStreamEnvelope {
         @Override
         public void complete(int segmentCount) {
             if (!started || finished || segmentCount != nextSequence || segmentCount < 1
-                    || segmentCount > VoiceReplySegmenter.MAX_SEGMENTS) {
+                    || segmentCount > MAX_SEGMENTS) {
                 throw new IllegalStateException("Voice stream completion frame is invalid");
             }
             writeFrame(FRAME_COMPLETE, json(new CompleteMetadata(segmentCount)));

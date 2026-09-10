@@ -1,16 +1,36 @@
 # 部署工作流
 
 - 状态：READY_FOR_REVIEW
-- 最后更新：2026-09-08
-- 当前分支：`codex/live-voice-v46-integration`（V46/live 与首播延迟优化已发布，段间播放固件已安装）
-- 基准提交：`f32386a`
-- 最后验证提交：`4444860`
-- 最后验证范围：server 运行态正常；段间播放固件保留 NVS 安装、WebSocket 在线与版本心跳通过
+- 最后更新：2026-09-10
+- 当前分支：`codex/voice-natural-conversation`
+- 基准提交：`c2b0fde`
+- 最后验证提交：`ac6f386`
+- 最后验证范围：VOICE-001 严格单 WAV server 镜像构建、发布前备份恢复、本机与 LAN 健康、V46、MCP 预热、设备在线和容器隔离通过
 - 当前模式：LAN HTTP development
 
 ## 当前目标
 
-保持已发布的 WORK-006/V46、真实二级菜单、无黑块输入区、窄屏消息滚动、天气、只读日程与角色删除冷静期；当前 live 服务端和 `628acd0` CoreS3 识别正常。短首段发布后用户确认响应变快，但两轮设备播放相对 PCM 多出 5.123/24.159 秒；已确认固件同步播放阻塞同一 HTTP 响应继续收帧。server、数据库和容器无需替换，本轮只安装有界 PSRAM 预取固件并继续保持 `motion_disabled`。
+VOICE-001 当前运行 `voice-single-wav-v5`；全部语音回复固定为一次 TTS 和一个 WAV，明确无人续聊按 `NO_SPEECH` 安静结束。CoreS3 保持 `4444860` 和 `motion_disabled`，下一步复核标点自然停顿和结束表情。
+
+## 已发布的自然低延迟短语音
+
+- 用户确认语音服务应直接根据标点生成语气停顿，不需要业务分段。`voice-single-wav-v5` 固定每回合一次 TTS、一个 WAV，并把超限回复约束为 160 码点内的自然摘要；固件和 SCV2 协议不变。
+- `voice-single-wav-v5` 发布前备份与最新备份隔离恢复成功，旧镜像保留为 `pre-voice-single-wav-v5`。当前容器 `16c6f1b260d7`，镜像 `sha256:2ef21d5cccb6462f47e6106162947736a2d029288f403e5f9572d6917364e564`；本机与 `192.168.1.4` 健康正常，46 个迁移校验通过，MCP 目录预热完成。
+- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 与 CoreS3 未替换；设备保持 `4444860 / motion_disabled / DISABLED`。
+- 用户明确反馈问题是两段音频中间约两秒等待。复核确认首句 TTS 在模型流回调中同步执行，余句在首段发出后才开始另一轮合成；这不是整体 Agent 调用延迟。
+- `voice-continuous-v4` 移除普通回复的抢先首句合成；不超过 160 字时只生成一个 WAV，超长回复才按 80 至 160 字边界使用 SCV2 分段。发布前备份和最新备份恢复验证成功，回滚镜像为 `pre-voice-continuous-v4`。
+- 当前容器 `8843bbc46f2d`，镜像 `sha256:6610bce0eba9311848e32e4a68569d25766da8d236fd7b6caa030aebd1f36bf9`。本机和 `192.168.1.4` 健康均为 200，V46 和 MCP 预热正常；PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 与 CoreS3 未替换，设备保持 `4444860 / motion_disabled / DISABLED`。
+- 2026-09-10 实测“现在几点”回合首段在请求后 5,262 ms 发出，其中 Agent/Tool 占 4,673 ms；一句话在逗号处拆为两段，第二段另需 1,684 ms 合成。播放结束后的无人续听被 ASR HTTP 400 误判为服务故障。
+- `voice-time-single-v3` 让语音时间查询直接执行已授权的本地 Tool，不调用模型；首段不在逗号切开。明确的无有效语音/无词 ASR 响应映射为 `NO_SPEECH`，其他供应商错误保持原失败处理。
+- 发布前备份与恢复验证成功，旧镜像保留为 `pre-voice-time-single-v3`。当前容器 `dbc7fa06db0c`，镜像 `sha256:de68ba12b3974eb786ad2c0f9bb1bdfe45ae8401f3614900a62b50b8e4b09cb6`。
+- 本机与 `192.168.1.4` 健康接口均为 200，运行库保持 V46；PostgreSQL、Redis、备份容器和 CoreS3 未替换，设备保持 `4444860 / motion_disabled / DISABLED`。
+- 实体复测显示回复速度明显改善，但每轮仍有 3–5 个独立 TTS 段。服务端 flush 均为 0 ms，后续段通常在前段播放期间已准备，停顿主要来自独立音频的起音、收尾与标点静音。
+- `voice-natural-pause-v2` 保留抢先首句，把普通长度的剩余正文合成一个连续段；超过 160 字才继续拆分。发布前备份与恢复验证成功，旧镜像保留为 `pre-voice-natural-pause-v2`。
+- 当前容器为 `ce80c94e73e3`，镜像为 `sha256:ffa95b8af1f0e9299efc98262c9ab5a909dfe59a16413af13f01302805c434a3`；本机和 LAN 健康为 200，V46 与 MCP 预热正常。
+- 发布前使用既有备份容器生成新备份并完成最新备份独立恢复验证；旧服务端镜像保留为 `pre-voice-natural-ac6f386`。
+- 新镜像 `sha256:d3f5b596bd3a4899855197f627482c72ef5306821cf76d1e88d184bc0e60b1f9` 只替换 `stackchan-foundation-server-1`，当前容器为 `e30bac8eef35`，构建版本为 `voice-natural-ac6f386`。
+- PostgreSQL `6d8feaa18623`、Redis `58e31a403637` 与备份容器 `c94b190f0428` 未替换；运行库保持 V46，46 个迁移校验通过。
+- 本机和 `192.168.1.4` 健康接口均为 200；服务约 7 秒启动，MCP 目录预热完成。设备继续在线上报 `4444860 / motion_disabled / DISABLED`，本任务未刷写固件。
 
 ## 已发布的首播延迟优化
 

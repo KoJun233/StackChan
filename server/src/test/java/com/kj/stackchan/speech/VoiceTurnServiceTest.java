@@ -149,14 +149,13 @@ class VoiceTurnServiceTest {
     }
 
     @Test
-    void streamsDeterministicAudioSegmentsInSequence() {
+    void keepsAShortMultiSentenceReplyInOneContinuousAudioSegment() {
         UUID deviceId = UUID.randomUUID();
         UUID turnId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
         UUID assistantMessageId = UUID.randomUUID();
         byte[] input = new byte[64];
-        byte[] firstAudio = new byte[44];
-        byte[] secondAudio = new byte[48];
+        byte[] replyAudio = new byte[92];
         when(speechRuntimeClient.transcribe(input)).thenReturn("分段回答");
         when(deviceVoiceConversationService.getOrCreateConversationId(deviceId)).thenReturn(conversationId);
         when(conversationService.loadHistory(conversationId)).thenReturn(List.of());
@@ -168,24 +167,64 @@ class VoiceTurnServiceTest {
         when(llmSettingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings(
                 "https://example.com/v1", "model", "prompt", "secret"
         ));
+        VoiceTurnSegmentSink sink = mock(VoiceTurnSegmentSink.class);
         when(agentOrchestrator.stream(any(AgentOrchestrator.AgentRequest.class)))
-                .thenReturn(Flux.just("第一句。", "第二句。"));
-        when(speechRuntimeClient.synthesize("第一句。", CompanionRoleEntity.DEFAULT_ROLE_ID))
-                .thenReturn(firstAudio);
-        when(speechRuntimeClient.synthesize("第二句。", CompanionRoleEntity.DEFAULT_ROLE_ID))
-                .thenReturn(secondAudio);
+                .thenReturn(Flux.concat(
+                        Flux.just("第一句。"),
+                        Flux.defer(() -> {
+                            verify(sink, never()).audio(anyInt(), any(byte[].class));
+                            return Flux.just("第二句。第三句！\n[[emotion:HAPPY:MEDIUM:5]]");
+                        })
+                ));
+        when(speechRuntimeClient.synthesize(
+                "第一句。第二句。第三句！", CompanionRoleEntity.DEFAULT_ROLE_ID))
+                .thenReturn(replyAudio);
+        service().handleStreaming(deviceId, turnId, input, sink);
+
+        var order = inOrder(sink);
+        order.verify(sink).start("分段回答");
+        order.verify(sink).audio(0, replyAudio);
+        order.verify(sink).complete(1);
+        verify(conversationService).completeGeneration(assistantMessageId, "第一句。第二句。第三句！");
+        verify(speechRuntimeClient, never()).synthesize(
+                "第一句。", CompanionRoleEntity.DEFAULT_ROLE_ID);
+    }
+
+    @Test
+    void boundsAnOverlongVoiceReplyAtANaturalBoundaryAndStillSendsOneAudioSegment() {
+        UUID deviceId = UUID.randomUUID();
+        UUID turnId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID assistantMessageId = UUID.randomUUID();
+        byte[] input = new byte[64];
+        byte[] replyAudio = new byte[128];
+        String spokenReply = "前".repeat(90) + "。";
+        String generatedReply = spokenReply + "后".repeat(100);
+        when(speechRuntimeClient.transcribe(input)).thenReturn("详细说说");
+        when(deviceVoiceConversationService.getOrCreateConversationId(deviceId)).thenReturn(conversationId);
+        when(conversationService.loadHistory(conversationId)).thenReturn(List.of());
+        when(conversationService.startGeneration(eq(conversationId), any(UUID.class), eq("详细说说")))
+                .thenReturn(new GenerationStart(
+                        conversationId, UUID.randomUUID(), assistantMessageId,
+                        false, GenerationStatus.STREAMING, ""
+                ));
+        when(llmSettingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings(
+                "https://example.com/v1", "model", "prompt", "secret"
+        ));
+        when(agentOrchestrator.stream(any(AgentOrchestrator.AgentRequest.class)))
+                .thenReturn(Flux.just(generatedReply));
+        when(speechRuntimeClient.synthesize(spokenReply, CompanionRoleEntity.DEFAULT_ROLE_ID))
+                .thenReturn(replyAudio);
         VoiceTurnSegmentSink sink = mock(VoiceTurnSegmentSink.class);
 
         service().handleStreaming(deviceId, turnId, input, sink);
 
         var order = inOrder(sink);
-        order.verify(sink).start("分段回答");
-        order.verify(sink).audio(0, firstAudio);
-        order.verify(sink).audio(1, secondAudio);
-        order.verify(sink).complete(2);
-        verify(conversationService).completeGeneration(assistantMessageId, "第一句。第二句。");
-        verify(speechRuntimeClient, never()).synthesize(
-                "第一句。第二句。", CompanionRoleEntity.DEFAULT_ROLE_ID);
+        order.verify(sink).start("详细说说");
+        order.verify(sink).audio(0, replyAudio);
+        order.verify(sink).complete(1);
+        verify(conversationService).completeGeneration(assistantMessageId, spokenReply);
+        verify(speechRuntimeClient).synthesize(spokenReply, CompanionRoleEntity.DEFAULT_ROLE_ID);
     }
 
     @Test
@@ -208,7 +247,7 @@ class VoiceTurnServiceTest {
         ));
         when(agentOrchestrator.stream(any(AgentOrchestrator.AgentRequest.class)))
                 .thenReturn(Flux.just("第一句。第二句。"));
-        when(speechRuntimeClient.synthesize("第一句。", CompanionRoleEntity.DEFAULT_ROLE_ID))
+        when(speechRuntimeClient.synthesize("第一句。第二句。", CompanionRoleEntity.DEFAULT_ROLE_ID))
                 .thenReturn(new byte[44]);
         VoiceTurnSegmentSink sink = mock(VoiceTurnSegmentSink.class);
         doAnswer(ignored -> {
@@ -220,7 +259,7 @@ class VoiceTurnServiceTest {
                 .isInstanceOf(VoiceTurnCancelledException.class);
 
         verify(speechRuntimeClient, never()).synthesize(
-                "第二句。", CompanionRoleEntity.DEFAULT_ROLE_ID);
+                "第一句。", CompanionRoleEntity.DEFAULT_ROLE_ID);
         verify(sink, never()).complete(anyInt());
         verify(conversationService).interruptGeneration(assistantMessageId, "第一句。第二句。");
     }

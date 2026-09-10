@@ -60,3 +60,4 @@
 | [0047](0047-isolated-tdesign-chat-ui.md) | ACCEPTED | TDesign Chat 仅用于陪伴聊天展示层，业务状态和其他管理页面继续使用既有 Fantastic-admin 边界。 |
 | [0048](0048-guarded-archived-role-deletion.md) | ACCEPTED | 非默认角色归档满七天后仅由管理员二次确认手动永久删除，不设置无人值守自动清理。 |
 | [0049](0049-local-vad-gated-live-voice-upload.md) | ACCEPTED | 语音在本地 VAD 命中后以 chunked WAV 边录边传，并把停录后的请求尾部控制在约一个 100 ms 音频窗口。 |
+| [0050](0050-low-latency-natural-voice-conversation.md) | ACCEPTED | 高频短语音闲聊绕过无用 Agent 组装并流式生成，首个完整自然段与剩余模型输出并行合成。 |

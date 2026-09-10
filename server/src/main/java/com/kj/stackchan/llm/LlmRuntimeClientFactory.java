@@ -42,6 +42,14 @@ public class LlmRuntimeClientFactory {
         return ChatClient.create(createChatModel());
     }
 
+    public ChatClient createLowLatencyChatClient() {
+        return ChatClient.create(createLowLatencyChatModel());
+    }
+
+    public ChatModel createLowLatencyChatModel() {
+        return createChatModel(true);
+    }
+
     public ChatModel createChatModel() {
         return createChatModel(false);
     }

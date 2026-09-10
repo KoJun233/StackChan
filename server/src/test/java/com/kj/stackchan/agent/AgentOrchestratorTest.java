@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kj.stackchan.config.AppProperties;
 import com.kj.stackchan.llm.LlmRuntimeClientFactory;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -21,16 +22,115 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.annotation.Tool;
+import reactor.core.publisher.Flux;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AgentOrchestratorTest {
+
+    @Test
+    void streamsShortVoiceConversationWithoutBuildingTheToolAgent() {
+        AgentSettingsService settingsService = mock(AgentSettingsService.class);
+        AgentToolAssemblyService assemblyService = mock(AgentToolAssemblyService.class);
+        AgentToolAuditService auditService = mock(AgentToolAuditService.class);
+        LlmRuntimeClientFactory clientFactory = mock(LlmRuntimeClientFactory.class);
+        ChatClient chatClient = mock(ChatClient.class, RETURNS_DEEP_STUBS);
+        AgentInvocationContext context = new AgentInvocationContext(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), AgentChannel.VOICE
+        );
+        when(clientFactory.createLowLatencyChatClient()).thenReturn(chatClient);
+        when(chatClient.prompt()
+                .system(any(String.class))
+                .messages(any(List.class))
+                .user(any(String.class))
+                .stream()
+                .content()).thenReturn(Flux.just("这把确实可惜。", "下一把打回来。"));
+
+        AgentOrchestrator orchestrator = new AgentOrchestrator(
+                settingsService, assemblyService, auditService, clientFactory,
+                new ObjectMapper(), new AppProperties()
+        );
+        List<String> output = orchestrator.stream(new AgentOrchestrator.AgentRequest(
+                context, "你是测试助手。", List.of(), "又输了"
+        )).collectList().block();
+
+        assertThat(output).containsExactly("这把确实可惜。", "下一把打回来。");
+        verify(assemblyService, never()).assemble(any());
+        verify(clientFactory, never()).createAgentChatModel();
+    }
+
+    @Test
+    void answersAuthorizedVoiceTimeDeterministicallyWithoutCallingTheModel() {
+        AgentSettingsService settingsService = mock(AgentSettingsService.class);
+        AgentToolAssemblyService assemblyService = mock(AgentToolAssemblyService.class);
+        AgentToolAuditService auditService = mock(AgentToolAuditService.class);
+        LlmRuntimeClientFactory clientFactory = mock(LlmRuntimeClientFactory.class);
+        SkillRegistry skillRegistry = mock(SkillRegistry.class);
+        AgentInvocationContext context = new AgentInvocationContext(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), AgentChannel.VOICE
+        );
+        ToolCallback callback = ToolCallbacks.from(new FixedCurrentTimeTool())[0];
+        when(settingsService.runtimeSettings()).thenReturn(new AgentSettingsService.RuntimeSettings(
+                true, true, true, Instant.parse("2026-09-08T00:00:00Z")
+        ));
+        when(assemblyService.assemble(context)).thenReturn(new AgentToolAssemblyService.AgentToolAssembly(
+                List.of(callback), Map.of(), skillRegistry, List.of(), Map.of(), List.of()
+        ));
+
+        AgentOrchestrator orchestrator = new AgentOrchestrator(
+                settingsService, assemblyService, auditService, clientFactory,
+                new ObjectMapper(), new AppProperties()
+        );
+        List<String> output = orchestrator.stream(new AgentOrchestrator.AgentRequest(
+                context, "你是测试助手。", List.of(), "现在几点"
+        )).collectList().block();
+
+        assertThat(output).containsExactly("现在是9月8日星期二，晚上10点05分。");
+        verify(clientFactory, never()).createAgentChatModel();
+        verify(clientFactory, never()).createLowLatencyChatClient();
+        verify(auditService).record(
+                eq(context), eq(null), eq(CurrentTimeTool.ID), eq(AgentToolSource.BUILTIN), eq(null),
+                eq(AgentToolOutcome.SUCCESS), anyLong(), anyInt(), eq(false)
+        );
+    }
+
+    @Test
+    void keepsReminderQuestionsOnTheRequiredToolPath() {
+        AgentSettingsService settingsService = mock(AgentSettingsService.class);
+        AgentToolAssemblyService assemblyService = mock(AgentToolAssemblyService.class);
+        AgentToolAuditService auditService = mock(AgentToolAuditService.class);
+        LlmRuntimeClientFactory clientFactory = mock(LlmRuntimeClientFactory.class);
+        SkillRegistry skillRegistry = mock(SkillRegistry.class);
+        AgentInvocationContext context = new AgentInvocationContext(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), AgentChannel.VOICE
+        );
+        when(settingsService.runtimeSettings()).thenReturn(new AgentSettingsService.RuntimeSettings(
+                true, true, true, Instant.parse("2026-09-08T00:00:00Z")
+        ));
+        when(assemblyService.assemble(context)).thenReturn(new AgentToolAssemblyService.AgentToolAssembly(
+                List.of(), Map.of(), skillRegistry, List.of(), Map.of(), List.of()
+        ));
+
+        AgentOrchestrator orchestrator = new AgentOrchestrator(
+                settingsService, assemblyService, auditService, clientFactory,
+                new ObjectMapper(), new AppProperties()
+        );
+        List<String> output = orchestrator.stream(new AgentOrchestrator.AgentRequest(
+                context, "你是测试助手。", List.of(), "下一条提醒是什么"
+        )).collectList().block();
+
+        assertThat(output).containsExactly("我暂时无法可靠读取当前角色的下一条提醒，所以不能猜测。");
+        verify(clientFactory, never()).createLowLatencyChatClient();
+    }
 
     @Test
     void executesAReadOnlyToolThroughReactAgentAndReturnsTheFinalAnswer() {
@@ -556,6 +656,15 @@ class AgentOrchestratorTest {
         public String read() {
             executions.incrementAndGet();
             return "{\"time\":\"10:00\"}";
+        }
+    }
+
+    public static class FixedCurrentTimeTool {
+
+        @Tool(name = CurrentTimeTool.ID, description = "Return a complete fixed test time")
+        public String read() {
+            return "{\"date\":\"2026-09-08\",\"time\":\"22:05:00\","
+                    + "\"dayOfWeek\":\"TUESDAY\",\"zoneId\":\"Asia/Shanghai\",\"utcOffset\":\"+08:00\"}";
         }
     }
 
