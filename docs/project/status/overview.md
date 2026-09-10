@@ -2,14 +2,16 @@
 
 - 状态：READY_FOR_REVIEW
 - 最后更新：2026-09-10
-- 当前分支：`codex/voice-natural-conversation`
-- 实现基准：`c2b0fde`
-- 最后验证提交：`ac6f386`
-- 最后验证范围：VOICE-001 严格单 WAV 相关 44/44；排除既有 8 个 Windows loopback 类后的服务端 463/463；镜像构建、备份恢复与 LAN 发布健康检查通过
+- 当前分支：`codex/interest-aware-proactive-chat`
+- 实现基准：`efcb85d`
+- 最后验证提交：`efcb85d`
+- 最后验证范围：COMPANION-001 定向 22/22；排除 8 个既有 Windows loopback 类后的服务端 470/470；控制台 32 文件 102/102、类型检查、production build、V47 空库迁移、镜像构建与 LAN 发布通过
 - 当前部署：LAN HTTP development mode
 - 生产边界：HTTPS-only
 
 ## 当前结论
+
+`COMPANION-001` 已完成实现并发布：保留显式开关，在设备时区的指定窗口内保存随机候选，每天最多三次且两次至少间隔一小时；到点后仍经过在线、免打扰、语音忙碌和提醒单飞仲裁。开场措辞读取当前活动角色人设；自动建议只有被识别为用户明确兴趣时才预置允许主动提及，仍须用户确认后生效。当前 DeepSeek 官方接口没有可核验来源的联网搜索，本阶段从已确认兴趣切入但禁止生成“最近发布、最新模型”等无来源资讯。详见 [ADR 0051](../decisions/0051-persona-aware-random-proactive-conversation.md)。
 
 `VOICE-001` 已完成代码、自动化与 LAN 发布。八十码点以内且没有外部查询意图的设备语音使用关闭推理的直接流式模型。用户纠正本轮问题是两段音频之间等待，而非整体调用慢；日志确认首段同步 TTS 会阻塞后续模型文本消费，余句随后才单独合成。当前实现让每个语音回合只进行一次 TTS、只下发一个 WAV，所有标点语气停顿由语音服务生成；正文优先摘要到 160 码点以内，模型超限时在自然句界安全收束。当前时间语音直接执行已授权的本地 Tool 并确定性生成单句，不经过 ReactAgent；其他事实能力仍保持受控 Tool。非实时 ASR 明确返回“无有效语音/无词”时按 `NO_SPEECH` 安静结束，不再显示语音服务错误。详见 [ADR 0050](../decisions/0050-low-latency-natural-voice-conversation.md)。
 
@@ -35,10 +37,10 @@ V46 后台信息架构、真实二级菜单、无黑块聊天输入区、窄屏�
 
 | 工作流 | 状态 | 当前事实 | 下一步 |
 | --- | --- | --- | --- |
-| [服务端](server.md) | READY_FOR_REVIEW | `voice-single-wav-v5` 固定每回合一次 TTS、一个 WAV；时间 Tool 快路径与无人续聊安静收尾已发布 | 用户复测标点自然停顿及无人续聊 |
-| [前端](frontend.md) | READY_FOR_REVIEW | 真实二级分组和 Fantastic-admin 聊天输入区已发布，V46 页面能力在整合中保持 | 用户强制刷新后复核 |
+| [服务端](server.md) | READY_FOR_REVIEW | 随机主动候选、当前人设生成和确认兴趣自动授权已发布为 V47 | 用户启用主动问候与个性化后观察首个候选 |
+| [前端](frontend.md) | READY_FOR_REVIEW | 主动关心页已显示随机规则、下一候选和资讯事实边界 | 用户刷新页面并复核设置交互 |
 | [固件](firmware.md) | READY_FOR_REVIEW | `4444860` 已保留 NVS 安装且 WebSocket 稳定在线 | 用户唤醒两轮并监听段间日志 |
-| [部署](deployment.md) | READY_FOR_REVIEW | server 运行 `voice-single-wav-v5`；CoreS3 保持 `4444860` | 用户复核两句话连续播放和结束表情 |
+| [部署](deployment.md) | READY_FOR_REVIEW | server 已运行 `companion-random-v47`，运行库为 V47 | 保持显式开关关闭，等待用户从页面启用 |
 
 ## 当前能力地图
 
@@ -56,12 +58,14 @@ V46 后台信息架构、真实二级菜单、无黑块聊天输入区、窄屏�
 
 ## 版本与运行态
 
-- Git：当前整合分支 `codex/live-voice-v46-integration` 已变基到 `master@f32386a`；V46 页面改动由主线继承，任务提交只保留语音上传、首播延迟和段间播放优化，等待人工审核。
-- LAN server：V46 `voice-latency-v46-final` 运行于 `http://192.168.1.4:8080/`；运行库保持 V46，详情见[部署状态](deployment.md)。
+- Git：`VOICE-001` 已由 `efcb85d` 合入主线；当前任务分支 `codex/interest-aware-proactive-chat` 基于 `master@efcb85d`。
+- LAN server：`companion-random-v47` 运行于 `http://192.168.1.4:8080/`；运行库为 V47，详情见[部署状态](deployment.md)。
 - CoreS3：当前运行 `4444860` LAN HTTP Quad；经 COM3 保留 NVS 安装，Wi-Fi、设备身份、8192 字节主栈、WakeNet 和 `motion_disabled` 保留，WebSocket 已稳定在线并向服务端上报新版本。
 - 实机固件提交只作为运行候选，不能替代 `master` 作为新任务分支基线。
 
 ## 最近验证
+
+- 2026-09-10 COMPANION-001：随机调度、人设开场、兴趣权限和 API 定向 22/22；排除 8 个既有 Windows loopback 类后的服务端 470/470，完整 502 个用例中 31 个错误仍全部来自这些基础设施限制；控制台 32 文件 102/102、类型检查和 production build 通过。发布前生成新备份并完成最新备份隔离恢复；旧镜像保留为 `pre-companion-random-v47`，只替换 server。当前容器 `0a388ac7217c`、镜像 `sha256:691d99e0f6756df2cba153a5e73facde96f4f3e4cf94df9ee868a2fb7f6a15ca`、版本 `companion-random-v47`；本机与 LAN 健康为 `ok`，运行库 V47，MCP 预热完成。PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；主动开关保持关闭，设备保持 `4444860 / motion_disabled / DISABLED`。
 
 - 2026-09-08 主线冲突修复：当前任务分支已变基到 `master@f32386a`，Git 合并模拟无冲突，相对主线恰好一个任务提交；已合入主线的 V46 前端文件不再重复出现在差异中。服务端语音专项 20/20、三组固件栈预算、`git diff --check` 和 `pnpm docs:check` 均通过。
 

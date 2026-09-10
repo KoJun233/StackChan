@@ -75,6 +75,7 @@ const devices = ref<Device[]>([])
 const loading = ref(false)
 const stopping = ref(false)
 const topicCooldowns = ref<ProactiveTopicCooldown[]>([])
+const proactiveNextAt = ref<string | null>(null)
 const resumingTopic = ref('')
 const model = ref<InteractionFormModel>(defaults())
 const workdayRuntime = ref<WorkdayRuntime | null>(null)
@@ -171,9 +172,9 @@ const validationSchema = toTypedSchema(z.object({
   proactiveEnabled: z.boolean(),
   proactiveStart: z.string().min(1, '请选择主动问候开始时间'),
   proactiveEnd: z.string().min(1, '请选择主动问候结束时间'),
-  proactiveMinIntervalMinutes: z.number().int().min(30).max(1440),
+  proactiveMinIntervalMinutes: z.number().int().min(60).max(1440),
   proactivePersonalizationEnabled: z.boolean(),
-  proactiveDailyLimit: z.number().int().min(1).max(10),
+  proactiveDailyLimit: z.number().int().min(1).max(3),
   proactiveContent: z.string().trim().min(1, '请输入主动问候内容').max(500),
   workdayEnabled: z.boolean(),
   workdayMonday: z.boolean(),
@@ -252,9 +253,9 @@ function defaults(): InteractionFormModel {
     proactiveEnabled: false,
     proactiveStart: '09:00',
     proactiveEnd: '21:00',
-    proactiveMinIntervalMinutes: 240,
+    proactiveMinIntervalMinutes: 60,
     proactivePersonalizationEnabled: false,
-    proactiveDailyLimit: 2,
+    proactiveDailyLimit: 3,
     proactiveContent: '你好呀，记得休息一下，也可以和我聊聊天。',
     workdayEnabled: false,
     workdayMonday: true,
@@ -355,6 +356,7 @@ async function loadSettings(deviceId: string) {
       longitude: workday.longitude?.toString() ?? '',
       workdayZoneId: workday.zoneId,
     }
+    proactiveNextAt.value = settings.proactiveNextAt ?? null
     try {
       topicCooldowns.value = await listProactiveTopics(deviceId)
     }
@@ -424,10 +426,11 @@ async function submit(values: InteractionFormModel) {
       longitude: optionalCoordinate(values.longitude),
       zoneId: values.workdayZoneId.trim(),
     }
-    await Promise.all([
+    const [savedInteraction] = await Promise.all([
       saveInteractionSettings(values.deviceId, interactionInput),
       saveWorkdaySettings(values.deviceId, workdayInput),
     ])
+    proactiveNextAt.value = savedInteraction.proactiveNextAt ?? null
     workdayWeather.value = await getWorkdayWeather(values.deviceId)
     useFaToast().success('设置已保存', { description: '工作日陪伴保持默认关闭；启用后按固定规则运行。' })
   }
@@ -1069,14 +1072,19 @@ onMounted(loadDevices)
 
               <FaCard title="有限主动问候">
                 <div class="gap-6 grid">
-                  <FaAlert title="默认关闭" description="问候由这里的固定时间窗、间隔和每日上限决定，不由模型自行决定何时打扰。" />
+                  <FaAlert title="默认关闭，时段内随机触发" description="启用后会先生成下一次随机时间；离线、忙碌或免打扰时顺延，每天最多三次且两次至少间隔一小时。" />
+                  <FaAlert
+                    v-if="model.proactiveEnabled && proactiveNextAt"
+                    title="下一次随机候选"
+                    :description="`${new Date(proactiveNextAt).toLocaleString()}；到点时仍会检查在线、免打扰和忙碌状态。`"
+                  />
                   <FaFormItem name="proactiveEnabled" label="允许主动问候">
                     <FaSwitch v-model="model.proactiveEnabled" />
                   </FaFormItem>
                   <FaFormItem
                     name="proactivePersonalizationEnabled"
                     label="使用确认记忆生成一句个性化措辞"
-                    description="默认关闭。只读取已确认、启用且允许主动提及的一条记忆；规则不通过时不会调用模型。"
+                    description="默认关闭。开场白读取当前角色人设；确认过的兴趣可自动匹配相邻话题，但没有可信来源时不会声称最新资讯。"
                   >
                     <FaSwitch v-model="model.proactivePersonalizationEnabled" />
                   </FaFormItem>
@@ -1087,12 +1095,12 @@ onMounted(loadDevices)
                     <FaInput v-model="model.proactiveEnd" type="time" class="w-full" />
                   </FaFormItem>
                   <FaFormItem name="proactiveMinIntervalMinutes" label="最小间隔（分钟）" required>
-                    <FaNumberField v-model="model.proactiveMinIntervalMinutes" :min="30" :max="1440" :step="30" class="w-full" />
+                    <FaNumberField v-model="model.proactiveMinIntervalMinutes" :min="60" :max="1440" :step="30" class="w-full" />
                   </FaFormItem>
                   <FaFormItem name="proactiveDailyLimit" label="每日最多次数" required>
-                    <FaNumberField v-model="model.proactiveDailyLimit" :min="1" :max="10" class="w-full" />
+                    <FaNumberField v-model="model.proactiveDailyLimit" :min="1" :max="3" class="w-full" />
                   </FaFormItem>
-                  <FaFormItem name="proactiveContent" label="固定问候内容" required>
+                  <FaFormItem name="proactiveContent" label="生成失败时的备用问候" required>
                     <FaTextarea v-model="model.proactiveContent" rows="4" align="block" class="w-full" />
                   </FaFormItem>
                   <div class="pt-5 border-t">

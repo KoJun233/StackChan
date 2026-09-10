@@ -78,6 +78,9 @@ public class DeviceInteractionSettingsEntity {
     @Column(name = "proactive_last_at")
     private Instant proactiveLastAt;
 
+    @Column(name = "proactive_next_at")
+    private Instant proactiveNextAt;
+
     @Column(name = "proactive_counter_date")
     private LocalDate proactiveCounterDate;
 
@@ -106,8 +109,8 @@ public class DeviceInteractionSettingsEntity {
         this.proactiveEnabled = false;
         this.proactiveStart = LocalTime.of(9, 0);
         this.proactiveEnd = LocalTime.of(21, 0);
-        this.proactiveMinIntervalMinutes = 240;
-        this.proactiveDailyLimit = 2;
+        this.proactiveMinIntervalMinutes = 60;
+        this.proactiveDailyLimit = 3;
         this.proactiveContent = "你好呀，记得休息一下，也可以和我聊聊天。";
         this.proactivePersonalizationEnabled = false;
         this.proactiveCounter = 0;
@@ -164,6 +167,14 @@ public class DeviceInteractionSettingsEntity {
         updatedAt = now;
     }
 
+    public void scheduleProactive(Instant nextAt) {
+        this.proactiveNextAt = nextAt;
+    }
+
+    public void clearProactiveSchedule() {
+        this.proactiveNextAt = null;
+    }
+
     public void setVolume(int volumePercent, Instant now) {
         this.volumePercent = volumePercent;
         this.updatedAt = now;
@@ -194,6 +205,7 @@ public class DeviceInteractionSettingsEntity {
     public String getProactiveContent() { return proactiveContent; }
     public boolean isProactivePersonalizationEnabled() { return proactivePersonalizationEnabled; }
     public Instant getProactiveLastAt() { return proactiveLastAt; }
+    public Instant getProactiveNextAt() { return proactiveNextAt; }
     public LocalDate getProactiveCounterDate() { return proactiveCounterDate; }
     public int getProactiveCounter() { return proactiveCounter; }
     public Instant getUpdatedAt() { return updatedAt; }

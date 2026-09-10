@@ -99,8 +99,8 @@ public class InteractionSettingsController {
             boolean proactiveEnabled,
             @NotNull LocalTime proactiveStart,
             @NotNull LocalTime proactiveEnd,
-            @Min(30) @Max(1440) int proactiveMinIntervalMinutes,
-            @Min(1) @Max(10) int proactiveDailyLimit,
+            @Min(60) @Max(1440) int proactiveMinIntervalMinutes,
+            @Min(1) @Max(3) int proactiveDailyLimit,
             @NotBlank @Size(max = 500) String proactiveContent,
             boolean proactivePersonalizationEnabled
     ) {

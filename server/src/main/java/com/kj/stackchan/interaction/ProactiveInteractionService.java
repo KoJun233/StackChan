@@ -86,12 +86,13 @@ public class ProactiveInteractionService {
                     )) {
                 continue;
             }
-            LongTermMemoryService.MemorySnapshot memory = selectMemory(settings, now);
-            UUID roleId = activeRoleId(settings.deviceId());
+            CompanionRoleService.RoleSnapshot role = activeRole(settings.deviceId());
+            UUID roleId = role == null ? CompanionRoleEntity.DEFAULT_ROLE_ID : role.id();
+            LongTermMemoryService.MemorySnapshot memory = selectMemory(settings, now, roleId);
             if (!settingsService.recordProactiveIfEligible(settings.deviceId(), now)) continue;
-            ProactiveMessageGenerator.GenerationResult wording = messageGenerator.generate(
-                    settings.proactiveContent(), memory
-            );
+            ProactiveMessageGenerator.GenerationResult wording = role == null
+                    ? messageGenerator.generate(settings.proactiveContent(), memory)
+                    : messageGenerator.generate(settings.proactiveContent(), memory, role);
             String topicKey = memory == null ? null : memory.topicKey();
             reminderRepository.save(new ReminderEntity(
                     roleId, settings.deviceId(), wording.content(), now, settings.zoneId(),
@@ -109,10 +110,10 @@ public class ProactiveInteractionService {
 
     private LongTermMemoryService.MemorySnapshot selectMemory(
             InteractionSettingsService.InteractionSettingsSnapshot settings,
-            Instant now
+            Instant now,
+            UUID roleId
     ) {
         if (!settings.proactivePersonalizationEnabled()) return null;
-        UUID roleId = activeRoleId(settings.deviceId());
         var memories = roleService == null
                 ? memoryService.loadProactiveCandidates(settings.deviceId(), 8)
                 : memoryService.loadProactiveCandidates(roleId, settings.deviceId(), 8);
@@ -124,7 +125,7 @@ public class ProactiveInteractionService {
                 .orElse(null);
     }
 
-    private UUID activeRoleId(UUID deviceId) {
-        return roleService == null ? CompanionRoleEntity.DEFAULT_ROLE_ID : roleService.getActive(deviceId).id();
+    private CompanionRoleService.RoleSnapshot activeRole(UUID deviceId) {
+        return roleService == null ? null : roleService.getActive(deviceId);
     }
 }

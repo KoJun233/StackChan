@@ -75,9 +75,28 @@ class InteractionSettingsServiceTest {
         assertThat(service().isDnd(settings, until)).isFalse();
     }
 
+    @Test
+    void enablingProactiveConversationCreatesAPersistedRandomCandidate() {
+        UUID deviceId = UUID.randomUUID();
+        when(deviceRepository.existsById(deviceId)).thenReturn(true);
+        when(repository.findById(deviceId)).thenReturn(Optional.empty());
+        when(repository.save(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var settings = service().save(deviceId, new InteractionSettingsService.UpdateInteractionSettingsCommand(
+                50, false, true, 6, false, LocalTime.of(22, 0), LocalTime.of(7, 0), "UTC",
+                MissedReminderPolicy.PLAY_NOW, 10, true, LocalTime.of(9, 0), LocalTime.of(21, 0),
+                60, 3, "你好", true
+        ));
+
+        assertThat(settings.proactiveNextAt()).isAfterOrEqualTo(NOW.plusSeconds(60));
+        assertThat(settings.proactiveNextAt()).isBefore(Instant.parse("2026-07-27T21:00:00Z"));
+        assertThat(service().isProactiveEligible(settings, NOW)).isFalse();
+    }
+
     private InteractionSettingsService service() {
         return new InteractionSettingsService(
-                repository, deviceRepository, Clock.fixed(NOW, ZoneOffset.UTC)
+                repository, deviceRepository, Clock.fixed(NOW, ZoneOffset.UTC),
+                new ProactiveSchedulePlanner(() -> 0.5)
         );
     }
 }

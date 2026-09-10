@@ -21,7 +21,8 @@ public class MemorySuggestionExtractionService {
             不得推断，不得保存密码、验证码、令牌、密钥、精确地址、身份号码、银行卡号、财务状况或医疗状况。
             没有高价值建议时只返回 {"suggest":false}。
             有建议时只返回一个 JSON 对象：
-            {"suggest":true,"category":"USER_PROFILE|EVENT","title":"不超过120字","content":"不超过2000字的可核对事实","topicKey":"不超过120字的稳定主题键","importance":1到5,"reason":"不超过500字的建议原因"}
+            {"suggest":true,"category":"USER_PROFILE|EVENT","title":"不超过120字","content":"不超过2000字的可核对事实","topicKey":"不超过120字的稳定主题键","importance":1到5,"reason":"不超过500字的建议原因","allowProactiveMention":true或false}
+            只有用户明确表达的兴趣、爱好或内容偏好才把 allowProactiveMention 设为 true；称呼、身份、位置、计划、经历、关系、健康、财务和其他个人事实必须为 false。
             不要返回 Markdown、解释、第二条建议或其他字段。
             """;
 
@@ -75,7 +76,7 @@ public class MemorySuggestionExtractionService {
                             draft.content(),
                             draft.topicKey(),
                             draft.importance(),
-                            false
+                            draft.allowProactiveMention()
                     ),
                     draft.reason(),
                     turn.sourceTurnId()
@@ -100,7 +101,7 @@ public class MemorySuggestionExtractionService {
             if (!root.isObject() || !root.path("suggest").asBoolean(false)) {
                 return null;
             }
-            if (root.size() > 7) {
+            if (root.size() > 8) {
                 return null;
             }
             return new SuggestionDraft(
@@ -109,7 +110,8 @@ public class MemorySuggestionExtractionService {
                     requiredText(root, "content"),
                     requiredText(root, "topicKey"),
                     root.path("importance").intValue(),
-                    requiredText(root, "reason")
+                    requiredText(root, "reason"),
+                    root.path("allowProactiveMention").asBoolean(false)
             );
         } catch (RuntimeException | java.io.IOException exception) {
             return null;
@@ -148,7 +150,8 @@ public class MemorySuggestionExtractionService {
             String content,
             String topicKey,
             int importance,
-            String reason
+            String reason,
+            boolean allowProactiveMention
     ) {
     }
 }
