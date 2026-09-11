@@ -1,13 +1,21 @@
 # 前端工作流
 
 - 状态：READY_FOR_REVIEW
-- 最后更新：2026-09-10
-- 当前分支：`codex/interest-aware-proactive-chat`
-- 基准提交：`efcb85d`
-- 最后验证提交：`efcb85d`
-- 最后验证范围：COMPANION-001 交互 API 定向 1/1；控制台完整 Vitest 32 文件 102/102、类型检查和 production build 通过
+- 最后更新：2026-09-11
+- 当前分支：`codex/source-backed-interest-briefs`
+- 基准提交：`e60f310`
+- 最后验证提交：`e60f310`
+- 最后验证范围：控制台完整 Vitest 32 文件 102/102、类型检查、production build、定向 ESLint/Stylelint 通过
 
 ## 当前目标
+
+在主动关心页说明真实资讯的启用和降级边界，并让管理员从提醒列表直接核对主动播报的原始标题、HTTPS 链接和来源收录时间。
+
+## 已完成并发布的 COMPANION-002
+
+- 主动关心页说明个性化开启后只从 Hacker News 近期技术标题匹配确认兴趣，没有合适来源时使用普通问候。
+- 提醒 API 类型增加来源名、标题、链接、Hacker News 条目收录时间和抓取时间；列表只把 HTTPS 链接渲染为新窗口链接并使用 `noopener noreferrer`。
+- 控制台完整 Vitest 32 文件 102/102、类型检查、production build 和本任务文件 ESLint/Stylelint 通过；运行静态资源已确认包含“来源收录时间”。
 
 主动关心页已补齐随机主动闲聊的可见规则：每天最多三次、至少间隔一小时，保存后显示持久化的下一次随机候选；固定文案明确为生成失败时的备用问候，页面同时说明确认兴趣与无来源资讯边界。完整验证和 LAN 发布已通过，既有后台信息架构和聊天页面保持不变。
 

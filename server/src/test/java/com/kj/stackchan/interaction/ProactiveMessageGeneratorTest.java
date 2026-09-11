@@ -1,5 +1,8 @@
 package com.kj.stackchan.interaction;
 
+import java.time.Instant;
+import java.util.List;
+
 import com.kj.stackchan.llm.LlmRuntimeClientFactory;
 import com.kj.stackchan.memory.LongTermMemoryService;
 import com.kj.stackchan.reminder.ProactiveGenerationStatus;
@@ -97,6 +100,38 @@ class ProactiveMessageGeneratorTest {
         var result = fixture.generator.generate("固定问候", fixture.memory);
 
         assertThat(result.content()).isEqualTo("固定问候");
+        assertThat(result.status()).isEqualTo(ProactiveGenerationStatus.FALLBACK);
+    }
+
+    @Test
+    void attributesASelectedSourceWithoutLettingTheModelRewriteItsTitle() {
+        var fixture = fixture("S1|爸爸，这条 AI 动态你也许会感兴趣", false);
+        InterestBrief brief = new InterestBrief(
+                "Hacker News", "Open model improves tool use", "https://example.com/ai",
+                Instant.parse("2026-09-10T10:00:00Z"), Instant.parse("2026-09-10T10:05:00Z")
+        );
+
+        var result = fixture.generator.generate("固定问候", fixture.memory, null, List.of(brief));
+
+        assertThat(result.content()).isEqualTo(
+                "爸爸，这条 AI 动态你也许会感兴趣。Hacker News 上的标题是《Open model improves tool use》，想听听吗？"
+        );
+        assertThat(result.source()).isEqualTo(brief);
+        assertThat(result.status()).isEqualTo(ProactiveGenerationStatus.GENERATED);
+    }
+
+    @Test
+    void rejectsAnUnknownSourceSelection() {
+        var fixture = fixture("S9|爸爸，这条消息你也许会感兴趣", false);
+        InterestBrief brief = new InterestBrief(
+                "Hacker News", "Open model improves tool use", "https://example.com/ai",
+                Instant.parse("2026-09-10T10:00:00Z"), Instant.parse("2026-09-10T10:05:00Z")
+        );
+
+        var result = fixture.generator.generate("固定问候", fixture.memory, null, List.of(brief));
+
+        assertThat(result.content()).isEqualTo("固定问候");
+        assertThat(result.source()).isNull();
         assertThat(result.status()).isEqualTo(ProactiveGenerationStatus.FALLBACK);
     }
 

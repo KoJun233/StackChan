@@ -2,7 +2,7 @@ import { apiJson } from '../client'
 
 export type ReminderStatus = 'PENDING' | 'DISPATCHED' | 'DELIVERED' | 'FAILED' | 'CANCELLED' | 'SKIPPED'
 export type ReminderRecurrence = 'DAILY' | 'NONE' | 'WEEKLY'
-export type ReminderSource = 'PROACTIVE' | 'USER'
+export type ReminderSource = 'EXTERNAL' | 'PROACTIVE' | 'USER'
 export type ProactiveGenerationStatus = 'FALLBACK' | 'FIXED' | 'GENERATED'
 
 export interface Reminder {
@@ -22,6 +22,11 @@ export interface Reminder {
   source: ReminderSource
   proactiveTopicKey: string | null
   proactiveGenerationStatus: ProactiveGenerationStatus | null
+  proactiveSourceName: string | null
+  proactiveSourceTitle: string | null
+  proactiveSourceUrl: string | null
+  proactiveSourcePublishedAt: string | null
+  proactiveSourceRetrievedAt: string | null
   updatedAt: string
   zoneId: string
 }
@@ -60,7 +65,9 @@ export function listReminders(params: ReminderListParams): Promise<ReminderPage>
   if (params.status) {
     query.set('status', params.status)
   }
-  if (params.roleId) query.set('roleId', params.roleId)
+  if (params.roleId) {
+    query.set('roleId', params.roleId)
+  }
   return apiJson(`/api/v1/reminders?${query.toString()}`)
 }
 
@@ -112,7 +119,7 @@ export function toReminderInstant(localDateTime: string, timezoneOffsetMinutes?:
   const [year, month, day, hour, minute] = parseLocalDateTime(localDateTime)
   const localDate = new Date(year, month - 1, day, hour, minute)
   if (Number.isNaN(localDate.getTime())) {
-    throw new Error('提醒时间格式无效。')
+    throw new TypeError('提醒时间格式无效。')
   }
   const offset = timezoneOffsetMinutes ?? localDate.getTimezoneOffset()
   return new Date(Date.UTC(year, month - 1, day, hour, minute) + offset * 60_000).toISOString()
@@ -128,5 +135,5 @@ export function toLocalDateTimeValue(instant: string, timezoneOffsetMinutes?: nu
 }
 
 export function currentTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai'
+  return new Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai'
 }

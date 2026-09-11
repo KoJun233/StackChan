@@ -1,15 +1,17 @@
 # 全局工作流总览
 
 - 状态：READY_FOR_REVIEW
-- 最后更新：2026-09-10
-- 当前分支：`codex/interest-aware-proactive-chat`
-- 实现基准：`efcb85d`
-- 最后验证提交：`efcb85d`
-- 最后验证范围：COMPANION-001 定向 22/22；排除 8 个既有 Windows loopback 类后的服务端 470/470；控制台 32 文件 102/102、类型检查、production build、V47 空库迁移、镜像构建与 LAN 发布通过
+- 最后更新：2026-09-11
+- 当前分支：`codex/source-backed-interest-briefs`
+- 实现基准：`e60f310`
+- 最后验证提交：`e60f310`
+- 最后验证范围：COMPANION-002 定向 18/18；排除 8 个既有 Windows loopback 类后的服务端 477/477；完整 509 个用例中 31 个错误均来自这些环境限制；控制台 32 文件 102/102、类型检查、production build、V48 空库迁移、备份恢复和 LAN 发布通过
 - 当前部署：LAN HTTP development mode
 - 生产边界：HTTPS-only
 
 ## 当前结论
+
+`COMPANION-002` 已完成并发布：服务端后台读取 Hacker News 官方只读 API 并保存不超过两小时的通用技术标题缓存，不发送用户兴趣；只有个性化开启且选出已确认兴趣后，模型才在最多六个标题中返回候选编号和短开场。最终标题与来源由程序确定性拼接，V48 保存原始标题、HTTPS 链接、Hacker News 条目收录时间和抓取时间，管理端提醒列表可追溯查看；无匹配、超时或输出不合规均退回普通人设问候。详见 [ADR 0052](../decisions/0052-source-backed-interest-briefs.md)。
 
 `COMPANION-001` 已完成实现并发布：保留显式开关，在设备时区的指定窗口内保存随机候选，每天最多三次且两次至少间隔一小时；到点后仍经过在线、免打扰、语音忙碌和提醒单飞仲裁。开场措辞读取当前活动角色人设；自动建议只有被识别为用户明确兴趣时才预置允许主动提及，仍须用户确认后生效。当前 DeepSeek 官方接口没有可核验来源的联网搜索，本阶段从已确认兴趣切入但禁止生成“最近发布、最新模型”等无来源资讯。详见 [ADR 0051](../decisions/0051-persona-aware-random-proactive-conversation.md)。
 
@@ -37,10 +39,10 @@ V46 后台信息架构、真实二级菜单、无黑块聊天输入区、窄屏�
 
 | 工作流 | 状态 | 当前事实 | 下一步 |
 | --- | --- | --- | --- |
-| [服务端](server.md) | READY_FOR_REVIEW | 随机主动候选、当前人设生成和确认兴趣自动授权已发布为 V47 | 用户启用主动问候与个性化后观察首个候选 |
-| [前端](frontend.md) | READY_FOR_REVIEW | 主动关心页已显示随机规则、下一候选和资讯事实边界 | 用户刷新页面并复核设置交互 |
+| [服务端](server.md) | READY_FOR_REVIEW | V48、后台来源缓存、受限候选选择和证据持久化已发布 | 用户审核任务提交 |
+| [前端](frontend.md) | READY_FOR_REVIEW | 主动关心页说明真实来源，提醒列表展示来源证据且已发布 | 用户审核任务提交 |
 | [固件](firmware.md) | READY_FOR_REVIEW | `4444860` 已保留 NVS 安装且 WebSocket 稳定在线 | 用户唤醒两轮并监听段间日志 |
-| [部署](deployment.md) | READY_FOR_REVIEW | server 已运行 `companion-random-v47`，运行库为 V47 | 保持显式开关关闭，等待用户从页面启用 |
+| [部署](deployment.md) | READY_FOR_REVIEW | LAN 运行 `companion-sourced-v48-final`，数据库为 V48 | 保持现状并等待用户审核 |
 
 ## 当前能力地图
 
@@ -58,12 +60,14 @@ V46 后台信息架构、真实二级菜单、无黑块聊天输入区、窄屏�
 
 ## 版本与运行态
 
-- Git：`VOICE-001` 已由 `efcb85d` 合入主线；当前任务分支 `codex/interest-aware-proactive-chat` 基于 `master@efcb85d`。
-- LAN server：`companion-random-v47` 运行于 `http://192.168.1.4:8080/`；运行库为 V47，详情见[部署状态](deployment.md)。
+- Git：`COMPANION-001` 已由 `e60f310` 合入主线；当前任务分支 `codex/source-backed-interest-briefs` 基于 `master@e60f310`。
+- LAN server：`companion-sourced-v48-final` 运行于 `http://192.168.1.4:8080/`；运行库为 V48，详情见[部署状态](deployment.md)。
 - CoreS3：当前运行 `4444860` LAN HTTP Quad；经 COM3 保留 NVS 安装，Wi-Fi、设备身份、8192 字节主栈、WakeNet 和 `motion_disabled` 保留，WebSocket 已稳定在线并向服务端上报新版本。
 - 实机固件提交只作为运行候选，不能替代 `master` 作为新任务分支基线。
 
 ## 最近验证
+
+- 2026-09-11 COMPANION-002：发布前新 PostgreSQL 备份和最新备份隔离恢复成功，只替换 server；最终容器 `a145b96ea279`、镜像 `sha256:085ab90c9602e16789bdfd53f1f281d7695fc21d2454514dca607f21c6f92e7c`、构建版本 `companion-sourced-v48-final`。运行库为 V48，本机和 `192.168.1.4` 首页为 200，健康为 `ok`，未认证提醒接口为 401，最终容器后台成功缓存 12 条 Hacker News 候选。PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；主动开关和个性化保持关闭，最小间隔 90 分钟、每日上限 3 次，设备保持 `4444860 / motion_disabled / DISABLED`。
 
 - 2026-09-10 COMPANION-001：随机调度、人设开场、兴趣权限和 API 定向 22/22；排除 8 个既有 Windows loopback 类后的服务端 470/470，完整 502 个用例中 31 个错误仍全部来自这些基础设施限制；控制台 32 文件 102/102、类型检查和 production build 通过。发布前生成新备份并完成最新备份隔离恢复；旧镜像保留为 `pre-companion-random-v47`，只替换 server。当前容器 `0a388ac7217c`、镜像 `sha256:691d99e0f6756df2cba153a5e73facde96f4f3e4cf94df9ee868a2fb7f6a15ca`、版本 `companion-random-v47`；本机与 LAN 健康为 `ok`，运行库 V47，MCP 预热完成。PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；主动开关保持关闭，设备保持 `4444860 / motion_disabled / DISABLED`。
 

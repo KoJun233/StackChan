@@ -66,6 +66,21 @@ public class ReminderEntity {
     @Column(name = "proactive_generation_status", length = 16)
     private ProactiveGenerationStatus proactiveGenerationStatus;
 
+    @Column(name = "proactive_source_name", length = 120)
+    private String proactiveSourceName;
+
+    @Column(name = "proactive_source_title", length = 300)
+    private String proactiveSourceTitle;
+
+    @Column(name = "proactive_source_url", length = 1000)
+    private String proactiveSourceUrl;
+
+    @Column(name = "proactive_source_published_at")
+    private Instant proactiveSourcePublishedAt;
+
+    @Column(name = "proactive_source_retrieved_at")
+    private Instant proactiveSourceRetrievedAt;
+
     @Column(name = "last_completed_at")
     private Instant lastCompletedAt;
 
@@ -213,6 +228,11 @@ public class ReminderEntity {
         this.source = ReminderSource.USER;
         this.proactiveTopicKey = null;
         this.proactiveGenerationStatus = null;
+        this.proactiveSourceName = null;
+        this.proactiveSourceTitle = null;
+        this.proactiveSourceUrl = null;
+        this.proactiveSourcePublishedAt = null;
+        this.proactiveSourceRetrievedAt = null;
         this.lastOutcome = null;
         this.lastCompletedAt = null;
         this.commandId = null;
@@ -320,6 +340,25 @@ public class ReminderEntity {
         this.updatedAt = now;
     }
 
+    public void assignProactiveSource(
+            String sourceName,
+            String sourceTitle,
+            String sourceUrl,
+            Instant sourcePublishedAt,
+            Instant sourceRetrievedAt,
+            Instant now
+    ) {
+        if (source != ReminderSource.PROACTIVE) {
+            throw new IllegalStateException("Only proactive reminders can have an interest source");
+        }
+        this.proactiveSourceName = sourceName;
+        this.proactiveSourceTitle = sourceTitle;
+        this.proactiveSourceUrl = sourceUrl;
+        this.proactiveSourcePublishedAt = sourcePublishedAt;
+        this.proactiveSourceRetrievedAt = sourceRetrievedAt;
+        this.updatedAt = now;
+    }
+
     public void snoozeExternalUntil(Instant scheduledAt, Instant expiresAt, Instant now) {
         deferUntil(scheduledAt, now);
         this.expiresAt = expiresAt;
@@ -374,6 +413,11 @@ public class ReminderEntity {
     public Instant getLastCompletedAt() { return lastCompletedAt; }
     public String getProactiveTopicKey() { return proactiveTopicKey; }
     public ProactiveGenerationStatus getProactiveGenerationStatus() { return proactiveGenerationStatus; }
+    public String getProactiveSourceName() { return proactiveSourceName; }
+    public String getProactiveSourceTitle() { return proactiveSourceTitle; }
+    public String getProactiveSourceUrl() { return proactiveSourceUrl; }
+    public Instant getProactiveSourcePublishedAt() { return proactiveSourcePublishedAt; }
+    public Instant getProactiveSourceRetrievedAt() { return proactiveSourceRetrievedAt; }
 
     public String getCommandId() {
         return commandId;

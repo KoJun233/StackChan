@@ -1073,6 +1073,7 @@ onMounted(loadDevices)
               <FaCard title="有限主动问候">
                 <div class="gap-6 grid">
                   <FaAlert title="默认关闭，时段内随机触发" description="启用后会先生成下一次随机时间；离线、忙碌或免打扰时顺延，每天最多三次且两次至少间隔一小时。" />
+                  <FaAlert title="资讯有据可查" description="开启个性化后，可从 Hacker News 的近期技术标题中匹配已确认兴趣；来源、原始链接和来源收录时间会保存在提醒记录中。没有合适来源时只生成普通问候。" />
                   <FaAlert
                     v-if="model.proactiveEnabled && proactiveNextAt"
                     title="下一次随机候选"
@@ -1084,7 +1085,7 @@ onMounted(loadDevices)
                   <FaFormItem
                     name="proactivePersonalizationEnabled"
                     label="使用确认记忆生成一句个性化措辞"
-                    description="默认关闭。开场白读取当前角色人设；确认过的兴趣可自动匹配相邻话题，但没有可信来源时不会声称最新资讯。"
+                    description="默认关闭。开场白读取当前角色人设；确认过的兴趣可自动匹配相邻话题，有合适的近期技术来源时才会播报资讯。"
                   >
                     <FaSwitch v-model="model.proactivePersonalizationEnabled" />
                   </FaFormItem>
