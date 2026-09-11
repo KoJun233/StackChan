@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.kj.stackchan.device.DeviceRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +24,22 @@ public class InteractionSettingsService {
     private final DeviceRepository deviceRepository;
     private final Clock clock;
     private final ProactiveSchedulePlanner proactiveSchedulePlanner;
+    private final SilentPresenceSchedulePlanner silentPresenceSchedulePlanner;
+
+    @Autowired
+    public InteractionSettingsService(
+            DeviceInteractionSettingsRepository repository,
+            DeviceRepository deviceRepository,
+            Clock clock,
+            ProactiveSchedulePlanner proactiveSchedulePlanner,
+            SilentPresenceSchedulePlanner silentPresenceSchedulePlanner
+    ) {
+        this.repository = repository;
+        this.deviceRepository = deviceRepository;
+        this.clock = clock;
+        this.proactiveSchedulePlanner = proactiveSchedulePlanner;
+        this.silentPresenceSchedulePlanner = silentPresenceSchedulePlanner;
+    }
 
     public InteractionSettingsService(
             DeviceInteractionSettingsRepository repository,
@@ -30,10 +47,7 @@ public class InteractionSettingsService {
             Clock clock,
             ProactiveSchedulePlanner proactiveSchedulePlanner
     ) {
-        this.repository = repository;
-        this.deviceRepository = deviceRepository;
-        this.clock = clock;
-        this.proactiveSchedulePlanner = proactiveSchedulePlanner;
+        this(repository, deviceRepository, clock, proactiveSchedulePlanner, new SilentPresenceSchedulePlanner());
     }
 
     @Transactional
@@ -44,6 +58,9 @@ public class InteractionSettingsService {
                 .orElseGet(() -> repository.save(new DeviceInteractionSettingsEntity(deviceId, now)));
         if (settings.isProactiveEnabled() && settings.getProactiveNextAt() == null) {
             settings.scheduleProactive(proactiveSchedulePlanner.next(snapshot(settings), now));
+        }
+        if (settings.isSilentPresenceEnabled() && settings.getSilentPresenceNextAt() == null) {
+            settings.scheduleSilentPresence(silentPresenceSchedulePlanner.next(snapshot(settings), now));
         }
         return snapshot(settings);
     }
@@ -62,12 +79,18 @@ public class InteractionSettingsService {
                 command.dndStart(), command.dndEnd(), zoneId.getId(), command.missedReminderPolicy(),
                 command.missedSnoozeMinutes(), command.proactiveEnabled(), command.proactiveStart(),
                 command.proactiveEnd(), command.proactiveMinIntervalMinutes(), command.proactiveDailyLimit(),
-                command.proactiveContent().trim(), command.proactivePersonalizationEnabled(), now
+                command.proactiveContent().trim(), command.proactivePersonalizationEnabled(),
+                command.silentPresenceEnabled(), now
         );
         if (command.proactiveEnabled()) {
             settings.scheduleProactive(proactiveSchedulePlanner.next(snapshot(settings), now));
         } else {
             settings.clearProactiveSchedule();
+        }
+        if (command.silentPresenceEnabled()) {
+            settings.scheduleSilentPresence(silentPresenceSchedulePlanner.next(snapshot(settings), now));
+        } else {
+            settings.clearSilentPresenceSchedule();
         }
         return snapshot(repository.save(settings));
     }
@@ -119,6 +142,20 @@ public class InteractionSettingsService {
     }
 
     @Transactional
+    public List<InteractionSettingsSnapshot> silentPresenceCandidates() {
+        Instant now = clock.instant();
+        return repository.findAll().stream()
+                .filter(DeviceInteractionSettingsEntity::isSilentPresenceEnabled)
+                .peek(settings -> {
+                    if (settings.getSilentPresenceNextAt() == null) {
+                        settings.scheduleSilentPresence(silentPresenceSchedulePlanner.next(snapshot(settings), now));
+                    }
+                })
+                .map(this::snapshot)
+                .toList();
+    }
+
+    @Transactional
     public boolean recordProactiveIfEligible(UUID deviceId, Instant now) {
         DeviceInteractionSettingsEntity entity = repository.findLockedByDeviceId(deviceId).orElse(null);
         if (entity == null || !isProactiveEligible(snapshot(entity), now)) {
@@ -127,6 +164,16 @@ public class InteractionSettingsService {
         LocalDate date = now.atZone(ZoneId.of(entity.getZoneId())).toLocalDate();
         entity.recordProactive(date, now);
         entity.scheduleProactive(proactiveSchedulePlanner.next(snapshot(entity), now));
+        return true;
+    }
+
+    @Transactional
+    public boolean recordSilentPresenceIfEligible(UUID deviceId, Instant now) {
+        DeviceInteractionSettingsEntity entity = repository.findLockedByDeviceId(deviceId).orElse(null);
+        if (entity == null || !isSilentPresenceEligible(snapshot(entity), now)) return false;
+        LocalDate date = now.atZone(ZoneId.of(entity.getZoneId())).toLocalDate();
+        entity.recordSilentPresence(date, now);
+        entity.scheduleSilentPresence(silentPresenceSchedulePlanner.next(snapshot(entity), now));
         return true;
     }
 
@@ -184,6 +231,20 @@ public class InteractionSettingsService {
                 || !settings.proactiveLastAt().plus(Duration.ofMinutes(settings.proactiveMinIntervalMinutes())).isAfter(now);
     }
 
+    public boolean isSilentPresenceEligible(InteractionSettingsSnapshot settings, Instant now) {
+        if (!settings.silentPresenceEnabled() || isDnd(settings, now)
+                || settings.silentPresenceNextAt() == null || settings.silentPresenceNextAt().isAfter(now)) {
+            return false;
+        }
+        ZonedDateTime localNow = now.atZone(ZoneId.of(settings.zoneId()));
+        if (!inWindow(localNow.toLocalTime(), settings.proactiveStart(), settings.proactiveEnd())) return false;
+        int count = localNow.toLocalDate().equals(settings.silentPresenceCounterDate())
+                ? settings.silentPresenceCounter() : 0;
+        if (count >= SilentPresenceSchedulePlanner.DAILY_LIMIT) return false;
+        return settings.silentPresenceLastAt() == null
+                || !settings.silentPresenceLastAt().plus(SilentPresenceSchedulePlanner.MINIMUM_INTERVAL).isAfter(now);
+    }
+
     private boolean inWindow(LocalTime time, LocalTime start, LocalTime end) {
         if (start.isBefore(end)) {
             return !time.isBefore(start) && time.isBefore(end);
@@ -230,7 +291,9 @@ public class InteractionSettingsService {
                 entity.getProactiveEnd(), entity.getProactiveMinIntervalMinutes(), entity.getProactiveDailyLimit(),
                 entity.getProactiveContent(), entity.getProactiveLastAt(), entity.getProactiveCounterDate(),
                 entity.getProactiveCounter(), entity.getUpdatedAt(), entity.getTemporaryDndUntil(),
-                entity.isProactivePersonalizationEnabled(), entity.getProactiveNextAt()
+                entity.isProactivePersonalizationEnabled(), entity.getProactiveNextAt(),
+                entity.isSilentPresenceEnabled(), entity.getSilentPresenceNextAt(), entity.getSilentPresenceLastAt(),
+                entity.getSilentPresenceCounterDate(), entity.getSilentPresenceCounter()
         );
     }
 
@@ -251,7 +314,8 @@ public class InteractionSettingsService {
             int proactiveMinIntervalMinutes,
             int proactiveDailyLimit,
             String proactiveContent,
-            boolean proactivePersonalizationEnabled
+            boolean proactivePersonalizationEnabled,
+            boolean silentPresenceEnabled
     ) {
         public UpdateInteractionSettingsCommand(
                 int volumePercent, boolean nightMode, boolean continuousConversationEnabled,
@@ -263,7 +327,21 @@ public class InteractionSettingsService {
             this(volumePercent, nightMode, continuousConversationEnabled, followUpWindowSeconds,
                     dndEnabled, dndStart, dndEnd, zoneId, missedReminderPolicy, missedSnoozeMinutes,
                     proactiveEnabled, proactiveStart, proactiveEnd, proactiveMinIntervalMinutes,
-                    proactiveDailyLimit, proactiveContent, false);
+                    proactiveDailyLimit, proactiveContent, false, false);
+        }
+
+        public UpdateInteractionSettingsCommand(
+                int volumePercent, boolean nightMode, boolean continuousConversationEnabled,
+                int followUpWindowSeconds, boolean dndEnabled, LocalTime dndStart, LocalTime dndEnd,
+                String zoneId, MissedReminderPolicy missedReminderPolicy, int missedSnoozeMinutes,
+                boolean proactiveEnabled, LocalTime proactiveStart, LocalTime proactiveEnd,
+                int proactiveMinIntervalMinutes, int proactiveDailyLimit, String proactiveContent,
+                boolean proactivePersonalizationEnabled
+        ) {
+            this(volumePercent, nightMode, continuousConversationEnabled, followUpWindowSeconds,
+                    dndEnabled, dndStart, dndEnd, zoneId, missedReminderPolicy, missedSnoozeMinutes,
+                    proactiveEnabled, proactiveStart, proactiveEnd, proactiveMinIntervalMinutes,
+                    proactiveDailyLimit, proactiveContent, proactivePersonalizationEnabled, false);
         }
     }
 
@@ -291,7 +369,12 @@ public class InteractionSettingsService {
             Instant updatedAt,
             Instant temporaryDndUntil,
             boolean proactivePersonalizationEnabled,
-            Instant proactiveNextAt
+            Instant proactiveNextAt,
+            boolean silentPresenceEnabled,
+            Instant silentPresenceNextAt,
+            Instant silentPresenceLastAt,
+            LocalDate silentPresenceCounterDate,
+            int silentPresenceCounter
     ) {
         public InteractionSettingsSnapshot(
                 UUID deviceId, int volumePercent, boolean nightMode,
@@ -306,7 +389,8 @@ public class InteractionSettingsService {
                     dndEnabled, dndStart, dndEnd, zoneId, missedReminderPolicy, missedSnoozeMinutes,
                     proactiveEnabled, proactiveStart, proactiveEnd, proactiveMinIntervalMinutes,
                     proactiveDailyLimit, proactiveContent, proactiveLastAt, proactiveCounterDate,
-                    proactiveCounter, updatedAt, null, false, null);
+                    proactiveCounter, updatedAt, null, false, null,
+                    false, null, null, null, 0);
         }
 
         public InteractionSettingsSnapshot(
@@ -322,7 +406,8 @@ public class InteractionSettingsService {
                     dndEnabled, dndStart, dndEnd, zoneId, missedReminderPolicy, missedSnoozeMinutes,
                     proactiveEnabled, proactiveStart, proactiveEnd, proactiveMinIntervalMinutes,
                     proactiveDailyLimit, proactiveContent, proactiveLastAt, proactiveCounterDate,
-                    proactiveCounter, updatedAt, temporaryDndUntil, false, null);
+                    proactiveCounter, updatedAt, temporaryDndUntil, false, null,
+                    false, null, null, null, 0);
         }
 
         public InteractionSettingsSnapshot(
@@ -339,7 +424,26 @@ public class InteractionSettingsService {
                     dndEnabled, dndStart, dndEnd, zoneId, missedReminderPolicy, missedSnoozeMinutes,
                     proactiveEnabled, proactiveStart, proactiveEnd, proactiveMinIntervalMinutes,
                     proactiveDailyLimit, proactiveContent, proactiveLastAt, proactiveCounterDate,
-                    proactiveCounter, updatedAt, temporaryDndUntil, proactivePersonalizationEnabled, null);
+                    proactiveCounter, updatedAt, temporaryDndUntil, proactivePersonalizationEnabled, null,
+                    false, null, null, null, 0);
+        }
+
+        public InteractionSettingsSnapshot(
+                UUID deviceId, int volumePercent, boolean nightMode,
+                boolean continuousConversationEnabled, int followUpWindowSeconds, boolean dndEnabled,
+                LocalTime dndStart, LocalTime dndEnd, String zoneId, MissedReminderPolicy missedReminderPolicy,
+                int missedSnoozeMinutes, boolean proactiveEnabled, LocalTime proactiveStart,
+                LocalTime proactiveEnd, int proactiveMinIntervalMinutes, int proactiveDailyLimit,
+                String proactiveContent, Instant proactiveLastAt, LocalDate proactiveCounterDate,
+                int proactiveCounter, Instant updatedAt, Instant temporaryDndUntil,
+                boolean proactivePersonalizationEnabled, Instant proactiveNextAt
+        ) {
+            this(deviceId, volumePercent, nightMode, continuousConversationEnabled, followUpWindowSeconds,
+                    dndEnabled, dndStart, dndEnd, zoneId, missedReminderPolicy, missedSnoozeMinutes,
+                    proactiveEnabled, proactiveStart, proactiveEnd, proactiveMinIntervalMinutes,
+                    proactiveDailyLimit, proactiveContent, proactiveLastAt, proactiveCounterDate,
+                    proactiveCounter, updatedAt, temporaryDndUntil, proactivePersonalizationEnabled,
+                    proactiveNextAt, false, null, null, null, 0);
         }
     }
 }

@@ -54,12 +54,13 @@ class InteractionSettingsControllerTest {
         var command = new InteractionSettingsController.InteractionSettingsRequest(
                 65, false, true, 6, false, LocalTime.of(22, 0), LocalTime.of(7, 0),
                 "Asia/Shanghai", MissedReminderPolicy.PLAY_NOW, 10, false,
-                LocalTime.of(9, 0), LocalTime.of(21, 0), 240, 2, "你好", true
+                LocalTime.of(9, 0), LocalTime.of(21, 0), 240, 2, "你好", true, true
         ).toCommand();
 
         assertThat(command.continuousConversationEnabled()).isTrue();
         assertThat(command.followUpWindowSeconds()).isEqualTo(6);
         assertThat(command.proactivePersonalizationEnabled()).isTrue();
+        assertThat(command.silentPresenceEnabled()).isTrue();
     }
 
     private InteractionSettingsController controller() {

@@ -2,15 +2,22 @@
 
 - 状态：READY_FOR_REVIEW
 - 最后更新：2026-09-11
-- 当前分支：`codex/source-backed-interest-briefs`
-- 基准提交：`e60f310`
-- 最后验证提交：`e60f310`
-- 最后验证范围：COMPANION-002 定向 18/18、非 loopback 服务端 477/477、控制台 102/102/类型检查/production build、V48 空库迁移、备份恢复和 LAN 发布通过
+- 当前分支：`codex/silent-presence-expressions`
+- 基准提交：`06ab0b3`
+- 最后验证提交：`06ab0b3`
+- 最后验证范围：COMPANION-003 定向 25/25、非 loopback 服务端 482/482、控制台 102/102/类型检查/production build、V49 空库迁移、备份恢复和 LAN 发布通过
 - 当前模式：LAN HTTP development
 
 ## 当前目标
 
-LAN 当前运行 `companion-sourced-v48-final` 和数据库 V48；主动开关、个性化开关和 CoreS3 安全状态保持不变。
+LAN 当前运行 `silent-presence-v49-final` 和数据库 V49；无声陪伴、主动问候、个性化开关和 CoreS3 安全状态保持不变。
+
+## 已发布的 COMPANION-003
+
+- 发布前使用既有备份容器生成新 PostgreSQL 备份并再次隔离恢复验证最新备份；旧镜像保留为 `pre-silent-presence-v49`。
+- 只替换 `stackchan-foundation-server-1`；当前容器为 `a8c901a1156b`，镜像为 `sha256:c9234911630d5ca42fb804c58aa734f29b9c8919e09008321cfae510979a320a`，构建版本为 `silent-presence-v49-final`，无重启且启动日志无错误。
+- 运行库由 V48 迁移到 V49；本机和 `192.168.1.4` 首页为 200，健康状态为 `ok`，静态资源包含“无声陪伴”。现有一条交互设置保持无声陪伴关闭且下一候选为空。
+- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；设备继续保持 `4444860 / motion_disabled`。未连接或刷写固件，卷、端口、凭据和部署模式未修改。
 
 ## 已发布的 COMPANION-002
 

@@ -24,6 +24,7 @@ describe('interaction settings API', () => {
       proactivePersonalizationEnabled: false,
       proactiveDailyLimit: 3,
       proactiveContent: '你好',
+      silentPresenceEnabled: false,
     }
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ deviceId, ...input }), {
