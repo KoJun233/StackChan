@@ -1,16 +1,23 @@
 # 部署工作流
 
 - 状态：READY_FOR_REVIEW
-- 最后更新：2026-09-10
-- 当前分支：`codex/interest-aware-proactive-chat`
-- 基准提交：`efcb85d`
-- 最后验证提交：`efcb85d`
-- 最后验证范围：COMPANION-001 定向 22/22、非 loopback 服务端 470/470、控制台 102/102/类型检查/production build、V47、备份恢复和 LAN 发布通过
+- 最后更新：2026-09-11
+- 当前分支：`codex/source-backed-interest-briefs`
+- 基准提交：`e60f310`
+- 最后验证提交：`e60f310`
+- 最后验证范围：COMPANION-002 定向 18/18、非 loopback 服务端 477/477、控制台 102/102/类型检查/production build、V48 空库迁移、备份恢复和 LAN 发布通过
 - 当前模式：LAN HTTP development
 
 ## 当前目标
 
-LAN 当前运行 `companion-random-v47` 和数据库 V47。主动开关仍保持关闭，待用户从页面显式启用；CoreS3 保持 `4444860` 和 `motion_disabled`。
+LAN 当前运行 `companion-sourced-v48-final` 和数据库 V48；主动开关、个性化开关和 CoreS3 安全状态保持不变。
+
+## 已发布的 COMPANION-002
+
+- 发布前使用现有备份容器生成新 PostgreSQL 备份，并把最新备份恢复到一次性隔离实例验证成功；旧镜像保留为 `pre-companion-sourced-v48`。
+- 只替换 `stackchan-foundation-server-1`；最终容器为 `a145b96ea279`，镜像为 `sha256:085ab90c9602e16789bdfd53f1f281d7695fc21d2454514dca607f21c6f92e7c`，构建版本为 `companion-sourced-v48-final`，无重启。
+- 运行库由 V47 迁移到 V48；本机和 `192.168.1.4` 首页为 200，健康状态为 `ok`，未认证提醒接口为 401，静态资源包含“来源收录时间”，最终容器后台刷新成功缓存 12 条 Hacker News 候选。
+- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；主动开关和个性化保持关闭，最小间隔 90 分钟、每日上限 3 次，设备继续保持 `4444860 / motion_disabled / DISABLED`。未连接或刷写固件，卷、端口、凭据和部署模式未修改。
 
 ## 已发布的 COMPANION-001
 

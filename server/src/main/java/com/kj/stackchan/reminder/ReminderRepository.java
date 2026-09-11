@@ -72,6 +72,8 @@ public interface ReminderRepository extends JpaRepository<ReminderEntity, UUID>,
 
     boolean existsByDeviceIdAndSourceAndStatus(UUID deviceId, ReminderSource source, ReminderStatus status);
 
+    boolean existsByDeviceIdAndSourceAndProactiveSourceUrl(UUID deviceId, ReminderSource source, String proactiveSourceUrl);
+
     Optional<ReminderEntity> findFirstByDeviceIdAndSourceAndProactiveTopicKeyStartingWithOrderByCreatedAtDesc(
             UUID deviceId,
             ReminderSource source,

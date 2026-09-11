@@ -37,6 +37,7 @@ public class ProactiveInteractionService {
     private final ProactiveMessageGenerator messageGenerator;
     private final Clock clock;
     private final CompanionRoleService roleService;
+    private final ProactiveInterestBriefSource interestBriefSource;
 
     @Autowired
     public ProactiveInteractionService(
@@ -48,7 +49,8 @@ public class ProactiveInteractionService {
             ProactiveTopicCooldownService topicCooldownService,
             ProactiveMessageGenerator messageGenerator,
             Clock clock,
-            CompanionRoleService roleService
+            CompanionRoleService roleService,
+            ProactiveInterestBriefSource interestBriefSource
     ) {
         this.settingsService = settingsService;
         this.reminderRepository = reminderRepository;
@@ -59,6 +61,17 @@ public class ProactiveInteractionService {
         this.messageGenerator = messageGenerator;
         this.clock = clock;
         this.roleService = roleService;
+        this.interestBriefSource = interestBriefSource;
+    }
+
+    public ProactiveInteractionService(
+            InteractionSettingsService settingsService, ReminderRepository reminderRepository,
+            VoiceTurnRepository voiceTurnRepository, DeviceCommandGateway commandGateway,
+            LongTermMemoryService memoryService, ProactiveTopicCooldownService topicCooldownService,
+            ProactiveMessageGenerator messageGenerator, Clock clock, CompanionRoleService roleService
+    ) {
+        this(settingsService, reminderRepository, voiceTurnRepository, commandGateway, memoryService,
+                topicCooldownService, messageGenerator, clock, roleService, null);
     }
 
     public ProactiveInteractionService(
@@ -68,7 +81,7 @@ public class ProactiveInteractionService {
             ProactiveMessageGenerator messageGenerator, Clock clock
     ) {
         this(settingsService, reminderRepository, voiceTurnRepository, commandGateway, memoryService,
-                topicCooldownService, messageGenerator, clock, null);
+                topicCooldownService, messageGenerator, clock, null, null);
     }
 
     public int generateDueGreetings() {
@@ -90,15 +103,28 @@ public class ProactiveInteractionService {
             UUID roleId = role == null ? CompanionRoleEntity.DEFAULT_ROLE_ID : role.id();
             LongTermMemoryService.MemorySnapshot memory = selectMemory(settings, now, roleId);
             if (!settingsService.recordProactiveIfEligible(settings.deviceId(), now)) continue;
-            ProactiveMessageGenerator.GenerationResult wording = role == null
-                    ? messageGenerator.generate(settings.proactiveContent(), memory)
-                    : messageGenerator.generate(settings.proactiveContent(), memory, role);
+            List<InterestBrief> briefs = sourceCandidates(settings.deviceId(), memory);
+            ProactiveMessageGenerator.GenerationResult wording;
+            if (!briefs.isEmpty()) {
+                wording = messageGenerator.generate(settings.proactiveContent(), memory, role, briefs);
+            } else {
+                wording = role == null
+                        ? messageGenerator.generate(settings.proactiveContent(), memory)
+                        : messageGenerator.generate(settings.proactiveContent(), memory, role);
+            }
             String topicKey = memory == null ? null : memory.topicKey();
-            reminderRepository.save(new ReminderEntity(
+            ReminderEntity reminder = new ReminderEntity(
                     roleId, settings.deviceId(), wording.content(), now, settings.zoneId(),
                     ReminderRecurrence.NONE, 1, null, ReminderSource.PROACTIVE,
                     topicKey, wording.status(), now
-            ));
+            );
+            if (wording.source() != null) {
+                InterestBrief source = wording.source();
+                reminder.assignProactiveSource(
+                        source.sourceName(), source.title(), source.url(), source.publishedAt(), source.retrievedAt(), now
+                );
+            }
+            reminderRepository.save(reminder);
             if (topicKey != null) {
                 if (roleService == null) topicCooldownService.recordMention(settings.deviceId(), topicKey, now);
                 else topicCooldownService.recordMention(settings.deviceId(), roleId, topicKey, now);
@@ -106,6 +132,19 @@ public class ProactiveInteractionService {
             generated++;
         }
         return generated;
+    }
+
+    private List<InterestBrief> sourceCandidates(
+            UUID deviceId,
+            LongTermMemoryService.MemorySnapshot memory
+    ) {
+        if (memory == null || interestBriefSource == null) return List.of();
+        return interestBriefSource.current().stream()
+                .filter(source -> !reminderRepository.existsByDeviceIdAndSourceAndProactiveSourceUrl(
+                        deviceId, ReminderSource.PROACTIVE, source.url()
+                ))
+                .limit(6)
+                .toList();
     }
 
     private LongTermMemoryService.MemorySnapshot selectMemory(

@@ -62,3 +62,4 @@
 | [0049](0049-local-vad-gated-live-voice-upload.md) | ACCEPTED | 语音在本地 VAD 命中后以 chunked WAV 边录边传，并把停录后的请求尾部控制在约一个 100 ms 音频窗口。 |
 | [0050](0050-low-latency-natural-voice-conversation.md) | ACCEPTED | 高频短语音闲聊绕过无用 Agent 组装，语音回复固定一次 TTS 和一个 WAV，标点停顿交给语音服务。 |
 | [0051](0051-persona-aware-random-proactive-conversation.md) | ACCEPTED | 主动闲聊在允许时段保存随机候选，限制每天最多三次和至少一小时间隔，并按当前人设与已确认兴趣生成。 |
+| [0052](0052-source-backed-interest-briefs.md) | ACCEPTED | 兴趣资讯后台读取官方只读源，模型只做受限相关性选择，播报与提醒记录保存可核验来源。 |

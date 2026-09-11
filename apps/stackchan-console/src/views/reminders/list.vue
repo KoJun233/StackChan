@@ -88,6 +88,19 @@ function formatTime(value: string) {
   return new Date(value).toLocaleString('zh-CN', { hour12: false })
 }
 
+function safeSourceUrl(value: string | null) {
+  if (!value) {
+    return null
+  }
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' ? url.toString() : null
+  }
+  catch {
+    return null
+  }
+}
+
 function recurrenceLabel(row: Reminder) {
   if (row.recurrenceType === 'NONE') {
     return '单次'
@@ -275,8 +288,23 @@ onBeforeUnmount(() => {
           </div>
         </template>
         <template #cell-content="{ row }">
-          <div class="max-w-100 truncate" :title="row.original.content">
-            {{ row.original.content }}
+          <div class="max-w-100">
+            <div class="truncate" :title="row.original.content">
+              {{ row.original.content }}
+            </div>
+            <a
+              v-if="safeSourceUrl(row.original.proactiveSourceUrl)"
+              :href="safeSourceUrl(row.original.proactiveSourceUrl) || undefined"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-xs text-primary mt-1 underline-offset-2 block truncate hover:underline"
+              :title="row.original.proactiveSourceTitle || undefined"
+            >
+              来源：{{ row.original.proactiveSourceName }} · {{ row.original.proactiveSourceTitle }}
+            </a>
+            <div v-if="row.original.proactiveSourcePublishedAt" class="text-xs text-muted-foreground">
+              来源收录时间 {{ formatTime(row.original.proactiveSourcePublishedAt) }}
+            </div>
           </div>
         </template>
         <template #cell-device="{ row }">

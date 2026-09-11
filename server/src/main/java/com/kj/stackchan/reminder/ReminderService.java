@@ -236,6 +236,11 @@ public class ReminderService {
                 reminder.getSource(),
                 reminder.getProactiveTopicKey(),
                 reminder.getProactiveGenerationStatus(),
+                reminder.getProactiveSourceName(),
+                reminder.getProactiveSourceTitle(),
+                reminder.getProactiveSourceUrl(),
+                reminder.getProactiveSourcePublishedAt(),
+                reminder.getProactiveSourceRetrievedAt(),
                 reminder.getLastOutcome(),
                 reminder.getLastCompletedAt(),
                 reminder.getAttemptCount(),
@@ -282,6 +287,11 @@ public class ReminderService {
             ReminderSource source,
             String proactiveTopicKey,
             ProactiveGenerationStatus proactiveGenerationStatus,
+            String proactiveSourceName,
+            String proactiveSourceTitle,
+            String proactiveSourceUrl,
+            Instant proactiveSourcePublishedAt,
+            Instant proactiveSourceRetrievedAt,
             ReminderStatus lastOutcome,
             Instant lastCompletedAt,
             int attemptCount,
@@ -303,7 +313,8 @@ public class ReminderService {
         ) {
             this(
                     id, deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID, content, scheduledAt, zoneId, status,
-                    ReminderRecurrence.NONE, 1, ReminderSource.USER, null, null, null, null,
+                    ReminderRecurrence.NONE, 1, ReminderSource.USER, null, null,
+                    null, null, null, null, null, null, null,
                     attemptCount, failureCode, createdAt, updatedAt
             );
         }
@@ -315,7 +326,8 @@ public class ReminderService {
                 int attemptCount, String failureCode, Instant createdAt, Instant updatedAt
         ) {
             this(id, deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID, content, scheduledAt, zoneId, status, recurrenceType,
-                    recurrenceInterval, source, null, null, lastOutcome, lastCompletedAt,
+                    recurrenceInterval, source, null, null,
+                    null, null, null, null, null, lastOutcome, lastCompletedAt,
                     attemptCount, failureCode, createdAt, updatedAt);
         }
     }
