@@ -87,6 +87,21 @@ public class DeviceInteractionSettingsEntity {
     @Column(name = "proactive_counter", nullable = false)
     private int proactiveCounter;
 
+    @Column(name = "silent_presence_enabled", nullable = false)
+    private boolean silentPresenceEnabled;
+
+    @Column(name = "silent_presence_next_at")
+    private Instant silentPresenceNextAt;
+
+    @Column(name = "silent_presence_last_at")
+    private Instant silentPresenceLastAt;
+
+    @Column(name = "silent_presence_counter_date")
+    private LocalDate silentPresenceCounterDate;
+
+    @Column(name = "silent_presence_counter", nullable = false)
+    private int silentPresenceCounter;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
@@ -114,6 +129,8 @@ public class DeviceInteractionSettingsEntity {
         this.proactiveContent = "你好呀，记得休息一下，也可以和我聊聊天。";
         this.proactivePersonalizationEnabled = false;
         this.proactiveCounter = 0;
+        this.silentPresenceEnabled = false;
+        this.silentPresenceCounter = 0;
         this.updatedAt = now;
     }
 
@@ -135,6 +152,7 @@ public class DeviceInteractionSettingsEntity {
             int proactiveDailyLimit,
             String proactiveContent,
             boolean proactivePersonalizationEnabled,
+            boolean silentPresenceEnabled,
             Instant now
     ) {
         this.volumePercent = volumePercent;
@@ -154,6 +172,7 @@ public class DeviceInteractionSettingsEntity {
         this.proactiveDailyLimit = proactiveDailyLimit;
         this.proactiveContent = proactiveContent;
         this.proactivePersonalizationEnabled = proactivePersonalizationEnabled;
+        this.silentPresenceEnabled = silentPresenceEnabled;
         this.updatedAt = now;
     }
 
@@ -173,6 +192,24 @@ public class DeviceInteractionSettingsEntity {
 
     public void clearProactiveSchedule() {
         this.proactiveNextAt = null;
+    }
+
+    public void recordSilentPresence(LocalDate localDate, Instant now) {
+        if (!localDate.equals(silentPresenceCounterDate)) {
+            silentPresenceCounterDate = localDate;
+            silentPresenceCounter = 0;
+        }
+        silentPresenceCounter++;
+        silentPresenceLastAt = now;
+        updatedAt = now;
+    }
+
+    public void scheduleSilentPresence(Instant nextAt) {
+        this.silentPresenceNextAt = nextAt;
+    }
+
+    public void clearSilentPresenceSchedule() {
+        this.silentPresenceNextAt = null;
     }
 
     public void setVolume(int volumePercent, Instant now) {
@@ -208,5 +245,10 @@ public class DeviceInteractionSettingsEntity {
     public Instant getProactiveNextAt() { return proactiveNextAt; }
     public LocalDate getProactiveCounterDate() { return proactiveCounterDate; }
     public int getProactiveCounter() { return proactiveCounter; }
+    public boolean isSilentPresenceEnabled() { return silentPresenceEnabled; }
+    public Instant getSilentPresenceNextAt() { return silentPresenceNextAt; }
+    public Instant getSilentPresenceLastAt() { return silentPresenceLastAt; }
+    public LocalDate getSilentPresenceCounterDate() { return silentPresenceCounterDate; }
+    public int getSilentPresenceCounter() { return silentPresenceCounter; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

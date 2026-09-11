@@ -102,7 +102,8 @@ public class InteractionSettingsController {
             @Min(60) @Max(1440) int proactiveMinIntervalMinutes,
             @Min(1) @Max(3) int proactiveDailyLimit,
             @NotBlank @Size(max = 500) String proactiveContent,
-            boolean proactivePersonalizationEnabled
+            boolean proactivePersonalizationEnabled,
+            boolean silentPresenceEnabled
     ) {
         InteractionSettingsService.UpdateInteractionSettingsCommand toCommand() {
             return new InteractionSettingsService.UpdateInteractionSettingsCommand(
@@ -110,7 +111,7 @@ public class InteractionSettingsController {
                     dndEnabled, dndStart, dndEnd, zoneId,
                     missedReminderPolicy, missedSnoozeMinutes, proactiveEnabled, proactiveStart,
                     proactiveEnd, proactiveMinIntervalMinutes, proactiveDailyLimit, proactiveContent,
-                    proactivePersonalizationEnabled
+                    proactivePersonalizationEnabled, silentPresenceEnabled
             );
         }
 
@@ -124,7 +125,21 @@ public class InteractionSettingsController {
             this(volumePercent, nightMode, continuousConversationEnabled, followUpWindowSeconds,
                     dndEnabled, dndStart, dndEnd, zoneId, missedReminderPolicy, missedSnoozeMinutes,
                     proactiveEnabled, proactiveStart, proactiveEnd, proactiveMinIntervalMinutes,
-                    proactiveDailyLimit, proactiveContent, false);
+                    proactiveDailyLimit, proactiveContent, false, false);
+        }
+
+        public InteractionSettingsRequest(
+                int volumePercent, boolean nightMode, boolean continuousConversationEnabled,
+                int followUpWindowSeconds, boolean dndEnabled, LocalTime dndStart, LocalTime dndEnd,
+                String zoneId, MissedReminderPolicy missedReminderPolicy, int missedSnoozeMinutes,
+                boolean proactiveEnabled, LocalTime proactiveStart, LocalTime proactiveEnd,
+                int proactiveMinIntervalMinutes, int proactiveDailyLimit, String proactiveContent,
+                boolean proactivePersonalizationEnabled
+        ) {
+            this(volumePercent, nightMode, continuousConversationEnabled, followUpWindowSeconds,
+                    dndEnabled, dndStart, dndEnd, zoneId, missedReminderPolicy, missedSnoozeMinutes,
+                    proactiveEnabled, proactiveStart, proactiveEnd, proactiveMinIntervalMinutes,
+                    proactiveDailyLimit, proactiveContent, proactivePersonalizationEnabled, false);
         }
     }
 

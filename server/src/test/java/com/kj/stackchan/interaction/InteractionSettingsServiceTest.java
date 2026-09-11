@@ -93,10 +93,28 @@ class InteractionSettingsServiceTest {
         assertThat(service().isProactiveEligible(settings, NOW)).isFalse();
     }
 
+    @Test
+    void enablingSilentPresenceCreatesAnIndependentPersistedCandidate() {
+        UUID deviceId = UUID.randomUUID();
+        when(deviceRepository.existsById(deviceId)).thenReturn(true);
+        when(repository.findById(deviceId)).thenReturn(Optional.empty());
+        when(repository.save(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var settings = service().save(deviceId, new InteractionSettingsService.UpdateInteractionSettingsCommand(
+                50, false, true, 6, false, LocalTime.of(22, 0), LocalTime.of(7, 0), "UTC",
+                MissedReminderPolicy.PLAY_NOW, 10, false, LocalTime.of(9, 0), LocalTime.of(21, 0),
+                60, 3, "你好", false, true
+        ));
+
+        assertThat(settings.silentPresenceEnabled()).isTrue();
+        assertThat(settings.silentPresenceNextAt()).isEqualTo(Instant.parse("2026-07-27T16:00:00Z"));
+        assertThat(settings.proactiveNextAt()).isNull();
+    }
+
     private InteractionSettingsService service() {
         return new InteractionSettingsService(
                 repository, deviceRepository, Clock.fixed(NOW, ZoneOffset.UTC),
-                new ProactiveSchedulePlanner(() -> 0.5)
+                new ProactiveSchedulePlanner(() -> 0.5), new SilentPresenceSchedulePlanner(() -> 0.5)
         );
     }
 }

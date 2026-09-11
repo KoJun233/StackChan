@@ -76,6 +76,7 @@ const loading = ref(false)
 const stopping = ref(false)
 const topicCooldowns = ref<ProactiveTopicCooldown[]>([])
 const proactiveNextAt = ref<string | null>(null)
+const silentPresenceNextAt = ref<string | null>(null)
 const resumingTopic = ref('')
 const model = ref<InteractionFormModel>(defaults())
 const workdayRuntime = ref<WorkdayRuntime | null>(null)
@@ -101,7 +102,7 @@ const isWorkdayPage = computed(() => route.name === 'workdayCompanion')
 const pageTitle = computed(() => isWorkdayPage.value ? '工作日陪伴' : '主动关心')
 const pageDescription = computed(() => isWorkdayPage.value
   ? '先查看当前工作状态，再按需调整节奏、日历天气和十四天私用观察。'
-  : '管理机器人本地呈现、身体动作安全、免打扰和有限主动问候。')
+  : '管理机器人本地呈现、身体动作安全、无声陪伴、免打扰和有限主动问候。')
 const sectionTabs = computed(() => isWorkdayPage.value
   ? [
       { label: '当前概览', value: 'workday-overview', icon: 'i-ri:focus-2-line' },
@@ -176,6 +177,7 @@ const validationSchema = toTypedSchema(z.object({
   proactivePersonalizationEnabled: z.boolean(),
   proactiveDailyLimit: z.number().int().min(1).max(3),
   proactiveContent: z.string().trim().min(1, '请输入主动问候内容').max(500),
+  silentPresenceEnabled: z.boolean(),
   workdayEnabled: z.boolean(),
   workdayMonday: z.boolean(),
   workdayTuesday: z.boolean(),
@@ -257,6 +259,7 @@ function defaults(): InteractionFormModel {
     proactivePersonalizationEnabled: false,
     proactiveDailyLimit: 3,
     proactiveContent: '你好呀，记得休息一下，也可以和我聊聊天。',
+    silentPresenceEnabled: false,
     workdayEnabled: false,
     workdayMonday: true,
     workdayTuesday: true,
@@ -337,6 +340,7 @@ async function loadSettings(deviceId: string) {
       proactivePersonalizationEnabled: settings.proactivePersonalizationEnabled ?? false,
       proactiveDailyLimit: settings.proactiveDailyLimit,
       proactiveContent: settings.proactiveContent,
+      silentPresenceEnabled: settings.silentPresenceEnabled ?? false,
       workdayEnabled: workday.enabled,
       workdayMonday: includesWorkday(workday.workDaysMask, 0),
       workdayTuesday: includesWorkday(workday.workDaysMask, 1),
@@ -357,6 +361,7 @@ async function loadSettings(deviceId: string) {
       workdayZoneId: workday.zoneId,
     }
     proactiveNextAt.value = settings.proactiveNextAt ?? null
+    silentPresenceNextAt.value = settings.silentPresenceNextAt ?? null
     try {
       topicCooldowns.value = await listProactiveTopics(deviceId)
     }
@@ -411,6 +416,7 @@ async function submit(values: InteractionFormModel) {
       proactivePersonalizationEnabled: values.proactivePersonalizationEnabled,
       proactiveDailyLimit: values.proactiveDailyLimit,
       proactiveContent: values.proactiveContent,
+      silentPresenceEnabled: values.silentPresenceEnabled,
     }
     const workdayInput: SaveWorkdaySettingsInput = {
       enabled: values.workdayEnabled,
@@ -431,6 +437,7 @@ async function submit(values: InteractionFormModel) {
       saveWorkdaySettings(values.deviceId, workdayInput),
     ])
     proactiveNextAt.value = savedInteraction.proactiveNextAt ?? null
+    silentPresenceNextAt.value = savedInteraction.silentPresenceNextAt ?? null
     workdayWeather.value = await getWorkdayWeather(values.deviceId)
     useFaToast().success('设置已保存', { description: '工作日陪伴保持默认关闭；启用后按固定规则运行。' })
   }
@@ -1070,9 +1077,22 @@ onMounted(loadDevices)
                 </div>
               </FaCard>
 
-              <FaCard title="有限主动问候">
+              <FaCard title="主动陪伴">
                 <div class="gap-6 grid">
-                  <FaAlert title="默认关闭，时段内随机触发" description="启用后会先生成下一次随机时间；离线、忙碌或免打扰时顺延，每天最多三次且两次至少间隔一小时。" />
+                  <FaAlert title="无声表情优先" description="无声陪伴开启后复用下方允许时段，每 30–90 分钟随机显示一次短表情，每天最多 8 次；不播音、不调用模型，也不占主动问候次数。" />
+                  <FaAlert
+                    v-if="model.silentPresenceEnabled && silentPresenceNextAt"
+                    title="下一次无声表情候选"
+                    :description="`${new Date(silentPresenceNextAt).toLocaleString()}；离线、免打扰、语音或提醒播放期间不会显示。`"
+                  />
+                  <FaFormItem
+                    name="silentPresenceEnabled"
+                    label="允许无声陪伴表情"
+                    description="默认关闭。只使用现有动态表情能力，不读取摄像头、麦克风或电脑活动。"
+                  >
+                    <FaSwitch v-model="model.silentPresenceEnabled" />
+                  </FaFormItem>
+                  <FaAlert title="有限语音问候" description="启用后会先生成下一次随机时间；离线、忙碌或免打扰时顺延，每天最多三次且两次至少间隔一小时。" />
                   <FaAlert title="资讯有据可查" description="开启个性化后，可从 Hacker News 的近期技术标题中匹配已确认兴趣；来源、原始链接和来源收录时间会保存在提醒记录中。没有合适来源时只生成普通问候。" />
                   <FaAlert
                     v-if="model.proactiveEnabled && proactiveNextAt"

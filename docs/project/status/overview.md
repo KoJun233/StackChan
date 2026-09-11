@@ -2,14 +2,16 @@
 
 - 状态：READY_FOR_REVIEW
 - 最后更新：2026-09-11
-- 当前分支：`codex/source-backed-interest-briefs`
-- 实现基准：`e60f310`
-- 最后验证提交：`e60f310`
-- 最后验证范围：COMPANION-002 定向 18/18；排除 8 个既有 Windows loopback 类后的服务端 477/477；完整 509 个用例中 31 个错误均来自这些环境限制；控制台 32 文件 102/102、类型检查、production build、V48 空库迁移、备份恢复和 LAN 发布通过
+- 当前分支：`codex/silent-presence-expressions`
+- 实现基准：`06ab0b3`
+- 最后验证提交：`06ab0b3`
+- 最后验证范围：COMPANION-003 定向 25/25；排除 8 个既有 Windows loopback 类后的服务端 482/482；完整 514 个用例中 31 个错误均来自这些环境限制；控制台 32 文件 102/102、类型检查、production build、V49 空库迁移、备份恢复和 LAN 发布通过
 - 当前部署：LAN HTTP development mode
 - 生产边界：HTTPS-only
 
 ## 当前结论
+
+`COMPANION-003` 已完成并发布：新增默认关闭、与语音主动问候独立的无声陪伴开关；开启后复用当前允许时段，每 30–90 分钟随机显示 6–8 秒弱/中等动态表情，每个本地日期最多八次。离线、免打扰、活动语音和正在播放的提醒会抑制显示且不占次数；实现不调用模型、不播音、不读取摄像头、麦克风或电脑活动，也不执行身体动作。详见 [ADR 0053](../decisions/0053-bounded-silent-presence-expressions.md)。
 
 `COMPANION-002` 已完成并发布：服务端后台读取 Hacker News 官方只读 API 并保存不超过两小时的通用技术标题缓存，不发送用户兴趣；只有个性化开启且选出已确认兴趣后，模型才在最多六个标题中返回候选编号和短开场。最终标题与来源由程序确定性拼接，V48 保存原始标题、HTTPS 链接、Hacker News 条目收录时间和抓取时间，管理端提醒列表可追溯查看；无匹配、超时或输出不合规均退回普通人设问候。详见 [ADR 0052](../decisions/0052-source-backed-interest-briefs.md)。
 
@@ -39,15 +41,15 @@ V46 后台信息架构、真实二级菜单、无黑块聊天输入区、窄屏�
 
 | 工作流 | 状态 | 当前事实 | 下一步 |
 | --- | --- | --- | --- |
-| [服务端](server.md) | READY_FOR_REVIEW | V48、后台来源缓存、受限候选选择和证据持久化已发布 | 用户审核任务提交 |
-| [前端](frontend.md) | READY_FOR_REVIEW | 主动关心页说明真实来源，提醒列表展示来源证据且已发布 | 用户审核任务提交 |
+| [服务端](server.md) | READY_FOR_REVIEW | V49、持久随机无声表情和忙碌抑制已发布 | 用户审核任务提交 |
+| [前端](frontend.md) | READY_FOR_REVIEW | 主动关心页提供默认关闭的无声陪伴开关和下一候选时间 | 用户审核任务提交 |
 | [固件](firmware.md) | READY_FOR_REVIEW | `4444860` 已保留 NVS 安装且 WebSocket 稳定在线 | 用户唤醒两轮并监听段间日志 |
-| [部署](deployment.md) | READY_FOR_REVIEW | LAN 运行 `companion-sourced-v48-final`，数据库为 V48 | 保持现状并等待用户审核 |
+| [部署](deployment.md) | READY_FOR_REVIEW | LAN 运行 `silent-presence-v49-final`，数据库为 V49 | 保持默认关闭并等待用户审核 |
 
 ## 当前能力地图
 
 - 对话：流式文字聊天、本地唤醒语音、完整回复、连续对话、触摸取消、隐私安全诊断和有序分段播放。
-- 陪伴：角色容器、可选角色音色、确认记忆、建议过滤、相关检索、周期提醒、免打扰和有界主动关心；人设与陪伴数据按角色隔离。
+- 陪伴：角色容器、可选角色音色、确认记忆、建议过滤、相关检索、周期提醒、免打扰、有界主动关心和无声陪伴表情；人设与陪伴数据按角色隔离。
 - Agent：受控 ReactAgent、Skill ZIP、只读 Tool、页面管理的 Streamable HTTP MCP Client 和语音动作确认。
 - 待办：设备与角色隔离的本地 CRUD、可靠截止提醒、最小只读 Agent Tool，以及确认式语音新增与完成。
 - 设备：配对/JWT/WebSocket、唤醒模型 OTA、动态球形表情、兼容八状态 PNG 包和应用 A/B OTA。
@@ -60,12 +62,14 @@ V46 后台信息架构、真实二级菜单、无黑块聊天输入区、窄屏�
 
 ## 版本与运行态
 
-- Git：`COMPANION-001` 已由 `e60f310` 合入主线；当前任务分支 `codex/source-backed-interest-briefs` 基于 `master@e60f310`。
-- LAN server：`companion-sourced-v48-final` 运行于 `http://192.168.1.4:8080/`；运行库为 V48，详情见[部署状态](deployment.md)。
+- Git：`COMPANION-002` 已由 `06ab0b3` 合入主线；当前任务分支 `codex/silent-presence-expressions` 基于 `master@06ab0b3`。
+- LAN server：`silent-presence-v49-final` 运行于 `http://192.168.1.4:8080/`；运行库为 V49，详情见[部署状态](deployment.md)。
 - CoreS3：当前运行 `4444860` LAN HTTP Quad；经 COM3 保留 NVS 安装，Wi-Fi、设备身份、8192 字节主栈、WakeNet 和 `motion_disabled` 保留，WebSocket 已稳定在线并向服务端上报新版本。
 - 实机固件提交只作为运行候选，不能替代 `master` 作为新任务分支基线。
 
 ## 最近验证
+
+- 2026-09-11 COMPANION-003：服务端定向 25/25、排除 8 个既有 Windows loopback 类后的 482/482、控制台 32 文件 102/102、类型检查、production build 和定向 ESLint/Stylelint 通过；Testcontainers 从空库成功应用 V1..V49。发布前新备份与最新备份隔离恢复成功，只替换 server；当前容器 `a8c901a1156b`、镜像 `sha256:c9234911630d5ca42fb804c58aa734f29b9c8919e09008321cfae510979a320a`、构建版本 `silent-presence-v49-final`，健康为 `ok` 且无重启。本机与 `192.168.1.4` 首页为 200，运行静态资源包含“无声陪伴”；现有一条设置保持开关关闭且无候选。PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换，设备保持 `4444860 / motion_disabled`。
 
 - 2026-09-11 COMPANION-002：发布前新 PostgreSQL 备份和最新备份隔离恢复成功，只替换 server；最终容器 `a145b96ea279`、镜像 `sha256:085ab90c9602e16789bdfd53f1f281d7695fc21d2454514dca607f21c6f92e7c`、构建版本 `companion-sourced-v48-final`。运行库为 V48，本机和 `192.168.1.4` 首页为 200，健康为 `ok`，未认证提醒接口为 401，最终容器后台成功缓存 12 条 Hacker News 候选。PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；主动开关和个性化保持关闭，最小间隔 90 分钟、每日上限 3 次，设备保持 `4444860 / motion_disabled / DISABLED`。
 
