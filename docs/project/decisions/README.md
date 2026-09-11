@@ -64,3 +64,6 @@
 | [0051](0051-persona-aware-random-proactive-conversation.md) | ACCEPTED | 主动闲聊在允许时段保存随机候选，限制每天最多三次和至少一小时间隔，并按当前人设与已确认兴趣生成。 |
 | [0052](0052-source-backed-interest-briefs.md) | ACCEPTED | 兴趣资讯后台读取官方只读源，模型只做受限相关性选择，播报与提醒记录保存可核验来源。 |
 | [0053](0053-bounded-silent-presence-expressions.md) | ACCEPTED | 无声陪伴使用独立开关和持久随机计划，只下发既有动态表情并避开免打扰、语音与提醒播放。 |
+| [0054](0054-bounded-recent-voice-context.md) | ACCEPTED | 语音话题承接只使用最近三十分钟内至多四个完整轮次，缺少上下文时简短澄清且不补造当前事件。 |
+| [0055](0055-delivered-proactive-conversation-context.md) | ACCEPTED | 已成功播放的主动消息按设备、角色和三十分钟窗口进入语音上下文，来源标题不等同于文章全文。 |
+| [0056](0056-contextual-voice-fact-followups.md) | ACCEPTED | 日期省略追问沿近期连续话题继承天气或日程工具，保留授权和成功调用门槛。 |

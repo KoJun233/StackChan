@@ -218,12 +218,12 @@ public class ConversationService {
         if (!conversationRepository.existsById(conversationId)) {
             throw new ConversationNotFoundException(conversationId);
         }
-        List<ConversationMessageSnapshot> completedMessages = getMessages(conversationId).stream()
-                .filter(message -> message.generationStatus() == GenerationStatus.COMPLETED)
-                .filter(message -> message.role() == MessageRole.USER || message.role() == MessageRole.ASSISTANT)
+        return messageRepository
+                .findTop20ByConversationIdAndGenerationStatusAndRoleInOrderByCreatedAtDescIdDesc(
+                        conversationId, GenerationStatus.COMPLETED, List.of(MessageRole.USER, MessageRole.ASSISTANT))
+                .reversed().stream()
+                .map(this::toSnapshot)
                 .toList();
-        int firstIncludedIndex = Math.max(0, completedMessages.size() - 20);
-        return completedMessages.subList(firstIncludedIndex, completedMessages.size());
     }
 
     private ConversationMessageEntity findAssistantMessage(UUID assistantMessageId) {
@@ -251,7 +251,8 @@ public class ConversationService {
                 message.getContent(),
                 message.getGenerationStatus(),
                 message.getCreatedAt(),
-                message.getCompletedAt()
+                message.getCompletedAt(),
+                message.getInReplyToMessageId()
         );
     }
 }

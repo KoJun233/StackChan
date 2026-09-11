@@ -9,6 +9,11 @@ public record ConversationMessageSnapshot(
         String content,
         GenerationStatus generationStatus,
         Instant createdAt,
-        Instant completedAt
+        Instant completedAt,
+        @com.fasterxml.jackson.annotation.JsonIgnore UUID inReplyToMessageId
 ) {
+    public ConversationMessageSnapshot(UUID id, MessageRole role, String content,
+            GenerationStatus generationStatus, Instant createdAt, Instant completedAt) {
+        this(id, role, content, generationStatus, createdAt, completedAt, null);
+    }
 }

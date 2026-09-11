@@ -1,13 +1,50 @@
 # 全局工作流总览
 
 - 状态：READY_FOR_REVIEW
-- 最后更新：2026-09-11
-- 当前分支：`codex/silent-presence-expressions`
-- 实现基准：`06ab0b3`
-- 最后验证提交：`06ab0b3`
-- 最后验证范围：COMPANION-003 定向 25/25；排除 8 个既有 Windows loopback 类后的服务端 482/482；完整 514 个用例中 31 个错误均来自这些环境限制；控制台 32 文件 102/102、类型检查、production build、V49 空库迁移、备份恢复和 LAN 发布通过
+- 最后更新：2026-09-13
+- 当前分支：`codex/contextual-fact-followup`
+- 实现基准：`3da34c1`
+- 最后验证提交：`3da34c1`
+- 最后验证范围：日期追问/语音定向 32/32，非 loopback 回归 497/497，V49 空库迁移、JAR/镜像、新备份隔离恢复、本机/LAN 健康和文档检查通过
 - 当前部署：LAN HTTP development mode
 - 生产边界：HTTPS-only
+
+## 开发暂停与合并交接
+
+2026-09-13 推送前采用较小 JVM 内存复验语音定向 32/32 通过（此前默认 JVM 启动曾受本机内存不足影响）；497/497 回归为 2026-09-12 的已通过结果。用户确认当前核心功能满足正常使用，要求暂停后续优化并推送已完成实现，等待人工合并。本次仅交付已完成的 COMPANION-004/005/006；“换个话题”尚未实现，不包含在交付中。后续优化与延期实体验收不作为继续开发的授权。
+
+下一条操作：推送当前任务分支后由用户创建 PR、审核并合并；Agent 不创建或合并 PR，不再启动新功能开发。运行版本保持 `fact-followup-v49`。
+
+## 已完成并发布的 COMPANION-006
+
+- 日期省略追问按近期连续用户话题继承天气/日程必需工具；当前明确问题优先，游戏转题、其他工具和不完整历史会停止继承，普通闲聊快速路径保留。
+- 定向 32/32、排除既有八个 Windows loopback 类后的回归 497/497、V1..V49 空库迁移、打包和文档检查通过。实际模型日期理解与措辞未冒充自动化验收。
+- 新备份及隔离恢复成功后只替换 LAN server：容器 `d449921c54d6`，镜像 `sha256:38da048573e52aef1bbb1e6fa35e1e8ba782d1cbb857810c8f9740f40916448c`，版本 `fact-followup-v49`，本机/LAN 健康 ok 且无重启。
+- 复用已部署页面资源，仅替换 JAR；数据库 V49、PostgreSQL/Redis/备份容器和设备 `4444860 / motion_disabled / DISABLED` 不变。回退可使用上一镜像标签 `proactive-context-v49`。
+- 设计见 [ADR 0056](../decisions/0056-contextual-voice-fact-followups.md)。本轮无代码或部署阻塞；后续为实体日期追问复测和用户审核。保留前轮未推送实现并整理为一个中文任务提交，外部推送等待明确授权。
+
+## 已完成并发布的 COMPANION-005
+
+- 当前设备、当前角色最近三十分钟内成功播放的最新一条主动消息进入语音上下文，用户可以继续追问；未播放、失败、过期、未来记录及其他设备/角色均被排除。
+- 只读取有长度上限的正文和已有来源元数据，明确区分标题信息与一般解释，不假装已读取文章全文；读取失败时继续普通语音。
+- 定向 26/26、排除既有八个 Windows loopback 测试类后的服务端回归 492/492、V1..V49 空库迁移和 JAR 打包通过。
+- 新备份和隔离恢复成功后仅更新 LAN server：容器 `398d9a946aa9`，镜像 `sha256:46b814c136d1092d82a7cc46d797a35381f04e3d2fa3a0244c77d7b04e52fd40`，版本 `proactive-context-v49`；本机/LAN 健康 ok、无重启，数据库 V49、依赖容器和设备 `4444860 / motion_disabled / DISABLED` 保持不变。
+- 复用已发布页面资源，只替换已验证 JAR；保留上一版本 `bounded-history-v49` 供回退。无新增 TTS 调用、迁移、页面、固件或主动次数。
+- 设计见 [ADR 0055](../decisions/0055-delivered-proactive-conversation-context.md)。代码和发布无阻塞；真实模型措辞尚待正常主动播报后的用户追问复测，Git 推送等待明确授权。
+
+## 已完成并发布的历史读取优化
+
+用户确认上一轮可用后继续开发。历史改为数据库过滤并仅返回最近二十条正文，按既有索引排序；查看与导出完整记录接口不变。定向 29/29、排除既有八个 Windows loopback 类后的回归 489/489、V49 空库迁移和打包通过。新备份及隔离恢复后只替换 server：容器 `5ff72ab79651`，镜像 `sha256:75260733ece0a01043b72b7320fb49cad347bbfc0478f123db4608bd5a44e67c`，版本 `bounded-history-v49`，本机/LAN 健康 ok、无重启，设备保持 `4444860 / motion_disabled / DISABLED`。实际端到端提速未测量；当前无代码阻塞，等待审核及推送授权。
+
+## 已完成并发布的 COMPANION-004
+
+- 2026-09-12 重新 fetch 确认最新 master 为 `3da34c1`，任务从该提交继续；旧状态中的 COMPANION-003 待审核描述已由 PR #39 合并事实取代。
+- 语音从已有最近二十条历史中，按持久化回复关联选取三十分钟内至多四个完整轮次；同时间戳、缺失用户消息和失败回复不再按相邻位置误配。历史正文继续作为消息传递，不提升为系统指令。
+- 省略表达优先承接最近一轮，缺少对象时提示模型简短澄清；长期记忆不得用于补造当前游戏或事件。措辞质量仍需实体对话复测。
+- 最终非 loopback 服务端 487/487、V1..V49 空库迁移、JAR 打包和镜像构建通过。三项既有语音修复继续保留：短语音快速路径、一次 TTS/一个 WAV、无有效语音按 NO_SPEECH 结束。
+- 新备份与隔离恢复成功，只替换 LAN server；容器 `18054bd71191`、镜像 `sha256:4ffc790589e3fa8e2cd155d94b709e768d9dd3a28e5d31b6eefbcdf6b5a32fff`、版本 `conversation-context-v49`，本机和 LAN 健康为 ok，无重启。
+- 镜像以已部署的 `c923491` 镜像为基础，仅替换已测试 JAR；管理页面复用已发布版本。数据库 V49、依赖容器和 CoreS3 `4444860 / motion_disabled / DISABLED` 保持不变。
+- 设计见 [ADR 0054](../decisions/0054-bounded-recent-voice-context.md)。未完成项为用户实体措辞复测与 Git 推送，推送等待明确授权。
 
 ## 当前结论
 
@@ -41,10 +78,10 @@ V46 后台信息架构、真实二级菜单、无黑块聊天输入区、窄屏�
 
 | 工作流 | 状态 | 当前事实 | 下一步 |
 | --- | --- | --- | --- |
-| [服务端](server.md) | READY_FOR_REVIEW | V49、持久随机无声表情和忙碌抑制已发布 | 用户审核任务提交 |
+| [服务端](server.md) | READY_FOR_REVIEW | V49、短时话题及日期追问工具衔接已发布 | 用户审核任务提交 |
 | [前端](frontend.md) | READY_FOR_REVIEW | 主动关心页提供默认关闭的无声陪伴开关和下一候选时间 | 用户审核任务提交 |
 | [固件](firmware.md) | READY_FOR_REVIEW | `4444860` 已保留 NVS 安装且 WebSocket 稳定在线 | 用户唤醒两轮并监听段间日志 |
-| [部署](deployment.md) | READY_FOR_REVIEW | LAN 运行 `silent-presence-v49-final`，数据库为 V49 | 保持默认关闭并等待用户审核 |
+| [部署](deployment.md) | READY_FOR_REVIEW | LAN 运行 `fact-followup-v49`，数据库为 V49 | 保持默认关闭并等待用户审核 |
 
 ## 当前能力地图
 
@@ -62,7 +99,7 @@ V46 后台信息架构、真实二级菜单、无黑块聊天输入区、窄屏�
 
 ## 版本与运行态
 
-- Git：`COMPANION-002` 已由 `06ab0b3` 合入主线；当前任务分支 `codex/silent-presence-expressions` 基于 `master@06ab0b3`。
+- Git：`COMPANION-002` 已由 `06ab0b3` 合入主线；当前任务分支 `codex/contextual-fact-followup` 基于 `master@3da34c1`。
 - LAN server：`silent-presence-v49-final` 运行于 `http://192.168.1.4:8080/`；运行库为 V49，详情见[部署状态](deployment.md)。
 - CoreS3：当前运行 `4444860` LAN HTTP Quad；经 COM3 保留 NVS 安装，Wi-Fi、设备身份、8192 字节主栈、WakeNet 和 `motion_disabled` 保留，WebSocket 已稳定在线并向服务端上报新版本。
 - 实机固件提交只作为运行候选，不能替代 `master` 作为新任务分支基线。
@@ -184,6 +221,7 @@ V46 后台信息架构、真实二级菜单、无黑块聊天输入区、窄屏�
 - MEDIA-002 已合入，固件成功路径、显示性能和音量回归已通过；固定 60 FPS 仍是调度目标而不是硬件承诺。
 - MEDIA-003/004 已合入且无代码阻塞。`esp_emote_gfx` 仍不进入正式显示链；MEDIA-004 V2 实体激活因暂无素材延期，后续只有在提供素材并单独授权时才执行。
 
+
 ## 下一步
 
-保持当前 LAN server/V41 和 CoreS3 `5e14d73` 的 `motion_disabled` 不变；把 SCS 写 ACK 兼容修复压回单一任务提交并重建提交绑定 LAN HTTP Quad 候选。Git 推送仍需用户明确授权；新的固件候选也需再次获批后才可保留 NVS 安装，本轮只复测无动作校准，动作继续按 runbook 分阶段授权。
+开发按用户要求暂停；本轮已获任务分支推送授权。推送后等待用户创建 PR、审核与合并，不继续新增功能。

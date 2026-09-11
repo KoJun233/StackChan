@@ -15,6 +15,30 @@ import org.springframework.data.jpa.repository.Modifying;
 
 public interface ReminderRepository extends JpaRepository<ReminderEntity, UUID>, JpaSpecificationExecutor<ReminderEntity> {
 
+    @Query("""
+            select r.content as content, r.proactiveSourceName as sourceName,
+                   r.proactiveSourceTitle as sourceTitle, r.proactiveSourceUrl as sourceUrl,
+                   r.lastCompletedAt as completedAt
+            from ReminderEntity r
+            where r.deviceId = :deviceId and r.roleId = :roleId
+              and r.source = com.kj.stackchan.reminder.ReminderSource.PROACTIVE
+              and r.status = com.kj.stackchan.reminder.ReminderStatus.DELIVERED
+              and r.lastCompletedAt >= :cutoff and r.lastCompletedAt <= :now
+            order by r.lastCompletedAt desc, r.id desc
+            """)
+    List<DeliveredProactiveContext> findDeliveredProactiveContext(
+            @Param("deviceId") UUID deviceId, @Param("roleId") UUID roleId,
+            @Param("cutoff") Instant cutoff, @Param("now") Instant now,
+            org.springframework.data.domain.Pageable pageable);
+
+    interface DeliveredProactiveContext {
+        String getContent();
+        String getSourceName();
+        String getSourceTitle();
+        String getSourceUrl();
+        Instant getCompletedAt();
+    }
+
     List<ReminderEntity> findTop20ByStatusAndScheduledAtLessThanEqualOrderByScheduledAtAscIdAsc(
             ReminderStatus status,
             Instant scheduledAt
