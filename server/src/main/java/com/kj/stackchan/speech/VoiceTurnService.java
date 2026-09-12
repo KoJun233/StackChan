@@ -1,5 +1,6 @@
 package com.kj.stackchan.speech;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -40,6 +41,9 @@ public class VoiceTurnService {
     private static final String VOICE_SYSTEM_INSTRUCTION = """
 
             当前是机器人语音对话。请直接使用简体中文回答，不要使用 Markdown。
+            对话历史只包含最近三十分钟内完整结束的至多四轮对话。用户用“刚才”“还是”“又”
+            “然后”“那个”等省略说法时，优先结合最近一轮自然承接，不要复述历史。历史不足以确定
+            对象时只问一句简短澄清；不得根据长期记忆补造本次游戏、输赢、人物或事件。
             对随口吐槽、输赢分享和简短闲聊，默认只回应一到两句、整个回答尽量不超过四十个汉字，先自然接住用户的情绪或话题；
             用户没有请求建议时不要主动说教，也不要为了延续对话而每次反问。只有用户明确要求解释、
             分析、步骤或完整事实时才展开，必要的 Tool 查询结果必须完整准确。即使展开，语音正文也必须
@@ -60,6 +64,8 @@ public class VoiceTurnService {
     private final VoiceTurnCancellationService cancellationService;
     private final VoiceActionCoordinator voiceActionCoordinator;
     private final CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator;
+    private final VoiceConversationContextPolicy conversationContextPolicy;
+    private final RecentProactiveContextService recentProactiveContextService;
     private DeviceExpressionService deviceExpressionService;
 
     @Autowired(required = false)
@@ -78,7 +84,9 @@ public class VoiceTurnService {
             VoiceTurnDiagnosticsService diagnosticsService,
             VoiceTurnCancellationService cancellationService,
             VoiceActionCoordinator voiceActionCoordinator,
-            CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator
+            CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator,
+            VoiceConversationContextPolicy conversationContextPolicy,
+            RecentProactiveContextService recentProactiveContextService
     ) {
         this.speechRuntimeClient = speechRuntimeClient;
         this.deviceVoiceConversationService = deviceVoiceConversationService;
@@ -90,6 +98,8 @@ public class VoiceTurnService {
         this.cancellationService = cancellationService;
         this.voiceActionCoordinator = voiceActionCoordinator;
         this.completedTurnMemoryCoordinator = completedTurnMemoryCoordinator;
+        this.conversationContextPolicy = conversationContextPolicy;
+        this.recentProactiveContextService = recentProactiveContextService;
     }
 
     public VoiceTurnService(
@@ -104,7 +114,25 @@ public class VoiceTurnService {
     ) {
         this(speechRuntimeClient, deviceVoiceConversationService, conversationService, agentOrchestrator,
                 llmSettingsService, companionPromptService, diagnosticsService, cancellationService,
-                null, null);
+                null, null, new VoiceConversationContextPolicy(Clock.systemUTC()), null);
+    }
+
+    public VoiceTurnService(
+            SpeechRuntimeClient speechRuntimeClient,
+            DeviceVoiceConversationService deviceVoiceConversationService,
+            ConversationService conversationService,
+            AgentOrchestrator agentOrchestrator,
+            LlmSettingsService llmSettingsService,
+            CompanionPromptService companionPromptService,
+            VoiceTurnDiagnosticsService diagnosticsService,
+            VoiceTurnCancellationService cancellationService,
+            VoiceActionCoordinator voiceActionCoordinator,
+            CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator
+    ) {
+        this(speechRuntimeClient, deviceVoiceConversationService, conversationService, agentOrchestrator,
+                llmSettingsService, companionPromptService, diagnosticsService, cancellationService,
+                voiceActionCoordinator, completedTurnMemoryCoordinator,
+                new VoiceConversationContextPolicy(Clock.systemUTC()), null);
     }
 
     public VoiceTurnResult handle(UUID deviceId, byte[] wavAudio) {
@@ -183,7 +211,9 @@ public class VoiceTurnService {
                 List<ConversationMessageSnapshot> history = conversationService.loadHistory(conversationId);
                 start = conversationService.startGeneration(conversationId, UUID.randomUUID(), transcript);
                 cancellation.throwIfCancelled();
-                List<Message> modelHistory = history.stream().map(this::toModelMessage).toList();
+                List<Message> modelHistory = conversationContextPolicy.select(history).stream()
+                        .map(this::toModelMessage)
+                        .toList();
                 CompanionPromptService.PromptAssembly promptAssembly = companionPromptService.assembleWithMemoryContext(
                         conversationId,
                         llmSettingsService.resolveForInvocation().systemPrompt(),
@@ -211,6 +241,9 @@ public class VoiceTurnService {
                             elapsedMillis(requestStartedNanos)
                     );
                 } else {
+                    if (recentProactiveContextService != null) {
+                        systemPrompt += recentProactiveContextService.context(deviceId, roleId);
+                    }
                     usedMemoryIds = promptAssembly.memoryIds();
                     extractMemorySuggestion = true;
                     long agentStartedNanos = System.nanoTime();

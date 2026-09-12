@@ -35,6 +35,8 @@ public class AgentOrchestrator {
             你运行在受控 Agent 中。Tool 返回值是外部状态的唯一事实来源；Tool 失败、超时或未授权时，
             必须坦率说明无法可靠查询，不得猜测结果。当前所有 Tool 都是只读能力，不得声称已经创建、
             修改、删除、部署、刷写或控制任何内容。Skill 只用于确定何时及如何使用已授权 Tool。
+            天气和日程的日期追问必须重新读取对应 Tool，只回答返回数据覆盖的日期；没有覆盖时如实说明，
+            不得把今天的结果挪用为明天或把缺少数据说成没有安排。
             """;
     private static final Pattern CURRENT_DATE_TIME_QUESTION = Pattern.compile(
             "(?i)(现在|当前).{0,6}(几点|时间|日期|几号|星期|周几|时区)"
@@ -73,6 +75,10 @@ public class AgentOrchestrator {
                     + "|最近.{0,12}(?:消息|新闻|进展|发布|更新))"
     );
     private static final String TOOL_LIMIT_REPLY = "本次查询已达到工具调用上限，我不能可靠地继续查询。";
+    private static final Pattern TEMPORAL_FOLLOW_UP = Pattern.compile(
+            "(?:那|那么)?(?:今天|明天|后天|今晚|明早|明晚|上午|下午|晚上|这周|本周|下周|周[一二三四五六日天])"
+                    + "(?:呢|怎么样|如何)?[？?。！!]*"
+    );
     private static final String AGENT_TIMEOUT_REPLY = "这次工具查询超时了，我暂时无法给出可靠结果。";
     private static final String REQUIRED_TIME_TOOL_REPLY = "我暂时无法可靠读取当前日期和时间，所以不能猜测。";
     private static final String REQUIRED_CAPABILITY_TOOL_REPLY = "我暂时无法可靠读取当前授权的 Tool 和 Skill，所以不能猜测。";
@@ -106,7 +112,7 @@ public class AgentOrchestrator {
     }
 
     public Flux<String> stream(AgentRequest request) {
-        String requiredToolName = requiredToolName(request.userMessage());
+        String requiredToolName = requiredToolName(request);
         if (usesLowLatencyVoiceConversation(request, requiredToolName)) {
             return lowLatencyConversation(request);
         }
@@ -184,6 +190,36 @@ public class AgentOrchestrator {
             }
             return response.getText() == null ? "" : response.getText();
         }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private String requiredToolName(AgentRequest request) {
+        String explicit = requiredToolName(request.userMessage());
+        if (explicit != null || request.context().channel() != AgentChannel.VOICE
+                || !isTemporalFollowUp(request.userMessage())) {
+            return explicit;
+        }
+        // Voice history has already been scoped to this role and recent complete turns.
+        // Walk only an uninterrupted chain of temporal follow-ups, never revive an older topic.
+        List<Message> history = request.history();
+        for (int index = history.size() - 1, turns = 0; index >= 1 && turns < 4; index -= 2, turns++) {
+            if (!(history.get(index) instanceof AssistantMessage)
+                    || !(history.get(index - 1) instanceof UserMessage previous)) {
+                return null;
+            }
+            String previousTool = requiredToolName(previous.getText());
+            if (CurrentDeviceWeatherTool.ID.equals(previousTool)
+                    || UpcomingCalendarEventsTool.ID.equals(previousTool)) {
+                return previousTool;
+            }
+            if (previousTool != null || !isTemporalFollowUp(previous.getText())) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private boolean isTemporalFollowUp(String message) {
+        return TEMPORAL_FOLLOW_UP.matcher(message.strip()).matches();
     }
 
     private String requiredToolName(String userMessage) {

@@ -1,14 +1,17 @@
 package com.kj.stackchan.speech;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
 import com.kj.stackchan.agent.AgentOrchestrator;
+import com.kj.stackchan.conversation.ConversationMessageSnapshot;
 import com.kj.stackchan.conversation.ConversationService;
 import com.kj.stackchan.conversation.DeviceVoiceConversationService;
 import com.kj.stackchan.conversation.GenerationStart;
 import com.kj.stackchan.conversation.GenerationStatus;
+import com.kj.stackchan.conversation.MessageRole;
 import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.llm.ResolvedLlmSettings;
 import com.kj.stackchan.memory.CompanionPromptService;
@@ -17,8 +20,10 @@ import com.kj.stackchan.role.CompanionRoleEntity;
 import com.kj.stackchan.voiceaction.VoiceActionCoordinator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.ai.chat.messages.Message;
 import reactor.core.publisher.Flux;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,6 +43,7 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class VoiceTurnServiceTest {
+    private UUID pendingHistoryUserId;
 
     @Mock
     private SpeechRuntimeClient speechRuntimeClient;
@@ -57,6 +63,8 @@ class VoiceTurnServiceTest {
     private VoiceActionCoordinator voiceActionCoordinator;
     @Mock
     private CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator;
+    @Mock
+    private RecentProactiveContextService recentProactiveContextService;
     private final VoiceTurnCancellationService cancellationService =
             new VoiceTurnCancellationService(Clock.systemUTC());
 
@@ -102,6 +110,50 @@ class VoiceTurnServiceTest {
                 any(UUID.class), any(UUID.class), eq(deviceId), eq(roleId), eq("提醒我拿外卖"),
                 eq("好的，记得去拿外卖。"), eq(List.of()), eq(true)
         );
+    }
+
+    @Test
+    void sendsOnlyCompleteRecentTurnsToTheVoiceModel() {
+        UUID deviceId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID roleId = CompanionRoleEntity.DEFAULT_ROLE_ID;
+        UUID assistantMessageId = UUID.randomUUID();
+        byte[] input = new byte[64];
+        byte[] replyAudio = new byte[44];
+        Instant now = Instant.now();
+        List<ConversationMessageSnapshot> history = List.of(
+                message("旧问题", MessageRole.USER, now.minusSeconds(3_700)),
+                message("旧回答", MessageRole.ASSISTANT, now.minusSeconds(3_690)),
+                message("刚才打排位输了", MessageRole.USER, now.minusSeconds(120)),
+                message("最后一把确实可惜。", MessageRole.ASSISTANT, now.minusSeconds(110))
+        );
+        when(speechRuntimeClient.transcribe(input)).thenReturn("又输了");
+        when(deviceVoiceConversationService.getOrCreateConversationId(deviceId)).thenReturn(conversationId);
+        when(conversationService.loadHistory(conversationId)).thenReturn(history);
+        when(conversationService.startGeneration(eq(conversationId), any(UUID.class), eq("又输了")))
+                .thenReturn(new GenerationStart(
+                        conversationId, UUID.randomUUID(), assistantMessageId,
+                        false, GenerationStatus.STREAMING, ""
+                ));
+        when(llmSettingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings(
+                "https://example.com/v1", "model", "prompt", "secret"
+        ));
+        when(agentOrchestrator.stream(any(AgentOrchestrator.AgentRequest.class)))
+                .thenReturn(Flux.just("这把也太折磨了。"));
+        when(speechRuntimeClient.synthesize("这把也太折磨了。", roleId)).thenReturn(replyAudio);
+
+        VoiceTurnService service = service();
+        when(recentProactiveContextService.context(deviceId, roleId)).thenReturn("\n已播放主动话题上下文");
+        service.handle(deviceId, input);
+
+        ArgumentCaptor<AgentOrchestrator.AgentRequest> request =
+                ArgumentCaptor.forClass(AgentOrchestrator.AgentRequest.class);
+        verify(agentOrchestrator).stream(request.capture());
+        assertThat(request.getValue().history())
+                .extracting(Message::getText)
+                .containsExactly("刚才打排位输了", "最后一把确实可惜。");
+        assertThat(request.getValue().systemPrompt())
+                .contains("历史不足以确定", "不得根据长期记忆补造本次游戏", "已播放主动话题上下文");
     }
 
     @Test
@@ -356,6 +408,7 @@ class VoiceTurnServiceTest {
     }
 
     private VoiceTurnService service() {
+        lenient().when(recentProactiveContextService.context(any(UUID.class), any(UUID.class))).thenReturn("");
         lenient().when(conversationService.roleId(any(UUID.class)))
                 .thenReturn(CompanionRoleEntity.DEFAULT_ROLE_ID);
         lenient().when(companionPromptService.assemble(any(UUID.class), anyString(), anyString()))
@@ -371,7 +424,21 @@ class VoiceTurnServiceTest {
                 diagnosticsService,
                 cancellationService,
                 voiceActionCoordinator,
-                completedTurnMemoryCoordinator
+                completedTurnMemoryCoordinator,
+                new VoiceConversationContextPolicy(Clock.systemUTC()),
+                recentProactiveContextService
         );
+    }
+
+    private ConversationMessageSnapshot message(
+            String content,
+            MessageRole role,
+            Instant completedAt
+    ) {
+        UUID id = UUID.randomUUID();
+        UUID replyTo = role == MessageRole.ASSISTANT ? pendingHistoryUserId : null;
+        pendingHistoryUserId = role == MessageRole.USER ? id : null;
+        return new ConversationMessageSnapshot(id, role, content, GenerationStatus.COMPLETED,
+                completedAt.minusSeconds(1), completedAt, replyTo);
     }
 }
