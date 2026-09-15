@@ -16,6 +16,7 @@ import com.alibaba.cloud.ai.graph.agent.hook.skills.SkillsAgentHook;
 import com.alibaba.cloud.ai.graph.agent.hook.toolcalllimit.ToolCallLimitHook;
 import com.kj.stackchan.config.AppProperties;
 import com.kj.stackchan.llm.LlmRuntimeClientFactory;
+import com.kj.stackchan.speech.VoiceDialogueControl;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -193,9 +194,12 @@ public class AgentOrchestrator {
     }
 
     private String requiredToolName(AgentRequest request) {
-        String explicit = requiredToolName(request.userMessage());
+        var dialogue = VoiceDialogueControl.parse(request.userMessage());
+        String explicit = requiredToolName(request.context().channel() == AgentChannel.VOICE
+                ? dialogue.routingText() : request.userMessage());
+        boolean continuation = dialogue.kind() == VoiceDialogueControl.Kind.CONTINUE;
         if (explicit != null || request.context().channel() != AgentChannel.VOICE
-                || !isTemporalFollowUp(request.userMessage())) {
+                || (!isTemporalFollowUp(dialogue.routingText()) && !continuation)) {
             return explicit;
         }
         // Voice history has already been scoped to this role and recent complete turns.
@@ -206,12 +210,15 @@ public class AgentOrchestrator {
                     || !(history.get(index - 1) instanceof UserMessage previous)) {
                 return null;
             }
-            String previousTool = requiredToolName(previous.getText());
+            var previousDialogue = VoiceDialogueControl.parse(previous.getText());
+            String previousTool = requiredToolName(previousDialogue.routingText());
+            if (previousTool != null && continuation) return previousTool;
             if (CurrentDeviceWeatherTool.ID.equals(previousTool)
                     || UpcomingCalendarEventsTool.ID.equals(previousTool)) {
                 return previousTool;
             }
-            if (previousTool != null || !isTemporalFollowUp(previous.getText())) {
+            if (previousTool != null || (!isTemporalFollowUp(previousDialogue.routingText())
+                    && previousDialogue.kind() != VoiceDialogueControl.Kind.CONTINUE)) {
                 return null;
             }
         }

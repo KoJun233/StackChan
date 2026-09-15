@@ -22,6 +22,20 @@ class VoiceConversationContextPolicyTest {
             Clock.fixed(NOW, ZoneOffset.UTC)
     );
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"结束聊天。", "不聊这个"})
+    void endingClosesOlderHistoryAndTheClosingTurnIsNotAContinuationTopic(String transcript) {
+        var oldUser = message(MessageRole.USER, "说说咖啡", GenerationStatus.COMPLETED, NOW.minusSeconds(80));
+        var oldReply = message(MessageRole.ASSISTANT, "咖啡话题", GenerationStatus.COMPLETED, NOW.minusSeconds(70));
+        var end = message(MessageRole.USER, transcript, GenerationStatus.COMPLETED, NOW.minusSeconds(60));
+        var goodbye = message(MessageRole.ASSISTANT, "好的，先聊到这里。", GenerationStatus.COMPLETED, NOW.minusSeconds(50));
+        assertThat(policy.select(List.of(oldUser, oldReply, end, goodbye))).isEmpty();
+        var nextUser = message(MessageRole.USER, "聊聊音乐", GenerationStatus.COMPLETED, NOW.minusSeconds(40));
+        var nextReply = message(MessageRole.ASSISTANT, "你想聊哪类音乐？", GenerationStatus.COMPLETED, NOW.minusSeconds(30));
+        assertThat(policy.select(List.of(oldUser, oldReply, end, goodbye, nextUser, nextReply), end.createdAt()))
+                .containsExactly(nextUser, nextReply);
+    }
+
     @Test
     void keepsOnlyTheLatestFourCompleteRecentTurns() {
         List<ConversationMessageSnapshot> history = new ArrayList<>();
@@ -64,6 +78,17 @@ class VoiceConversationContextPolicyTest {
         );
 
         assertThat(policy.select(history)).hasSize(2);
+    }
+
+    @Test
+    void topicBoundaryExcludesOldUsersEvenWhenTheirAssistantFinishesLater() {
+        Instant boundary = NOW.minusSeconds(60);
+        var oldUser = message(MessageRole.USER, "旧天气", GenerationStatus.COMPLETED, NOW.minusSeconds(90));
+        var lateAssistant = message(MessageRole.ASSISTANT, "迟到的旧回答", GenerationStatus.COMPLETED, NOW.minusSeconds(40));
+        var newUser = message(MessageRole.USER, "换个话题", GenerationStatus.COMPLETED, NOW.minusSeconds(30));
+        var newAssistant = message(MessageRole.ASSISTANT, "想聊什么？", GenerationStatus.COMPLETED, NOW.minusSeconds(20));
+        assertThat(policy.select(List.of(oldUser, lateAssistant, newUser, newAssistant), boundary))
+                .containsExactly(newUser, newAssistant);
     }
 
     private ConversationMessageSnapshot message(

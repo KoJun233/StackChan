@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import type { BodyMotion, Device } from '@/api/modules/devices'
-import type { MissedReminderPolicy, ProactiveTopicCooldown, SaveInteractionSettingsInput } from '@/api/modules/interactions'
+import type { MissedReminderPolicy, ProactivePause, ProactiveTopicCooldown, SaveInteractionSettingsInput } from '@/api/modules/interactions'
 import type { ICloudCalendarConnection, ICloudCalendarEvent, SaveWorkdaySettingsInput, WorkdayMetrics, WorkdayPilotReport, WorkdayRestAction, WorkdayRuntime, WorkdayWeather, WorkdayWeatherLocationInput } from '@/api/modules/workday'
 import { toTypedSchema } from '@vee-validate/zod'
+import { useNow } from '@vueuse/core'
 import * as z from 'zod'
 import {
   calibrateDeviceBody,
@@ -13,12 +14,16 @@ import {
 } from '@/api/modules/devices'
 import {
   getInteractionSettings,
+  getProactivePause,
   listProactiveTopics,
+  pauseProactive,
+  resumeProactive,
   resumeProactiveTopic,
   saveInteractionSettings,
   stopDeviceAudio,
 } from '@/api/modules/interactions'
 import { currentTimeZone } from '@/api/modules/reminders'
+import { getDeviceActiveRole, listRoles } from '@/api/modules/roles'
 import {
   connectICloudCalendar,
   disconnectICloudCalendar,
@@ -75,6 +80,17 @@ const devices = ref<Device[]>([])
 const loading = ref(false)
 const stopping = ref(false)
 const topicCooldowns = ref<ProactiveTopicCooldown[]>([])
+const topicRoleId = ref('')
+const proactivePause = ref<ProactivePause | null>(null)
+const pauseAction = ref(false)
+const pauseNow = useNow({ interval: 30_000 })
+const proactivePaused = computed(() => !!proactivePause.value?.pausedUntil
+  && new Date(proactivePause.value.pausedUntil).getTime() > pauseNow.value.getTime())
+const topicRoleOptions = ref<{ label: string, value: string }[]>([])
+const topicsLoading = ref(false)
+const topicsError = ref('')
+let topicsRequest = 0
+let settingsRequest = 0
 const proactiveNextAt = ref<string | null>(null)
 const silentPresenceNextAt = ref<string | null>(null)
 const resumingTopic = ref('')
@@ -99,16 +115,16 @@ type SettingsSection = 'care' | 'connections' | 'device' | 'pilot' | 'workday-ov
 
 const activeSection = ref<SettingsSection>('device')
 const isWorkdayPage = computed(() => route.name === 'workdayCompanion')
-const pageTitle = computed(() => isWorkdayPage.value ? '工作日陪伴' : '主动关心')
+const pageTitle = computed(() => isWorkdayPage.value ? '工作日陪伴' : '主动陪伴')
 const pageDescription = computed(() => isWorkdayPage.value
-  ? '先查看当前工作状态，再按需调整节奏、日历天气和十四天私用观察。'
+  ? '工作模式按需开启，聊天和记忆不依赖它。日历、天气与工程诊断可以稍后配置。'
   : '管理机器人本地呈现、身体动作安全、无声陪伴、免打扰和有限主动问候。')
 const sectionTabs = computed(() => isWorkdayPage.value
   ? [
       { label: '当前概览', value: 'workday-overview', icon: 'i-ri:focus-2-line' },
       { label: '工作规则', value: 'workday-rules', icon: 'i-ri:calendar-schedule-line' },
       { label: '日历与天气', value: 'connections', icon: 'i-ri:cloud-line' },
-      { label: '十四天观察', value: 'pilot', icon: 'i-ri:line-chart-line' },
+      { label: '工程诊断', value: 'pilot', icon: 'i-ri:line-chart-line' },
     ]
   : [
       { label: '设备交互', value: 'device', icon: 'i-ri:robot-2-line' },
@@ -116,7 +132,7 @@ const sectionTabs = computed(() => isWorkdayPage.value
     ])
 
 watch(isWorkdayPage, (workday) => {
-  activeSection.value = workday ? 'workday-overview' : 'device'
+  activeSection.value = workday ? 'workday-overview' : 'care'
 }, { immediate: true })
 
 const bodyMotions: { label: string, value: BodyMotion }[] = [
@@ -284,7 +300,9 @@ function defaults(): InteractionFormModel {
 async function loadDevices() {
   loading.value = true
   try {
-    devices.value = await listDevices()
+    const [deviceList, roles] = await Promise.all([listDevices(), listRoles()])
+    devices.value = deviceList
+    topicRoleOptions.value = roles.filter(role => !role.archivedAt).map(role => ({ label: role.name, value: role.id }))
     model.value.deviceId = devices.value[0]?.id ?? ''
     if (model.value.deviceId) {
       await loadSettings(model.value.deviceId)
@@ -302,7 +320,14 @@ async function loadSettings(deviceId: string) {
   if (!deviceId) {
     return
   }
+  const request = ++settingsRequest
   loading.value = true
+  ++topicsRequest
+  topicRoleId.value = ''
+  proactivePause.value = null
+  topicCooldowns.value = []
+  topicsError.value = ''
+  topicsLoading.value = true
   try {
     const [settings, workday, runtime, metrics, pilot, calendar, weather] = await Promise.all([
       getInteractionSettings(deviceId),
@@ -313,6 +338,9 @@ async function loadSettings(deviceId: string) {
       getICloudCalendarConnection(deviceId),
       getWorkdayWeather(deviceId),
     ])
+    if (request !== settingsRequest || model.value.deviceId !== deviceId) {
+      return
+    }
     workdayRuntime.value = runtime
     workdayMetrics.value = metrics
     workdayPilot.value = pilot
@@ -363,29 +391,106 @@ async function loadSettings(deviceId: string) {
     proactiveNextAt.value = settings.proactiveNextAt ?? null
     silentPresenceNextAt.value = settings.silentPresenceNextAt ?? null
     try {
-      topicCooldowns.value = await listProactiveTopics(deviceId)
+      const activeRole = await getDeviceActiveRole(deviceId)
+      if (request === settingsRequest && model.value.deviceId === deviceId) {
+        topicRoleId.value = activeRole.id
+        await loadTopics()
+      }
     }
     catch {
-      topicCooldowns.value = []
+      if (request === settingsRequest && model.value.deviceId === deviceId) {
+        topicCooldowns.value = []
+        topicRoleId.value = ''
+        topicsLoading.value = false
+        topicsError.value = '无法读取伙伴，请重新加载设备。'
+      }
     }
   }
   catch (error) {
+    if (request === settingsRequest && model.value.deviceId === deviceId) {
+      topicsLoading.value = false
+      topicsError.value = '请先重新加载设备设置。'
+    }
     useFaToast().error('加载失败', { description: error instanceof Error ? error.message : '无法读取交互设置。' })
   }
   finally {
-    loading.value = false
+    if (request === settingsRequest) {
+      loading.value = false
+    }
+  }
+}
+
+async function loadTopics() {
+  const deviceId = model.value.deviceId
+  const roleId = topicRoleId.value
+  const request = ++topicsRequest
+  topicCooldowns.value = []
+  proactivePause.value = null
+  topicsError.value = ''
+  if (!deviceId || !roleId) {
+    topicsLoading.value = false
+    return
+  }
+  topicsLoading.value = true
+  try {
+    const [topics, pause] = await Promise.all([listProactiveTopics(deviceId, roleId), getProactivePause(deviceId, roleId)])
+    if (request === topicsRequest && deviceId === model.value.deviceId && roleId === topicRoleId.value) {
+      topicCooldowns.value = topics
+      proactivePause.value = pause
+    }
+  }
+  catch (error) {
+    if (request === topicsRequest) {
+      topicsError.value = error instanceof Error ? error.message : '无法读取话题。'
+    }
+  }
+  finally {
+    if (request === topicsRequest) {
+      topicsLoading.value = false
+    }
+  }
+}
+
+async function updateProactivePause(action: 'resume' | 'today' | 'hour') {
+  const deviceId = model.value.deviceId
+  const roleId = topicRoleId.value
+  if (!deviceId || !roleId || topicsLoading.value || pauseAction.value || resumingTopic.value) {
+    return
+  }
+  pauseAction.value = true
+  try {
+    if (action === 'resume') {
+      await resumeProactive(deviceId, roleId)
+    }
+    else {
+      await pauseProactive(deviceId, roleId, action === 'today' ? null : 60)
+    }
+    if (deviceId === model.value.deviceId && roleId === topicRoleId.value) {
+      await loadTopics()
+    }
+    useFaToast().success(action === 'resume' ? '已解除该伙伴的主动暂停' : '已暂停该伙伴的主动聊天')
+  }
+  catch (error) {
+    useFaToast().error('操作失败', { description: error instanceof Error ? error.message : '无法更新主动暂停。' })
+  }
+  finally {
+    pauseAction.value = false
   }
 }
 
 async function resumeTopic(topicKey: string) {
-  if (!model.value.deviceId) {
+  const deviceId = model.value.deviceId
+  const roleId = topicRoleId.value
+  if (!deviceId || !roleId || topicsLoading.value || resumingTopic.value || pauseAction.value) {
     return
   }
   resumingTopic.value = topicKey
   try {
-    await resumeProactiveTopic(model.value.deviceId, topicKey)
-    topicCooldowns.value = await listProactiveTopics(model.value.deviceId)
-    useFaToast().success('已解除主题冷却')
+    await resumeProactiveTopic(deviceId, topicKey, roleId)
+    if (deviceId === model.value.deviceId && roleId === topicRoleId.value) {
+      await loadTopics()
+    }
+    useFaToast().success('已恢复该伙伴的话题')
   }
   catch (error) {
     useFaToast().error('操作失败', { description: error instanceof Error ? error.message : '无法解除主题冷却。' })
@@ -1092,14 +1197,14 @@ onMounted(loadDevices)
                   >
                     <FaSwitch v-model="model.silentPresenceEnabled" />
                   </FaFormItem>
-                  <FaAlert title="有限语音问候" description="启用后会先生成下一次随机时间；离线、忙碌或免打扰时顺延，每天最多三次且两次至少间隔一小时。" />
+                  <FaAlert title="轻量语音开场" description="启用后会先生成下一次随机时间；离线、忙碌或免打扰时顺延，每天最多三次且两次至少间隔一小时。" />
                   <FaAlert title="资讯有据可查" description="开启个性化后，可从 Hacker News 的近期技术标题中匹配已确认兴趣；来源、原始链接和来源收录时间会保存在提醒记录中。没有合适来源时只生成普通问候。" />
                   <FaAlert
                     v-if="model.proactiveEnabled && proactiveNextAt"
                     title="下一次随机候选"
                     :description="`${new Date(proactiveNextAt).toLocaleString()}；到点时仍会检查在线、免打扰和忙碌状态。`"
                   />
-                  <FaFormItem name="proactiveEnabled" label="允许主动问候">
+                  <FaFormItem name="proactiveEnabled" label="允许语音主动开场">
                     <FaSwitch v-model="model.proactiveEnabled" />
                   </FaFormItem>
                   <FaFormItem
@@ -1126,10 +1231,35 @@ onMounted(loadDevices)
                   </FaFormItem>
                   <div class="pt-5 border-t">
                     <div class="text-sm font-medium mb-3">
-                      最近主动主题
+                      伙伴的主动话题
                     </div>
+                    <FaSelect v-model="topicRoleId" :options="topicRoleOptions" :disabled="!!resumingTopic || pauseAction" class="mb-3 w-full" @change="loadTopics" />
+                    <p class="text-xs text-muted-foreground mb-3">
+                      只查看和恢复所选伙伴的话题，不切换设备当前伙伴。
+                    </p>
+                    <div class="mb-4 space-y-3">
+                      <p v-if="proactivePause && !topicsLoading && !topicsError" class="text-sm">
+                        {{ proactivePaused ? `主动聊天暂停至 ${new Date(proactivePause.pausedUntil!).toLocaleString(undefined, { timeZone: model.zoneId })}（设备时间）` : '主动聊天未暂停' }}
+                      </p>
+                      <p class="text-xs text-muted-foreground">
+                        暂停仅作用于所选伙伴的主动聊天，提醒照常执行；到期自动解除，仍遵守原有时段和次数设置。
+                      </p>
+                      <div class="flex flex-wrap gap-2">
+                        <FaButton type="button" variant="outline" :disabled="!topicRoleId || topicsLoading || !!topicsError || pauseAction" @click="updateProactivePause('today')">
+                          今天别主动聊
+                        </FaButton>
+                        <FaButton type="button" variant="outline" :disabled="!topicRoleId || topicsLoading || !!topicsError || pauseAction" @click="updateProactivePause('hour')">
+                          暂停一小时
+                        </FaButton>
+                        <FaButton v-if="proactivePaused" type="button" variant="outline" :disabled="topicsLoading || pauseAction" @click="updateProactivePause('resume')">
+                          提前恢复
+                        </FaButton>
+                      </div>
+                    </div>
+                    <FaAlert v-if="topicsError" title="话题加载失败" :description="topicsError" />
+                    <FaAlert v-else-if="topicsLoading" title="正在读取话题" />
                     <FaAlert
-                      v-if="topicCooldowns.length === 0"
+                      v-else-if="topicCooldowns.length === 0"
                       title="暂无主题记录"
                       description="个性化主题成功进入主动提醒后才会出现；使用记录不复制记忆正文。"
                     />
@@ -1150,6 +1280,7 @@ onMounted(loadDevices)
                           size="sm"
                           variant="outline"
                           :loading="resumingTopic === topic.topicKey"
+                          :disabled="!!resumingTopic || topicsLoading"
                           @click="resumeTopic(topic.topicKey)"
                         >
                           解除冷却
@@ -1238,7 +1369,7 @@ onMounted(loadDevices)
           </template>
 
           <template #pilot>
-            <FaCard title="十四天私用观察" description="用本地匿名聚合验证工作陪伴是否足够稳定、克制且安全。">
+            <FaCard title="工作陪伴工程观察" description="仅检查已有工程门槛，不衡量你是否愿意聊天、记忆是否准确或伙伴是否讨喜。">
               <div class="gap-6 grid">
                 <div class="pt-6 border-t gap-4 grid">
                   <div class="flex flex-wrap gap-3 items-center justify-between">
@@ -1316,7 +1447,7 @@ onMounted(loadDevices)
                       </FaCard>
                     </div>
                     <FaAlert
-                      :title="workdayPilot.status === 'PASS' ? '十四天门槛已通过' : workdayPilot.status === 'FAIL' ? '观察结束，但至少一项门槛未通过' : '正在收集本地匿名聚合'"
+                      :title="workdayPilot.status === 'PASS' ? '工程门槛通过，陪伴体验仍需实际使用判断' : workdayPilot.status === 'FAIL' ? '观察结束，但至少一项门槛未通过' : '正在收集本地匿名聚合'"
                       :description="workdayPilot.externalFailureAttributionComplete ? '日历和天气失败均保留受控来源与失败码；不保存日程、天气响应或播报正文。' : '存在未归属的外部服务失败，请先排查再判断门槛。'"
                     />
                   </template>

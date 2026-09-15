@@ -1,0 +1,5 @@
+services:
+  server:
+    image: stackchan-foundation-server:companion-v51-20260914
+    environment:
+      COMPANION_BUILD_VERSION: companion-v51-20260914

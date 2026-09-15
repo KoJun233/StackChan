@@ -254,16 +254,18 @@ public class LongTermMemoryService {
         int safeLimit = Math.min(Math.max(limit, 1), 8);
         try {
             List<LongTermMemoryEntity> matches = repository.searchContext(
-                    roleId, deviceId, normalizeSearchQuery(queryText), safeLimit
+                    roleId, deviceId, queryText, safeLimit
             );
             if (matches == null) {
-                return loadContextFallback(roleId, deviceId, safeLimit);
+                return List.of();
             }
             return matches.stream()
                     .map(this::toSnapshot)
                     .toList();
         } catch (DataAccessException ignored) {
-            return loadContextFallback(roleId, deviceId, safeLimit);
+            // The repository isolates a failed native query in its own transaction.
+            // Unrelated high-importance memories are not a safe substitute for failed retrieval.
+            return List.of();
         }
     }
 
@@ -280,33 +282,6 @@ public class LongTermMemoryService {
                 .filter(memory -> safetyPolicy.isAllowed(
                         memory.getTitle(), memory.getContent(), memory.getSourceDetail()
                 ))
-                .map(this::toSnapshot)
-                .toList();
-    }
-
-    private List<MemorySnapshot> loadContextFallback(UUID roleId, UUID deviceId, int limit) {
-        Specification<LongTermMemoryEntity> specification = (root, query, builder) -> builder.and(
-                builder.equal(root.get("confirmationStatus"), MemoryConfirmationStatus.CONFIRMED),
-                builder.equal(root.get("roleId"), roleId),
-                builder.isTrue(root.get("enabled")),
-                builder.isNull(root.get("supersededByMemoryId")),
-                deviceId == null
-                        ? builder.equal(root.get("scopeType"), MemoryScopeType.GLOBAL)
-                        : builder.or(
-                                builder.equal(root.get("scopeType"), MemoryScopeType.GLOBAL),
-                                builder.and(
-                                        builder.equal(root.get("scopeType"), MemoryScopeType.DEVICE),
-                                        builder.equal(root.get("deviceId"), deviceId)
-                                )
-                        )
-        );
-        return repository.findAll(
-                        specification,
-                        PageRequest.of(0, limit,
-                                Sort.by(Sort.Direction.DESC, "importance", "updatedAt", "id"))
-                )
-                .getContent()
-                .stream()
                 .map(this::toSnapshot)
                 .toList();
     }
@@ -449,11 +424,6 @@ public class LongTermMemoryService {
             throw new InvalidMemoryException("Memory importance is invalid");
         }
         return value;
-    }
-
-    private String normalizeSearchQuery(String queryText) {
-        String normalized = queryText == null ? "" : queryText.trim();
-        return normalized.length() <= 500 ? normalized : normalized.substring(0, 500);
     }
 
     private UUID validateScope(MemoryScopeType scopeType, UUID deviceId) {

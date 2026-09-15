@@ -39,6 +39,7 @@ vi.mock('@fantastic-admin/components', () => {
       },
     }),
     FaCard: container,
+    FaCollapsible: container,
     FaLoading: container,
     FaInput: defineComponent({
       props: { modelValue: String },

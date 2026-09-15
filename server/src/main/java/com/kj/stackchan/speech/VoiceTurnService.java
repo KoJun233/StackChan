@@ -2,6 +2,7 @@ package com.kj.stackchan.speech;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeoutException;
@@ -211,27 +212,25 @@ public class VoiceTurnService {
                 List<ConversationMessageSnapshot> history = conversationService.loadHistory(conversationId);
                 start = conversationService.startGeneration(conversationId, UUID.randomUUID(), transcript);
                 cancellation.throwIfCancelled();
-                List<Message> modelHistory = conversationContextPolicy.select(history).stream()
+                VoiceDialogueControl dialogue = VoiceDialogueControl.parse(transcript);
+                boolean newTopic = dialogue.kind() == VoiceDialogueControl.Kind.NEW_TOPIC;
+                boolean ending = dialogue.closesTopic();
+                Instant topicBoundary = (newTopic || ending)
+                        ? conversationService.resetVoiceTopic(conversationId, start.userMessageId())
+                        : conversationService.voiceTopicBoundary(conversationId);
+                topicBoundary = conversationContextPolicy.topicBoundary(history, topicBoundary);
+                if ((newTopic || ending || dialogue.kind() == VoiceDialogueControl.Kind.CORRECTION) && voiceActionCoordinator != null) {
+                    voiceActionCoordinator.cancelPendingOperation(deviceId, conversationId);
+                }
+                String voiceInstruction = VOICE_SYSTEM_INSTRUCTION + dialogue.guidance();
+                List<Message> modelHistory = ((newTopic || ending) ? List.<ConversationMessageSnapshot>of()
+                        : conversationContextPolicy.select(history, topicBoundary)).stream()
                         .map(this::toModelMessage)
                         .toList();
-                CompanionPromptService.PromptAssembly promptAssembly = companionPromptService.assembleWithMemoryContext(
-                        conversationId,
-                        llmSettingsService.resolveForInvocation().systemPrompt(),
-                        VOICE_SYSTEM_INSTRUCTION,
-                        transcript
-                );
-                if (promptAssembly == null) {
-                    promptAssembly = new CompanionPromptService.PromptAssembly(
-                            companionPromptService.assemble(
-                                    conversationId,
-                                    llmSettingsService.resolveForInvocation().systemPrompt(),
-                                    VOICE_SYSTEM_INSTRUCTION
-                            ),
-                            List.of()
-                    );
-                }
-                String systemPrompt = promptAssembly.prompt();
-                VoiceActionCoordinator.ActionResult actionResult = voiceActionCoordinator == null ? null
+                VoiceActionCoordinator.ActionResult actionResult = ending
+                        ? new VoiceActionCoordinator.ActionResult(dialogue.kind() == VoiceDialogueControl.Kind.DECLINE
+                            ? "好的，先不聊这个。" : "好的，先聊到这里。", true)
+                        : voiceActionCoordinator == null ? null
                         : voiceActionCoordinator.handle(deviceId, conversationId, turnId, transcript);
                 if (actionResult != null && actionResult.handled()) {
                     reply = actionResult.reply();
@@ -241,43 +240,58 @@ public class VoiceTurnService {
                             elapsedMillis(requestStartedNanos)
                     );
                 } else {
-                    if (recentProactiveContextService != null) {
-                        systemPrompt += recentProactiveContextService.context(deviceId, roleId);
+                    String proactiveContext = "";
+                    if (recentProactiveContextService != null && !newTopic) {
+                        proactiveContext = topicBoundary == null ? recentProactiveContextService.context(deviceId, roleId)
+                                : recentProactiveContextService.context(deviceId, roleId, topicBoundary);
                     }
-                    usedMemoryIds = promptAssembly.memoryIds();
-                    extractMemorySuggestion = true;
-                    long agentStartedNanos = System.nanoTime();
-                    logger.info(
-                            "Voice turn timing: turn_id={} stage=AGENT_STARTED request_ms={}",
-                            turnId,
-                            elapsedMillis(requestStartedNanos)
-                    );
-                    reply = agentOrchestrator.stream(new AgentOrchestrator.AgentRequest(
-                                    new AgentInvocationContext(
-                                            turnId,
-                                            conversationId,
-                                            deviceId,
-                                            roleId,
-                                            AgentChannel.VOICE
-                                    ),
-                                    systemPrompt,
-                                    modelHistory,
-                                    transcript
-                            ))
-                            .takeUntilOther(cancellation.cancellationSignal())
-                            .filter(chunk -> chunk != null && !chunk.isEmpty())
-                            .timeout(VOICE_LLM_TIMEOUT)
-                            .onErrorMap(TimeoutException.class, ignored -> new LlmProviderUnavailableException())
-                            .publishOn(Schedulers.boundedElastic(), 32)
-                            .doOnNext(streamedReply::append)
-                            .collect(Collectors.joining())
-                            .block();
-                    logger.info(
-                            "Voice turn timing: turn_id={} stage=AGENT_COMPLETED stage_ms={} request_ms={}",
-                            turnId,
-                            elapsedMillis(agentStartedNanos),
-                            elapsedMillis(requestStartedNanos)
-                    );
+                    if (proactiveContext == null) proactiveContext = "";
+                    if (dialogue.kind() == VoiceDialogueControl.Kind.CONTINUE
+                            && modelHistory.isEmpty() && proactiveContext.isBlank()) {
+                        reply = "你想让我继续讲哪个话题？";
+                    } else {
+                        CompanionPromptService.PromptAssembly promptAssembly = companionPromptService.assembleWithMemoryContext(
+                                conversationId, llmSettingsService.resolveForInvocation().systemPrompt(), voiceInstruction, transcript);
+                        if (promptAssembly == null) {
+                            promptAssembly = new CompanionPromptService.PromptAssembly(companionPromptService.assemble(
+                                    conversationId, llmSettingsService.resolveForInvocation().systemPrompt(), voiceInstruction), List.of());
+                        }
+                        String systemPrompt = promptAssembly.prompt() + proactiveContext;
+                        usedMemoryIds = promptAssembly.memoryIds();
+                        extractMemorySuggestion = true;
+                        long agentStartedNanos = System.nanoTime();
+                        logger.info(
+                                "Voice turn timing: turn_id={} stage=AGENT_STARTED request_ms={}",
+                                turnId,
+                                elapsedMillis(requestStartedNanos)
+                        );
+                        reply = agentOrchestrator.stream(new AgentOrchestrator.AgentRequest(
+                                        new AgentInvocationContext(
+                                                turnId,
+                                                conversationId,
+                                                deviceId,
+                                                roleId,
+                                                AgentChannel.VOICE
+                                        ),
+                                        systemPrompt,
+                                        modelHistory,
+                                        transcript
+                                ))
+                                .takeUntilOther(cancellation.cancellationSignal())
+                                .filter(chunk -> chunk != null && !chunk.isEmpty())
+                                .timeout(VOICE_LLM_TIMEOUT)
+                                .onErrorMap(TimeoutException.class, ignored -> new LlmProviderUnavailableException())
+                                .publishOn(Schedulers.boundedElastic(), 32)
+                                .doOnNext(streamedReply::append)
+                                .collect(Collectors.joining())
+                                .block();
+                        logger.info(
+                                "Voice turn timing: turn_id={} stage=AGENT_COMPLETED stage_ms={} request_ms={}",
+                                turnId,
+                                elapsedMillis(agentStartedNanos),
+                                elapsedMillis(requestStartedNanos)
+                        );
+                    }
                 }
                 cancellation.throwIfCancelled();
                 if (reply == null || reply.isBlank()) {

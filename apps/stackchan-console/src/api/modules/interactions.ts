@@ -65,12 +65,41 @@ export function stopDeviceAudio(deviceId: string): Promise<{ accepted: boolean }
   return apiJson(`/api/v1/settings/interactions/${encodeURIComponent(deviceId)}:stop`, { method: 'POST' })
 }
 
-export function listProactiveTopics(deviceId: string): Promise<ProactiveTopicCooldown[]> {
-  return apiJson(`/api/v1/settings/interactions/${encodeURIComponent(deviceId)}/proactive-topics`)
+export function listProactiveTopics(deviceId: string, roleId?: string): Promise<ProactiveTopicCooldown[]> {
+  const scope = roleId ? `?roleId=${encodeURIComponent(roleId)}` : ''
+  return apiJson(`/api/v1/settings/interactions/${encodeURIComponent(deviceId)}/proactive-topics${scope}`)
 }
 
-export function resumeProactiveTopic(deviceId: string, topicKey: string): Promise<ProactiveTopicCooldown> {
-  return apiJson(`/api/v1/settings/interactions/${encodeURIComponent(deviceId)}/proactive-topics:resume`, {
+export interface ProactivePause {
+  deviceId: string
+  roleId: string
+  paused: boolean
+  pausedUntil: string | null
+}
+
+function proactivePausePath(deviceId: string, roleId: string) {
+  return `/api/v1/settings/interactions/${encodeURIComponent(deviceId)}/roles/${encodeURIComponent(roleId)}/proactive-pause`
+}
+
+export function getProactivePause(deviceId: string, roleId: string): Promise<ProactivePause> {
+  return apiJson(proactivePausePath(deviceId, roleId))
+}
+
+export function pauseProactive(deviceId: string, roleId: string, minutes: number | null): Promise<ProactivePause> {
+  return apiJson(proactivePausePath(deviceId, roleId), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ minutes }),
+  })
+}
+
+export function resumeProactive(deviceId: string, roleId: string): Promise<ProactivePause> {
+  return apiJson(proactivePausePath(deviceId, roleId), { method: 'DELETE' })
+}
+
+export function resumeProactiveTopic(deviceId: string, topicKey: string, roleId?: string): Promise<ProactiveTopicCooldown> {
+  const scope = roleId ? `?roleId=${encodeURIComponent(roleId)}` : ''
+  return apiJson(`/api/v1/settings/interactions/${encodeURIComponent(deviceId)}/proactive-topics:resume${scope}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ topicKey }),

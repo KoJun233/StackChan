@@ -54,6 +54,56 @@ class CompanionPromptServiceTest {
         verify(memoryService).loadContext(roleId, deviceId, "", 8);
     }
 
+    @Test
+    void tracksOnlyWholeMemoriesActuallyRenderedWithinTheBudget() {
+        var oversized = memory(MemoryCategory.USER_PROFILE, MemoryScopeType.GLOBAL, null,
+                "过长条目", "大".repeat(4_000));
+        var first = memory(MemoryCategory.USER_PROFILE, MemoryScopeType.GLOBAL, null,
+                "有效档案一", "甲".repeat(1_850));
+        var second = memory(MemoryCategory.USER_PROFILE, MemoryScopeType.GLOBAL, null,
+                "有效档案二", "乙".repeat(1_850));
+        var excluded = memory(MemoryCategory.EVENT, MemoryScopeType.GLOBAL, null,
+                "被预算排除的事件", "丙".repeat(500));
+        var small = memory(MemoryCategory.EVENT, MemoryScopeType.GLOBAL, null,
+                "短事件", "完成联调");
+
+        var assembly = assemble(List.of(oversized, first, second, excluded, small));
+
+        assertThat(assembly.memoryIds()).containsExactly(first.id(), second.id(), small.id());
+        String rendered = assembly.prompt().substring(assembly.prompt().indexOf("<用户档案>"));
+        assertThat(rendered.length()).isLessThanOrEqualTo(4_000);
+        assertThat(rendered).contains("有效档案一", "有效档案二", "短事件", "</用户档案>", "</事件记忆>")
+                .doesNotContain("过长条目", "被预算排除的事件", "丙");
+    }
+
+    @Test
+    void emptyOrUnrenderableContextDoesNotClaimThatNoStoredMemoriesExist() {
+        var oversized = memory(MemoryCategory.EVENT, MemoryScopeType.GLOBAL, null,
+                "超长事件", "长".repeat(4_000));
+        for (var candidates : List.of(List.<LongTermMemoryService.MemorySnapshot>of(), List.of(oversized))) {
+            var assembly = assemble(candidates);
+            assertThat(assembly.memoryIds()).isEmpty();
+            assertThat(assembly.prompt()).contains("本轮没有可引用", "不代表全部存储记录")
+                    .doesNotContain("当前没有已确认且启用的长期记忆", "<事件记忆>", "超长事件");
+        }
+    }
+
+    private CompanionPromptService.PromptAssembly assemble(List<LongTermMemoryService.MemorySnapshot> memories) {
+        UUID conversation = UUID.randomUUID();
+        UUID role = UUID.randomUUID();
+        var roles = mock(CompanionRoleService.class);
+        var memoryService = mock(LongTermMemoryService.class);
+        var devices = mock(DeviceVoiceConversationService.class);
+        var conversations = mock(ConversationService.class);
+        when(conversations.roleId(conversation)).thenReturn(role);
+        when(roles.get(role)).thenReturn(new CompanionRoleService.RoleSnapshot(
+                role, "小栈", PersonaTone.WARM, PersonaReplyLength.SHORT, PersonaProactivity.BALANCED,
+                "", "", "", true, null, Instant.EPOCH, Instant.EPOCH));
+        when(memoryService.loadContext(role, null, "你记得什么", 8)).thenReturn(memories);
+        return new CompanionPromptService(roles, memoryService, devices, conversations)
+                .assembleWithMemoryContext(conversation, "基础规则", "", "你记得什么");
+    }
+
     private LongTermMemoryService.MemorySnapshot memory(
             MemoryCategory category,
             MemoryScopeType scopeType,

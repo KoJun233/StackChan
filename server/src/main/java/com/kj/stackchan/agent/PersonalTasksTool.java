@@ -34,20 +34,24 @@ public class PersonalTasksTool {
         this.objectMapper = objectMapper;
     }
 
-    @Tool(name = ID, description = "读取当前设备和角色尚未完成的个人待办，以及设备时区下今天完成的待办；不得创建或修改待办。")
+    @Tool(name = ID, description = "读取当前设备和角色的待办及设备时区下今日完成项。总数使用 totalCount 和 completedTodayTotalCount；count 和 completedTodayCount 仅为本次展示数量，hasMore 为真时不能称已列出全部。不得创建或修改待办。")
     public String currentTasks() {
-        List<TaskResult> tasks = taskService.openForAgent(deviceId, roleId).stream()
+        String zoneId = workdaySettingsService.resolve(deviceId).zoneId();
+        PersonalTaskService.AgentTaskProgress progress = taskService.progressForAgent(
+                deviceId, roleId, ZoneId.of(zoneId));
+        List<TaskResult> tasks = progress.tasks().stream()
                 .map(task -> new TaskResult(task.id(), task.title(), task.priority(),
                         task.dueAt() == null ? null : task.dueAt().toString()))
                 .toList();
-        String zoneId = workdaySettingsService.resolve(deviceId).zoneId();
-        List<CompletedTaskResult> completedToday = taskService.completedTodayForAgent(
-                        deviceId, roleId, ZoneId.of(zoneId)).stream()
+        List<CompletedTaskResult> completedToday = progress.completedToday().stream()
                 .map(task -> new CompletedTaskResult(task.title()))
                 .toList();
         try {
             return objectMapper.writeValueAsString(new Result(
-                    tasks, tasks.size(), completedToday, completedToday.size(), zoneId));
+                    tasks, tasks.size(), completedToday, completedToday.size(), zoneId,
+                    progress.totalCount(), progress.completedTodayTotalCount(),
+                    progress.totalCount() > tasks.size(),
+                    progress.completedTodayTotalCount() > completedToday.size(), progress.localDate().toString()));
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Could not serialize personal tasks", exception);
         }
@@ -60,6 +64,11 @@ public class PersonalTasksTool {
             int count,
             List<CompletedTaskResult> completedToday,
             int completedTodayCount,
-            String zoneId
+            String zoneId,
+            long totalCount,
+            long completedTodayTotalCount,
+            boolean hasMore,
+            boolean completedTodayHasMore,
+            String localDate
     ) { }
 }

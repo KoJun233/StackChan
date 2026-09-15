@@ -14,9 +14,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.domain.Specification;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -124,21 +121,15 @@ class LongTermMemoryServiceTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
-    void fallsBackToOrdinaryIndexWhenTrigramQueryIsUnavailable() {
-        LongTermMemoryEntity memory = new LongTermMemoryEntity(
-                MemoryScopeType.GLOBAL, null, MemoryCategory.EVENT,
-                "项目进度", "完成联调", MemorySource.USER_ENTERED, LongTermMemoryService.USER_ENTERED_DETAIL,
-                MemoryConfirmationStatus.CONFIRMED, "项目进度", 5, null, null, false, NOW
-        );
+    void doesNotSubstituteUnrelatedMemoriesWhenRetrievalIsUnavailable() {
         when(repository.searchContext(CompanionRoleEntity.DEFAULT_ROLE_ID, null, "项目", 8))
                 .thenThrow(new DataAccessResourceFailureException("pg_trgm unavailable"));
-        when(repository.findAll(any(Specification.class), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(memory)));
 
         List<LongTermMemoryService.MemorySnapshot> result = service().loadContext(null, "项目", 20);
 
-        assertThat(result).extracting(LongTermMemoryService.MemorySnapshot::id).containsExactly(memory.getId());
+        assertThat(result).isEmpty();
+        verify(repository).searchContext(CompanionRoleEntity.DEFAULT_ROLE_ID, null, "项目", 8);
+        org.mockito.Mockito.verifyNoMoreInteractions(repository);
     }
 
     @Test

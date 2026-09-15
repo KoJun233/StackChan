@@ -27,6 +27,15 @@ public class ConversationEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "voice_topic_reset_at")
+    private Instant voiceTopicResetAt;
+
+    public Instant getVoiceTopicResetAt() { return voiceTopicResetAt; }
+
+    void resetVoiceTopic(Instant boundary) {
+        if (voiceTopicResetAt == null || boundary.isAfter(voiceTopicResetAt)) voiceTopicResetAt = boundary;
+    }
+
     protected ConversationEntity() {
     }
 

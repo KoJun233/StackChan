@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -73,16 +74,18 @@ public class InteractionSettingsController {
     }
 
     @GetMapping("/{deviceId}/proactive-topics")
-    public java.util.List<ProactiveTopicCooldownService.TopicCooldownSnapshot> topics(@PathVariable UUID deviceId) {
-        return topicCooldownService.list(deviceId);
+    public java.util.List<ProactiveTopicCooldownService.TopicCooldownSnapshot> topics(@PathVariable UUID deviceId,
+            @RequestParam(defaultValue = "00000000-0000-0000-0000-000000000001") UUID roleId) {
+        return topicCooldownService.list(deviceId, roleId);
     }
 
     @PostMapping(path = "/{deviceId}/proactive-topics:resume", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ProactiveTopicCooldownService.TopicCooldownSnapshot resumeTopic(
             @PathVariable UUID deviceId,
+            @RequestParam(defaultValue = "00000000-0000-0000-0000-000000000001") UUID roleId,
             @Valid @RequestBody ResumeTopicRequest request
     ) {
-        return topicCooldownService.resume(deviceId, request.topicKey());
+        return topicCooldownService.resume(deviceId, roleId, request.topicKey());
     }
 
     public record InteractionSettingsRequest(

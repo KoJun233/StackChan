@@ -81,6 +81,23 @@ public class ConversationService {
     }
 
     @Transactional(readOnly = true)
+    public Instant voiceTopicBoundary(UUID conversationId) {
+        return conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new ConversationNotFoundException(conversationId)).getVoiceTopicResetAt();
+    }
+
+    @Transactional
+    public Instant resetVoiceTopic(UUID conversationId, UUID userMessageId) {
+        ConversationEntity conversation = conversationRepository.findByIdForUpdate(conversationId)
+                .orElseThrow(() -> new ConversationNotFoundException(conversationId));
+        var user = messageRepository.findById(userMessageId)
+                .filter(message -> conversationId.equals(message.getConversationId()) && message.getRole() == MessageRole.USER)
+                .orElseThrow(() -> new IllegalArgumentException("Voice topic boundary requires this conversation's user message"));
+        conversation.resetVoiceTopic(user.getCreatedAt());
+        return conversation.getVoiceTopicResetAt();
+    }
+
+    @Transactional(readOnly = true)
     public List<ConversationMessageSnapshot> getMessages(UUID conversationId) {
         if (!conversationRepository.existsById(conversationId)) {
             throw new ConversationNotFoundException(conversationId);

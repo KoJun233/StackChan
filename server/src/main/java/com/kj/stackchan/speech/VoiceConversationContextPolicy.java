@@ -26,11 +26,27 @@ public class VoiceConversationContextPolicy {
     }
 
     public List<ConversationMessageSnapshot> select(List<ConversationMessageSnapshot> history) {
+        return select(history, null);
+    }
+
+    public Instant topicBoundary(List<ConversationMessageSnapshot> history, Instant storedBoundary) {
+        Instant latestEnd = history.stream()
+                .filter(message -> message.role() == MessageRole.USER)
+                .filter(message -> VoiceDialogueControl.parse(message.content()).closesTopic())
+                .map(ConversationMessageSnapshot::createdAt).max(Instant::compareTo).orElse(null);
+        return latestEnd != null && (storedBoundary == null || latestEnd.isAfter(storedBoundary))
+                ? latestEnd : storedBoundary;
+    }
+
+    public List<ConversationMessageSnapshot> select(List<ConversationMessageSnapshot> history, Instant topicBoundary) {
         Instant now = clock.instant();
         Instant cutoff = now.minus(RECENT_CONTEXT_AGE);
+        Instant boundary = topicBoundary(history, topicBoundary);
         var users = history.stream()
                 .filter(message -> message.role() == MessageRole.USER)
+                .filter(message -> !VoiceDialogueControl.parse(message.content()).closesTopic())
                 .filter(message -> message.generationStatus() == GenerationStatus.COMPLETED)
+                .filter(message -> boundary == null || !message.createdAt().isBefore(boundary))
                 .collect(Collectors.toMap(ConversationMessageSnapshot::id, Function.identity()));
         var assistants = history.stream()
                 .filter(message -> message.role() == MessageRole.ASSISTANT)

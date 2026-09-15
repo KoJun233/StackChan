@@ -40,7 +40,8 @@ public class WorkdayCompanionService {
     private static final DateTimeFormatter EVENT_TIME = DateTimeFormatter.ofPattern("M月d日H点mm分", Locale.CHINA);
     private static final String BRIEF_TOPIC = "workday:brief:";
     private static final String REST_TOPIC = "workday:rest:";
-    private static final int SPOKEN_TASK_TITLE_CODE_POINTS = 40;
+    static final int MAX_BRIEF_CODE_POINTS = 200;
+    private static final int SPOKEN_TITLE_CODE_POINTS = 12;
 
     private final WorkdayRuntimeService runtimeService;
     private final WorkdaySettingsService settingsService;
@@ -214,7 +215,8 @@ public class WorkdayCompanionService {
         Instant now = clock.instant();
         WorkdaySettingsService.WorkdaySettingsSnapshot settings = settingsService.resolve(deviceId);
         ZoneId zone = ZoneId.of(settings.zoneId());
-        StringBuilder text = new StringBuilder("主人，").append(role.name()).append("陪您开始今天的工作。");
+        StringBuilder text = new StringBuilder("主人，").append(spokenExcerpt(role.name(), 8))
+                .append("陪您开始今天的工作。");
         boolean weatherAvailable = false;
         boolean calendarAvailable = false;
         String weatherFailureCode = null;
@@ -222,7 +224,7 @@ public class WorkdayCompanionService {
         try {
             WorkdayWeatherService.WeatherSnapshot weather = weatherService.get(deviceId);
             if (weather.configured() && weather.fresh() && weather.summary() != null) {
-                text.append(weather.summary()).append('。');
+                text.append(spokenWeatherSummary(weather.summary())).append('。');
                 weatherAvailable = true;
             } else if (weather.configured()) {
                 weatherFailureCode = weather.lastFailureCode() != null
@@ -247,7 +249,8 @@ public class WorkdayCompanionService {
                         ICloudCalendarService.CachedEventSnapshot event = events.get(index);
                         if (index > 0) text.append("；");
                         text.append(event.startsAt().atZone(zone).format(EVENT_TIME))
-                                .append(' ').append(event.privateEvent() ? "私人日程" : event.title());
+                                .append(' ').append(event.privateEvent() ? "私人日程"
+                                        : spokenExcerpt(event.title(), SPOKEN_TITLE_CODE_POINTS));
                     }
                     text.append('。');
                 }
@@ -267,7 +270,7 @@ public class WorkdayCompanionService {
                 for (int index = 0; index < tasks.size(); index++) {
                     PersonalTaskService.TaskBriefItem task = tasks.get(index);
                     if (index > 0) text.append("；");
-                    text.append(spokenTaskTitle(task.title())).append(switch (task.timing()) {
+                    text.append(spokenExcerpt(task.title(), SPOKEN_TITLE_CODE_POINTS)).append(switch (task.timing()) {
                         case OVERDUE -> "（已逾期）";
                         case DUE_TODAY -> "（今天到期）";
                         case HIGH_PRIORITY -> "（高优先级）";
@@ -288,7 +291,7 @@ public class WorkdayCompanionService {
         WorkdayBriefStatus status = weatherAvailable && calendarAvailable
                 ? WorkdayBriefStatus.SUCCESS : WorkdayBriefStatus.PARTIAL;
         return new BriefContent(
-                text.toString(), status, calendarFailureCode, weatherFailureCode
+                spokenExcerpt(text.toString(), MAX_BRIEF_CODE_POINTS), status, calendarFailureCode, weatherFailureCode
         );
     }
 
@@ -369,9 +372,31 @@ public class WorkdayCompanionService {
         return BRIEF_TOPIC + workDate + ":";
     }
 
-    private String spokenTaskTitle(String title) {
-        if (title.codePointCount(0, title.length()) <= SPOKEN_TASK_TITLE_CODE_POINTS) return title;
-        return title.substring(0, title.offsetByCodePoints(0, SPOKEN_TASK_TITLE_CODE_POINTS)) + "…";
+    private String spokenExcerpt(String text, int limit) {
+        if (text.codePointCount(0, text.length()) <= limit) return text;
+        return text.substring(0, text.offsetByCodePoints(0, limit - 1)) + "…";
+    }
+
+    public Instant pendingRestPromptAt(UUID deviceId) {
+        var runtime = runtimeService.get(deviceId);
+        return runtime.state() == WorkdayRuntimeState.REST_PROMPTED ? runtime.stateChangedAt() : null;
+    }
+
+    public WorkdayRuntimeService.WorkdayRuntimeSnapshot respondToRest(UUID deviceId, WorkdayRestAction action, Instant expectedPromptAt) {
+        if (expectedPromptAt == null) throw new InvalidWorkdayStateException("Rest confirmation has no prompt");
+        var runtime = runtimeService.respondToRest(deviceId, action, expectedPromptAt);
+        cancelPending(deviceId, REST_TOPIC);
+        return runtime;
+    }
+
+    private String spokenWeatherSummary(String summary) {
+        if (summary.codePointCount(0, summary.length()) <= 39) return summary;
+        String prefix = summary.substring(0, summary.offsetByCodePoints(0, 32));
+        int boundary = Math.max(prefix.lastIndexOf('，'),
+                Math.max(prefix.lastIndexOf('；'), prefix.lastIndexOf('。')));
+        // Never cut through a temperature, date, probability or other factual unit.
+        return boundary > 0 ? prefix.substring(0, boundary) + "，详情可问我"
+                : "天气信息已更新，详细天气可以问我";
     }
 
     private record BriefContent(

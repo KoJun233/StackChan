@@ -136,7 +136,7 @@ public class ProactiveMessageGenerator {
         if (lead == null) return null;
         InterestBrief source = candidates.get(index);
         String title = spokenTitle(source.title());
-        String content = lead + "。" + source.sourceName() + " 上的标题是《" + title + "》，想听听吗？";
+        String content = lead + "。" + source.sourceName() + " 上的标题是《" + title + "》，要聊聊这个话题吗？";
         if (content.length() > 160 || FORBIDDEN.matcher(content.toLowerCase(Locale.ROOT)).find()) return null;
         return new GenerationResult(content, ProactiveGenerationStatus.GENERATED, source);
     }

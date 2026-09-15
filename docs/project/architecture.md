@@ -5,8 +5,8 @@ StackChan 按设备、服务、浏览器和数据边界划分职责，从而使�
 ## 职责边界
 
 - **StackChan firmware** 负责显示屏、传感器、麦克风/扬声器集成、本地安全状态、配网，以及设备 WebSocket 客户端。
-- **Spring Boot** 负责管理员认证、加密的 LLM 设置、会话、记忆服务、配对、设备凭据、设备会话和未来的主动调度。
-- **Fantastic-admin** 负责浏览器管理、LLM 配置、文本聊天、设备状态、配对和未来的记忆/人设控制。
+- **Spring Boot** 负责管理员认证、加密的 LLM 设置、会话、角色与记忆服务、配对、设备凭据、设备会话、主动陪伴和可靠提醒调度。
+- **Fantastic-admin** 负责浏览器管理、LLM 配置、文本聊天、设备状态、配对、角色/记忆管理和事务与陪伴设置。
 - **PostgreSQL** 是持久化存储；**Redis** 用于瞬态协调和缓存，绝不能成为持久记忆的唯一来源。
 
 服务通过 Spring AI 的 Alibaba-compatible 接口，从已存储的 `apiKey`、`baseUrl`、模型和系统提示词中选择 LLM runtime。设备命令始终由服务端授权；

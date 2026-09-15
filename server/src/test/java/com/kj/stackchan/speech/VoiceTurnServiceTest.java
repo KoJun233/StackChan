@@ -156,6 +156,52 @@ class VoiceTurnServiceTest {
                 .contains("历史不足以确定", "不得根据长期记忆补造本次游戏", "已播放主动话题上下文");
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
+    void topicBoundaryAppliesOnTheResetTurnAndLaterTurns(boolean resettingNow) {
+        UUID deviceId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID assistantId = UUID.randomUUID();
+        UUID roleId = CompanionRoleEntity.DEFAULT_ROLE_ID;
+        Instant boundary = Instant.now().minusSeconds(30);
+        byte[] input = new byte[64];
+        String transcript = resettingNow ? "换个话题" : "那明天呢";
+        when(speechRuntimeClient.transcribe(input)).thenReturn(transcript);
+        when(deviceVoiceConversationService.getOrCreateConversationId(deviceId)).thenReturn(conversationId);
+        when(conversationService.loadHistory(conversationId)).thenReturn(List.of(
+                message("旧天气问题", MessageRole.USER, boundary.minusSeconds(60)),
+                message("旧天气回答", MessageRole.ASSISTANT, boundary.minusSeconds(50))));
+        when(conversationService.startGeneration(eq(conversationId), any(UUID.class), eq(transcript)))
+                .thenReturn(new GenerationStart(conversationId, userId, assistantId, false, GenerationStatus.STREAMING, ""));
+        if (resettingNow) {
+            when(conversationService.resetVoiceTopic(conversationId, userId)).thenReturn(boundary);
+        } else {
+            when(conversationService.voiceTopicBoundary(conversationId)).thenReturn(boundary);
+            when(recentProactiveContextService.context(deviceId, roleId, boundary)).thenReturn("");
+        }
+        when(llmSettingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings(
+                "https://example.com/v1", "model", "prompt", "secret"));
+        when(agentOrchestrator.stream(any())).thenReturn(Flux.just("你想聊哪一件事？"));
+        when(speechRuntimeClient.synthesize("你想聊哪一件事？", roleId)).thenReturn(new byte[44]);
+
+        service().handle(deviceId, input);
+
+        ArgumentCaptor<AgentOrchestrator.AgentRequest> request = ArgumentCaptor.forClass(AgentOrchestrator.AgentRequest.class);
+        verify(agentOrchestrator).stream(request.capture());
+        assertThat(request.getValue().history()).isEmpty();
+        assertThat(request.getValue().userMessage()).isEqualTo(transcript);
+        if (resettingNow) {
+            assertThat(request.getValue().systemPrompt()).contains("用户明确要求换话题");
+            verify(voiceActionCoordinator).cancelPendingOperation(deviceId, conversationId);
+            verifyNoInteractions(recentProactiveContextService);
+        } else {
+            verify(recentProactiveContextService).context(deviceId, roleId, boundary);
+            verify(recentProactiveContextService, never()).context(deviceId, roleId);
+        }
+        verify(conversationService).completeGeneration(assistantId, "你想聊哪一件事？");
+    }
+
     @Test
     void sendsTheCompleteMultiSentenceLlmReplyToTtsAndHistory() {
         UUID deviceId = UUID.randomUUID();
@@ -254,7 +300,10 @@ class VoiceTurnServiceTest {
         String generatedReply = spokenReply + "后".repeat(100);
         when(speechRuntimeClient.transcribe(input)).thenReturn("详细说说");
         when(deviceVoiceConversationService.getOrCreateConversationId(deviceId)).thenReturn(conversationId);
-        when(conversationService.loadHistory(conversationId)).thenReturn(List.of());
+        when(conversationService.loadHistory(conversationId)).thenReturn(List.of(
+                message("讲讲月亮", MessageRole.USER, Instant.now().minusSeconds(20)),
+                message("月亮是地球的天然卫星。", MessageRole.ASSISTANT, Instant.now().minusSeconds(10))
+        ));
         when(conversationService.startGeneration(eq(conversationId), any(UUID.class), eq("详细说说")))
                 .thenReturn(new GenerationStart(
                         conversationId, UUID.randomUUID(), assistantMessageId,
@@ -405,6 +454,63 @@ class VoiceTurnServiceTest {
         verify(conversationService, never()).completeGeneration(eq(assistantMessageId), anyString());
         verify(conversationService, never()).failGeneration(eq(assistantMessageId), anyString(), anyString());
         verify(diagnosticsService).recordServerStage(deviceId, turnId, VoiceTurnStage.CANCELLED, null);
+    }
+
+    @Test
+    void continuingWithoutRecentContextAsksForAnObjectWithoutInventingOne() {
+        UUID device = UUID.randomUUID();
+        UUID conversation = UUID.randomUUID();
+        UUID assistant = UUID.randomUUID();
+        byte[] input = new byte[64];
+        String clarification = "你想让我继续讲哪个话题？";
+        when(speechRuntimeClient.transcribe(input)).thenReturn("继续讲");
+        when(deviceVoiceConversationService.getOrCreateConversationId(device)).thenReturn(conversation);
+        when(conversationService.startGeneration(eq(conversation), any(UUID.class), eq("继续讲")))
+                .thenReturn(new GenerationStart(conversation, UUID.randomUUID(), assistant, false,
+                        GenerationStatus.STREAMING, ""));
+        when(speechRuntimeClient.synthesize(clarification, CompanionRoleEntity.DEFAULT_ROLE_ID))
+                .thenReturn(new byte[44]);
+
+        service().handle(device, input);
+
+        verifyNoInteractions(agentOrchestrator, completedTurnMemoryCoordinator, llmSettingsService, companionPromptService);
+        verify(conversationService).completeGeneration(assistant, clarification);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+            "false,结束聊天？！,好的，先聊到这里。", "true,结束聊天？！,好的，先聊到这里。",
+            "false,不聊这个,好的，先不聊这个。", "true,现在忙,好的，先不聊这个。"})
+    void explicitEndClosesTheTopicWithoutCallingTheModelOrExtractingMemory(boolean streaming, String transcript, String reply) {
+        UUID device = UUID.randomUUID();
+        UUID conversation = UUID.randomUUID();
+        UUID user = UUID.randomUUID();
+        UUID assistant = UUID.randomUUID();
+        UUID turn = UUID.randomUUID();
+        byte[] input = new byte[64];
+        byte[] audio = new byte[44];
+        when(speechRuntimeClient.transcribe(input)).thenReturn(transcript);
+        when(deviceVoiceConversationService.getOrCreateConversationId(device)).thenReturn(conversation);
+        when(conversationService.startGeneration(eq(conversation), any(UUID.class), eq(transcript)))
+                .thenReturn(new GenerationStart(conversation, user, assistant, false, GenerationStatus.STREAMING, ""));
+        when(conversationService.resetVoiceTopic(conversation, user)).thenReturn(Instant.now());
+        when(speechRuntimeClient.synthesize(reply, CompanionRoleEntity.DEFAULT_ROLE_ID)).thenReturn(audio);
+        var service = service();
+        if (streaming) {
+            var sink = mock(VoiceTurnSegmentSink.class);
+            service.handleStreaming(device, turn, input, sink);
+            verify(sink).start(transcript);
+            verify(sink).audio(0, audio);
+            verify(sink).complete(1);
+        } else {
+            service.handle(device, turn, input);
+        }
+        verify(conversationService).resetVoiceTopic(conversation, user);
+        verify(voiceActionCoordinator).cancelPendingOperation(device, conversation);
+        verify(voiceActionCoordinator, never()).handle(any(), any(), any(), anyString());
+        verify(conversationService).completeGeneration(assistant, reply);
+        verifyNoInteractions(agentOrchestrator, llmSettingsService, companionPromptService,
+                recentProactiveContextService, completedTurnMemoryCoordinator);
     }
 
     private VoiceTurnService service() {

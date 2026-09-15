@@ -1,5 +1,6 @@
 import type { RouteRecordMainRaw } from '@fantastic-admin/types'
 import type { RouteRecordRaw } from 'vue-router'
+import NotificationRoutes from './notifications'
 
 function Layout() {
   return import('@/layouts/index.vue')
@@ -32,15 +33,27 @@ const settingsRoute: RouteRecordRaw = {
         icon: 'i-ri:mic-line',
       },
     },
+  ],
+}
+
+const advancedRoute: RouteRecordRaw = {
+  path: '/advanced',
+  name: 'advancedExtensions',
+  meta: { title: '高级扩展', icon: 'i-ri:tools-line', expand: false },
+  children: [
     {
-      path: 'agent',
-      name: 'agentCapabilities',
-      component: () => import('@/views/settings/agent/index.vue'),
-      meta: {
-        title: 'Agent 能力',
-        icon: 'i-ri:robot-2-line',
-      },
+      path: '/settings/agent',
+      name: 'agentCapabilitiesMenu',
+      component: Layout,
+      meta: { title: '可用帮助与扩展', icon: 'i-ri:robot-2-line' },
+      children: [{
+        path: '',
+        name: 'agentCapabilities',
+        component: () => import('@/views/settings/agent/index.vue'),
+        meta: { title: '可用帮助与扩展', menu: false, breadcrumb: false },
+      }],
     },
+    ...(NotificationRoutes.children ?? []),
   ],
 }
 
@@ -49,7 +62,7 @@ const routes: RouteRecordMainRaw = {
     title: '系统与能力',
     icon: 'i-ri:settings-3-line',
   },
-  children: [settingsRoute],
+  children: [settingsRoute, advancedRoute],
 }
 
 export default routes

@@ -139,6 +139,49 @@ public class VoiceActionProposalService {
             throw new VoiceActionException("Voice action proposal is invalid");
         }
         validateDraft(draft);
+        if (draft.actionType() == VoiceActionType.CREATE_REMINDER && draft.targetReference() != null) {
+            if (draft.durationMinutes() == null || draft.durationMinutes() < 1 || draft.durationMinutes() > 1440) {
+                throw new VoiceActionException("Recent reminder delay is invalid");
+            }
+            var heard = reminderService.requireHeardUserReminder(draft.targetReference(), deviceId,
+                    resolveRoleId(conversationId), draft.targetAt(), draft.content());
+            draft = new VoiceActionDraft(VoiceActionType.CREATE_REMINDER, true, heard.content(), "再提醒",
+                    clock.instant().plusSeconds(draft.durationMinutes() * 60L), heard.zoneId(), "NONE", 1,
+                    draft.durationMinutes(), heard.lastCompletedAt(), null, null, heard.id());
+        }
+        if (draft.actionType() == VoiceActionType.START_WORKDAY_REST
+                || draft.actionType() == VoiceActionType.SNOOZE_WORKDAY_REST
+                || draft.actionType() == VoiceActionType.SKIP_WORKDAY_REST_FOR_DAY) {
+            Instant promptAt = workdayCompanionService == null ? null : workdayCompanionService.pendingRestPromptAt(deviceId);
+            if (promptAt == null) throw new VoiceActionException("No rest prompt is awaiting a response");
+            if ("近期休息".equals(draft.title()) && (draft.targetAt() == null || promptAt.isAfter(draft.targetAt()))) {
+                throw new VoiceActionException("The heard rest prompt is no longer current");
+            }
+            draft = new VoiceActionDraft(draft.actionType(), true, null, null, null, null, null, null,
+                    null, promptAt, null, null, null);
+        }
+        NotificationResponseAction notificationAction = switch (draft.actionType()) {
+            case ACKNOWLEDGE_NOTIFICATION -> NotificationResponseAction.ACKNOWLEDGE;
+            case COMPLETE_NOTIFICATION -> NotificationResponseAction.COMPLETE;
+            case SNOOZE_NOTIFICATION -> NotificationResponseAction.SNOOZE;
+            default -> null;
+        };
+        if (notificationAction != null) {
+            if (notificationService == null) throw new VoiceActionException("Interactive notifications are unavailable");
+            String content = notificationService.descriptionForVoice(draft.targetReference(), deviceId,
+                    resolveRoleId(conversationId), notificationAction);
+            draft = new VoiceActionDraft(draft.actionType(), true, content, null, null, null, null, null,
+                    draft.durationMinutes(), null, null, null, draft.targetReference());
+        }
+        if (draft.actionType() == VoiceActionType.SNOOZE_NEXT_REMINDER
+                || draft.actionType() == VoiceActionType.SKIP_NEXT_REMINDER) {
+            var target = reminderService.nextPendingUserReminder(deviceId, resolveRoleId(conversationId));
+            if (target == null) throw new VoiceActionException("No pending reminder for this partner");
+            // Resolve on the server, including model-created drafts; never trust a model-supplied ID.
+            draft = new VoiceActionDraft(draft.actionType(), true, target.content(), null,
+                    target.scheduledAt(), target.zoneId(), null, null, draft.durationMinutes(),
+                    null, null, null, target.id());
+        }
         Instant now = clock.instant();
         VoiceActionProposalEntity proposal = proposalRepository.save(
                 new VoiceActionProposalEntity(SINGLE_ADMIN, deviceId, resolveRoleId(conversationId),
@@ -201,16 +244,19 @@ public class VoiceActionProposalService {
 
     public String restatement(ProposalSnapshot proposal) {
         return switch (proposal.actionType()) {
-            case CREATE_REMINDER -> "要创建提醒：" + proposal.content() + "，时间为 " + proposal.scheduledAt() + "。确认执行吗？";
-            case SNOOZE_NEXT_REMINDER -> "要将下一条提醒推迟 " + proposal.durationMinutes() + " 分钟。确认执行吗？";
-            case SKIP_NEXT_REMINDER -> "要跳过下一次提醒。确认执行吗？";
+            case CREATE_REMINDER -> "再提醒".equals(proposal.title())
+                    ? "要在 " + proposal.durationMinutes() + " 分钟后再提醒一次：“" + proposal.content()
+                        + "”。原来的周期和待办状态不变。确认执行吗？"
+                    : "要创建提醒：" + proposal.content() + "，时间为 " + proposal.scheduledAt() + "。确认执行吗？";
+            case SNOOZE_NEXT_REMINDER -> "要将提醒“" + proposal.content() + "”推迟 " + proposal.durationMinutes() + " 分钟。确认执行吗？";
+            case SKIP_NEXT_REMINDER -> "要跳过提醒“" + proposal.content() + "”的下一次播报。确认执行吗？";
             case SET_TEMPORARY_DND -> "要将免打扰持续到 " + proposal.targetAt() + "。确认执行吗？";
             case SET_VOLUME -> "要将音量调到 " + proposal.volumePercent() + "%。确认执行吗？";
             case CREATE_MEMORY_SUGGESTION -> "已生成一条待确认记忆建议。";
             case SWITCH_ROLE -> "要切换到角色“" + proposal.content() + "”。确认执行吗？";
-            case ACKNOWLEDGE_NOTIFICATION -> "要将最近通知标记为已知晓。确认执行吗？";
-            case SNOOZE_NOTIFICATION -> "要将最近通知推迟 " + proposal.durationMinutes() + " 分钟再次播报。确认执行吗？";
-            case COMPLETE_NOTIFICATION -> "要将最近通知标记为已完成。确认执行吗？";
+            case ACKNOWLEDGE_NOTIFICATION -> notificationLabel(proposal.content()) + "，要标记为已知晓。确认执行吗？";
+            case SNOOZE_NOTIFICATION -> notificationLabel(proposal.content()) + "，要在 " + proposal.durationMinutes() + " 分钟后再次播报。确认执行吗？";
+            case COMPLETE_NOTIFICATION -> notificationLabel(proposal.content()) + "，要向来源回报已完成，不会替你执行外部任务。确认执行吗？";
             case START_WORKDAY -> "要开始当前设备的工作模式。确认执行吗？";
             case END_WORKDAY -> "要结束当前设备的工作模式。确认执行吗？";
             case START_WORKDAY_REST -> "要开始本轮休息。确认执行吗？";
@@ -228,6 +274,10 @@ public class VoiceActionProposalService {
             proposal.markExecuting(now);
         }
         try {
+            if (proposal.getActionType() == VoiceActionType.CREATE_REMINDER && proposal.getTargetReference() != null) {
+                reminderService.requireHeardUserReminder(proposal.getTargetReference(), proposal.getDeviceId(),
+                        proposal.getRoleId(), proposal.getTargetAt(), proposal.getContent());
+            }
             UUID result = switch (proposal.getActionType()) {
                 case CREATE_REMINDER -> conversationService == null
                         ? reminderService.create(new ReminderService.ReminderCommand(
@@ -238,8 +288,11 @@ public class VoiceActionProposalService {
                         ReminderRecurrence.valueOf(proposal.getRecurrenceType()), proposal.getRecurrenceInterval())).id();
                 case SWITCH_ROLE -> roleService.switchActiveFromVoice(
                         proposal.getDeviceId(), proposal.getContent()).id();
-                case SNOOZE_NEXT_REMINDER -> reminderService.snoozeNext(proposal.getDeviceId(), proposal.getDurationMinutes()).id();
-                case SKIP_NEXT_REMINDER -> reminderService.skipNextPending(proposal.getDeviceId()).id();
+                case SNOOZE_NEXT_REMINDER -> reminderService.applyConfirmedVoiceChange(proposal.getTargetReference(),
+                        proposal.getDeviceId(), proposal.getRoleId(), proposal.getScheduledAt(), proposal.getContent(),
+                        proposal.getDurationMinutes()).id();
+                case SKIP_NEXT_REMINDER -> reminderService.applyConfirmedVoiceChange(proposal.getTargetReference(),
+                        proposal.getDeviceId(), proposal.getRoleId(), proposal.getScheduledAt(), proposal.getContent(), null).id();
                 case SET_TEMPORARY_DND -> settingsService.setTemporaryDndUntil(proposal.getDeviceId(), proposal.getTargetAt()).deviceId();
                 case SET_VOLUME -> {
                     var settings = settingsService.setVolume(proposal.getDeviceId(), proposal.getVolumePercent());
@@ -283,6 +336,13 @@ public class VoiceActionProposalService {
             auditRepository.save(new VoiceActionAuditEntity(proposal, VoiceActionAuditEvent.FAILED, "action_failed", failed));
         }
         return snapshot(proposal);
+    }
+
+    private String notificationLabel(String content) {
+        if (content == null || content.isBlank()) return "这条通知";
+        int length = content.codePointCount(0, content.length());
+        return length <= 48 ? "通知“" + content + "”"
+                : "通知内容开头是“" + content.substring(0, content.offsetByCodePoints(0, 48)) + "…”";
     }
 
     private VoiceActionProposalEntity findScopedForUpdate(UUID id, UUID deviceId, UUID conversationId) {
@@ -370,7 +430,7 @@ public class VoiceActionProposalService {
             Boolean start
     ) {
         if (workdayCompanionService == null) throw new VoiceActionException("Workday companion is unavailable");
-        if (restAction != null) workdayCompanionService.respondToRest(proposal.getDeviceId(), restAction);
+        if (restAction != null) workdayCompanionService.respondToRest(proposal.getDeviceId(), restAction, proposal.getTargetAt());
         else if (Boolean.TRUE.equals(start)) workdayCompanionService.start(proposal.getDeviceId());
         else workdayCompanionService.stop(proposal.getDeviceId());
         return proposal.getDeviceId();

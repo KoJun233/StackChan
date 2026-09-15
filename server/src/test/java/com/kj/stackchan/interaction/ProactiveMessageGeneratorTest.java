@@ -114,7 +114,7 @@ class ProactiveMessageGeneratorTest {
         var result = fixture.generator.generate("固定问候", fixture.memory, null, List.of(brief));
 
         assertThat(result.content()).isEqualTo(
-                "爸爸，这条 AI 动态你也许会感兴趣。Hacker News 上的标题是《Open model improves tool use》，想听听吗？"
+                "爸爸，这条 AI 动态你也许会感兴趣。Hacker News 上的标题是《Open model improves tool use》，要聊聊这个话题吗？"
         );
         assertThat(result.source()).isEqualTo(brief);
         assertThat(result.status()).isEqualTo(ProactiveGenerationStatus.GENERATED);

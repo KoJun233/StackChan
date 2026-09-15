@@ -42,6 +42,24 @@ class BoundedConversationHistoryTest {
     @Autowired JdbcTemplate jdbc;
 
     @Test
+    void voiceTopicBoundaryPersistsIdempotentlyWithoutDeletingMessagesOrCrossingConversations() {
+        Instant now = Instant.parse("2026-09-13T01:00:00Z");
+        var first = conversations.saveAndFlush(new ConversationEntity("first", CompanionRoleEntity.DEFAULT_ROLE_ID, now));
+        var second = conversations.saveAndFlush(new ConversationEntity("second", CompanionRoleEntity.DEFAULT_ROLE_ID, now));
+        var user = messages.saveAndFlush(ConversationMessageEntity.user(first.getId(), UUID.randomUUID(), "换个话题", now));
+        var service = new ConversationService(conversations, messages, Clock.systemUTC());
+        assertThat(service.resetVoiceTopic(first.getId(), user.getId())).isEqualTo(now);
+        assertThat(service.resetVoiceTopic(first.getId(), user.getId())).isEqualTo(now);
+        conversations.flush();
+        assertThat(jdbc.queryForObject("select voice_topic_reset_at from conversations where id = ?",
+                java.sql.Timestamp.class, first.getId()).toInstant()).isEqualTo(now);
+        assertThat(service.voiceTopicBoundary(second.getId())).isNull();
+        assertThat(service.getMessages(first.getId())).hasSize(1);
+        assertThatThrownBy(() -> service.resetVoiceTopic(second.getId(), user.getId()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void preservesLatestTwentyOrderingAndFiltersBeforeLimiting() {
         Instant now = Instant.parse("2026-09-12T00:00:00Z");
         var conversation = conversations.saveAndFlush(new ConversationEntity(
