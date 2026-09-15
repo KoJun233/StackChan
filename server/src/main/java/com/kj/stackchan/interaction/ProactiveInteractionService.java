@@ -38,6 +38,10 @@ public class ProactiveInteractionService {
     private final Clock clock;
     private final CompanionRoleService roleService;
     private final ProactiveInterestBriefSource interestBriefSource;
+    private ProactivePauseService pauseService;
+
+    @Autowired
+    public void setPauseService(ProactivePauseService pauseService) { this.pauseService = pauseService; }
 
     @Autowired
     public ProactiveInteractionService(
@@ -101,6 +105,7 @@ public class ProactiveInteractionService {
             }
             CompanionRoleService.RoleSnapshot role = activeRole(settings.deviceId());
             UUID roleId = role == null ? CompanionRoleEntity.DEFAULT_ROLE_ID : role.id();
+            if (pauseService != null && pauseService.isPaused(settings.deviceId(), roleId, now)) continue;
             LongTermMemoryService.MemorySnapshot memory = selectMemory(settings, now, roleId);
             if (!settingsService.recordProactiveIfEligible(settings.deviceId(), now)) continue;
             List<InterestBrief> briefs = sourceCandidates(settings.deviceId(), memory);

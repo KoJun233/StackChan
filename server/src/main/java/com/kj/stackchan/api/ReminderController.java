@@ -50,6 +50,11 @@ public class ReminderController {
         return reminderService.get(id);
     }
 
+    @GetMapping("/timeline")
+    public ReminderService.DeliveryTimeline timeline(@RequestParam UUID deviceId, @RequestParam UUID roleId) {
+        return reminderService.timeline(deviceId, roleId);
+    }
+
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public ReminderService.ReminderSnapshot create(@Valid @RequestBody ReminderRequest request) {

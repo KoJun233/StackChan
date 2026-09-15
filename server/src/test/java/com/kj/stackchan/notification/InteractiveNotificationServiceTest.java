@@ -42,9 +42,8 @@ class InteractiveNotificationServiceTest {
     void findsOnlyExplicitlyActionableDeliveredNotificationInDeviceAndRoleScope() {
         ReminderEntity notification = delivered(Set.of(NotificationResponseAction.ACKNOWLEDGE));
         when(reminderRepository
-                .findTop20ByDeviceIdAndRoleIdAndSourceAndStatusAndLastCompletedAtAfterOrderByLastCompletedAtDescIdDesc(
-                        notification.getDeviceId(), notification.getRoleId(), ReminderSource.EXTERNAL,
-                        ReminderStatus.DELIVERED, NOW.minusSeconds(86_400)))
+                .findRecentCompletedDeliveries(notification.getDeviceId(), notification.getRoleId(), NOW.minusSeconds(1800),
+                        NOW, org.springframework.data.domain.PageRequest.of(0, 2)))
                 .thenReturn(List.of(notification));
 
         assertThat(service.latestActionable(
@@ -53,6 +52,43 @@ class InteractiveNotificationServiceTest {
         assertThat(service.latestActionable(
                 notification.getDeviceId(), notification.getRoleId(), NotificationResponseAction.COMPLETE))
                 .isNull();
+    }
+
+    @Test
+    void newerOrdinaryReminderUnsupportedActionAndTiedCompletionNeverFallBack() {
+        var notification = delivered(Set.of(NotificationResponseAction.ACKNOWLEDGE));
+        UUID device = notification.getDeviceId();
+        UUID role = notification.getRoleId();
+        var ordinary = new ReminderEntity(role, device, "休息一下", NOW.minusSeconds(15), "UTC",
+                ReminderRecurrence.NONE, 1, null, ReminderSource.USER, NOW.minusSeconds(60));
+        ordinary.completeOccurrence(ReminderStatus.DELIVERED, null, NOW.minusSeconds(10));
+        when(reminderRepository.findRecentCompletedDeliveries(device, role, NOW.minusSeconds(1800), NOW,
+                org.springframework.data.domain.PageRequest.of(0, 2))).thenReturn(List.of(ordinary, notification));
+        assertThat(service.latestActionable(device, role, NotificationResponseAction.ACKNOWLEDGE)).isNull();
+        ordinary.completeOccurrence(ReminderStatus.DELIVERED, null, notification.getLastCompletedAt());
+        when(reminderRepository.findRecentCompletedDeliveries(device, role, NOW.minusSeconds(1800), NOW,
+                org.springframework.data.domain.PageRequest.of(0, 2))).thenReturn(List.of(notification, ordinary));
+        assertThat(service.latestActionable(device, role, NotificationResponseAction.ACKNOWLEDGE)).isNull();
+        Instant boundary = NOW.minusSeconds(5);
+        when(reminderRepository.findRecentCompletedDeliveries(device, role, boundary, NOW,
+                org.springframework.data.domain.PageRequest.of(0, 2))).thenReturn(List.of());
+        assertThat(service.latestActionable(device, role, NotificationResponseAction.ACKNOWLEDGE, boundary)).isNull();
+    }
+
+    @Test
+    void voiceDescriptionRequiresSamePartnerDeliveredContentAndPermittedAction() {
+        var notification = delivered(Set.of(NotificationResponseAction.ACKNOWLEDGE));
+        when(reminderRepository.findByIdAndDeviceId(notification.getId(), notification.getDeviceId()))
+                .thenReturn(java.util.Optional.of(notification));
+        assertThat(service.descriptionForVoice(notification.getId(), notification.getDeviceId(), notification.getRoleId(),
+                NotificationResponseAction.ACKNOWLEDGE)).isEqualTo("完成");
+        assertThatThrownBy(() -> service.descriptionForVoice(notification.getId(), notification.getDeviceId(), UUID.randomUUID(),
+                NotificationResponseAction.ACKNOWLEDGE)).isInstanceOf(NotificationApiException.class);
+        assertThatThrownBy(() -> service.descriptionForVoice(notification.getId(), notification.getDeviceId(), notification.getRoleId(),
+                NotificationResponseAction.COMPLETE)).isInstanceOf(NotificationApiException.class);
+        notification.completeOccurrence(ReminderStatus.DELIVERED, null, NOW.minusSeconds(86_401));
+        assertThatThrownBy(() -> service.descriptionForVoice(notification.getId(), notification.getDeviceId(), notification.getRoleId(),
+                NotificationResponseAction.ACKNOWLEDGE)).isInstanceOf(NotificationApiException.class);
     }
 
     @Test

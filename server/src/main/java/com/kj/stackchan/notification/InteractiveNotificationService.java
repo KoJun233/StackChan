@@ -34,15 +34,23 @@ public class InteractiveNotificationService {
 
     @Transactional(readOnly = true)
     public UUID latestActionable(UUID deviceId, UUID roleId, NotificationResponseAction action) {
-        Instant cutoff = clock.instant().minus(RESPONSE_WINDOW);
-        return reminderRepository.findTop20ByDeviceIdAndRoleIdAndSourceAndStatusAndLastCompletedAtAfterOrderByLastCompletedAtDescIdDesc(
-                        deviceId, roleId, ReminderSource.EXTERNAL, ReminderStatus.DELIVERED, cutoff)
-                .stream()
-                .filter(notification -> notification.getResponseActions().contains(action))
-                .filter(notification -> !hasTerminalResponse(notification.getId()))
-                .map(ReminderEntity::getId)
-                .findFirst()
-                .orElse(null);
+        return latestActionable(deviceId, roleId, action, null);
+    }
+
+    @Transactional(readOnly = true)
+    public UUID latestActionable(UUID deviceId, UUID roleId, NotificationResponseAction action, Instant topicBoundary) {
+        Instant now = clock.instant();
+        Instant cutoff = now.minus(Duration.ofMinutes(30));
+        if (topicBoundary != null && topicBoundary.isAfter(cutoff)) cutoff = topicBoundary;
+        var recent = reminderRepository.findRecentCompletedDeliveries(deviceId, roleId, cutoff, now,
+                org.springframework.data.domain.PageRequest.of(0, 2));
+        if (recent.isEmpty()) return null;
+        var latest = recent.getFirst();
+        // Never skip a newer ordinary reminder, unsupported notification or ambiguous digest member.
+        if (recent.size() > 1 && latest.getLastCompletedAt().equals(recent.get(1).getLastCompletedAt())) return null;
+        if (latest.getSource() != ReminderSource.EXTERNAL || latest.getStatus() != ReminderStatus.DELIVERED
+                || !latest.getResponseActions().contains(action) || hasTerminalResponse(latest.getId())) return null;
+        return latest.getId();
     }
 
     @Transactional
@@ -59,6 +67,20 @@ public class InteractiveNotificationService {
             throw notFound();
         }
         return respondLocked(notification, action, snoozeMinutes);
+    }
+
+    @Transactional(readOnly = true)
+    public String descriptionForVoice(UUID notificationId, UUID deviceId, UUID roleId, NotificationResponseAction action) {
+        var notification = reminderRepository.findByIdAndDeviceId(notificationId, deviceId).orElseThrow(this::notFound);
+        Instant now = clock.instant();
+        if (!notification.getRoleId().equals(roleId) || notification.getSource() != ReminderSource.EXTERNAL) throw notFound();
+        if (notification.getStatus() != ReminderStatus.DELIVERED || notification.getLastCompletedAt() == null
+                || notification.getLastCompletedAt().isAfter(now)
+                || notification.getLastCompletedAt().isBefore(now.minus(RESPONSE_WINDOW))
+                || !notification.getResponseActions().contains(action) || hasTerminalResponse(notificationId)) {
+            throw invalid("该通知当前不能回应，请重新指定对象。");
+        }
+        return notification.getContent();
     }
 
     @Transactional

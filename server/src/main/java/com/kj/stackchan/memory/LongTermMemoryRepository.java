@@ -81,6 +81,7 @@ public interface LongTermMemoryRepository
               and memory.role_id = :roleId
               and memory.enabled = true
               and memory.superseded_by_memory_id is null
+              and (:inventory = true or lower(concat_ws(' ', memory.topic_key, memory.title, memory.content)) ~ :relevancePattern)
               and (
                 (:deviceId is null and memory.scope_type = 'GLOBAL')
                 or (:deviceId is not null and (
@@ -100,12 +101,21 @@ public interface LongTermMemoryRepository
               memory.id desc
             limit :limit
             """, nativeQuery = true)
-    List<LongTermMemoryEntity> searchContext(
+    @org.springframework.transaction.annotation.Transactional(readOnly = true,
+            propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    List<LongTermMemoryEntity> searchRelevantContext(
             @Param("roleId") UUID roleId,
             @Param("deviceId") UUID deviceId,
             @Param("queryText") String queryText,
+            @Param("relevancePattern") String relevancePattern,
+            @Param("inventory") boolean inventory,
             @Param("limit") int limit
     );
+
+    default List<LongTermMemoryEntity> searchContext(UUID roleId, UUID deviceId, String queryText, int limit) {
+        MemorySearchQuery query = MemorySearchQuery.parse(queryText);
+        return searchRelevantContext(roleId, deviceId, query.text(), query.relevancePattern(), query.inventory(), limit);
+    }
 
     @Query("""
             select memory from LongTermMemoryEntity memory

@@ -333,11 +333,11 @@ function mcpToolEnabled(row: McpTool) {
   return row.enabled
 }
 
-const activeSection = ref<'audit' | 'mcp' | 'overview' | 'tools'>('overview')
+const activeSection = ref<'audit' | 'mcp' | 'overview' | 'tools'>('tools')
 const sectionTabs = [
-  { label: '运行概览', value: 'overview', icon: 'i-ri:dashboard-line' },
-  { label: 'Tool 与 Skill', value: 'tools', icon: 'i-ri:tools-line' },
-  { label: 'MCP 连接', value: 'mcp', icon: 'i-ri:plug-line' },
+  { label: '能帮你做什么', value: 'tools', icon: 'i-ri:tools-line' },
+  { label: '运行策略（高级）', value: 'overview', icon: 'i-ri:dashboard-line' },
+  { label: '连接外部能力（高级）', value: 'mcp', icon: 'i-ri:plug-line' },
   { label: '调用审计', value: 'audit', icon: 'i-ri:file-list-3-line' },
 ]
 
@@ -347,8 +347,8 @@ onMounted(() => load())
 <template>
   <div>
     <FaPageHeader
-      title="Agent 能力"
-      description="管理 ReactAgent 的只读 Tool、自定义 Skill 包与显式授权 MCP；所有能力都可随时停用。"
+      title="可用帮助与扩展"
+      description="先选择日常需要的事实查询能力。自定义工作流与外部连接按需配置，聊天和独立伙伴不要求安装扩展。"
     />
     <FaPageMain>
       <FaLoading :loading="loading">
@@ -429,7 +429,7 @@ onMounted(() => load())
 
           <template #tools>
             <div class="gap-4 grid xl:grid-cols-2">
-              <FaCard title="内置只读 Tool" description="关闭后，下一回合不再把该 Tool 暴露给模型。">
+              <FaCard title="日常事实查询" description="查看各项用途并按需授权。关闭后机器人不会调用该能力，不能用猜测替代查询结果。">
                 <FaTable :columns="capabilityColumns" :data="builtInRows" empty-text="暂无内置 Tool" row-key="id" border>
                   <template #cell-enabled="{ row }">
                     <FaSwitch
@@ -441,54 +441,59 @@ onMounted(() => load())
                 </FaTable>
               </FaCard>
 
-              <FaCard title="自定义 Skill 包" description="上传完整 ZIP；服务端安全解压并保留 SKILL.md、references、examples 等附属文件。">
-                <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-                  <FaFileUpload
-                    v-model="stagedSkill"
-                    :max="1"
-                    :http-request="stageSkill"
-                    :after-upload="() => ''"
-                    accept=".zip,application/zip"
-                    description="选择不超过 4 MiB 的 ZIP；包内只能有一个 Skill 根目录"
-                    class="flex-1 min-w-0"
-                  />
-                  <FaButton :disabled="stagedSkill.length === 0" :loading="importingSkill" @click="submitSkill">
-                    导入 Skill
-                  </FaButton>
-                </div>
-                <FaAlert
-                  title="默认停用，权限不随包导入"
-                  description="Skill 只提供文字工作流，不会自动获得 Shell、Python、文件系统或新的 Tool/MCP 权限。"
-                  class="mb-4"
-                />
-                <FaTable :columns="skillColumns" :data="skillRows" empty-text="暂无自定义 Skill" row-key="id" border>
-                  <template #cell-packageLabel="{ row }">
-                    <div class="max-w-72">
-                      <p>{{ row.original.packageLabel }}</p>
-                      <p class="text-xs text-muted-foreground mt-1 truncate" :title="row.original.files.join(' · ')">
-                        {{ row.original.files.join(' · ') }}
-                      </p>
-                    </div>
-                  </template>
-                  <template #cell-enabled="{ row }">
-                    <FaSwitch
-                      :model-value="row.original.enabled"
-                      :disabled="updatingKey !== null"
-                      @update:model-value="value => value !== undefined && setSkill(row.original, value)"
+              <FaCollapsible>
+                <template #trigger="{ open }">
+                  <span class="text-sm px-4 py-2 border rounded-md inline-block">{{ open ? '收起' : '展开' }}自定义工作流（高级）</span>
+                </template>
+                <FaCard title="自定义 Skill 包" description="有重复使用的明确场景时再配置。上传工作流说明不会自动获得外部工具权限。">
+                  <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <FaFileUpload
+                      v-model="stagedSkill"
+                      :max="1"
+                      :http-request="stageSkill"
+                      :after-upload="() => ''"
+                      accept=".zip,application/zip"
+                      description="选择不超过 4 MiB 的 ZIP；包内只能有一个 Skill 根目录"
+                      class="flex-1 min-w-0"
                     />
-                  </template>
-                  <template #cell-actions="{ row }">
-                    <FaButton
-                      variant="destructive"
-                      size="sm"
-                      :disabled="row.original.enabled || updatingKey !== null"
-                      @click="removeSkill(row.original)"
-                    >
-                      删除
+                    <FaButton :disabled="stagedSkill.length === 0" :loading="importingSkill" @click="submitSkill">
+                      导入 Skill
                     </FaButton>
-                  </template>
-                </FaTable>
-              </FaCard>
+                  </div>
+                  <FaAlert
+                    title="默认停用，权限不随包导入"
+                    description="Skill 只提供文字工作流，不会自动获得 Shell、Python、文件系统或新的 Tool/MCP 权限。"
+                    class="mb-4"
+                  />
+                  <FaTable :columns="skillColumns" :data="skillRows" empty-text="暂无自定义 Skill" row-key="id" border>
+                    <template #cell-packageLabel="{ row }">
+                      <div class="max-w-72">
+                        <p>{{ row.original.packageLabel }}</p>
+                        <p class="text-xs text-muted-foreground mt-1 truncate" :title="row.original.files.join(' · ')">
+                          {{ row.original.files.join(' · ') }}
+                        </p>
+                      </div>
+                    </template>
+                    <template #cell-enabled="{ row }">
+                      <FaSwitch
+                        :model-value="row.original.enabled"
+                        :disabled="updatingKey !== null"
+                        @update:model-value="value => value !== undefined && setSkill(row.original, value)"
+                      />
+                    </template>
+                    <template #cell-actions="{ row }">
+                      <FaButton
+                        variant="destructive"
+                        size="sm"
+                        :disabled="row.original.enabled || updatingKey !== null"
+                        @click="removeSkill(row.original)"
+                      >
+                        删除
+                      </FaButton>
+                    </template>
+                  </FaTable>
+                </FaCard>
+              </FaCollapsible>
             </div>
           </template>
 

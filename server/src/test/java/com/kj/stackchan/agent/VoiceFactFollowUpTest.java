@@ -108,6 +108,17 @@ class VoiceFactFollowUpTest {
         verify(clients, never()).createAgentChatModel();
     }
 
+    @Test
+    void correctionUsesTheNewObjectInsteadOfTheNegatedCalendarIntent() {
+        when(settings.runtimeSettings()).thenReturn(new AgentSettingsService.RuntimeSettings(
+                false, false, false, Instant.EPOCH));
+        assertThat(reply(history("明天有什么日程"), "不是日程，是明天的天气"))
+                .contains("天气").doesNotContain("日历缓存");
+        assertThat(reply(history("我的待办有哪些"), "继续讲"))
+                .contains("待办");
+        verify(clients, never()).createLowLatencyChatClient();
+    }
+
     private String reply(List<Message> history, String message) {
         return orchestrator.stream(new AgentOrchestrator.AgentRequest(context, "测试助手", history, message))
                 .collectList().block().stream().reduce("", String::concat);

@@ -210,6 +210,34 @@ class PersonalTaskServiceTest {
         assertThat(pageable.getValue().getPageSize()).isEqualTo(10);
     }
 
+    @Test
+    void progressCountsUseTheSameScopedDayAsTheLimitedListIncludingDst() {
+        UUID deviceId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        allow(deviceId, roleId);
+        service = new PersonalTaskService(taskRepository, deviceRepository, roleRepository, reminderService,
+                Clock.fixed(Instant.parse("2026-03-08T16:00:00Z"), ZoneOffset.UTC));
+        ZoneId zone = ZoneId.of("America/New_York");
+        Instant start = Instant.parse("2026-03-08T05:00:00Z");
+        Instant end = Instant.parse("2026-03-09T04:00:00Z");
+        when(taskRepository.countByDeviceIdAndRoleIdAndStatus(deviceId, roleId, PersonalTaskStatus.OPEN))
+                .thenReturn(21L);
+        when(taskRepository.countByDeviceIdAndRoleIdAndStatusAndCompletedAtGreaterThanEqualAndCompletedAtLessThan(
+                deviceId, roleId, PersonalTaskStatus.COMPLETED, start, end)).thenReturn(11L);
+
+        var result = service.progressForAgent(deviceId, roleId, zone);
+
+        assertThat(result.totalCount()).isEqualTo(21);
+        assertThat(result.completedTodayTotalCount()).isEqualTo(11);
+        assertThat(result.localDate()).isEqualTo(LocalDate.of(2026, 3, 8));
+        ArgumentCaptor<Pageable> page = ArgumentCaptor.forClass(Pageable.class);
+        verify(taskRepository).findCompletedInRange(eq(deviceId), eq(roleId), eq(PersonalTaskStatus.COMPLETED),
+                eq(start), eq(end), page.capture());
+        assertThat(page.getValue().getPageSize()).isEqualTo(10);
+        verify(taskRepository).findTop20ByDeviceIdAndRoleIdAndStatusOrderByDueAtAscCreatedAtDesc(
+                deviceId, roleId, PersonalTaskStatus.OPEN);
+    }
+
     private void allow(UUID deviceId, UUID roleId) {
         when(deviceRepository.existsById(deviceId)).thenReturn(true);
         when(roleRepository.existsById(roleId)).thenReturn(true);

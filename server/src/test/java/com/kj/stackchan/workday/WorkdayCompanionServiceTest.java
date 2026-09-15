@@ -232,8 +232,8 @@ class WorkdayCompanionServiceTest {
         ArgumentCaptor<ReminderEntity> reminder = ArgumentCaptor.forClass(ReminderEntity.class);
         verify(reminderRepository).save(reminder.capture());
         assertThat(reminder.getValue().getContent())
-                .contains("今天优先处理：提交季度复盘（已逾期）；" + "长".repeat(40) + "…（高优先级）")
-                .doesNotContain("长".repeat(41))
+                .contains("今天优先处理：提交季度复盘（已逾期）；" + "长".repeat(11) + "…（高优先级）")
+                .doesNotContain("长".repeat(12))
                 .doesNotContain("备注");
         verify(taskService).dailyBriefItems(
                 DEVICE_ID, ROLE_ID, date, java.time.ZoneId.of("Asia/Shanghai"));
@@ -260,6 +260,45 @@ class WorkdayCompanionServiceTest {
         assertThat(reminder.getValue().getContent())
                 .contains("小峰陪您开始今天的工作", "天气和日历信息暂不可用")
                 .doesNotContain("task storage unavailable");
+    }
+
+    @Test
+    void longUnicodeInputsKeepEverySourceInsideTheTotalSpokenBudget() {
+        LocalDate date = LocalDate.of(2026, 8, 29);
+        when(role.name()).thenReturn("伙伴".repeat(40));
+        when(runtimeService.tick(DEVICE_ID)).thenReturn(runtime(
+                WorkdayRuntimeState.ACTIVE_PRESENT, date, null, NOW.minusSeconds(60)));
+        when(reminderRepository.findFirstByDeviceIdAndSourceAndProactiveTopicKeyStartingWithOrderByCreatedAtDesc(
+                eq(DEVICE_ID), eq(ReminderSource.PROACTIVE), any())).thenReturn(Optional.empty());
+        when(runtimeService.claimBrief(DEVICE_ID)).thenReturn(new WorkdayRuntimeService.BriefClaimSnapshot(
+                UUID.randomUUID(), DEVICE_ID, date, WorkdayBriefStatus.PENDING, true, NOW, null, NOW));
+        when(weatherService.get(DEVICE_ID)).thenReturn(new WorkdayWeatherService.WeatherSnapshot(
+                DEVICE_ID, true, true, "上海", "Asia/Shanghai", WorkdayWeatherStatus.READY,
+                null, NOW, NOW, NOW.plusSeconds(3600), "天气☀".repeat(200), null, List.of()));
+        when(calendarService.get(DEVICE_ID)).thenReturn(new ICloudCalendarService.ConnectionSnapshot(
+                DEVICE_ID, true, "a***@example.com", true, ICloudCalendarConnectionStatus.CONNECTED,
+                null, NOW, NOW.minusSeconds(60), 1, NOW.plusSeconds(3600), List.of()));
+        String publicTitle = "会议🚀".repeat(100);
+        when(calendarService.cachedEvents(eq(DEVICE_ID), eq(NOW), any())).thenReturn(List.of(
+                new ICloudCalendarService.CachedEventSnapshot(NOW.plusSeconds(3600), NOW.plusSeconds(5400),
+                        false, true, false, publicTitle, ""),
+                new ICloudCalendarService.CachedEventSnapshot(NOW.plusSeconds(7200), NOW.plusSeconds(9000),
+                        false, true, true, "私密原始标题".repeat(50), "")));
+        when(taskService.dailyBriefItems(DEVICE_ID, ROLE_ID, date, java.time.ZoneId.of("Asia/Shanghai")))
+                .thenReturn(List.of(
+                        new PersonalTaskService.TaskBriefItem("任务🚀".repeat(100), PersonalTaskService.TaskBriefTiming.OVERDUE),
+                        new PersonalTaskService.TaskBriefItem("Report".repeat(100), PersonalTaskService.TaskBriefTiming.DUE_TODAY)));
+
+        service.processActiveDevice(DEVICE_ID);
+
+        ArgumentCaptor<ReminderEntity> reminder = ArgumentCaptor.forClass(ReminderEntity.class);
+        verify(reminderRepository).save(reminder.capture());
+        String content = reminder.getValue().getContent();
+        assertThat(content.codePointCount(0, content.length())).isLessThanOrEqualTo(200);
+        assertThat(content).contains("天气", "会议🚀", "私人日程", "今天优先处理", "已逾期", "今天到期", "…")
+                .doesNotContain("私密原始标题").doesNotContain(publicTitle);
+        assertThat(content.codePoints().anyMatch(cp -> cp >= 0xD800 && cp <= 0xDFFF)).isFalse();
+        assertThat(reminder.getValue().getProactiveTopicKey()).endsWith("SUCCESS");
     }
 
     private WorkdayRuntimeService.WorkdayRuntimeSnapshot runtime(

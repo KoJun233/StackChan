@@ -26,6 +26,11 @@ public interface PersonalTaskRepository extends JpaRepository<PersonalTaskEntity
             PersonalTaskStatus status
     );
 
+    long countByDeviceIdAndRoleIdAndStatus(UUID deviceId, UUID roleId, PersonalTaskStatus status);
+
+    long countByDeviceIdAndRoleIdAndStatusAndCompletedAtGreaterThanEqualAndCompletedAtLessThan(
+            UUID deviceId, UUID roleId, PersonalTaskStatus status, Instant startInclusive, Instant endExclusive);
+
     @Query("""
             select task from PersonalTaskEntity task
             where task.deviceId = :deviceId

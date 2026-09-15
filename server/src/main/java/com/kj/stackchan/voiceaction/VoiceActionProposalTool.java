@@ -26,6 +26,9 @@ public class VoiceActionProposalTool {
     public String submit(Input input) {
         VoiceActionDraft draft;
         try {
+            if (input.targetReference() != null && !input.targetReference().isBlank()) {
+                throw new VoiceActionException("Model-generated proposals cannot select business object identifiers");
+            }
             VoiceActionType type = VoiceActionType.valueOf(input.actionType());
             draft = new VoiceActionDraft(type, type != VoiceActionType.CREATE_MEMORY_SUGGESTION,
                     input.content(), input.title(), parseInstant(input.scheduledAt()), input.zoneId(),

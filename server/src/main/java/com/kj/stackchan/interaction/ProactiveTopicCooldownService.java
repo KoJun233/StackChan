@@ -18,10 +18,43 @@ public class ProactiveTopicCooldownService {
 
     private final ProactiveTopicCooldownRepository repository;
     private final Clock clock;
+    private final com.kj.stackchan.reminder.ReminderRepository reminders;
 
     public ProactiveTopicCooldownService(ProactiveTopicCooldownRepository repository, Clock clock) {
+        this(repository, clock, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ProactiveTopicCooldownService(ProactiveTopicCooldownRepository repository, Clock clock,
+            com.kj.stackchan.reminder.ReminderRepository reminders) {
         this.repository = repository;
         this.clock = clock;
+        this.reminders = reminders;
+    }
+
+    @Transactional
+    public boolean muteLastDeliveredTopic(UUID deviceId, UUID roleId, Instant topicBoundary) {
+        if (reminders == null || deviceId == null || roleId == null) return false;
+        Instant now = clock.instant();
+        var delivered = reminders.findRecentCompletedDeliveries(deviceId, roleId, now.minus(Duration.ofMinutes(30)),
+                now, org.springframework.data.domain.PageRequest.of(0, 2));
+        if (delivered.isEmpty()) return false;
+        var latest = delivered.getFirst();
+        if (latest.getSource() != com.kj.stackchan.reminder.ReminderSource.PROACTIVE) return false;
+        if (delivered.size() > 1 && latest.getLastCompletedAt().equals(delivered.get(1).getLastCompletedAt())) return false;
+        if (topicBoundary != null && !latest.getLastCompletedAt().isAfter(topicBoundary)) return false;
+        if (latest.getProactiveTopicKey() == null || latest.getProactiveTopicKey().isBlank()
+                || latest.getProactiveTopicKey().startsWith("workday:")) return false;
+        var topic = repository.findLocked(deviceId, roleId, normalize(latest.getProactiveTopicKey())).orElse(null);
+        if (topic == null) return false;
+        topic.mute(now);
+        return true;
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isUserMuted(UUID deviceId, UUID roleId, String topicKey) {
+        return repository.findById(new ProactiveTopicCooldownId(deviceId, roleId, normalize(topicKey)))
+                .map(ProactiveTopicCooldownEntity::isUserMuted).orElse(false);
     }
 
     @Transactional(readOnly = true)
@@ -71,8 +104,13 @@ public class ProactiveTopicCooldownService {
 
     @Transactional
     public TopicCooldownSnapshot resume(UUID deviceId, String topicKey) {
+        return resume(deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID, topicKey);
+    }
+
+    @Transactional
+    public TopicCooldownSnapshot resume(UUID deviceId, UUID roleId, String topicKey) {
         String normalized = normalize(topicKey);
-        ProactiveTopicCooldownEntity entity = repository.findLocked(deviceId, normalized)
+        ProactiveTopicCooldownEntity entity = repository.findLocked(deviceId, roleId, normalized)
                 .orElseThrow(ProactiveTopicCooldownNotFoundException::new);
         entity.resume(clock.instant());
         return snapshot(entity);
@@ -80,8 +118,13 @@ public class ProactiveTopicCooldownService {
 
     @Transactional(readOnly = true)
     public List<TopicCooldownSnapshot> list(UUID deviceId) {
+        return list(deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID);
+    }
+
+    @Transactional(readOnly = true)
+    public List<TopicCooldownSnapshot> list(UUID deviceId, UUID roleId) {
         return repository.findAllByDeviceIdAndRoleIdOrderByLastMentionedAtDescTopicKeyAsc(
-                        deviceId, CompanionRoleEntity.DEFAULT_ROLE_ID).stream()
+                        deviceId, roleId).stream()
                 .map(this::snapshot)
                 .toList();
     }

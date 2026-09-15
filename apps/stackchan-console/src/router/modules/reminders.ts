@@ -1,6 +1,5 @@
 import type { RouteRecordMainRaw } from '@fantastic-admin/types'
 import type { RouteRecordRaw } from 'vue-router'
-import NotificationRoutes from './notifications'
 
 function Layout() {
   return import('@/layouts/index.vue')
@@ -83,12 +82,12 @@ const taskManagementRoute: RouteRecordRaw = {
     title: '事务管理',
     icon: 'i-ri:notification-3-line',
   },
-  children: [reminderRoute, personalTaskRoute, ...(NotificationRoutes.children ?? [])],
+  children: [reminderRoute, personalTaskRoute],
 }
 
 const routes: RouteRecordMainRaw = {
   meta: {
-    title: '事务与通知',
+    title: '个人事务',
     icon: 'i-ri:notification-3-line',
   },
   children: [taskManagementRoute],

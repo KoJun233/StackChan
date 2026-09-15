@@ -1,5 +1,11 @@
 # 架构决策记录
 
+当前新增：[ADR 0065：普通提醒确认固定对象与伙伴范围](0065-scoped-reminder-confirmation.md)。
+
+当前新增：[ADR 0066：通知语音反馈先确认最近播报对象](0066-recent-cross-source-notification-response.md)。
+
+当前新增：[ADR 0067：伙伴播报视图与统一近期来源](0067-partner-delivery-timeline.md)。
+
 本目录保存会跨会话持续生效、且不应在没有明确决策的情况下被改变的架构选择。
 
 - `PROPOSED`：正在讨论，尚未成为实现约束。
@@ -67,3 +73,16 @@
 | [0054](0054-bounded-recent-voice-context.md) | ACCEPTED | 语音话题承接只使用最近三十分钟内至多四个完整轮次，缺少上下文时简短澄清且不补造当前事件。 |
 | [0055](0055-delivered-proactive-conversation-context.md) | ACCEPTED | 已成功播放的主动消息按设备、角色和三十分钟窗口进入语音上下文，来源标题不等同于文章全文。 |
 | [0056](0056-contextual-voice-fact-followups.md) | ACCEPTED | 日期省略追问沿近期连续话题继承天气或日程工具，保留授权和成功调用门槛。 |
+| [0057](0057-companion-trust-and-bounded-briefs.md) | ACCEPTED | 资讯只邀请讨论话题，待办区分总量与展示数，工作简报采用有界文字并保留事实和隔离边界。 |
+| [0058](0058-explicit-voice-dialogue-controls.md) | ACCEPTED | 转题持久隔离旧上下文并取消待确认操作，明确纠正优先路由，续讲缺少对象时确定性澄清。 |
+| [0059](0059-rendered-memory-context-accounting.md) | ACCEPTED | 记忆使用记录仅包含实际渲染条目，完整分类纳入长度预算，空上下文不冒充数据库无记忆。 |
+| [0060](0060-relevant-memory-recall.md) | ACCEPTED | 长期记忆在截断前按有界词面相关性筛选，支持有限同义表达和显式回顾，故障不回填无关记忆。 |
+| [0061](0061-role-scoped-proactive-topic-feedback.md) | ACCEPTED | 语音话题静默、控制台查看和恢复贯通设备与角色范围，旧客户端保持默认角色兼容。 |
+| [0062](0062-delivered-topic-feedback-target.md) | ACCEPTED | 主动反馈只对应近期实际播放且未跨换题边界的主题，投递端取消尚未发送的已静默话题。 |
+| [0063](0063-temporary-role-proactive-pause.md) | ACCEPTED | 临时暂停按设备与伙伴独立保存，支持设备当地今天/明确分钟和提前恢复，普通提醒照常。 |
+| [0064](0064-explicit-dialogue-end-cleanup.md) | ACCEPTED | 复用固件“结束聊天”短句，服务端固定回复、取消旧确认并关闭近期话题，不调用模型或提取记忆。 |
+| [0065](0065-scoped-reminder-confirmation.md) | ACCEPTED | 普通提醒按伙伴查询，确认固定服务端对象并验证原排期与内容。 |
+| [0066](0066-recent-cross-source-notification-response.md) | ACCEPTED | 简短通知反馈先判断跨来源最近实际播报，不回退旧通知。 |
+| [0067](0067-partner-delivery-timeline.md) | ACCEPTED | 今日概览按设备与伙伴统一展示待播及近期播报，保留真实数量和来源。 |
+| [0068](0068-confirmed-short-responses-and-quiet-decline.md) | ACCEPTED | 简短回应校验具体对象与休息状态，单次拒绝关闭话题但不改变全天主动开关。 |
+| [0069](0069-companion-first-console-consolidation.md) | ACCEPTED | 常用入口聚焦陪伴与个人事务，高级扩展折叠并保留旧链接和授权边界。 |

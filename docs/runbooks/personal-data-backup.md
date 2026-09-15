@@ -55,6 +55,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-latest-post
 
 ## 发布验证
 
+陪伴 V51 增加一次性的全栈发布快照与隔离演练，使用 Windows PowerShell 7：
+
+```powershell
+./scripts/verify-companion-full-restore.ps1
+```
+
+脚本从已存在的本机 server/backup 容器取配置与命名卷，制作新数据库备份，再保存到独立 `stackchan-release-时间戳` 卷：数据库 dump/manifest、Skill 归档与校验和、Windows DPAPI 加密的运行配置（包含原加密主密钥和设备凭据签名密钥）及旧镜像标识。终端只返回验证结果，不输出认证材料。运行配置不是明文 `.env`，也不提交到 Git。
+
+演练只创建独立数据库和 Skill 卷，使用无外连、无公开端口的内部网络；按正常应用配置启动候选，验证 V51、记录计数、Skill 归档恢复、现有加密字段解密、原管理员记录保留、临时测试管理员登录及页面壳。测试账号只存在于隔离副本。完成后清理本次副本，保留发布快照；异常中断时先核对 `stackchan-restore-时间戳` 资源归属，再清理同一批临时资源，不能删除源卷。
+
+普通运行中执行该脚本不保证数据库与 Skill 文件属于同一停写时点。正式发布使用 `scripts/deploy-companion-v51.ps1` 先停止 server，成功完成快照和演练后才替换镜像。此脚本仅适用于已有 LAN 部署，保持 PostgreSQL、Redis、备份服务和数据卷；凭据只在进程内复用。若备份门槛失败，会重启旧服务；开始替换后失败不自动回退旧应用或覆盖数据库。
+
+边界：DPAPI 仅由原 Windows 用户/机器解密，这份本地快照不是跨机器灾备。迁移到新机器之前，必须通过独立安全保管渠道准备原加密主密钥、设备签名密钥及运行配置，并保存对应镜像；不能只复制 dump 后重新生成密钥。独立卷仍位于同一台 Docker 主机，不能抵御整机或磁盘丢失。恢复原管理员记录及测试登录成功，也不替代用户用自己的当前密码登录确认。设备应沿用原身份和服务地址重连，不清 NVS、不重新配对、不刷写固件。
+
 ```powershell
 docker build -f ops/postgres-backup/Dockerfile -t stackchan-postgres-backup:verify .
 docker compose --env-file .env -f compose.yaml -f compose.lan.yaml config --quiet

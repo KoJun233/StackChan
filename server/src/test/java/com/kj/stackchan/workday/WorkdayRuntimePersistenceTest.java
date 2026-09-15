@@ -54,6 +54,7 @@ class WorkdayRuntimePersistenceTest {
     @Autowired private WorkdayDailyMetricRepository metricRepository;
     @Autowired private WorkdayPilotObservationRepository observationRepository;
     @Autowired private PersonalTaskRepository personalTaskRepository;
+    @Autowired private com.kj.stackchan.role.CompanionRoleRepository roleRepository;
 
     @BeforeEach
     void clearData() {
@@ -166,6 +167,45 @@ class WorkdayRuntimePersistenceTest {
         assertThat(result).extracting(PersonalTaskEntity::getId)
                 .containsExactly(completedToday.getId())
                 .doesNotContain(completedYesterday.getId());
+    }
+
+    @Test
+    void countsAllTasksBeyondTheReturnedPageWithoutCrossingScopesOrDayBoundaries() {
+        UUID role = CompanionRoleEntity.DEFAULT_ROLE_ID;
+        UUID otherRole = roleRepository.save(new CompanionRoleEntity("独立伙伴",
+                com.kj.stackchan.persona.PersonaTone.CALM,
+                com.kj.stackchan.persona.PersonaReplyLength.SHORT,
+                com.kj.stackchan.persona.PersonaProactivity.RESERVED, "", "", "", Instant.EPOCH)).getId();
+        UUID device = deviceRepository.save(new DeviceEntity("count-main", "1.0.0")).getId();
+        UUID otherDevice = deviceRepository.save(new DeviceEntity("count-other", "1.0.0")).getId();
+        Instant start = Instant.parse("2026-08-29T16:00:00Z");
+        Instant end = Instant.parse("2026-08-30T16:00:00Z");
+        for (int i = 0; i < 21; i++) saveCountTask(device, role, null, start);
+        for (int i = 0; i < 11; i++) saveCountTask(device, role, start.plusSeconds(i), start);
+        saveCountTask(device, role, start.minusSeconds(1), start);
+        saveCountTask(device, role, end, start);
+        saveCountTask(otherDevice, role, null, start);
+        saveCountTask(device, otherRole, null, start);
+        saveCountTask(otherDevice, role, start, start);
+        saveCountTask(device, otherRole, start, start);
+        personalTaskRepository.flush();
+
+        assertThat(personalTaskRepository.findTop20ByDeviceIdAndRoleIdAndStatusOrderByDueAtAscCreatedAtDesc(
+                device, role, PersonalTaskStatus.OPEN)).hasSize(20);
+        assertThat(personalTaskRepository.countByDeviceIdAndRoleIdAndStatus(device, role, PersonalTaskStatus.OPEN))
+                .isEqualTo(21);
+        assertThat(personalTaskRepository.findCompletedInRange(device, role, PersonalTaskStatus.COMPLETED,
+                start, end, PageRequest.of(0, 10))).hasSize(10);
+        assertThat(personalTaskRepository
+                .countByDeviceIdAndRoleIdAndStatusAndCompletedAtGreaterThanEqualAndCompletedAtLessThan(
+                        device, role, PersonalTaskStatus.COMPLETED, start, end)).isEqualTo(11);
+    }
+
+    private void saveCountTask(UUID device, UUID role, Instant completedAt, Instant createdAt) {
+        var task = new PersonalTaskEntity(device, role, "计数事项", "不得进入工具的备注",
+                PersonalTaskPriority.NORMAL, null, "Asia/Shanghai", createdAt.minusSeconds(3600));
+        if (completedAt != null) task.complete(completedAt);
+        personalTaskRepository.save(task);
     }
 
     @Test

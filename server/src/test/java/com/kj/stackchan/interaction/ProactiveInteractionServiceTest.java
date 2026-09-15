@@ -43,6 +43,27 @@ class ProactiveInteractionServiceTest {
     @Mock private ProactiveInterestBriefSource interestBriefSource;
 
     @Test
+    void pausedPartnerDoesNotGenerateOrConsumeTheDailyQuota() {
+        UUID device = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        var settings = org.mockito.Mockito.mock(InteractionSettingsService.InteractionSettingsSnapshot.class);
+        var role = org.mockito.Mockito.mock(CompanionRoleService.RoleSnapshot.class);
+        var pauses = org.mockito.Mockito.mock(ProactivePauseService.class);
+        when(settings.deviceId()).thenReturn(device);
+        when(role.id()).thenReturn(roleId);
+        when(roleService.getActive(device)).thenReturn(role);
+        when(settingsService.proactiveCandidates()).thenReturn(List.of(settings));
+        when(settingsService.isProactiveEligible(settings, NOW)).thenReturn(true);
+        when(commandGateway.isConnected(device)).thenReturn(true);
+        when(pauses.isPaused(device, roleId, NOW)).thenReturn(true);
+        var service = serviceWithRole();
+        service.setPauseService(pauses);
+        assertThat(service.generateDueGreetings()).isZero();
+        org.mockito.Mockito.verify(settingsService, org.mockito.Mockito.never()).recordProactiveIfEligible(device, NOW);
+        verifyNoInteractions(memoryService, messageGenerator);
+    }
+
+    @Test
     void blocksOnlyOnRecentlyUpdatedVoiceTurns() {
         UUID deviceId = UUID.randomUUID();
         var settings = new InteractionSettingsService.InteractionSettingsSnapshot(

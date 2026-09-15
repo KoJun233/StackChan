@@ -40,6 +40,22 @@ class ReminderControllerTest {
     private AdminUserRepository adminUserRepository;
 
     @Test
+    void timelineRequiresAdministratorAndExplicitDeviceAndRole() throws Exception {
+        UUID device = UUID.randomUUID();
+        UUID role = UUID.randomUUID();
+        when(reminderService.timeline(device, role)).thenReturn(new ReminderService.DeliveryTimeline(
+                device, role, List.of(), 12, List.of(), false, Instant.EPOCH));
+        mockMvc.perform(get("/api/v1/reminders/timeline").param("deviceId", device.toString()).param("roleId", role.toString()))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/reminders/timeline").with(user("admin").roles("ADMIN"))
+                        .param("deviceId", device.toString())).andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/v1/reminders/timeline").with(user("admin").roles("ADMIN"))
+                        .param("deviceId", device.toString()).param("roleId", role.toString()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.upcomingTotal").value(12))
+                .andExpect(jsonPath("$.roleId").value(role.toString()));
+    }
+
+    @Test
     void listsReminderPageForAdministrator() throws Exception {
         UUID reminderId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();

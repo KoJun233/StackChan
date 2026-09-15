@@ -50,6 +50,63 @@ class VoiceActionProposalServiceTest {
     }
 
     @Test
+    void reminderConfirmationPinsServerSelectedPartnerObjectBeforeQueueChanges() {
+        UUID device = UUID.randomUUID();
+        UUID conversation = UUID.randomUUID();
+        UUID role = UUID.randomUUID();
+        UUID reminder = UUID.randomUUID();
+        var conversations = mock(ConversationService.class);
+        when(conversations.roleId(conversation)).thenReturn(role);
+        var scopedService = new VoiceActionProposalService(proposalRepository, auditRepository, reminderService,
+                settingsService, memoryService, settingsCoordinator, Clock.fixed(NOW, ZoneOffset.UTC),
+                conversations, mock(CompanionRoleService.class));
+        var target = new ReminderService.ReminderSnapshot(reminder, device, "喝水", NOW.plusSeconds(600),
+                "Asia/Shanghai", ReminderStatus.PENDING, 0, null, NOW, NOW);
+        when(reminderService.nextPendingUserReminder(device, role)).thenReturn(target);
+        var proposal = scopedService.propose(device, conversation, UUID.randomUUID(), new VoiceActionDraft(
+                VoiceActionType.SNOOZE_NEXT_REMINDER, true, "模型伪造标题", null, null, null, null, null,
+                10, null, null, null, UUID.randomUUID()));
+        assertThat(scopedService.restatement(proposal)).contains("喝水").doesNotContain("模型伪造标题");
+        var entity = capturedProposal();
+        assertThat(entity.getTargetReference()).isEqualTo(reminder);
+        when(proposalRepository.findByIdForUpdate(proposal.id())).thenReturn(java.util.Optional.of(entity));
+        when(reminderService.applyConfirmedVoiceChange(reminder, device, role, target.scheduledAt(), "喝水", 10))
+                .thenReturn(target);
+        assertThat(scopedService.confirm(proposal.id(), device, conversation).status()).isEqualTo(VoiceActionStatus.EXECUTED);
+        verify(reminderService, times(1)).nextPendingUserReminder(device, role);
+        verify(reminderService, never()).snoozeNext(any(), anyInt());
+    }
+
+    @Test
+    void repeatHeardReminderCreatesOneNewOccurrenceAfterRevalidation() {
+        UUID device = UUID.randomUUID();
+        UUID conversation = UUID.randomUUID();
+        UUID source = UUID.randomUUID();
+        UUID role = com.kj.stackchan.role.CompanionRoleEntity.DEFAULT_ROLE_ID;
+        Instant played = NOW.minusSeconds(30);
+        var heard = mock(ReminderService.ReminderSnapshot.class);
+        when(heard.id()).thenReturn(source);
+        when(heard.content()).thenReturn("喝水");
+        when(heard.zoneId()).thenReturn("UTC");
+        when(heard.lastCompletedAt()).thenReturn(played);
+        when(reminderService.requireHeardUserReminder(source, device, role, played, "喝水")).thenReturn(heard);
+        var proposal = service.propose(device, conversation, UUID.randomUUID(), new VoiceActionDraft(
+                VoiceActionType.CREATE_REMINDER, true, "喝水", "再提醒", NOW.plusSeconds(600), "UTC", "NONE", 1,
+                10, played, null, null, source));
+        assertThat(service.restatement(proposal)).contains("再提醒一次", "原来的周期和待办状态不变");
+        var entity = capturedProposal();
+        when(proposalRepository.findByIdForUpdate(proposal.id())).thenReturn(java.util.Optional.of(entity));
+        UUID copy = UUID.randomUUID();
+        when(reminderService.create(any())).thenReturn(new ReminderService.ReminderSnapshot(copy, device, "喝水",
+                NOW.plusSeconds(600), "UTC", ReminderStatus.PENDING, 0, null, NOW, NOW));
+        assertThat(service.confirm(proposal.id(), device, conversation).resultReference()).isEqualTo(copy);
+        assertThat(service.confirm(proposal.id(), device, conversation).resultReference()).isEqualTo(copy);
+        verify(reminderService, times(2)).requireHeardUserReminder(source, device, role, played, "喝水");
+        verify(reminderService, times(1)).create(any());
+        verify(reminderService, never()).snooze(any(), anyInt());
+    }
+
+    @Test
     void confirmationExecutesReminderExactlyOnceAndReplayIsIdempotent() {
         UUID deviceId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
@@ -145,11 +202,14 @@ class VoiceActionProposalServiceTest {
         UUID roleId = UUID.randomUUID();
         UUID notificationId = UUID.randomUUID();
         when(conversationService.roleId(conversationId)).thenReturn(roleId);
+        when(notificationService.descriptionForVoice(notificationId, deviceId, roleId, NotificationResponseAction.SNOOZE))
+                .thenReturn("构建已经完成");
 
         var proposal = interactiveService.propose(deviceId, conversationId, UUID.randomUUID(),
                 VoiceActionDraft.notificationResponse(
                         VoiceActionType.SNOOZE_NOTIFICATION, notificationId, 15));
         VoiceActionProposalEntity entity = capturedProposal();
+        assertThat(interactiveService.restatement(proposal)).contains("构建已经完成", "15 分钟");
         when(proposalRepository.findByIdForUpdate(proposal.id())).thenReturn(java.util.Optional.of(entity));
 
         assertThat(interactiveService.confirm(proposal.id(), deviceId, conversationId).status())
@@ -199,6 +259,7 @@ class VoiceActionProposalServiceTest {
         UUID deviceId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
         when(conversationService.roleId(conversationId)).thenReturn(UUID.randomUUID());
+        when(workdayService.pendingRestPromptAt(deviceId)).thenReturn(NOW.minusSeconds(30));
 
         var proposal = workdayActions.propose(deviceId, conversationId, UUID.randomUUID(),
                 workdayDraft(VoiceActionType.SNOOZE_WORKDAY_REST));
@@ -207,7 +268,7 @@ class VoiceActionProposalServiceTest {
 
         assertThat(workdayActions.confirm(proposal.id(), deviceId, conversationId).status())
                 .isEqualTo(VoiceActionStatus.EXECUTED);
-        verify(workdayService).respondToRest(deviceId, WorkdayRestAction.SNOOZE);
+        verify(workdayService).respondToRest(deviceId, WorkdayRestAction.SNOOZE, NOW.minusSeconds(30));
     }
 
     @Test

@@ -22,6 +22,26 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class InteractionSettingsControllerTest {
 
+    @Test
+    void topicEndpointsCarryAnExplicitRoleAndKeepLegacyDefaultScope() throws Exception {
+        UUID device = UUID.randomUUID();
+        UUID role = UUID.randomUUID();
+        var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller()).build();
+        String path = "/api/v1/settings/interactions/" + device + "/proactive-topics";
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(path).param("roleId", role.toString()))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk());
+        verify(topicCooldownService).list(device, role);
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(path))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk());
+        verify(topicCooldownService).list(device, com.kj.stackchan.role.CompanionRoleEntity.DEFAULT_ROLE_ID);
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path + ":resume")
+                .param("roleId", role.toString()).contentType("application/json").content("{\"topicKey\":\"coffee\"}"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk());
+        verify(topicCooldownService).resume(device, role, "coffee");
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(path).param("roleId", "invalid"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadRequest());
+    }
+
     @Mock private InteractionSettingsService settingsService;
     @Mock private DeviceInteractionSettingsCoordinator settingsCoordinator;
     @Mock private DeviceCommandGateway commandGateway;

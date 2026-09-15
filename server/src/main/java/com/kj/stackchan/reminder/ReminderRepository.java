@@ -15,10 +15,24 @@ import org.springframework.data.jpa.repository.Modifying;
 
 public interface ReminderRepository extends JpaRepository<ReminderEntity, UUID>, JpaSpecificationExecutor<ReminderEntity> {
 
+    org.springframework.data.domain.Page<ReminderEntity> findByDeviceIdAndRoleIdAndStatusIn(
+            UUID deviceId, UUID roleId, List<ReminderStatus> statuses, org.springframework.data.domain.Pageable pageable);
+
+    @Query("""
+            select r from ReminderEntity r
+            where r.deviceId = :deviceId and r.roleId = :roleId
+              and r.lastOutcome = com.kj.stackchan.reminder.ReminderStatus.DELIVERED
+              and r.lastCompletedAt > :cutoff and r.lastCompletedAt <= :now
+            order by r.lastCompletedAt desc, r.id desc
+            """)
+    List<ReminderEntity> findRecentCompletedDeliveries(@Param("deviceId") UUID deviceId,
+            @Param("roleId") UUID roleId, @Param("cutoff") Instant cutoff, @Param("now") Instant now,
+            org.springframework.data.domain.Pageable pageable);
+
     @Query("""
             select r.content as content, r.proactiveSourceName as sourceName,
                    r.proactiveSourceTitle as sourceTitle, r.proactiveSourceUrl as sourceUrl,
-                   r.lastCompletedAt as completedAt
+                   r.lastCompletedAt as completedAt, r.proactiveTopicKey as topicKey
             from ReminderEntity r
             where r.deviceId = :deviceId and r.roleId = :roleId
               and r.source = com.kj.stackchan.reminder.ReminderSource.PROACTIVE
@@ -37,6 +51,7 @@ public interface ReminderRepository extends JpaRepository<ReminderEntity, UUID>,
         String getSourceTitle();
         String getSourceUrl();
         Instant getCompletedAt();
+        String getTopicKey();
     }
 
     List<ReminderEntity> findTop20ByStatusAndScheduledAtLessThanEqualOrderByScheduledAtAscIdAsc(
@@ -91,6 +106,9 @@ public interface ReminderRepository extends JpaRepository<ReminderEntity, UUID>,
     );
     Optional<ReminderEntity> findFirstByDeviceIdAndRoleIdAndStatusAndDeliveryGroupIdIsNullOrderByScheduledAtAscIdAsc(
             UUID deviceId, UUID roleId, ReminderStatus status);
+
+    Optional<ReminderEntity> findFirstByDeviceIdAndRoleIdAndSourceAndStatusAndDeliveryGroupIdIsNullOrderByScheduledAtAscIdAsc(
+            UUID deviceId, UUID roleId, ReminderSource source, ReminderStatus status);
 
     boolean existsByDeviceIdAndStatus(UUID deviceId, ReminderStatus status);
 

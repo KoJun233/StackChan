@@ -131,6 +131,11 @@ public class WorkdayRuntimeService {
 
     @Transactional
     public WorkdayRuntimeSnapshot respondToRest(UUID deviceId, WorkdayRestAction action) {
+        return respondToRest(deviceId, action, null);
+    }
+
+    @Transactional
+    public WorkdayRuntimeSnapshot respondToRest(UUID deviceId, WorkdayRestAction action, Instant expectedPromptAt) {
         validateDevice(deviceId);
         if (action == null) {
             throw new InvalidWorkdayStateException("Rest action is required");
@@ -141,6 +146,9 @@ public class WorkdayRuntimeService {
         advance(runtime, settings, now);
         if (runtime.getState() != WorkdayRuntimeState.REST_PROMPTED || runtime.getWorkDate() == null) {
             throw new InvalidWorkdayStateException("No rest prompt is awaiting a response");
+        }
+        if (expectedPromptAt != null && !expectedPromptAt.equals(runtime.getStateChangedAt())) {
+            throw new InvalidWorkdayStateException("Rest prompt has changed since confirmation");
         }
         WorkdayDailyMetricEntity metric = metric(deviceId, runtime.getWorkDate(), now);
         switch (action) {

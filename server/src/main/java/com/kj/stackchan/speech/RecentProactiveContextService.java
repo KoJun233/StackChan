@@ -26,17 +26,24 @@ public class RecentProactiveContextService {
     }
 
     public String context(UUID deviceId, UUID roleId) {
+        return context(deviceId, roleId, null);
+    }
+
+    public String context(UUID deviceId, UUID roleId, Instant topicBoundary) {
         if (deviceId == null || roleId == null) return "";
         try {
             Instant now = clock.instant();
-            var results = reminders.findDeliveredProactiveContext(
-                    deviceId, roleId, now.minus(Duration.ofMinutes(30)), now, PageRequest.of(0, 1));
+            var results = reminders.findRecentCompletedDeliveries(
+                    deviceId, roleId, now.minus(Duration.ofMinutes(30)), now, PageRequest.of(0, 2));
             if (results.isEmpty()) return "";
             var delivered = results.getFirst();
+            if (delivered.getSource() != com.kj.stackchan.reminder.ReminderSource.PROACTIVE) return "";
+            if (results.size() > 1 && delivered.getLastCompletedAt().equals(results.get(1).getLastCompletedAt())) return "";
+            if (topicBoundary != null && !delivered.getLastCompletedAt().isAfter(topicBoundary)) return "";
             String data = objectMapper.writeValueAsString(new ContextData(
-                    bound(delivered.getContent(), 500), bound(delivered.getSourceName(), 120),
-                    bound(delivered.getSourceTitle(), 300), bound(delivered.getSourceUrl(), 1000),
-                    delivered.getCompletedAt().toString()))
+                    bound(delivered.getContent(), 500), bound(delivered.getProactiveSourceName(), 120),
+                    bound(delivered.getProactiveSourceTitle(), 300), bound(delivered.getProactiveSourceUrl(), 1000),
+                    delivered.getLastCompletedAt().toString()))
                     .replace("<", "\\u003c").replace(">", "\\u003e");
             return """
 

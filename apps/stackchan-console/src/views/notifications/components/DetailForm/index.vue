@@ -132,7 +132,7 @@ defineExpose({ submit })
       <FaFormItem name="enabled" label="启用状态" description="停用后所有现有令牌立即拒绝新请求，已入队通知继续保留。">
         <FaSwitch v-model="model.enabled" />
       </FaFormItem>
-      <FaFormItem name="digestWindowSeconds" label="摘要聚合" description="0 表示关闭；5–300 秒内到达的单向通知会按原文合并播报，互动通知始终逐条播报。">
+      <FaFormItem name="digestWindowSeconds" label="合并播报" description="0 表示关闭；5–300 秒内到达的单向通知会按原文合并播报，互动通知始终逐条播报。">
         <FaNumberField v-model="model.digestWindowSeconds" :min="0" :max="300" :step="5" class="w-full" />
       </FaFormItem>
       <FaAlert title="最小权限" description="外部令牌只能创建通知和查询本集成通知状态，不能访问设备、聊天、提醒 CRUD 或管理员接口。" />

@@ -38,11 +38,111 @@ class VoiceActionCoordinatorTest {
     @Mock private PersonalTaskService personalTaskService;
     private VoiceActionCoordinator coordinator;
 
+    @Test
+    void explicitTemporaryPauseAndResumeUseCurrentPartnerWithoutChangingReminderSettings() {
+        UUID device = UUID.randomUUID();
+        UUID conversation = UUID.randomUUID();
+        UUID role = UUID.randomUUID();
+        var pauses = org.mockito.Mockito.mock(com.kj.stackchan.interaction.ProactivePauseService.class);
+        coordinator.setPauseService(pauses);
+        when(conversationService.roleId(conversation)).thenReturn(role);
+        assertThat(coordinator.handle(device, conversation, UUID.randomUUID(), "今天别主动聊").reply()).contains("提醒照常");
+        verify(pauses).pause(device, role, null);
+        coordinator.handle(device, conversation, UUID.randomUUID(), "暂停主动聊天 30 分钟");
+        verify(pauses).pause(device, role, 30);
+        coordinator.handle(device, conversation, UUID.randomUUID(), "恢复主动聊天");
+        verify(pauses).resume(device, role);
+        assertThat(coordinator.handle(device, conversation, UUID.randomUUID(), "暂停主动聊天 0 分钟").reply()).contains("1 到 1440");
+        verify(pauses, never()).pause(device, role, 0);
+        verifyNoInteractions(settingsService, reminderService);
+        org.mockito.Mockito.clearInvocations(pauses);
+        coordinator.handle(device, conversation, UUID.randomUUID(), "他说今天别主动聊是什么意思");
+        verifyNoInteractions(pauses);
+    }
+
     @BeforeEach
     void setUp() {
         coordinator = new VoiceActionCoordinator(proposalService, reminderService, memoryService, settingsService,
                 Clock.fixed(Instant.parse("2026-08-02T08:00:00Z"), ZoneOffset.UTC), null, topicCooldownService,
                 notificationService, conversationService, personalTaskService);
+    }
+
+    @Test
+    void readOnlyReminderAndMemoryQuestionsStayWithConversationPartner() {
+        UUID device = UUID.randomUUID();
+        UUID conversation = UUID.randomUUID();
+        UUID role = UUID.randomUUID();
+        when(conversationService.roleId(conversation)).thenReturn(role);
+        when(memoryService.pendingVisibleCount(role, device)).thenReturn(2L);
+        assertThat(coordinator.handle(device, conversation, UUID.randomUUID(), "待确认记忆").reply()).contains("2 条");
+        assertThat(coordinator.handle(device, conversation, UUID.randomUUID(), "下一条提醒").reply()).contains("没有");
+        assertThat(coordinator.handle(device, conversation, UUID.randomUUID(), "提醒推迟 10 分钟").reply()).contains("当前伙伴没有");
+        verify(reminderService).nextPending(device, role);
+        verify(memoryService, never()).pendingVisibleCount(device);
+        verify(reminderService, never()).nextPending(device);
+        verify(proposalService, never()).propose(any(), any(), any(), any());
+    }
+
+    @Test
+    void shortSnoozeUsesTheHeardPersonalReminderAndLeavesCompletionSeparate() {
+        UUID device = UUID.randomUUID();
+        UUID conversation = UUID.randomUUID();
+        UUID role = UUID.randomUUID();
+        UUID reminder = UUID.randomUUID();
+        Instant playedAt = Instant.parse("2026-08-02T07:59:00Z");
+        when(conversationService.roleId(conversation)).thenReturn(role);
+        var heard = mock(ReminderService.ReminderSnapshot.class);
+        when(reminderService.latestHeard(device, role, null)).thenReturn(heard);
+        when(heard.source()).thenReturn(com.kj.stackchan.reminder.ReminderSource.USER);
+        when(heard.content()).thenReturn("喝水");
+        when(heard.id()).thenReturn(reminder);
+        when(heard.zoneId()).thenReturn("Asia/Shanghai");
+        when(heard.lastCompletedAt()).thenReturn(playedAt);
+        when(proposalService.restatement(any())).thenReturn("确认再提醒一次吗？");
+        assertThat(coordinator.handle(device, conversation, UUID.randomUUID(), "稍后").reply()).contains("确认");
+        var captor = ArgumentCaptor.forClass(VoiceActionDraft.class);
+        verify(proposalService).propose(eq(device), eq(conversation), any(), captor.capture());
+        assertThat(captor.getValue().actionType()).isEqualTo(VoiceActionType.CREATE_REMINDER);
+        assertThat(captor.getValue().targetReference()).isEqualTo(reminder);
+        assertThat(captor.getValue().targetAt()).isEqualTo(playedAt);
+        assertThat(captor.getValue().recurrenceType()).isEqualTo("NONE");
+        assertThat(captor.getValue().durationMinutes()).isEqualTo(10);
+        assertThat(coordinator.handle(device, conversation, UUID.randomUUID(), "完成了").reply()).contains("具体标题");
+        verify(personalTaskService, never()).complete(any(), any(), any());
+    }
+
+    @Test
+    void shortRestSnoozeBindsTheHeardPromptAndRejectsUnsupportedDuration() {
+        UUID device = UUID.randomUUID();
+        UUID conversation = UUID.randomUUID();
+        UUID role = UUID.randomUUID();
+        when(conversationService.roleId(conversation)).thenReturn(role);
+        var heard = mock(ReminderService.ReminderSnapshot.class);
+        when(reminderService.latestHeard(device, role, null)).thenReturn(heard);
+        when(heard.source()).thenReturn(com.kj.stackchan.reminder.ReminderSource.PROACTIVE);
+        when(heard.proactiveTopicKey()).thenReturn("workday:rest:fixture");
+        when(heard.lastCompletedAt()).thenReturn(Instant.EPOCH);
+        when(proposalService.restatement(any())).thenReturn("确认推迟休息吗？");
+        assertThat(coordinator.handle(device, conversation, UUID.randomUUID(), "稍后十分钟").reply()).contains("确认");
+        var captor = ArgumentCaptor.forClass(VoiceActionDraft.class);
+        verify(proposalService).propose(eq(device), eq(conversation), any(), captor.capture());
+        assertThat(captor.getValue().actionType()).isEqualTo(VoiceActionType.SNOOZE_WORKDAY_REST);
+        assertThat(captor.getValue().targetAt()).isEqualTo(Instant.EPOCH);
+        assertThat(coordinator.handle(device, conversation, UUID.randomUUID(), "稍后30分钟").reply()).contains("十分钟");
+    }
+
+    @Test
+    void changingTopicsCancelsPendingConfirmationWithoutExecutingIt() {
+        UUID device = UUID.randomUUID();
+        UUID conversation = UUID.randomUUID();
+        var pending = mock(VoiceActionProposalService.ProposalSnapshot.class);
+        UUID proposal = UUID.randomUUID();
+        when(pending.id()).thenReturn(proposal);
+        when(proposalService.latestPending(device, conversation)).thenReturn(pending);
+        coordinator.cancelPendingOperation(device, conversation);
+        verify(proposalService).cancel(proposal, device, conversation);
+        verify(proposalService, never()).confirm(any(), any(), any());
+        verifyNoInteractions(settingsService, personalTaskService);
     }
 
     @Test
@@ -81,13 +181,19 @@ class VoiceActionCoordinatorTest {
     @Test
     void explicitRequestPermanentlyMutesTheMostRecentProactiveTopic() {
         UUID deviceId = UUID.randomUUID();
-        when(topicCooldownService.muteLastTopic(deviceId)).thenReturn(true);
+        UUID conversationId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        when(conversationService.roleId(conversationId)).thenReturn(roleId);
+        Instant boundary = Instant.parse("2026-08-02T07:50:00Z");
+        when(conversationService.voiceTopicBoundary(conversationId)).thenReturn(boundary);
+        when(topicCooldownService.muteLastDeliveredTopic(deviceId, roleId, boundary)).thenReturn(true);
 
-        var result = coordinator.handle(deviceId, UUID.randomUUID(), UUID.randomUUID(), "别再提这个了");
+        var result = coordinator.handle(deviceId, conversationId, UUID.randomUUID(), "别再提这个了");
 
         assertThat(result.handled()).isTrue();
         assertThat(result.reply()).isEqualTo("好的，我不会再主动提这个话题。");
-        verify(topicCooldownService).muteLastTopic(deviceId);
+        verify(topicCooldownService).muteLastDeliveredTopic(deviceId, roleId, boundary);
+        verify(topicCooldownService, never()).muteLastTopic(deviceId);
         verify(proposalService, never()).propose(any(), any(), any(), any());
     }
 
@@ -109,7 +215,7 @@ class VoiceActionCoordinatorTest {
         UUID notificationId = UUID.randomUUID();
         UUID proposalId = UUID.randomUUID();
         when(conversationService.roleId(conversationId)).thenReturn(roleId);
-        when(notificationService.latestActionable(deviceId, roleId, NotificationResponseAction.ACKNOWLEDGE))
+        when(notificationService.latestActionable(deviceId, roleId, NotificationResponseAction.ACKNOWLEDGE, null))
                 .thenReturn(notificationId);
         when(proposalService.propose(any(), any(), any(), any())).thenReturn(
                 new VoiceActionProposalService.ProposalSnapshot(proposalId, VoiceActionType.ACKNOWLEDGE_NOTIFICATION,
@@ -127,15 +233,15 @@ class VoiceActionCoordinatorTest {
     }
 
     @Test
-    void ordinaryAcknowledgementFallsThroughWithoutMatchingInteractiveNotification() {
+    void ordinaryAcknowledgementDoesNotModifyAnOlderNotification() {
         UUID deviceId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
         UUID roleId = UUID.randomUUID();
         when(conversationService.roleId(conversationId)).thenReturn(roleId);
 
-        assertThat(coordinator.handle(deviceId, conversationId, UUID.randomUUID(), "知道了")).isNull();
+        assertThat(coordinator.handle(deviceId, conversationId, UUID.randomUUID(), "知道了").reply()).isEqualTo("好的。");
 
-        verify(notificationService).latestActionable(deviceId, roleId, NotificationResponseAction.ACKNOWLEDGE);
+        verify(notificationService).latestActionable(deviceId, roleId, NotificationResponseAction.ACKNOWLEDGE, null);
         verify(proposalService, never()).propose(any(), any(), any(), any());
     }
 

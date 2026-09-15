@@ -55,7 +55,7 @@ const proactiveRoute: RouteRecordRaw = {
   component: Layout,
   name: 'interactionSettingsMenu',
   meta: {
-    title: '主动关心',
+    title: '主动陪伴',
     icon: 'i-ri:heart-add-2-line',
   },
   children: [
@@ -63,7 +63,7 @@ const proactiveRoute: RouteRecordRaw = {
       path: '',
       name: 'interactionSettings',
       component: () => import('@/views/settings/interaction/index.vue'),
-      meta: { title: '主动关心', menu: false, breadcrumb: false },
+      meta: { title: '主动陪伴', menu: false, breadcrumb: false },
     },
   ],
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { asyncRoutes, systemRoutes } from './routes'
 
 function flattenRoutes(routes: any[]): any[] {
@@ -20,7 +21,7 @@ describe('stackChan console routes', () => {
       expect.objectContaining({ name: 'dashboardHome', path: '', meta: expect.objectContaining({ title: '今日概览' }) }),
       expect.objectContaining({ name: 'companionChat', path: '', meta: expect.objectContaining({ title: '陪伴聊天', keepAlive: true }) }),
       expect.objectContaining({ name: 'workdayCompanion', path: '', meta: expect.objectContaining({ title: '工作陪伴' }) }),
-      expect.objectContaining({ name: 'interactionSettings', path: '', meta: expect.objectContaining({ title: '主动关心' }) }),
+      expect.objectContaining({ name: 'interactionSettings', path: '', meta: expect.objectContaining({ title: '主动陪伴' }) }),
       expect.objectContaining({ name: 'deviceOverview', path: 'overview' }),
       expect.objectContaining({ name: 'devicePairing', path: 'pairing', meta: expect.objectContaining({ title: '配网与配对' }) }),
       expect.objectContaining({ name: 'deviceHealth', path: 'health', meta: expect.objectContaining({ title: '运行健康' }) }),
@@ -36,7 +37,7 @@ describe('stackChan console routes', () => {
       }),
       expect.objectContaining({ name: 'llmSettings', path: 'llm', meta: expect.objectContaining({ title: 'AI 配置' }) }),
       expect.objectContaining({ name: 'speechSettings', path: 'speech', meta: expect.objectContaining({ title: '语音配置' }) }),
-      expect.objectContaining({ name: 'agentCapabilities', path: 'agent', meta: expect.objectContaining({ title: 'Agent 能力' }) }),
+      expect.objectContaining({ name: 'agentCapabilities', path: '', meta: expect.objectContaining({ title: '可用帮助与扩展' }) }),
       expect.objectContaining({ name: 'reminderList', path: '', meta: expect.objectContaining({ keepAlive: 'reminderDetail' }) }),
       expect.objectContaining({
         name: 'reminderDetail',
@@ -73,14 +74,14 @@ describe('stackChan console routes', () => {
     expect((asyncRoutes as any[]).map(route => route.meta?.title)).toEqual([
       '今日',
       '陪伴',
-      '事务与通知',
+      '个人事务',
       '设备与运行',
       '系统与能力',
     ])
   })
 
-  it('groups external notifications under tasks and notifications', () => {
-    const reminderManagement = (asyncRoutes as any[]).find(route => route.meta?.title === '事务与通知')
+  it('keeps personal tasks simple and moves integrations into collapsed advanced settings', () => {
+    const reminderManagement = (asyncRoutes as any[]).find(route => route.meta?.title === '个人事务')
     const taskManagement = reminderManagement?.children?.find((route: any) => route.name === 'taskManagement')
 
     expect(reminderManagement?.children).toEqual([
@@ -89,8 +90,25 @@ describe('stackChan console routes', () => {
     expect(taskManagement?.children).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'reminders', path: '/reminders' }),
       expect.objectContaining({ name: 'personalTasks', path: '/personal-tasks' }),
+    ]))
+    expect(taskManagement?.children).toHaveLength(2)
+    const settings = (asyncRoutes as any[]).find(route => route.meta?.title === '系统与能力')
+    const advanced = settings.children.find((route: any) => route.name === 'advancedExtensions')
+    expect(advanced.meta.expand).toBe(false)
+    expect(advanced.children).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'notificationIntegrations', path: '/notifications' }),
+      expect.objectContaining({ name: 'agentCapabilitiesMenu', path: '/settings/agent' }),
     ]))
     expect((asyncRoutes as any[]).filter(route => route.meta?.title === '外部通知')).toHaveLength(0)
+  })
+
+  it('preserves existing capability and notification deep links', () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: asyncRoutes.flatMap(group => group.children ?? []),
+    })
+    expect(router.resolve('/settings/agent').name).toBe('agentCapabilities')
+    expect(router.resolve('/notifications').name).toBe('notificationIntegrationList')
+    expect(router.resolve({ name: 'agentCapabilities' }).path).toBe('/settings/agent')
   })
 })

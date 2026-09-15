@@ -1,327 +1,46 @@
 # 部署工作流
 
 - 状态：READY_FOR_REVIEW
-- 最后更新：2026-09-13
-- 当前分支：`codex/contextual-fact-followup`
-- 基准提交：`3da34c1`
-- 最后验证提交：`3da34c1`
-- 最后验证范围：日期追问/语音定向 32/32，非 loopback 回归 497/497，V49 空库迁移、JAR/镜像、新备份隔离恢复、本机/LAN 健康和文档检查通过
-- 当前模式：LAN HTTP development
-
-## 开发暂停与合并交接
-
-2026-09-13 推送前采用较小 JVM 内存复验语音定向 32/32 通过（此前默认 JVM 启动曾受本机内存不足影响）；497/497 回归为 2026-09-12 的已通过结果。用户确认当前核心功能满足正常使用，要求暂停后续优化并推送已完成实现，等待人工合并。本次仅交付已完成的 COMPANION-004/005/006；“换个话题”尚未实现，不包含在交付中。后续优化与延期实体验收不作为继续开发的授权。
-
-下一条操作：推送当前任务分支后由用户创建 PR、审核并合并；Agent 不创建或合并 PR，不再启动新功能开发。运行版本保持 `fact-followup-v49`。
-
-## 已完成并发布的 COMPANION-006
-
-- 日期省略追问按近期连续用户话题继承天气/日程必需工具；当前明确问题优先，游戏转题、其他工具和不完整历史会停止继承，普通闲聊快速路径保留。
-- 定向 32/32、排除既有八个 Windows loopback 类后的回归 497/497、V1..V49 空库迁移、打包和文档检查通过。实际模型日期理解与措辞未冒充自动化验收。
-- 新备份及隔离恢复成功后只替换 LAN server：容器 `d449921c54d6`，镜像 `sha256:38da048573e52aef1bbb1e6fa35e1e8ba782d1cbb857810c8f9740f40916448c`，版本 `fact-followup-v49`，本机/LAN 健康 ok 且无重启。
-- 复用已部署页面资源，仅替换 JAR；数据库 V49、PostgreSQL/Redis/备份容器和设备 `4444860 / motion_disabled / DISABLED` 不变。回退可使用上一镜像标签 `proactive-context-v49`。
-- 设计见 [ADR 0056](../decisions/0056-contextual-voice-fact-followups.md)。本轮无代码或部署阻塞；后续为实体日期追问复测和用户审核。保留前轮未推送实现并整理为一个中文任务提交，外部推送等待明确授权。
-
-## 已完成并发布的 COMPANION-005
-
-- 当前设备、当前角色最近三十分钟内成功播放的最新一条主动消息进入语音上下文，用户可以继续追问；未播放、失败、过期、未来记录及其他设备/角色均被排除。
-- 只读取有长度上限的正文和已有来源元数据，明确区分标题信息与一般解释，不假装已读取文章全文；读取失败时继续普通语音。
-- 定向 26/26、排除既有八个 Windows loopback 测试类后的服务端回归 492/492、V1..V49 空库迁移和 JAR 打包通过。
-- 新备份和隔离恢复成功后仅更新 LAN server：容器 `398d9a946aa9`，镜像 `sha256:46b814c136d1092d82a7cc46d797a35381f04e3d2fa3a0244c77d7b04e52fd40`，版本 `proactive-context-v49`；本机/LAN 健康 ok、无重启，数据库 V49、依赖容器和设备 `4444860 / motion_disabled / DISABLED` 保持不变。
-- 复用已发布页面资源，只替换已验证 JAR；保留上一版本 `bounded-history-v49` 供回退。无新增 TTS 调用、迁移、页面、固件或主动次数。
-- 设计见 [ADR 0055](../decisions/0055-delivered-proactive-conversation-context.md)。代码和发布无阻塞；真实模型措辞尚待正常主动播报后的用户追问复测，Git 推送等待明确授权。
-
-## 已完成并发布的历史读取优化
-
-用户确认上一轮可用后继续开发。历史改为数据库过滤并仅返回最近二十条正文，按既有索引排序；查看与导出完整记录接口不变。定向 29/29、排除既有八个 Windows loopback 类后的回归 489/489、V49 空库迁移和打包通过。新备份及隔离恢复后只替换 server：容器 `5ff72ab79651`，镜像 `sha256:75260733ece0a01043b72b7320fb49cad347bbfc0478f123db4608bd5a44e67c`，版本 `bounded-history-v49`，本机/LAN 健康 ok、无重启，设备保持 `4444860 / motion_disabled / DISABLED`。实际端到端提速未测量；当前无代码阻塞，等待审核及推送授权。
-
-## 已完成并发布的 COMPANION-004
-
-- 2026-09-12 重新 fetch 确认最新 master 为 `3da34c1`，任务从该提交继续；旧状态中的 COMPANION-003 待审核描述已由 PR #39 合并事实取代。
-- 语音从已有最近二十条历史中，按持久化回复关联选取三十分钟内至多四个完整轮次；同时间戳、缺失用户消息和失败回复不再按相邻位置误配。历史正文继续作为消息传递，不提升为系统指令。
-- 省略表达优先承接最近一轮，缺少对象时提示模型简短澄清；长期记忆不得用于补造当前游戏或事件。措辞质量仍需实体对话复测。
-- 最终非 loopback 服务端 487/487、V1..V49 空库迁移、JAR 打包和镜像构建通过。三项既有语音修复继续保留：短语音快速路径、一次 TTS/一个 WAV、无有效语音按 NO_SPEECH 结束。
-- 新备份与隔离恢复成功，只替换 LAN server；容器 `18054bd71191`、镜像 `sha256:4ffc790589e3fa8e2cd155d94b709e768d9dd3a28e5d31b6eefbcdf6b5a32fff`、版本 `conversation-context-v49`，本机和 LAN 健康为 ok，无重启。
-- 镜像以已部署的 `c923491` 镜像为基础，仅替换已测试 JAR；管理页面复用已发布版本。数据库 V49、依赖容器和 CoreS3 `4444860 / motion_disabled / DISABLED` 保持不变。
-- 设计见 [ADR 0054](../decisions/0054-bounded-recent-voice-context.md)。未完成项为用户实体措辞复测与 Git 推送，推送等待明确授权。
+- 最后更新：2026-09-15
+- 当前分支：`codex/companion-trust-improvements`
+- 基准提交：`54e41f9`
+- 最后验证提交：`54e41f9`
+- 最后验证范围：本任务工作区与实际发布；提交字段仍标识基准
 
 ## 当前目标
 
-LAN 当前运行 `fact-followup-v49` 和数据库 V49；无声陪伴、主动问候、个性化开关和 CoreS3 安全状态保持不变。
-
-## 已发布的 COMPANION-003
-
-- 发布前使用既有备份容器生成新 PostgreSQL 备份并再次隔离恢复验证最新备份；旧镜像保留为 `pre-silent-presence-v49`。
-- 只替换 `stackchan-foundation-server-1`；当前容器为 `a8c901a1156b`，镜像为 `sha256:c9234911630d5ca42fb804c58aa734f29b9c8919e09008321cfae510979a320a`，构建版本为 `silent-presence-v49-final`，无重启且启动日志无错误。
-- 运行库由 V48 迁移到 V49；本机和 `192.168.1.4` 首页为 200，健康状态为 `ok`，静态资源包含“无声陪伴”。现有一条交互设置保持无声陪伴关闭且下一候选为空。
-- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；设备继续保持 `4444860 / motion_disabled`。未连接或刷写固件，卷、端口、凭据和部署模式未修改。
-
-## 已发布的 COMPANION-002
-
-- 发布前使用现有备份容器生成新 PostgreSQL 备份，并把最新备份恢复到一次性隔离实例验证成功；旧镜像保留为 `pre-companion-sourced-v48`。
-- 只替换 `stackchan-foundation-server-1`；最终容器为 `a145b96ea279`，镜像为 `sha256:085ab90c9602e16789bdfd53f1f281d7695fc21d2454514dca607f21c6f92e7c`，构建版本为 `companion-sourced-v48-final`，无重启。
-- 运行库由 V47 迁移到 V48；本机和 `192.168.1.4` 首页为 200，健康状态为 `ok`，未认证提醒接口为 401，静态资源包含“来源收录时间”，最终容器后台刷新成功缓存 12 条 Hacker News 候选。
-- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；主动开关和个性化保持关闭，最小间隔 90 分钟、每日上限 3 次，设备继续保持 `4444860 / motion_disabled / DISABLED`。未连接或刷写固件，卷、端口、凭据和部署模式未修改。
-
-## 已发布的 COMPANION-001
-
-- 发布前通过现有备份容器生成新 PostgreSQL 备份，并把最新备份恢复到一次性隔离实例验证成功；旧镜像保留为 `pre-companion-random-v47`。
-- 只替换 `stackchan-foundation-server-1`；当前容器为 `0a388ac7217c`，镜像为 `sha256:691d99e0f6756df2cba153a5e73facde96f4f3e4cf94df9ee868a2fb7f6a15ca`，构建版本为 `companion-random-v47`。
-- 运行库由 V46 迁移到 V47，本机和 `192.168.1.4` 健康状态均为 `ok`，MCP 目录预热完成；当前交互设置为主动开关关闭、最小间隔 90 分钟、每日上限 3 次、个性化关闭，因此没有待触发候选。
-- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；设备继续保持 `4444860 / motion_disabled / DISABLED`，本轮未连接或刷写固件。
-
-## 已发布的自然低延迟短语音
-
-- 用户确认语音服务应直接根据标点生成语气停顿，不需要业务分段。`voice-single-wav-v5` 固定每回合一次 TTS、一个 WAV，并把超限回复约束为 160 码点内的自然摘要；固件和 SCV2 协议不变。
-- `voice-single-wav-v5` 发布前备份与最新备份隔离恢复成功，旧镜像保留为 `pre-voice-single-wav-v5`。当前容器 `16c6f1b260d7`，镜像 `sha256:2ef21d5cccb6462f47e6106162947736a2d029288f403e5f9572d6917364e564`；本机与 `192.168.1.4` 健康正常，46 个迁移校验通过，MCP 目录预热完成。
-- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 与 CoreS3 未替换；设备保持 `4444860 / motion_disabled / DISABLED`。
-- 用户明确反馈问题是两段音频中间约两秒等待。复核确认首句 TTS 在模型流回调中同步执行，余句在首段发出后才开始另一轮合成；这不是整体 Agent 调用延迟。
-- `voice-continuous-v4` 移除普通回复的抢先首句合成；不超过 160 字时只生成一个 WAV，超长回复才按 80 至 160 字边界使用 SCV2 分段。发布前备份和最新备份恢复验证成功，回滚镜像为 `pre-voice-continuous-v4`。
-- 当前容器 `8843bbc46f2d`，镜像 `sha256:6610bce0eba9311848e32e4a68569d25766da8d236fd7b6caa030aebd1f36bf9`。本机和 `192.168.1.4` 健康均为 200，V46 和 MCP 预热正常；PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 与 CoreS3 未替换，设备保持 `4444860 / motion_disabled / DISABLED`。
-- 2026-09-10 实测“现在几点”回合首段在请求后 5,262 ms 发出，其中 Agent/Tool 占 4,673 ms；一句话在逗号处拆为两段，第二段另需 1,684 ms 合成。播放结束后的无人续听被 ASR HTTP 400 误判为服务故障。
-- `voice-time-single-v3` 让语音时间查询直接执行已授权的本地 Tool，不调用模型；首段不在逗号切开。明确的无有效语音/无词 ASR 响应映射为 `NO_SPEECH`，其他供应商错误保持原失败处理。
-- 发布前备份与恢复验证成功，旧镜像保留为 `pre-voice-time-single-v3`。当前容器 `dbc7fa06db0c`，镜像 `sha256:de68ba12b3974eb786ad2c0f9bb1bdfe45ae8401f3614900a62b50b8e4b09cb6`。
-- 本机与 `192.168.1.4` 健康接口均为 200，运行库保持 V46；PostgreSQL、Redis、备份容器和 CoreS3 未替换，设备保持 `4444860 / motion_disabled / DISABLED`。
-- 实体复测显示回复速度明显改善，但每轮仍有 3–5 个独立 TTS 段。服务端 flush 均为 0 ms，后续段通常在前段播放期间已准备，停顿主要来自独立音频的起音、收尾与标点静音。
-- `voice-natural-pause-v2` 保留抢先首句，把普通长度的剩余正文合成一个连续段；超过 160 字才继续拆分。发布前备份与恢复验证成功，旧镜像保留为 `pre-voice-natural-pause-v2`。
-- 当前容器为 `ce80c94e73e3`，镜像为 `sha256:ffa95b8af1f0e9299efc98262c9ab5a909dfe59a16413af13f01302805c434a3`；本机和 LAN 健康为 200，V46 与 MCP 预热正常。
-- 发布前使用既有备份容器生成新备份并完成最新备份独立恢复验证；旧服务端镜像保留为 `pre-voice-natural-ac6f386`。
-- 新镜像 `sha256:d3f5b596bd3a4899855197f627482c72ef5306821cf76d1e88d184bc0e60b1f9` 只替换 `stackchan-foundation-server-1`，当前容器为 `e30bac8eef35`，构建版本为 `voice-natural-ac6f386`。
-- PostgreSQL `6d8feaa18623`、Redis `58e31a403637` 与备份容器 `c94b190f0428` 未替换；运行库保持 V46，46 个迁移校验通过。
-- 本机和 `192.168.1.4` 健康接口均为 200；服务约 7 秒启动，MCP 目录预热完成。设备继续在线上报 `4444860 / motion_disabled / DISABLED`，本任务未刷写固件。
-
-## 已发布的首播延迟优化
-
-- 2026-09-07 13:07 UTC 生成新备份并完成最新备份隔离恢复验证；旧镜像保留为 `pre-voice-latency-v46`。
-- 只替换 `stackchan-foundation-server-1`；当前容器为 `d126dfa8432d`，镜像为 `sha256:a72c6b97bf9fc8c9617dabe79bce5723787c56dc13b44ddbb51e836e4b76218b`，构建版本为 `voice-latency-v46-final`。
-- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；运行库保持 V46。
-- 应用约 7 秒启动，MCP 目录后台预热 895 ms；容器无 OOM、无重启，内存约 471 MiB/3.825 GiB。本机和 `192.168.1.4` 健康接口为 200，设备继续在线上报 `628acd0 / motion_disabled`。
-
-## 已发布的边录边传
-
-- V46 与边录边传合并为一个任务提交；运行构建版本固定为 `live-voice-v46-final`，只替换 server，不新增迁移，数据库保持 V46。
-- 2026-09-05 08:20 UTC 生成新备份，08:20 UTC 完成最新备份隔离恢复验证；旧 `console-feedback-v46-chat-scroll-final` 镜像保留用于回滚。
-- 发布后健康、本机与 LAN 首页、新 live 端点鉴权边界和旧完整 WAV 入口通过；PostgreSQL、Redis 和备份容器未替换。
-- 匹配的 LAN HTTP Quad 固件通过 COM3 保留 NVS 安装到当前 CoreS3；Wi-Fi、设备身份、服务地址和 `motion_disabled` 保留，等待两轮独立唤醒测量 `capture_tail_ms`。
-- 首轮两次主请求虽达到 136/17 ms 尾部，但同步 HTTP 写入让 I2S 采样出现约 1–1.8 秒缺口并误识别；服务端无需回滚。纠正候选将写入迁到独立 24 KiB PSRAM 任务并增加双窗口语音确认，待替换当前实机固件。
-
-## 已发布的聊天滚动复修
-
-- 2026-09-03 发布前生成新备份并完成隔离恢复；旧镜像保留为 `pre-chat-scroll-v46`。
-- 只替换 `stackchan-foundation-server-1`；当前容器为 `f12a4040770c`，镜像为 `sha256:0042f143a832aa8d5315dd902876db0dcb8c1f125e68f76ab3c4a6c1224cf165`，构建版本为 `console-feedback-v46-chat-scroll-final`。
-- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；运行库保持 V46。
-- 健康、本机与 LAN 首页为 200；聊天 CSS/JS 为 200，运行 CSS 确认固定工作区高度、内部纵向滚动、滚轮边界与触摸滚动，启动日志无应用错误。
-
-## 已发布的二级菜单与聊天复修
-
-- 2026-09-03 发布前生成新备份并完成隔离恢复；旧镜像保留为 `pre-menu-chat-fix-v46`。
-- 只替换 `stackchan-foundation-server-1`；当前容器为 `044b01b409d3`，镜像为 `sha256:6c9d7ff0a125abf8103a440cac94b64b902e65a19b0bd5b7a0cf9e437342b83d`，构建版本为 `console-feedback-v46-menu-chat-final`。
-- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；运行库保持 V46。
-- 健康、本机与 LAN 首页为 200；新菜单、聊天 JS/CSS 均为 200，运行资源确认“今日陪伴/事务管理”、主动关心、Enter 发送、停止生成和 OKLCH 主题映射。
-
-## 已发布的六项后台反馈
-
-- 新备份和最新备份内置隔离恢复通过；旧 V45 镜像保留为 `pre-console-feedback-v45`。
-- 只替换 `stackchan-foundation-server-1`；当前容器为 `afefeaf5884f`，镜像为 `sha256:a4066d42cb3eb5e8f5655c0648cac8009e559c577ac9d6767f7edcc919712328`，构建版本为 `console-feedback-v46-final`。
-- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；数据库由 V45 迁移至 V46。
-- 健康、本机与 LAN 首页为 200；未认证角色和只读日程接口为 401，最终聊天、工作日和角色静态资源为 200。
-
-## 已发布的后台信息架构与 UI 重整
-
-- 11:53 UTC 生成新备份并完成内置隔离恢复，11:53 UTC 再次独立验证最新备份成功；旧 WORK-006/V45 镜像保留为 `pre-console-ia-3697be8`。
-- 只替换 `stackchan-foundation-server-1`；当前容器为 `c580d0855c3c`，镜像为 `sha256:a3b015c36bc17db419b87993081badf3b744527b50627ac6f527f86c0649e85d`，构建版本为 `console-ia-3697be8`。
-- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；数据库继续为 V45。
-- 本机与 LAN 首页为 200，未认证设备接口为 401；运行资源包含新的今日概览与隔离 TDesign Chat chunk。运行库保留 1 条未完成待办和 2026-08-30 至 2026-09-12 观察窗口；设备在线并保持 `424cb49 / motion_disabled / DISABLED`。
-
-## 边录边传发布记录
-
-- LAN server 实际运行 `console-feedback-v46-chat-scroll-final`，容器 `f12a4040770c`，镜像 `sha256:0042f143a832aa8d5315dd902876db0dcb8c1f125e68f76ab3c4a6c1224cf165`，数据库为 V46；原 WORK-006/V45 状态记录已过期。
-- V46 源码 `a12dd3f` 与边录边传 `e6c3f6f` 已整合到 `codex/live-voice-v46-integration`；直接从旧候选发布造成回退的风险已解除。
-- 2026-09-04 15:25 UTC 的发布前预备备份和恢复验证通过；2026-09-05 08:20 UTC 又在实际发布窗口生成新备份并完成隔离恢复验证。
-- V46 保留 ADR 0047/0048，边录边传使用 ADR 0049；发布顺序保持 server 先、固件后。
-
-## 已发布的 WORK-006
-
-- 12:30 UTC 生成新备份，12:31 UTC 完成独立恢复验证；WORK-005 镜像保留为 `pre-work006-v45`。
-- 只替换 `stackchan-foundation-server-1`；当前容器为 `9617c52a48db`，镜像为 `sha256:6b120ef75ae32845b679d2ce976cf91260928a0dde3304b0ca63db61b19c79cb`，构建版本为 `work006-v45-task-progress`。
-- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；数据库继续为 V45。
-- 健康与 LAN 首页为 200，运行库保留 1 条未完成待办和 2026-08-30 至 2026-09-12 观察窗口；设备在线并保持 `424cb49 / motion_disabled / DISABLED`。
-
-## 已发布的 WORK-005
-
-- 11:14 UTC 生成新备份并完成内置恢复校验，11:15 UTC 再次独立验证最新备份成功；旧 V45 镜像保留为 `pre-work005-v45`。
-- 只替换 `stackchan-foundation-server-1`；当前容器为 `e384ffebb23a`，镜像为 `sha256:f9e5db38787621ea85d26d302fc92a0d6b5aee6f4051c85b43c1d460d9675112`，构建版本为 `work005-v45-task-brief`。
-- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 未替换；数据库仍为 V45。
-- 健康与 LAN 首页为 200，运行库保留 1 条个人待办和 2026-08-30 至 2026-09-12 观察窗口；设备在线并保持 `424cb49 / motion_disabled / DISABLED`。
-
-## 已发布的 WORK-004
-
-- 默认角色保留 ID 校验修复只替换 server/内置管理页面；当前容器为 `12ecb4a04de5`，镜像为 `sha256:4c8e3d5348aa2a5ef1381bb6538deff3994b4bb6088ace941b7ff05d44c0792c`，构建版本为 `work004-v45-role-fix`。
-- 13:33 UTC 生成新备份并完成隔离恢复；修复前 V45 镜像保留为 `pre-role-id-fix-a13a30c`。本机/LAN 首页和健康为 200，未认证待办接口为 401，运行资源包含共享角色 ID 校验。
-- 发布范围只有 server 镜像和内置管理页面；数据库由 V44 前进到 V45。
-- 发布前在既有备份卷生成新备份并完成一次性 PostgreSQL 隔离恢复；V44 回滚镜像保留为 `pre-work004-v44`。
-- 最终 server 容器为 `e8f8d03035c8`，镜像为 `sha256:a29d2895a6b9dcdaa1afbc785de6b935e59c335de288c4fe8bc86a9f24da7d54`，构建版本为 `work004-v45-final`。
-- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 均未替换；健康、本机/LAN 首页、V45 和鉴权边界通过。
-- 发布后 `personal_tasks=0`；观察窗口仍为 2026-08-30 至 2026-09-12，完成通知标记为空；设备保持 `424cb49 / motion_disabled / DISABLED`。
-
-## 已发布的 WORK-003
-
-- 发布范围只有 server；数据库由 V43 前进到 V44，内置管理页面代码没有变化。
-- 发布前在独立备份卷生成新备份并完成一次性 PostgreSQL 隔离恢复；V43 回滚镜像保留为 `pre-work003-v43`。
-- 最终 server 容器为 `04816c320b97`，镜像为 `sha256:378005a8996e1d1e5d63a3324336981f81da9f924e2e86145fa1fd2cf25a901f`，构建版本为 `work003-v44-final`。
-- PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和 CoreS3 均未替换；健康、本机/LAN 首页、V44、鉴权、观察窗口和安全状态通过。
-
-## 已发布的 WORK-002
-
-- 发布范围只有 server 镜像和内置管理页面，数据库已从 V42 前进到 V43。
-- 发布前在既有备份容器内生成新备份并完成最新备份校验；旧 WORK-001 镜像保留为 `pre-work002-c62ccd0`。
-- 最终 server 容器为 `e2dcfa2fbe86`，镜像为 `sha256:db8e8aca683db95ee1ace9273ae80aac8deb9368f2af15ecfae612e615dd1c72`，并保留标签 `work002-v43-final`。
-- 健康、本机/LAN 首页、Flyway V43、观察 API 鉴权和设备持续在线均通过；PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 和固件均未替换。
+按评审深化或收缩功能，部署后交给用户测试。软件交付与部署已完成。
 
 ## 已完成
 
-- Docker Compose 运行 PostgreSQL、Redis、server 和独立备份容器；数据卷和备份卷分离。
-- LAN development 绑定局域网地址；production 配置只接受可信代理后的 HTTPS/WSS。
-- PostgreSQL 日/周轮转、原子备份、清单、只读状态和一次性临时库恢复验证。
-- ROLE-001 server/V29 和角色管理前端已发布；CoreS3 保持原固件且 OTA 能力启用。
-- Docker Desktop 数据位于 E 盘，现有卷、镜像和容器已保留。
-- 完整合并历史见[里程碑索引](../milestones.md)。
+2026-09-15 18:36（Asia/Shanghai）停止 server 写入并制作完整发布快照，隔离恢复通过后仅替换 server。镜像 sha256:db5cd4afd52c61c1bbdc3ed1916f31ddccb0c7ba07d4ecc4b299bdcd0edf61af，运行库 V51，零重启，设备心跳恢复，动作仍为 DISABLED。
 
 ## 正在进行
 
-LAN server 已运行 V46 `voice-latency-v46-final`，当前宿主机局域网地址为 `http://192.168.1.4:8080/`。运行态保留 WORK-006/V46、真实侧栏分组、Fantastic-admin 聊天输入区、独立可滚动消息区、天气图标、未来七天只读日程、受七天冷静期保护的角色永久删除和固定同源 `/api/v1/device/voice/turn/live`，并新增短首段、MCP 后台预热和隐私安全时序日志。
-
-CoreS3 已保留 NVS 安装 `4444860` LAN HTTP Quad；Wi-Fi、身份、WakeNet、LAN HTTP、8 MiB PSRAM 和 `motion_disabled` 正常。7168 字节 WebSocket 栈在 7680 字节最大连续块下成功创建，连接时仍余 4000 字节栈并稳定在线超过一分钟；服务端数据库已收到新版本心跳。MEDIA-004 V2 实体激活继续等待 EAF 素材。
-
+用户已于 2026-09-15 授权推送当前任务分支，等待其创建 PR、审核和合并。不自动启动新开发或使用观察。
 
 ## 下一步操作
 
-开发按用户要求暂停；本轮已获任务分支推送授权。推送后等待用户创建 PR、审核与合并，不继续新增功能。
+推送唯一中文任务提交后由用户创建 PR、审核和合并；用户也可按[验收表](../companion-experience-acceptance.md)测试两个独立伙伴、记忆、主动暂停和简短回应，记录实际识别与听感问题。
 
 ## 阻塞项
 
-- 当前无已知部署阻塞；日期追问仍待实体语音验收。Git 外部推送、凭据轮换、部署模式切换以及卷或端口变更仍需分别显式授权。
+无发布阻塞。浏览器插件缺少运行文件，因此真实点击未验证；复杂口语、真实模型、使用价值和实体动作不以自动化替代。曾被自动审批拒绝读取隔离异常日志，已通过正常应用配置的隔离演练解决启动问题，没有读取该日志。
 
 ## 关键文件
 
-- `compose.yaml`
-- `compose.lan.yaml`
-- `compose.production.yaml`
-- `server/Dockerfile`
-- `ops/postgres-backup/`
-- `scripts/verify-lan-compose.ps1`
+compose.companion-v51.yaml、scripts/deploy-companion-v51.ps1、scripts/verify-companion-full-restore.ps1、server/target/companion-release-backup.log。
 
 ## 验证命令与最近结果
 
-- 2026-09-08 主线冲突修复：任务分支变基到 `master@f32386a` 后，Git 合并模拟无冲突且相对主线恰好一个提交；重复 V46 页面改动已由主线继承。服务端语音专项 20/20、三组固件栈预算、`git diff --check` 与 `pnpm docs:check` 通过；未修改运行部署或重新刷写 CoreS3。
+固定 Dockerfile 构建通过；停写快照 stackchan-release-20260915183606 的数据库/Skill/配置恢复、四项加密字段解密、原管理员记录和临时账号登录通过。健康、首页及入口脚本返回正常。原 .env 已不存在，发布仅在进程内复用容器现有配置，没有写明文凭据或轮换密钥。
 
-- 2026-09-08 WebSocket 启动纠正与安装：`4444860` LAN HTTP Quad 为 1,650,016 字节，SHA-256 `23E94ACCF3CC72CC2D95B5DE6408E372924D61A72675FC38AE2A1A8853826536`。COM3 保留 NVS 写后哈希通过；启动确认 WebSocket 栈余量 4000 字节、设备稳定在线超过一分钟并上报 `4444860 / motion_disabled`。server 健康为 `ok`，容器无重启、无 OOM；未替换 server、数据库、Redis 或备份容器。
-
-- 2026-09-07 段间播放预取候选：server 继续运行 `voice-latency-v46-final`，无数据库或容器变更。ESP-IDF 5.5.5 LAN HTTP Quad 应用 1,649,632 字节（`0x192be0`）、分区余量 48%，镜像校验和验证哈希有效；三组任务栈回归与真实语音栈预算通过。尚未连接 COM3 或写入设备。
-
-- 2026-09-07 首播延迟优化发布：专项 20/20、非 loopback 服务端 462/462 和 Docker production build 通过；13:07 UTC 新备份与隔离恢复验证成功，旧镜像保留为 `pre-voice-latency-v46`。只替换 server；容器 `d126dfa8432d`、镜像 `sha256:a72c6b97bf9fc8c9617dabe79bce5723787c56dc13b44ddbb51e836e4b76218b`、版本 `voice-latency-v46-final`。MCP 目录预热 895 ms，本机/LAN 健康为 200，V46、PostgreSQL、Redis、备份容器和 `628acd0 / motion_disabled` CoreS3 均正常。
-
-- 2026-09-05 边录边传整合发布：服务端 live 定向 18/18、排除既有 Windows loopback 类后的 460/460、控制台 102/102 和 production build、三组固件栈回归与真实语音栈预算通过。08:20 UTC 新备份和隔离恢复成功；只替换 server，数据库保持 V46；随后通过 COM3 保留 NVS 安装当前任务 LAN HTTP Quad 固件，等待用户两轮唤醒。
-- 2026-09-03 聊天滚动复修发布：新备份与隔离恢复成功，旧镜像保留为 `pre-chat-scroll-v46`，只替换 server。当前容器 `f12a4040770c`、镜像 `sha256:0042f143a832aa8d5315dd902876db0dcb8c1f125e68f76ab3c4a6c1224cf165`、版本 `console-feedback-v46-chat-scroll-final`；V46、本机/LAN 首页和健康 200，聊天 CSS/JS 200，运行 CSS 包含最终高度与滚动边界。PostgreSQL、Redis、备份容器和 CoreS3 未替换。
-
-- 2026-09-03 二级菜单与聊天复修发布：新备份与隔离恢复成功，旧镜像保留为 `pre-menu-chat-fix-v46`，只替换 server。当前容器 `044b01b409d3`、镜像 `sha256:6c9d7ff0a125abf8103a440cac94b64b902e65a19b0bd5b7a0cf9e437342b83d`、版本 `console-feedback-v46-menu-chat-final`；V46、本机/LAN 首页和健康 200，新菜单与聊天资源 200，运行资源包含最终分组、发送/停止动作和 OKLCH 主题映射。PostgreSQL、Redis、备份容器和 CoreS3 未替换。
-
-- 2026-09-01 六项后台反馈发布：新备份与最新备份内置隔离恢复成功，旧镜像保留为 `pre-console-feedback-v45`，只替换 server。当前容器 `afefeaf5884f`、镜像 `sha256:a4066d42cb3eb5e8f5655c0648cac8009e559c577ac9d6767f7edcc919712328`、版本 `console-feedback-v46-final`；V46、本机/LAN 首页 200、健康 200、角色与日程未认证接口 401、最终聊天/工作日/角色静态资源 200。PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 及 CoreS3 未替换。离线组装镜像第一次继承临时启动命令导致健康检查无响应，未触及数据库；修正入口后立即重建，并在最终资源格式化后再次精确替换为上述镜像。
-
-- 2026-09-01 后台信息架构与 UI 重整发布：11:53 UTC 新备份及内置隔离恢复成功，随后最新备份独立恢复成功；旧 WORK-006/V45 镜像保留为 `pre-console-ia-3697be8`，只替换 server。当前容器 `c580d0855c3c`、镜像 `sha256:a3b015c36bc17db419b87993081badf3b744527b50627ac6f527f86c0649e85d`、构建版本 `console-ia-3697be8`；V45、本机/LAN 首页 200、未认证设备接口 401、新 dashboard/chat 静态资源、1 条未完成待办、观察窗口和设备在线安全状态通过。PostgreSQL、Redis、备份容器及 CoreS3 未替换。
-
-- 2026-09-04 V46 运行态复核：当前 server 容器 `f12a4040770c`、镜像 `sha256:0042f143a832aa8d5315dd902876db0dcb8c1f125e68f76ab3c4a6c1224cf165`、构建版本 `console-feedback-v46-chat-scroll-final`，数据库为 V46，健康正常，设备为 `a70fb9c / motion_disabled / DISABLED`。15:25 UTC 新备份和独立恢复验证成功；识别同级分支冲突后停止，未替换任何容器或固件。
-- 2026-08-31 WORK-006/V45 发布：12:30 UTC 新备份、12:31 UTC 独立恢复验证成功；旧镜像保留为 `pre-work006-v45`，只替换 server。当前容器 `9617c52a48db`、镜像 `sha256:6b120ef75ae32845b679d2ce976cf91260928a0dde3304b0ca63db61b19c79cb`、构建版本 `work006-v45-task-progress`；V45、健康、LAN 首页、1 条未完成待办、观察窗口和设备在线安全状态通过。
-
-- 2026-08-31 WORK-005/V45 发布：11:14 UTC 新备份及内置恢复成功，11:15 UTC 最新备份独立恢复成功；旧镜像保留为 `pre-work005-v45`，只替换 server。当前容器 `e384ffebb23a`、镜像 `sha256:f9e5db38787621ea85d26d302fc92a0d6b5aee6f4051c85b43c1d460d9675112`、构建版本 `work005-v45-task-brief`；V45、健康、LAN 首页、1 条待办、观察窗口和设备在线安全状态通过。
-
-- 2026-08-30 WORK-004 默认角色校验修复发布：13:33 UTC 生成新备份并完成隔离恢复，修复前 V45 镜像保留为 `pre-role-id-fix-a13a30c`，只替换 server。最终容器 `12ecb4a04de5`、镜像 `sha256:4c8e3d5348aa2a5ef1381bb6538deff3994b4bb6088ace941b7ff05d44c0792c`、构建版本 `work004-v45-role-fix`；V45、本机/LAN 首页、健康、401 鉴权和新静态资源通过。待办表仍为空，观察窗口保持 2026-08-30 至 2026-09-12，设备保持 `424cb49 / motion_disabled / DISABLED`。
-- 2026-08-30 用户确认刷新页面后默认角色新增正常，发布修复人工验收通过；无需再次替换服务或操作固件。
-
-- 2026-08-30 WORK-004/V45 发布：21:06 生成新备份并完成隔离恢复，旧 V44 镜像保留为 `pre-work004-v44`，只替换 server。最终容器 `e8f8d03035c8`、镜像 `sha256:a29d2895a6b9dcdaa1afbc785de6b935e59c335de288c4fe8bc86a9f24da7d54`；运行库为 V45，本机/LAN 首页和健康为 200，未认证待办接口为 401。待办表为空，原观察窗口和完成通知标记未变化，设备保持 `424cb49 / motion_disabled / DISABLED`。
-
-- 2026-08-30 WORK-003/V44 发布：新备份和隔离恢复验证成功，旧 V43 镜像保留为 `pre-work003-v43`，只替换 server。最终容器 `04816c320b97`、镜像 `sha256:378005a8996e1d1e5d63a3324336981f81da9f924e2e86145fa1fd2cf25a901f`；运行库为 V44，本机/LAN 首页和健康正常，未认证观察接口为 401。当前观察窗口仍为 2026-08-30 至 2026-09-12，首次调度后入队标记为空且完成提醒数为零；设备保持 `424cb49 / motion_disabled / DISABLED`。
-
-- 2026-08-30 WORK-002/V43 发布：发布前及第十四天边界修正后均生成并校验最新备份，旧 WORK-001 镜像保留为 `pre-work002-c62ccd0`，两次均只替换 `stackchan-foundation-server-1`。最终容器为 `e2dcfa2fbe86`，镜像为 `sha256:db8e8aca683db95ee1ace9273ae80aac8deb9368f2af15ecfae612e615dd1c72`，构建版本为 `work002-v43-final`；PostgreSQL `6d8feaa18623`、Redis `58e31a403637` 和备份容器 `c94b190f0428` 未变化。运行库由 V42 迁移到 V43，本机与 LAN 健康/首页为 200，未认证观察接口为 401，运行资源包含最终观察说明。CoreS3 在线上报 `424cb49 / motion_disabled / DISABLED`，未连接串口、未刷写固件、未执行身体动作。
-
-- 2026-08-30 WORK-001 实机收口：用户自行安装 `424cb49`；数据库确认设备在线、固件版本匹配并持续为 `motion_disabled / DISABLED`。顶部长按先切换到 `ACTIVE_PRESENT`，再次长按切换为 `OFF`，跨调度周期保持停止。COM3 仅做授权范围内的只读监听，未下发命令或动作。
-
-- 2026-08-29 WORK-001/V42 发布：现有备份容器内完成新 PostgreSQL 备份和最新备份隔离恢复；旧镜像保留为 `pre-work001-v42-6c750ff`，只替换 `stackchan-foundation-server-1`。新容器为 `51fb6601e52a`，镜像为 `sha256:0e2bc6760001bb4d0304a738e019e5d8d42fc65cf4d6cef3a0bff496df0d4920`；PostgreSQL `6d8feaa18623`、Redis `58e31a403637` 和备份容器 `c94b190f0428` 未变化。运行库由 V41 迁移到 V42，健康为 `ok`，本机与 `192.168.1.4:8080` 首页为 200，未认证工作接口为 401，运行资源包含新工作陪伴控制且启动后无应用级错误。CoreS3 已恢复心跳，上报 `6c750ff / DISABLED`；未连接串口或刷写固件。
-- 2026-08-29 BODY-001 写 ACK 诊断：用户安装 `5e14d73` 后，经逐次授权和刷新管理页，在 COM3 实时捕获一次到达设备的无动作校准；三次均为 `stage=yaw_torque_off`，时间约 840467/840597/840727 ms，130 ms 间隔证明真实时钟等待已生效。M5Stack 官方上层不依赖 `EnableTorque()` 返回值而继续读取反馈；修复改为写指令只确认 UART 发送，再读回 yaw/pitch 扭矩寄存器，确认关闭后才读取位置。双 profile 工作树构建及三组任务栈回归/静态预算通过；未启用动作。
-- 2026-08-29 BODY-001 回包等待诊断：用户安装 `839e146` 后，经逐次授权在机器人无播报时实时捕获一次无动作校准；三次均为 `stage=yaw_torque_off`，时间间隔仅约 70 ms。确认 `pdMS_TO_TICKS(5)` 在 100 Hz 下为 0，固定扫描在回包前结束。修复改为 50 ms 单调时钟截止与最少 1 tick 阻塞，双 profile 工作树构建通过；未启用动作。
-- 2026-08-29 BODY-001 校准反馈诊断：用户已通过网页 OTA 安装 `2108f78`。数据库确认设备在线、`body_motion_supported=true`、`servo_feedback_supported=false`、`body_calibrated=false`、`FEEDBACK_FAULT`。经用户明确授权只读连接 COM3；端口连接触发设备重启，随后正常回到 `2108f78`、网络与语音恢复、`motion_disabled` 保持。用户按提示只执行一次无动作校准，失败计数从 0 增至 1；未启用身体动作。加固代码已完成双 profile 工作树构建，但未安装。
-- 2026-08-29 BODY-001 OTA 回退诊断：经用户逐次批准，对 `d1abe9d` 进行第二次 OTA 并只读监听 COM3。下载、SHA-256 和镜像装载成功；新镜像约 1.8 秒时在 BMI270 初始化错误路径报告 `A stack overflow in task main`，随即由 bootloader 回到 factory `fe95767`。旧固件重新连接 LAN server，NVS、Wi-Fi、身份、语音和 `motion_disabled` 保留；未执行校准、运动或舵机供电测试。
-- 2026-08-29 BODY-001 发布：新 PostgreSQL 备份和最新备份隔离恢复验证成功，旧 server 镜像保留为 `pre-body001-3596c80`；只替换 `stackchan-foundation-server-1`，新容器为 `5f10d0a2037b`，镜像为 `sha256:a1f3c3cdad658579695d9ed54190b33f317fb3d3ffe09843897bafbda2b630cd`。PostgreSQL `6d8feaa18623`、Redis `58e31a403637` 和备份容器 `c94b190f0428` 未变化；运行库由 V40 迁移到 V41，健康为 `ok`，本机与 `192.168.1.4:8080` 首页为 200，未认证设备接口为 401，静态资源包含 K151 管理卡。CoreS3 未连接、未刷写，旧固件 `fe95767` 已恢复心跳并保持 `motion_disabled`。
-
-- 2026-08-28 天气续期修复发布：发布前新 PostgreSQL 备份及最新备份校验成功，旧镜像保留为 `pre-weather-refresh-fix-fe95767`，只替换 `stackchan-foundation-server-1`。新容器为 `e61d46f8494a`，镜像为 `sha256:e23e5f0a5cf2a1c1b65e0de67f77cb7bd7c15e69bbc3c862f71c42836f8aa20d`；健康状态为 `ok`，运行库保持 V40。启动十秒后的真实 Open-Meteo 同步为 `READY`，缓存有效至 2026-08-28 19:41（Asia/Shanghai），数据库包含 8 月 28/29 两条预报。首次 Compose 调用误用 `stackchan` 项目名，只创建未启动容器并因 8080 占用退出；原服务未中断，误建的空容器、网络和空卷已精确删除，随后以正确项目名完成切换。
-- 2026-08-27 USB 服务地址快捷更新页面发布：部署前新 PostgreSQL 备份与隔离恢复成功，旧镜像保留为 `pre-usb-server-update-902bb95`，只替换 `stackchan-foundation-server-1`。新容器为 `944ed2ceedc3`，镜像为 `sha256:9ff0dce7ae5f17dc048fe341595b9f6dfcc688d576a476fdc3539c56199b3b9f`；PostgreSQL `6d8feaa18623`、Redis `58e31a403637` 和备份容器 `c94b190f0428` 未变化。健康状态为 `ok`，40 条迁移验证成功且运行库保持 V40，本机与 `192.168.1.4:8080` 首页为 200，未认证设备接口为 401，运行配网页资源包含“仅更新服务地址”。未连接或操作 CoreS3。
-- 2026-08-26 用户确认经纬度输入修正、真实固定位置同步和机器人天气问答均正常，WEATHER-001 人工验收通过。
-- 2026-08-26 修正经纬度输入被 `type=number` 转成数字后与字符串校验模型冲突导致的英文 `Invalid input`；改用保留字符串的十进制文本输入并提供示例。控制台 86/86、类型检查和 production build 通过；发布前新备份和隔离恢复成功，旧镜像保留为 `pre-v40-coordinate-fe5cece`，只替换 server。新容器为 `22a64c2dfe07`，镜像为 `sha256:9f3f06e5cf3528d467cebc74e534b7d5750fb7f505175244da8b6b9a78330b0a`；PostgreSQL、Redis 和备份容器 ID 未变化，V40 无待迁移项，健康和当前 LAN 首页为 200，运行资源包含经纬度示例，CoreS3 未操作。
-- 2026-08-26 WEATHER-001/V40 发布前新 PostgreSQL 备份和隔离恢复验证成功；旧镜像保留为 `pre-v40-weather-ecad118`，只替换 `stackchan-foundation-server-1`。新容器为 `80fff6f9ff74`；PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 及数据卷均未变化。
-- 运行源快照为 `ecad118`，镜像为 `sha256:db1f48cb1730351ce501d78e02b11635074c87a4fc6f31301233b1a6ead74c74`；Flyway 从 V39 成功迁移到 V40。本机与当前 LAN `192.168.1.4:8080` 首页为 200，健康状态为 `ok`，未认证天气接口为 401，运行静态资源包含 `Open-Meteo`，启动日志无应用级 `ERROR`；CoreS3 未连接、未刷写。
-- 2026-08-25 CONN-001 Agent 日历闭环发布前新 PostgreSQL 备份和隔离恢复验证成功；旧镜像保留为 `pre-v39-calendar-agent-a2a8e29`，只替换 `stackchan-foundation-server-1`。新容器为 `7a6b6821a206`；PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 及数据卷均未变化。
-- 运行源快照为 `a2a8e29`，镜像为 `sha256:fafc4e24a7d0191f20ec3300a2100517ed43c5c82d34088e0858c0edaaa688ed`；运行库保持 V39 且一条缓存事件仍有效。本机和 `192.168.1.3:8080` 首页为 200，健康状态为 `ok`，未认证日历接口为 401，启动后无应用级 `ERROR`；CoreS3 未刷写。
-- 2026-08-25 CONN-001 Apple 编号分片修正发布前新 PostgreSQL 备份和隔离恢复验证成功；旧镜像保留为 `pre-v39-caldav-shard-1af1c03`，只替换 `stackchan-foundation-server-1`。PostgreSQL `6d8feaa18623`、Redis `58e31a403637`、备份容器 `c94b190f0428` 及数据卷均未变化。
-- 运行源快照为 `1af1c03`，镜像为 `sha256:c1ee04a036376a1a36e3416ec54aa62a72da213a52d29f854a5c6e03f2612b68`；运行库保持 V39。本机和 `192.168.1.3:8080` 首页为 200，健康接口状态为 `ok`，未认证日历接口为 401，静态资源包含“Apple 账号邮箱”。CoreS3 未刷写。
-- 2026-08-25 CONN-001 中国大陆区域回退发布前新 PostgreSQL 备份和隔离恢复验证成功；旧镜像保留为 `pre-v39-cn-caldav-3a547e6`，只替换 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。
-- 运行库保持 V39，39 条迁移验证成功；本机首页、`192.168.1.3:8080` 首页和健康接口均为 200，未认证日历接口为 401。运行镜像为 `sha256:24aee105c5c94d06fd7367fea56670850e5535d7bb1abc7f6d6186c3cadda3a2`，CoreS3 未刷写。
-- 2026-08-25 CONN-001 手机号兼容发布前新 PostgreSQL 备份和隔离恢复验证成功；旧 V39 镜像保留为 `pre-v39-phone-842ac4b`，只替换 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。
-- 运行库保持 V39；本机首页、`192.168.1.3:8080` 首页和健康接口均为 200，未认证日历接口为 401，运行静态资源包含“Apple 账号邮箱或手机号”。运行镜像为 `sha256:7a9b2768820206878fe4f3e240736e9d69cf13e39ceb96578898f1b546ccf7a9`，未录入真实 Apple 凭据，CoreS3 未刷写。
-- 2026-08-25 CONN-001/V39 发布前新 PostgreSQL 备份和隔离恢复验证成功；旧 V38 镜像保留为 `pre-v39-9f3b427`，只替换 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。
-- 运行库由 V38 迁移至 V39，共 39 条迁移验证成功；本机首页、`192.168.1.3:8080` 首页和健康接口均为 200，未认证日历接口为 401。运行镜像为 `sha256:47d77048d39d7cfc3f4a4a31de9c93d68ebd4dd997decbdb6abdc75554ef23d7`，未录入真实 Apple 凭据，CoreS3 未刷写。
-- 2026-08-25 WORK-001 阶段 A/V38 发布前新 PostgreSQL 备份和隔离恢复验证成功；旧 server 镜像保留为 `pre-work001a-v38-e9c3edd`，只替换 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。
-- 运行库由 V37 迁移至 V38；本机首页、LAN 首页和健康接口均为 200，未认证工作日运行态接口为 401。运行镜像为 `sha256:17b863a5dc4fad4ce5d8df7d1869a0c94bbcaf2de3d39f85b6a4f5e462521258`，CoreS3 未刷写。
-- 2026-08-24 WORK-001 阶段 A 发布前新 PostgreSQL 备份和最新备份隔离恢复验证成功；旧 server 镜像保留为 `pre-work001a-9a9fee0`，只替换 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。
-- 运行库由 V36 迁移至 V37；本机首页、LAN 首页和健康接口均为 200，未认证工作日设置接口为 401，运行静态资源包含“工作日桌面陪伴”，启动日志无 `ERROR`/`Exception`。本次未连接、测试或刷写 CoreS3。
-- 2026-08-23 部署前工作树服务端 392/392、空库 Flyway V1..V35、前端 81/81/类型检查/生产构建、双固件 profile、三组任务栈预算和文档检查通过；自动化验证阶段未替换运行容器。
-- 2026-08-23 MEDIA-004 发布前新 PostgreSQL 备份及最新备份隔离恢复验证成功；只替换 `stackchan-foundation-server-1`，运行库由 V35 迁移到 V36，PostgreSQL、Redis、备份容器 ID 和数据卷均未变化。
-- 新 server 健康接口、本机首页和 `192.168.1.3:8080` 首页为 200；未认证表情包与设备接口均为 401。运行镜像为 `sha256:50d3f5bc86ce34441cbf16332a58ef99ea21afe8ff18028036539b9cf7ae0dbc`，旧镜像保留为 `pre-media004-0b70f33`，本次未 OTA CoreS3。
-- 2026-08-23 经用户授权，部署前新 PostgreSQL 备份和最新备份隔离恢复验证成功；只重建 `stackchan-foundation-server-1`，PostgreSQL、Redis 和备份容器 ID 均未变化。
-- 新 server 健康接口、本机首页和 `192.168.1.3:8080` 首页为 200；V35 无待迁移项，启动日志无 `ERROR`/`Exception`，运行静态资源包含新诊断标签。CoreS3 在容器重建后产生新心跳并恢复 `ADAPTIVE 45–60`、目标 60、实际 55。
-- 2026-08-22 经用户授权重启 Docker Desktop 后，既有 PostgreSQL、Redis、server 和备份容器全部恢复；运行 server 镜像仍为预期摘要 `sha256:b819e63378db6250bdbd8fd66939f15960d6c72097fce28b3558114afcf4ae4c`，本轮固件迁移未修改服务端或前端，因此未无意义替换容器。
-- 恢复后 `/api/v1/health` 和首页均为 200，Flyway 确认运行库保持 V35 且无待迁移项，启动日志无应用错误；服务端全量 391/391 和空库 V1..V35 通过。
-- 2026-08-22 部署前新备份和最新备份隔离恢复均成功；只重建 `stackchan-foundation-server-1`，PostgreSQL、Redis 与备份容器 ID 未变化。
-- 运行库成功迁移到 V35；`/api/v1/health` 和首页均为 200，运行镜像与预期新镜像摘要一致，启动日志无 `ERROR`/`Exception`。
-- 首次 Compose 调用因遗漏既有项目名，只创建了一个未启动容器并在 8080 端口检查处退出；原服务未中断，所创建的空容器、空卷与空网络随后被精确清理，再以 `stackchan-foundation` 项目名完成切换。
-- MEDIA-002 server/V34 与前端已部署，CoreS3 已运行 `41b8827`；用户确认平滑边缘和真机预览正常，并反馈固定 60 FPS 与语音并发回归。
-- `d65811d` 首次应用 OTA 因 UI 任务看门狗自动回退；修正候选 `759a91f` 随后安装为 `INSTALLED`，NVS、设备身份、网络、WakeNet、OTA 和 `motion_disabled` 均保留，用户确认基础功能正常。
-- 2026-08-19 INT-013 发布前新备份及最新备份隔离恢复成功；正式数据库未被覆盖。
-- 旧 server 镜像保留为 `pre-int013-a04ae0b`，新镜像保留为 `int013-a04ae0b`；只重建 `stackchan-foundation-server-1`，PostgreSQL、Redis、备份容器和卷保持不变。
-- 运行库成功从 V30 迁移到 V32，共 32 条迁移成功；`/api/v1/health` 和首页为 200，SCV1/SCV2 未认证语音入口均为 401，启动日志无错误。
-- 本次未连接或刷写 CoreS3；现有固件继续通过 SCV1 与新 server 兼容。
-- 用户随后以应用 OTA 将 CoreS3 从 `7e7c55f` 更新到 `bd818f0`；任务为 `INSTALLED`，设备连续心跳、NVS 设备身份、OTA 能力和 `motion_disabled` 保留。
-- SCV2 分段顺序和后续回合在 `bd818f0` 已正常；`29e8c36` 修复镜像随后从 `bd818f0` 应用 OTA 安装，任务为 `INSTALLED`、无失败码，用户确认播放中触摸停止和后续回合正常。
-- 2026-08-13 ROLE-002 发布前新备份及最新备份隔离恢复验证成功；未覆盖正式数据库。
-- `stackchan-foundation-server-1` 已替换为 ROLE-002 `b6cad0b` server/V30；旧 ROLE-001 镜像保留为 `pre-role002-b6cad0b`，新镜像保留为 `role002-b6cad0b`。
-- 运行库成功从 V29 迁移到 V30；`/api/v1/health` 和首页为 200，未认证角色/设备 API 为 401，前端资源包含角色音色配置，启动日志无错误。
-- PostgreSQL、Redis、备份容器、原数据卷和端口保持不变；本次未修改或刷写 CoreS3。
-- 2026-08-13 部署前新备份及最新备份隔离恢复验证成功；未覆盖正式数据库。
-- `stackchan-foundation-server-1` 已替换为 ROLE-001 镜像，构建版本 `9e526f8`；旧 EVT-001 镜像保留为 `pre-role001-e1a0a12`，新镜像保留为 `role001-9e526f8`。
-- 运行库成功从 V28 迁移到 V29；默认角色恰好一条，会话、记忆、提醒和通知集成均无空角色归属，设备活动角色映射已生成。
-- 首页返回 200，未认证 `/api/v1/roles` 与 `/api/v1/devices` 均返回 401，启动日志无应用错误。
-- 运行 server 健康与首页为 200，Flyway V28；未认证集成删除、队列删除、外部 REST/MCP 均为 401，启动日志无 `ERROR`/`Exception`。
-- 用户确认基础外部通知测试正常；菜单归属及集成/队列删除已随 `50d6269` 镜像发布，等待管理员页面复核。
-- 2026-08-11T13:54:04Z 新备份已完成 SHA-256 校验并恢复到一次性 PostgreSQL，关键数据计数一致，临时资源已清理。
-- 当前 V27 镜像保留 `pre-evt001-f569ff9` 回退标签；本次未修改或刷写 CoreS3。
-- 删除迭代发布前镜像额外保留为 `pre-evt001-delete-f8e9c1d`，新镜像保留为 `evt001-50d6269`。
-- LAN 和 production Compose 静态边界在 OPS-002 基线通过。
-- `git diff --check`、`pnpm docs:check` 和文档测试通过；本状态整合未访问 `.env` 或运行凭据。
+文档检查使用 `pnpm docs:check`、`pnpm docs:check:test` 和 `git diff --check`。前端回归使用 `pnpm --filter @stackchan/console test --maxWorkers=1`；构建使用 `docker build -f server/Dockerfile -t stackchan-foundation-server:companion-v51-20260914 .`。不重复宣称八个受限服务端测试类通过。
 
 ## 相关设计、计划和决策
 
-- [当前任务清单](../todo.md)
-- [工作日桌面陪伴 V1 开发设计](../workday-companion-v1.md)
-- [0041：私用优先的确定性工作日陪伴闭环](../decisions/0041-private-first-deterministic-workday-companion.md)
-- [开发环境与命令](../development.md)
-- [0004：LAN HTTP 仅限开发](../decisions/0004-lan-http-development-only.md)
-- [0005：生产 HTTPS-only](../decisions/0005-secure-production-boundary.md)
-- [0026：备份与隔离恢复](../decisions/0026-personal-data-lifecycle-and-isolated-backups.md)
-- [0031：应用 OTA 与健康中心](../decisions/0031-safe-application-firmware-ota-and-health-center.md)
-- [安全部署 runbook](../../runbooks/secure-deployment.md)
-- [个人数据备份 runbook](../../runbooks/personal-data-backup.md)
+[完整实施清单](../companion-completion-plan.md)、[ADR 索引](../decisions/README.md)、[发布与回退](../../runbooks/companion-v51-release.md)、[备份与恢复](../../runbooks/personal-data-backup.md)。历史合并能力查[里程碑](../milestones.md)。
 
 ## 安全与兼容性约束
 
-- 不组合 LAN 与 production Compose，不允许公网明文 HTTP/WS。
-- 不把管理员密码、通知令牌、API Key、JWT、Wi-Fi 凭据或加密主密钥写入仓库、镜像或日志。
-- 服务端及其内置管理页面可按用户的长期授权直接发布；Git 外部推送、固件刷写/OTA、修改卷/端口、切换部署模式或轮换凭据仍需明确授权。
+保持 LAN 开发模式；生产必须 HTTPS。伙伴记忆独立，操作确认不跨角色、不替换失效目标。旧 API/深链接与普通、工作、外部通知语义保留。本次只授权推送当前任务分支；不创建或合并 PR、不推送 master，不刷写固件或开启动作。DPAPI 备份依赖原 Windows 用户/机器，本地卷不是跨机器灾备；旧镜像与 V51 的直接回退不作兼容承诺。

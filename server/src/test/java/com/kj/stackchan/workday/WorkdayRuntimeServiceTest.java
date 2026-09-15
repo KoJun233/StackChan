@@ -76,6 +76,19 @@ class WorkdayRuntimeServiceTest {
     }
 
     @Test
+    void restConfirmationCannotActOnADifferentPrompt() {
+        serviceAt("2026-08-24T01:00:00Z").start(DEVICE_ID, true);
+        var prompt = serviceAt("2026-08-24T01:16:00Z").tick(DEVICE_ID);
+        var service = serviceAt("2026-08-24T01:17:00Z");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.respondToRest(DEVICE_ID,
+                WorkdayRestAction.SNOOZE, prompt.stateChangedAt().minusSeconds(1)))
+                .isInstanceOf(InvalidWorkdayStateException.class);
+        assertThat(runtime.get().getState()).isEqualTo(WorkdayRuntimeState.REST_PROMPTED);
+        assertThat(service.respondToRest(DEVICE_ID, WorkdayRestAction.SNOOZE, prompt.stateChangedAt()).snoozedUntil())
+                .isEqualTo(Instant.parse("2026-08-24T01:27:00Z"));
+    }
+
+    @Test
     void restoresPersistedFocusAndPromptsAfterTheConfiguredThreshold() {
         var started = serviceAt("2026-08-24T01:00:00Z").start(DEVICE_ID, true);
 

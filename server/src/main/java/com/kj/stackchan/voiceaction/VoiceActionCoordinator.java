@@ -23,6 +23,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class VoiceActionCoordinator {
+    public void cancelPendingOperation(UUID deviceId, UUID conversationId) {
+        var pending = proposalService.latestPending(deviceId, conversationId);
+        if (pending != null) proposalService.cancel(pending.id(), deviceId, conversationId);
+    }
     private static final Pattern VOLUME = Pattern.compile("音量(?:调到|设置为|设为)\\s*(\\d{1,3})\\s*%?");
     private static final Pattern DND_MINUTES = Pattern.compile("(?:安静|免打扰)(?:到|持续)\\s*(\\d{1,4})\\s*分钟");
     private static final Pattern REMINDER_MINUTES = Pattern.compile("提醒我\\s*(.+?)\\s*(\\d{1,5})\\s*分钟后");
@@ -51,6 +55,14 @@ public class VoiceActionCoordinator {
     private final InteractiveNotificationService notificationService;
     private final ConversationService conversationService;
     private final PersonalTaskService personalTaskService;
+    private com.kj.stackchan.interaction.ProactivePauseService pauseService;
+
+    @Autowired
+    public void setPauseService(com.kj.stackchan.interaction.ProactivePauseService pauseService) { this.pauseService = pauseService; }
+
+    private static final Pattern PAUSE_TODAY = Pattern.compile("^(?:(?:今天|今日)(?:别|不要)(?:再)?主动(?:聊|聊天|找我聊天)[了。！!]*|今天安静(?:一)?点[。！!]*)$");
+    private static final Pattern PAUSE_MINUTES = Pattern.compile("^暂停主动(?:聊天|开场)\\s*(\\d{1,4})\\s*分钟[。！!]*$");
+    private static final Pattern RESUME_PROACTIVE = Pattern.compile("^(?:恢复主动(?:聊天|开场)|可以继续主动(?:聊天|找我聊天)了)[。！!]*$");
 
     @Autowired
     public VoiceActionCoordinator(VoiceActionProposalService proposalService, ReminderService reminderService,
@@ -100,10 +112,34 @@ public class VoiceActionCoordinator {
     public ActionResult handle(UUID deviceId, UUID conversationId, UUID turnId, String transcript) {
         String text = transcript == null ? "" : transcript.trim();
         if (text.isBlank()) return null;
+        if (pauseService != null) {
+            var minutes = PAUSE_MINUTES.matcher(text);
+            boolean today = PAUSE_TODAY.matcher(text).matches();
+            boolean resume = RESUME_PROACTIVE.matcher(text).matches();
+            if (today || resume || minutes.matches()) {
+                UUID role = conversationService == null ? CompanionRoleEntity.DEFAULT_ROLE_ID : conversationService.roleId(conversationId);
+                if (resume) {
+                    cancelPendingOperation(deviceId, conversationId);
+                    pauseService.resume(deviceId, role);
+                    return new ActionResult("已解除我在这台设备上的主动聊天暂停，仍会遵守原来的时段和次数设置。", true);
+                }
+                Integer duration = today ? null : Integer.valueOf(minutes.group(1));
+                if (duration != null && (duration < 1 || duration > 1440)) {
+                    return new ActionResult("暂停时间可以是 1 到 1440 分钟。", true);
+                }
+                cancelPendingOperation(deviceId, conversationId);
+                pauseService.pause(deviceId, role, duration);
+                return new ActionResult(today ? "好的，我今天不再主动开场，设备当地时间明天恢复。提醒照常。"
+                        : "好的，我暂停主动聊天 " + duration + " 分钟。提醒照常。", true);
+            }
+        }
         if (isMuteLastTopic(text) && topicCooldownService != null) {
-            boolean muted = topicCooldownService.muteLastTopic(deviceId);
+            UUID roleId = conversationService == null ? CompanionRoleEntity.DEFAULT_ROLE_ID
+                    : conversationService.roleId(conversationId);
+            Instant boundary = conversationService == null ? null : conversationService.voiceTopicBoundary(conversationId);
+            boolean muted = topicCooldownService.muteLastDeliveredTopic(deviceId, roleId, boundary);
             return new ActionResult(
-                    muted ? "好的，我不会再主动提这个话题。" : "目前没有可以停止主动提及的话题。",
+                    muted ? "好的，我不会再主动提这个话题。" : "我没找到近期播放过、可以停止主动提及的话题，这次没有修改话题偏好。",
                     true
             );
         }
@@ -121,6 +157,8 @@ public class VoiceActionCoordinator {
         }
         ActionResult personalTaskAction = proposePersonalTaskAction(deviceId, conversationId, turnId, text);
         if (personalTaskAction != null) return personalTaskAction;
+        ActionResult recentResponse = proposeRecentResponse(deviceId, conversationId, turnId, text);
+        if (recentResponse != null) return recentResponse;
         ActionResult notificationResponse = proposeNotificationResponse(deviceId, conversationId, turnId, text);
         if (notificationResponse != null) return notificationResponse;
         VoiceActionType workdayAction = workdayAction(text);
@@ -141,6 +179,10 @@ public class VoiceActionCoordinator {
         }
         Matcher snooze = SNOOZE_MINUTES.matcher(text);
         if (snooze.find() && text.contains("提醒")) {
+            UUID role = conversationService == null ? CompanionRoleEntity.DEFAULT_ROLE_ID : conversationService.roleId(conversationId);
+            if (reminderService.nextPendingUserReminder(deviceId, role) == null) {
+                return new ActionResult("当前伙伴没有可以推迟的普通提醒。", true);
+            }
             int minutes = Integer.parseInt(snooze.group(1));
             VoiceActionProposalService.ProposalSnapshot proposal = proposalService.propose(deviceId, conversationId, turnId,
                     new VoiceActionDraft(VoiceActionType.SNOOZE_NEXT_REMINDER, true, null, null, null, null, null,
@@ -148,6 +190,10 @@ public class VoiceActionCoordinator {
             return new ActionResult(proposalService.restatement(proposal), true);
         }
         if ((text.contains("跳过") || text.contains("略过")) && text.contains("提醒")) {
+            UUID role = conversationService == null ? CompanionRoleEntity.DEFAULT_ROLE_ID : conversationService.roleId(conversationId);
+            if (reminderService.nextPendingUserReminder(deviceId, role) == null) {
+                return new ActionResult("当前伙伴没有可以跳过的普通提醒。", true);
+            }
             VoiceActionProposalService.ProposalSnapshot proposal = proposalService.propose(deviceId, conversationId, turnId,
                     new VoiceActionDraft(VoiceActionType.SKIP_NEXT_REMINDER, true, null, null, null, null, null,
                             null, null, null, null, null, null));
@@ -189,11 +235,13 @@ public class VoiceActionCoordinator {
             return new ActionResult(proposalService.restatement(proposal), true);
         }
         if (text.contains("下一条提醒") || text.contains("下一个提醒")) {
-            ReminderService.ReminderSnapshot next = reminderService.nextPending(deviceId);
+            UUID role = conversationService == null ? CompanionRoleEntity.DEFAULT_ROLE_ID : conversationService.roleId(conversationId);
+            ReminderService.ReminderSnapshot next = reminderService.nextPending(deviceId, role);
             return new ActionResult(next == null ? "当前没有待处理提醒。" : "下一条提醒是：" + next.content() + "，时间为 " + next.scheduledAt() + "。", true);
         }
         if (text.contains("待确认记忆") || text.contains("待确认的记忆")) {
-            return new ActionResult("当前有 " + memoryService.pendingVisibleCount(deviceId) + " 条待确认记忆。", true);
+            UUID role = conversationService == null ? CompanionRoleEntity.DEFAULT_ROLE_ID : conversationService.roleId(conversationId);
+            return new ActionResult("当前伙伴有 " + memoryService.pendingVisibleCount(role, deviceId) + " 条待确认记忆。", true);
         }
         if (isExplicitAction(text) && proposalOrchestrator != null) {
             String zone = settingsService.resolve(deviceId).zoneId();
@@ -210,6 +258,46 @@ public class VoiceActionCoordinator {
     }
 
     private boolean isConfirm(String text) { return text.matches("^(确认|确定|执行|好的|好|可以|是的)[。！!,.，]?$"); }
+
+    private ActionResult proposeRecentResponse(UUID deviceId, UUID conversationId, UUID turnId, String text) {
+        var snooze = Pattern.compile("^(?:这个|刚才的|刚才那条)?(?:稍后|推迟|延后)(?:\\s*(\\d{1,4}|十)\\s*分钟)?(?:再提醒我|再说|再提醒)?[。！!,.，]?$").matcher(text);
+        boolean delay = snooze.matches();
+        boolean acknowledged = text.matches("^(?:知道了|已知晓|我知道了)[。！!,.，]?$");
+        boolean complete = text.matches("^(?:完成了|已完成|办完了)[。！!,.，]?$");
+        if (!delay && !acknowledged && !complete) return null;
+        UUID role = conversationService == null ? CompanionRoleEntity.DEFAULT_ROLE_ID : conversationService.roleId(conversationId);
+        var heard = reminderService.latestHeard(deviceId, role,
+                conversationService == null ? null : conversationService.voiceTopicBoundary(conversationId));
+        if (heard == null) {
+            return acknowledged ? null : new ActionResult("请说清楚要处理哪条提醒、通知或休息提示。", true);
+        }
+        if (heard.source() == com.kj.stackchan.reminder.ReminderSource.EXTERNAL) {
+            if (!delay) return null;
+            int minutes = snooze.group(1) == null || "十".equals(snooze.group(1)) ? 10 : Integer.parseInt(snooze.group(1));
+            return proposeNotificationResponse(deviceId, conversationId, turnId, "这个通知稍后" + minutes + "分钟");
+        }
+        if (acknowledged) return new ActionResult("好的。", true);
+        if (complete) return new ActionResult("播报本身没有待办完成状态。要完成待办，请说“完成待办”加上具体标题。", true);
+        int minutes = snooze.group(1) == null || "十".equals(snooze.group(1)) ? 10 : Integer.parseInt(snooze.group(1));
+        if (minutes < 1 || minutes > 1440) return new ActionResult("稍后时间可以是 1 到 1440 分钟。", true);
+        if (heard.source() == com.kj.stackchan.reminder.ReminderSource.USER) {
+            var draft = new VoiceActionDraft(VoiceActionType.CREATE_REMINDER, true, heard.content(), "再提醒",
+                    clock.instant().plusSeconds(minutes * 60L), heard.zoneId(), "NONE", 1, minutes,
+                    heard.lastCompletedAt(), null, null, heard.id());
+            return new ActionResult(proposalService.restatement(proposalService.propose(deviceId, conversationId, turnId, draft)), true);
+        }
+        if (heard.proactiveTopicKey() != null && heard.proactiveTopicKey().startsWith("workday:rest:")) {
+            if (minutes != 10) return new ActionResult("这轮休息可以推迟十分钟；请说“稍后十分钟再休息”。", true);
+            var draft = new VoiceActionDraft(VoiceActionType.SNOOZE_WORKDAY_REST, true, null, "近期休息",
+                    null, null, null, null, null, heard.lastCompletedAt(), null, null, null);
+            try {
+                return new ActionResult(proposalService.restatement(proposalService.propose(deviceId, conversationId, turnId, draft)), true);
+            } catch (VoiceActionException exception) {
+                return new ActionResult("刚才那轮休息提示已经失效，这次没有修改工作状态。", true);
+            }
+        }
+        return new ActionResult("好的，先不展开这条消息。", true);
+    }
     private boolean isCancel(String text) { return text.matches("^(取消|不用了|不要|算了)[。！!,.，]?$"); }
     private boolean isExplicitAction(String text) {
         return text.contains("提醒我") || text.contains("稍后提醒") || text.contains("跳过下一次")
@@ -278,8 +366,12 @@ public class VoiceActionCoordinator {
         }
         if (action == null) return null;
         UUID roleId = conversationService.roleId(conversationId);
-        UUID notificationId = notificationService.latestActionable(deviceId, roleId, action);
-        if (notificationId == null) return null;
+        UUID notificationId = notificationService.latestActionable(deviceId, roleId, action,
+                conversationService.voiceTopicBoundary(conversationId));
+        if (notificationId == null) {
+            return new ActionResult(action == NotificationResponseAction.ACKNOWLEDGE ? "好的。"
+                    : "我没找到刚才播过且支持这个操作的通知。请说清楚是通知、普通提醒还是休息提醒。", true);
+        }
         VoiceActionType type = switch (action) {
             case ACKNOWLEDGE -> VoiceActionType.ACKNOWLEDGE_NOTIFICATION;
             case SNOOZE -> VoiceActionType.SNOOZE_NOTIFICATION;

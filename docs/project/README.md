@@ -1,5 +1,11 @@
 # 项目文档约定
 
+当前陪伴迭代的人工验收入口：[陪伴体验验收与观察](companion-experience-acceptance.md)。
+
+当前软件交付的发布依据：[陪伴 V51 发布与回退](../runbooks/companion-v51-release.md)。
+
+当前继续实施范围：[陪伴功能深化、收缩与部署完成清单](companion-completion-plan.md)。
+
 ## 稳定文档与状态文档
 
 稳定文档记录长期有效的架构、开发环境、路线图、协议、决策和 runbook；它们不记录频繁变化的当前任务。状态文档只记录当前目标、进度、阻塞、下一条精确操作和最近验证，不再累积每轮 Agent 的部署流水。已完成任务只在[里程碑索引](milestones.md)保留摘要，详细证据由 Git、ADR 和 runbook 保存。Git 跟踪的 `docs/project/status/` 是跨会话当前状态的正式事实来源，临时工作记录和历史聊天不是。
@@ -37,6 +43,7 @@
 - [架构说明](architecture.md)
 - [开发环境与命令](development.md)
 - [产品路线图](roadmap.md)
+- [2026-09-13 桌面机器人功能评审报告](feature-review-2026-09-13.md)
 - [工作日桌面陪伴 V1 开发设计](workday-companion-v1.md)
 - [WORK-002 私用观察与门槛可观测性](workday-pilot-observability.md)
 - [WORK-003 观察结果一次性通知](workday-pilot-completion-notification.md)

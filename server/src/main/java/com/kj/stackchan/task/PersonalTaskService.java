@@ -20,6 +20,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 
 @Service
 public class PersonalTaskService {
@@ -111,6 +112,34 @@ public class PersonalTaskService {
                 .map(task -> new CompletedTaskItem(task.getTitle()))
                 .toList();
     }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public AgentTaskProgress progressForAgent(UUID deviceId, UUID roleId, ZoneId zoneId) {
+        requireDevice(deviceId);
+        requireRole(roleId);
+        if (zoneId == null) {
+            throw new InvalidPersonalTaskException("Task progress time zone is required");
+        }
+        LocalDate today = LocalDate.ofInstant(clock.instant(), zoneId);
+        Instant start = today.atStartOfDay(zoneId).toInstant();
+        Instant end = today.plusDays(1).atStartOfDay(zoneId).toInstant();
+        List<TaskSnapshot> open = taskRepository
+                .findTop20ByDeviceIdAndRoleIdAndStatusOrderByDueAtAscCreatedAtDesc(
+                        deviceId, roleId, PersonalTaskStatus.OPEN).stream().map(this::snapshot).toList();
+        long total = taskRepository.countByDeviceIdAndRoleIdAndStatus(deviceId, roleId, PersonalTaskStatus.OPEN);
+        List<CompletedTaskItem> completed = taskRepository.findCompletedInRange(
+                        deviceId, roleId, PersonalTaskStatus.COMPLETED, start, end, PageRequest.of(0, 10))
+                .stream().limit(10).map(task -> new CompletedTaskItem(task.getTitle())).toList();
+        long completedTotal = taskRepository
+                .countByDeviceIdAndRoleIdAndStatusAndCompletedAtGreaterThanEqualAndCompletedAtLessThan(
+                        deviceId, roleId, PersonalTaskStatus.COMPLETED, start, end);
+        return new AgentTaskProgress(open, total, completed, completedTotal, today);
+    }
+
+    public record AgentTaskProgress(
+            List<TaskSnapshot> tasks, long totalCount,
+            List<CompletedTaskItem> completedToday, long completedTodayTotalCount, LocalDate localDate
+    ) { }
 
     @Transactional(readOnly = true)
     public List<TaskBriefItem> dailyBriefItems(

@@ -180,8 +180,8 @@ function confirmDelete(rows: LongTermMemory[]) {
   useFaModal().confirm({
     title: '删除长期记忆',
     content: rows.length === 1
-      ? `确认删除「${rows[0].title}」吗？删除后下一轮对话将不再加载它。`
-      : `确认删除选中的 ${rows.length} 条记忆吗？删除后无法恢复。`,
+      ? `确认删除「${rows[0].title}」吗？删除后不再作为长期记忆加载。原聊天记录及已有备份不会随之删除。`
+      : `确认删除选中的 ${rows.length} 条记忆吗？页面无法撤销，原聊天记录及已有备份不会随之删除。`,
     onConfirm: async () => {
       try {
         await Promise.all(rows.map(row => deleteMemory(row.id)))
@@ -199,7 +199,7 @@ function confirmDelete(rows: LongTermMemory[]) {
 function confirmClearAll() {
   useFaModal().confirm({
     title: '清空全部长期记忆',
-    content: '这会删除全局和所有设备的长期记忆，下一轮文本和语音对话都不会再加载它们。此操作无法恢复。',
+    content: '这会删除所有伙伴在全局和各设备的长期记忆，不受当前筛选条件限制。页面无法撤销，原聊天记录及已有备份不会随之删除。',
     confirmButtonText: '确认清空',
     onConfirm: async () => {
       try {
@@ -231,7 +231,7 @@ onBeforeUnmount(() => eventBus.off('get-memory-list'))
     <FaPageMain :class="{ 'flex-1 overflow-auto': tableAutoHeight }" :main-class="{ 'flex-1 flex flex-col overflow-auto': tableAutoHeight }">
       <FaAlert
         title="只有已确认且启用的记忆会进入对话"
-        description="模型建议默认处于待确认状态；已拒绝、已停用或已删除的内容不会进入后续文本和设备语音上下文。"
+        description="各伙伴独立保存记忆，模型建议需确认后才生效；确认替代会停用旧条目。停用或删除只停止长期记忆加载，原聊天仍可能出现在近期对话中，可到「对话与个人数据」管理；已有备份按保留周期轮转。"
         class="mb-4"
       />
       <FaSearchBar :show-toggle="false">

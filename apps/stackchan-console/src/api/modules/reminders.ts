@@ -36,6 +36,21 @@ export interface ReminderPage {
   total: number
 }
 
+export interface DeliveryTimeline {
+  deviceId: string
+  roleId: string
+  upcoming: Reminder[]
+  upcomingTotal: number
+  recent: Reminder[]
+  recentHasMore: boolean
+  checkedAt: string
+}
+
+export function getDeliveryTimeline(deviceId: string, roleId: string): Promise<DeliveryTimeline> {
+  const query = new URLSearchParams({ deviceId, roleId })
+  return apiJson(`/api/v1/reminders/timeline?${query.toString()}`)
+}
+
 export interface ReminderInput {
   content: string
   deviceId: string

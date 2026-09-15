@@ -40,6 +40,16 @@ public class ReminderDeliveryService {
     private final ReminderScheduleCalculator scheduleCalculator;
     private final NotificationIntegrationRepository notificationIntegrationRepository;
     private CompanionRoleService roleService;
+    private com.kj.stackchan.interaction.ProactiveTopicCooldownService topicCooldownService;
+    private com.kj.stackchan.interaction.ProactivePauseService pauseService;
+
+    @Autowired
+    public void setPauseService(com.kj.stackchan.interaction.ProactivePauseService service) { this.pauseService = service; }
+
+    @Autowired
+    public void setTopicCooldownService(com.kj.stackchan.interaction.ProactiveTopicCooldownService service) {
+        this.topicCooldownService = service;
+    }
 
     @Autowired(required = false)
     public void setRoleService(CompanionRoleService roleService) {
@@ -89,6 +99,20 @@ public class ReminderDeliveryService {
                 interactionSettingsService, voiceTurnRepository, scheduleCalculator, null);
     }
 
+    private boolean cancelMutedProactive(ReminderEntity reminder, Instant now) {
+        if (reminder.getSource() != ReminderSource.PROACTIVE) return false;
+        // Workday brief/rest/pilot messages share the legacy PROACTIVE source but have their own controls.
+        if (reminder.getProactiveTopicKey() != null && reminder.getProactiveTopicKey().startsWith("workday:")) return false;
+        boolean paused = pauseService != null && pauseService.isPaused(reminder.getDeviceId(), reminder.getRoleId(), now);
+        boolean muted = topicCooldownService != null && reminder.getProactiveTopicKey() != null
+                && !reminder.getProactiveTopicKey().isBlank()
+                && topicCooldownService.isUserMuted(reminder.getDeviceId(), reminder.getRoleId(), reminder.getProactiveTopicKey());
+        if (!paused && !muted) return false;
+        reminder.completeOccurrence(ReminderStatus.CANCELLED, null, now);
+        reminderRepository.save(reminder);
+        return true;
+    }
+
     public void dispatchDueReminders() {
         Instant now = clock.instant();
         Set<UUID> handledNotificationIds = new HashSet<>();
@@ -98,6 +122,7 @@ public class ReminderDeliveryService {
                         ReminderStatus.PENDING, now)) {
             if (handledNotificationIds.contains(reminder.getId())
                     || reminder.getStatus() != ReminderStatus.PENDING || reminder.getDeliveryGroupId() != null) continue;
+            if (cancelMutedProactive(reminder, now)) continue;
             if (isExpired(reminder, now)) {
                 reminder.markExpired(now);
                 reminderRepository.save(reminder);
@@ -127,6 +152,7 @@ public class ReminderDeliveryService {
                 deliveryLeader = selectedLeader;
                 String deliveryText = digestText(deliveryItems);
                 byte[] audio = speechRuntimeClient.synthesize(deliveryText, selectedLeader.getRoleId());
+                if (cancelMutedProactive(selectedLeader, clock.instant())) continue;
                 String commandId = UUID.randomUUID().toString();
                 if (deliveryItems.size() == 1) {
                     selectedLeader.markDispatched(commandId, audio, now);

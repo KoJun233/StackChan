@@ -169,6 +169,77 @@ public class ReminderService {
         return snooze(next.id(), minutes);
     }
 
+    @Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    public DeliveryTimeline timeline(UUID deviceId, UUID roleId) {
+        if (deviceId == null || !deviceRepository.existsById(deviceId)) {
+            throw new InvalidReminderException("Reminder device is invalid");
+        }
+        UUID role = requireRole(roleId);
+        Instant now = clock.instant();
+        var upcoming = reminderRepository.findByDeviceIdAndRoleIdAndStatusIn(deviceId, role,
+                List.of(ReminderStatus.PENDING, ReminderStatus.DISPATCHED),
+                PageRequest.of(0, 10, Sort.by("scheduledAt", "id")));
+        var recent = reminderRepository.findRecentCompletedDeliveries(deviceId, role, now.minusSeconds(1800), now,
+                PageRequest.of(0, 11));
+        return new DeliveryTimeline(deviceId, role, upcoming.getContent().stream().map(this::toSnapshot).toList(),
+                upcoming.getTotalElements(), recent.stream().limit(10).map(this::toSnapshot).toList(), recent.size() > 10, now);
+    }
+
+    public record DeliveryTimeline(UUID deviceId, UUID roleId, List<ReminderSnapshot> upcoming,
+            long upcomingTotal, List<ReminderSnapshot> recent, boolean recentHasMore, Instant checkedAt) { }
+
+    @Transactional(readOnly = true)
+    public ReminderSnapshot latestHeard(UUID deviceId, UUID roleId, Instant topicBoundary) {
+        Instant now = clock.instant();
+        Instant cutoff = now.minusSeconds(1800);
+        if (topicBoundary != null && topicBoundary.isAfter(cutoff)) cutoff = topicBoundary;
+        var recent = reminderRepository.findRecentCompletedDeliveries(deviceId, roleId, cutoff, now, PageRequest.of(0, 2));
+        if (recent.isEmpty() || (recent.size() > 1
+                && recent.getFirst().getLastCompletedAt().equals(recent.get(1).getLastCompletedAt()))) return null;
+        return toSnapshot(recent.getFirst());
+    }
+
+    @Transactional
+    public ReminderSnapshot requireHeardUserReminder(UUID id, UUID deviceId, UUID roleId, Instant playedAt, String content) {
+        var reminder = reminderRepository.findByIdAndSourceForUpdate(id, ReminderSource.USER)
+                .orElseThrow(ReminderNotFoundException::new);
+        Instant now = clock.instant();
+        if (!reminder.getDeviceId().equals(deviceId) || !reminder.getRoleId().equals(roleId)
+                || reminder.getLastOutcome() != ReminderStatus.DELIVERED || playedAt == null
+                || !playedAt.equals(reminder.getLastCompletedAt()) || playedAt.isAfter(now)
+                || !playedAt.isAfter(now.minusSeconds(1800)) || !reminder.getContent().equals(content)
+                || (reminder.getStatus() != ReminderStatus.DELIVERED && reminder.getStatus() != ReminderStatus.PENDING)) {
+            throw new InvalidReminderException("Recent reminder is no longer available");
+        }
+        return toSnapshot(reminder);
+    }
+
+    @Transactional(readOnly = true)
+    public ReminderSnapshot nextPendingUserReminder(UUID deviceId, UUID roleId) {
+        return reminderRepository.findFirstByDeviceIdAndRoleIdAndSourceAndStatusAndDeliveryGroupIdIsNullOrderByScheduledAtAscIdAsc(
+                deviceId, roleId, ReminderSource.USER, ReminderStatus.PENDING).map(this::toSnapshot).orElse(null);
+    }
+
+    @Transactional
+    public ReminderSnapshot applyConfirmedVoiceChange(UUID id, UUID deviceId, UUID roleId,
+            Instant expectedSchedule, String expectedContent, Integer minutes) {
+        if (id == null) throw new InvalidReminderException("Reminder confirmation has no target");
+        ReminderEntity reminder = reminderRepository.findByIdAndSourceForUpdate(id, ReminderSource.USER)
+                .orElseThrow(ReminderNotFoundException::new);
+        if (!reminder.getDeviceId().equals(deviceId) || !reminder.getRoleId().equals(roleId)
+                || !reminder.getScheduledAt().equals(expectedSchedule)
+                || !reminder.getContent().equals(expectedContent)
+                || reminder.getStatus() != ReminderStatus.PENDING || reminder.getDeliveryGroupId() != null) {
+            throw new InvalidReminderException("Reminder confirmation target has changed");
+        }
+        if (minutes == null) return skipNext(id);
+        if (minutes < 1 || minutes > 1440) throw new InvalidReminderException("Reminder snooze duration is invalid");
+        Instant now = clock.instant();
+        Instant base = reminder.getScheduledAt().isAfter(now) ? reminder.getScheduledAt() : now;
+        reminder.deferUntil(base.plusSeconds(minutes * 60L), now);
+        return toSnapshot(reminder);
+    }
+
     @Transactional
     public ReminderSnapshot skipNextPending(UUID deviceId) {
         ReminderSnapshot next = nextPending(deviceId);

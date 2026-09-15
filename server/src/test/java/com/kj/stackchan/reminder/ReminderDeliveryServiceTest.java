@@ -41,6 +41,77 @@ class ReminderDeliveryServiceTest {
     private NotificationIntegrationRepository integrationRepository;
 
     @Test
+    void workdayRestPromptBypassesCompanionChatPauseAndStillDispatches() {
+        UUID device = UUID.randomUUID();
+        UUID role = UUID.randomUUID();
+        var reminder = new ReminderEntity(role, device, "休息提醒", NOW, "UTC",
+                ReminderRecurrence.NONE, 1, null, ReminderSource.PROACTIVE,
+                "workday:rest:2026-07-19:1", ProactiveGenerationStatus.FIXED, NOW);
+        var pauses = org.mockito.Mockito.mock(com.kj.stackchan.interaction.ProactivePauseService.class);
+        when(repository.findTop20ByStatusAndScheduledAtLessThanEqualOrderByScheduledAtAscIdAsc(ReminderStatus.PENDING, NOW))
+                .thenReturn(List.of(reminder));
+        when(gateway.isConnected(device)).thenReturn(true);
+        when(speechRuntimeClient.synthesize("休息提醒", role)).thenReturn(new byte[44]);
+        when(gateway.speakReminder(org.mockito.ArgumentMatchers.eq(device), org.mockito.ArgumentMatchers.eq(reminder.getId()), anyString()))
+                .thenReturn(true);
+        var service = service();
+        service.setPauseService(pauses);
+        service.dispatchDueReminders();
+        assertThat(reminder.getStatus()).isEqualTo(ReminderStatus.DISPATCHED);
+        org.mockito.Mockito.verifyNoInteractions(pauses);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void pausedPartnerCancelsQueuedGenericGreetingsBeforeSending(boolean duringSynthesis) {
+        UUID device = UUID.randomUUID();
+        UUID role = UUID.randomUUID();
+        var reminder = new ReminderEntity(role, device, "普通问候", NOW, "UTC",
+                ReminderRecurrence.NONE, 1, null, ReminderSource.PROACTIVE, NOW);
+        var pauses = org.mockito.Mockito.mock(com.kj.stackchan.interaction.ProactivePauseService.class);
+        when(repository.findTop20ByStatusAndScheduledAtLessThanEqualOrderByScheduledAtAscIdAsc(ReminderStatus.PENDING, NOW))
+                .thenReturn(List.of(reminder));
+        if (duringSynthesis) {
+            when(pauses.isPaused(device, role, NOW)).thenReturn(false, true);
+            when(gateway.isConnected(device)).thenReturn(true);
+            when(speechRuntimeClient.synthesize("普通问候", role)).thenReturn(new byte[44]);
+        } else {
+            when(pauses.isPaused(device, role, NOW)).thenReturn(true);
+        }
+        var service = service();
+        service.setPauseService(pauses);
+        service.dispatchDueReminders();
+        assertThat(reminder.getStatus()).isEqualTo(ReminderStatus.CANCELLED);
+        verify(gateway, never()).speakReminder(any(), any(), anyString());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void cancelsMutedProactiveTopicsIncludingFeedbackReceivedDuringSynthesis(boolean duringSynthesis) {
+        UUID device = UUID.randomUUID();
+        UUID role = UUID.randomUUID();
+        var reminder = new ReminderEntity(role, device, "咖啡话题", NOW, "UTC",
+                ReminderRecurrence.NONE, 1, null, ReminderSource.PROACTIVE, "coffee", null, NOW);
+        var topics = org.mockito.Mockito.mock(com.kj.stackchan.interaction.ProactiveTopicCooldownService.class);
+        when(repository.findTop20ByStatusAndScheduledAtLessThanEqualOrderByScheduledAtAscIdAsc(ReminderStatus.PENDING, NOW))
+                .thenReturn(List.of(reminder));
+        if (duringSynthesis) {
+            when(topics.isUserMuted(device, role, "coffee")).thenReturn(false, true);
+            when(gateway.isConnected(device)).thenReturn(true);
+            when(speechRuntimeClient.synthesize("咖啡话题", role)).thenReturn(new byte[44]);
+        } else {
+            when(topics.isUserMuted(device, role, "coffee")).thenReturn(true);
+        }
+        var service = service();
+        service.setTopicCooldownService(topics);
+        service.dispatchDueReminders();
+        assertThat(reminder.getStatus()).isEqualTo(ReminderStatus.CANCELLED);
+        verify(gateway, never()).speakReminder(any(), any(), anyString());
+        verify(repository, never()).saveAndFlush(reminder);
+        if (!duringSynthesis) org.mockito.Mockito.verifyNoInteractions(speechRuntimeClient);
+    }
+
+    @Test
     void synthesizesAndDispatchesADueReminderThenCompletesOnAck() {
         UUID deviceId = UUID.randomUUID();
         UUID roleId = UUID.randomUUID();
@@ -59,7 +130,13 @@ class ReminderDeliveryServiceTest {
                 org.mockito.ArgumentMatchers.eq(reminder.getId()), anyString())).thenReturn(true);
 
         ReminderDeliveryService service = service();
+        var topics = org.mockito.Mockito.mock(com.kj.stackchan.interaction.ProactiveTopicCooldownService.class);
+        service.setTopicCooldownService(topics);
+        var pauses = org.mockito.Mockito.mock(com.kj.stackchan.interaction.ProactivePauseService.class);
+        service.setPauseService(pauses);
         service.dispatchDueReminders();
+        org.mockito.Mockito.verifyNoInteractions(topics);
+        org.mockito.Mockito.verifyNoInteractions(pauses);
 
         assertThat(reminder.getStatus()).isEqualTo(ReminderStatus.DISPATCHED);
         assertThat(reminder.getAudioPayload()).isEqualTo(audio);

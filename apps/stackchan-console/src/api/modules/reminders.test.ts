@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createReminder,
   deleteReminder,
+  getDeliveryTimeline,
   listReminders,
   skipNextReminder,
   snoozeReminder,
@@ -12,6 +13,16 @@ import {
 
 describe('reminder API', () => {
   afterEach(() => vi.unstubAllGlobals())
+
+  it('keeps both device and partner in the delivery timeline request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ upcoming: [], upcomingTotal: 12, recent: [] }), {
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await getDeliveryTimeline('device-a', 'role-b')
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/reminders/timeline?deviceId=device-a&roleId=role-b', expect.any(Object))
+    expect(result.upcomingTotal).toBe(12)
+  })
 
   it('queries reminders with paging and filters', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ list: [], total: 0 }), {
