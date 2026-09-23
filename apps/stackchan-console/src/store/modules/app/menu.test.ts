@@ -14,34 +14,30 @@ describe('app menu store', () => {
 
     const menu = useAppMenuStore()
 
-    expect(menu.sidebarMenus.map(item => item.meta?.title)).toEqual([
-      '今日陪伴',
-      '角色与内容',
-      '事务管理',
-      '机器人设备',
-      '能力配置',
-      '高级扩展',
+    expect(menu.sidebarMenus.filter(item => item.meta?.menu !== false).map(item => item.meta?.title)).toEqual([
+      '伙伴首页',
+      '聊天',
+      '我的伙伴',
+      '我的事务',
+      '机器人',
+      '设置与数据',
     ])
 
-    const daily = menu.sidebarMenus.find(item => item.meta?.title === '今日陪伴')
-    expect(daily?.meta?.expand).toBe(true)
-    expect(daily?.children?.map(item => item.meta?.title)).toEqual([
-      '今日概览',
-      '陪伴聊天',
-      '工作陪伴',
-      '主动陪伴',
-    ])
-
-    const tasks = menu.sidebarMenus.find(item => item.meta?.title === '事务管理')
+    const tasks = menu.sidebarMenus.find(item => item.meta?.title === '我的事务')
     expect(tasks?.children?.map(item => item.meta?.title)).toEqual([
       '提醒',
       '个人待办',
+      '工作陪伴',
     ])
-    const advanced = menu.sidebarMenus.find(item => item.meta?.title === '高级扩展')
+    const advanced = menu.sidebarMenus.find(item => item.meta?.title === '设置与数据')
     expect(advanced?.meta?.expand).toBe(false)
     expect(advanced?.children?.map(item => item.meta?.title)).toEqual([
+      'AI 配置',
+      '语音配置',
+      '对话与个人数据',
       '可用帮助与扩展',
       '外部通知',
     ])
+    expect(menu.sidebarMenus.find(item => item.meta?.title === '高级扩展')?.meta?.menu).toBe(false)
   })
 })

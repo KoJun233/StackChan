@@ -36,6 +36,10 @@ vi.mock('@fantastic-admin/components', () => {
       },
     }),
     FaCard: passthrough,
+    FaAlert: defineComponent({
+      props: { title: String, description: String },
+      setup: props => () => h('div', [props.title, props.description]),
+    }),
     FaEmpty: passthrough,
     FaPageHeader: passthrough,
     FaPageMain: passthrough,
@@ -54,6 +58,51 @@ vi.mock('@fantastic-admin/components', () => {
 })
 
 describe('device overview command availability', () => {
+  it('keeps the newest robot diagnostics when an older request finishes last', async () => {
+    let resolveOld!: (value: unknown[]) => void
+    const oldResponse = new Promise<unknown[]>((resolve) => {
+      resolveOld = resolve
+    })
+    deviceApi.listDevices.mockResolvedValue([
+      { id: 'a', displayName: '机器人 A', online: true, commandAvailable: true },
+      { id: 'b', displayName: '机器人 B', online: true, commandAvailable: true },
+    ])
+    const turn = (turnId: string) => ({
+      turnId,
+      status: 'COMPLETED',
+      failureCode: null,
+      startedAt: '2026-09-20T00:00:00Z',
+      updatedAt: '2026-09-20T00:00:01Z',
+      events: [],
+    })
+    deviceApi.listDeviceVoiceTurns.mockImplementation((deviceId: string) => deviceId === 'a' ? oldResponse : Promise.resolve([turn('new-turn')]))
+    const container = document.createElement('div')
+    const app = createApp(DeviceOverview)
+    app.mount(container)
+    await vi.waitFor(() => expect(container.querySelectorAll('[data-device-id]')).toHaveLength(2))
+    const clickDiagnostics = (id: string) => Array.from(container.querySelectorAll<HTMLButtonElement>(`[data-device-id="${id}"] button`)).find(button => button.textContent?.includes('交互诊断'))?.click()
+    clickDiagnostics('a')
+    clickDiagnostics('b')
+    await vi.waitFor(() => expect(container.querySelector('[data-turn-id="new-turn"]')).not.toBeNull())
+    resolveOld([turn('old-turn')])
+    await vi.waitFor(() => expect(memoryApi.getMemoryUsage).toHaveBeenCalledWith('new-turn'))
+    expect(container.querySelector('[data-turn-id="old-turn"]')).toBeNull()
+    expect(container.textContent).toContain('机器人 B 的最近语音回合')
+    app.unmount()
+  })
+
+  it('shows a failed diagnostic request as unavailable, not empty', async () => {
+    deviceApi.listDevices.mockResolvedValue([{ id: 'a', displayName: '机器人 A', online: true, commandAvailable: true }])
+    deviceApi.listDeviceVoiceTurns.mockRejectedValue(new Error('诊断暂不可用'))
+    const container = document.createElement('div')
+    const app = createApp(DeviceOverview)
+    app.mount(container)
+    await vi.waitFor(() => expect(container.querySelector('[data-device-id]')).not.toBeNull())
+    Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('交互诊断'))?.click()
+    await vi.waitFor(() => expect(container.textContent).toContain('诊断暂不可用'))
+    expect(container.textContent).not.toContain('暂无语音回合诊断数据')
+    app.unmount()
+  })
   afterEach(() => {
     document.body.innerHTML = ''
     vi.clearAllMocks()
@@ -87,8 +136,8 @@ describe('device overview command availability', () => {
     await vi.waitFor(() => expect(deviceApi.listDevices).toHaveBeenCalledOnce())
     await vi.waitFor(() => expect(container.querySelectorAll('[data-device-id]')).toHaveLength(2))
 
-    const heartbeatOnlyButton = container.querySelector<HTMLButtonElement>('[data-device-id="heartbeat-only"] button')
-    const connectedButton = container.querySelector<HTMLButtonElement>('[data-device-id="connected"] button')
+    const heartbeatOnlyButton = [...container.querySelectorAll<HTMLButtonElement>('[data-device-id="heartbeat-only"] button')].find(button => button.textContent?.includes('安全停止'))
+    const connectedButton = [...container.querySelectorAll<HTMLButtonElement>('[data-device-id="connected"] button')].find(button => button.textContent?.includes('安全停止'))
     expect(heartbeatOnlyButton?.disabled).toBe(true)
     expect(connectedButton?.disabled).toBe(false)
   })
@@ -157,7 +206,7 @@ describe('device overview command availability', () => {
     createApp(DeviceOverview).mount(container)
     await vi.waitFor(() => expect(container.querySelectorAll('[data-device-id]')).toHaveLength(1))
     const buttons = container.querySelectorAll<HTMLButtonElement>('[data-device-id="connected"] button')
-    buttons[1].click()
+    Array.from(buttons).find(button => button.textContent?.includes('交互诊断'))?.click()
 
     await vi.waitFor(() => expect(deviceApi.listDeviceVoiceTurns).toHaveBeenCalledWith('connected'))
     await vi.waitFor(() => expect(container.querySelector('[data-turn-id]')?.textContent).toContain('恢复聆听'))
@@ -208,7 +257,7 @@ describe('device overview command availability', () => {
     createApp(DeviceOverview).mount(container)
     await vi.waitFor(() => expect(container.querySelectorAll('[data-device-id]')).toHaveLength(1))
     const buttons = container.querySelectorAll<HTMLButtonElement>('[data-device-id="connected"] button')
-    buttons[1].click()
+    Array.from(buttons).find(button => button.textContent?.includes('交互诊断'))?.click()
 
     await vi.waitFor(() => expect(container.querySelector('[data-turn-id]')?.textContent).toContain('已取消'))
     expect(container.querySelector('[data-turn-id]')?.textContent).toContain('触摸发起')

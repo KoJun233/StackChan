@@ -43,7 +43,7 @@ const priorityOptions = [
 
 const validationSchema = toTypedSchema(z.object({
   deviceId: z.string().uuid('请选择目标设备'),
-  roleId: z.string().refine(isCompanionRoleId, '请选择角色'),
+  roleId: z.string().refine(isCompanionRoleId, '请选择伙伴'),
   title: z.string().trim().min(1, '请输入待办标题').max(200, '标题不能超过 200 个字符'),
   notes: z.string().max(2000, '备注不能超过 2000 个字符'),
   priority: z.enum(['HIGH', 'NORMAL', 'LOW']),
@@ -143,7 +143,7 @@ onMounted(async () => {
     await resetForRoute(props.id)
   }
   catch (error) {
-    useFaToast().error('基础数据加载失败', { description: error instanceof Error ? error.message : '无法获取设备或角色。' })
+    useFaToast().error('基础数据加载失败', { description: error instanceof Error ? error.message : '无法获取设备或伙伴。' })
   }
 })
 
@@ -157,7 +157,7 @@ defineExpose({ submit })
       <FaFormItem name="deviceId" label="目标设备" required description="待办和截止提醒只对所选机器人生效。">
         <FaSelect :options="deviceOptions" :disabled="Boolean(model.id)" class="w-full" />
       </FaFormItem>
-      <FaFormItem name="roleId" label="归属角色" required description="创建后不可改绑角色。">
+      <FaFormItem name="roleId" label="归属伙伴" required description="创建后不可改绑伙伴。">
         <FaSelect :options="roleOptions" :disabled="Boolean(model.id)" class="w-full" />
       </FaFormItem>
       <FaFormItem name="title" label="待办标题" required>

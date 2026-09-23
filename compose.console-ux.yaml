@@ -1,0 +1,5 @@
+services:
+  server:
+    image: ${STACKCHAN_CONSOLE_RELEASE_IMAGE:-stackchan-foundation-server:console-ux-20260921}
+    environment:
+      COMPANION_BUILD_VERSION: ${STACKCHAN_CONSOLE_RELEASE_VERSION:-console-ux-20260921}

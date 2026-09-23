@@ -1,0 +1,6 @@
+# Build context contains public/ from a validated console production build.
+# Keep the deployed V51 backend binary and replace only static console assets.
+ARG BASE_IMAGE=stackchan-foundation-server:companion-v51-20260914
+FROM ${BASE_IMAGE}
+RUN rm -rf /app/public
+COPY public/ /app/public/

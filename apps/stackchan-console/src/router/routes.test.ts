@@ -2,113 +2,72 @@ import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { asyncRoutes, systemRoutes } from './routes'
 
-function flattenRoutes(routes: any[]): any[] {
-  return routes.flatMap(route => [route, ...(route.children ? flattenRoutes(route.children) : [])])
+function flatten(routes: any[]): any[] {
+  return routes.flatMap(route => [route, ...flatten(route.children ?? [])])
 }
+const create = () => createRouter({ history: createMemoryHistory(), routes: asyncRoutes.flatMap(group => group.children ?? []) })
 
-describe('stackChan console routes', () => {
-  it('redirects the root route to the daily overview', () => {
-    const rootRoute = (systemRoutes as any[]).find(route => route.path === '/')
-    const indexRoute = rootRoute?.children?.find((route: any) => route.path === '')
-
-    expect(indexRoute?.redirect).toBe('/dashboard')
+describe('console navigation compatibility', () => {
+  it('retains the home redirect', () => {
+    expect((systemRoutes as any[]).find(route => route.path === '/')?.children?.find((route: any) => route.path === '')?.redirect).toBe('/dashboard')
   })
-
-  it('exposes the daily, companion, device, task and capability pages', () => {
-    const routes = flattenRoutes(asyncRoutes as any[])
-
-    expect(routes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'dashboardHome', path: '', meta: expect.objectContaining({ title: '今日概览' }) }),
-      expect.objectContaining({ name: 'companionChat', path: '', meta: expect.objectContaining({ title: '陪伴聊天', keepAlive: true }) }),
-      expect.objectContaining({ name: 'workdayCompanion', path: '', meta: expect.objectContaining({ title: '工作陪伴' }) }),
-      expect.objectContaining({ name: 'interactionSettings', path: '', meta: expect.objectContaining({ title: '主动陪伴' }) }),
-      expect.objectContaining({ name: 'deviceOverview', path: 'overview' }),
-      expect.objectContaining({ name: 'devicePairing', path: 'pairing', meta: expect.objectContaining({ title: '配网与配对' }) }),
-      expect.objectContaining({ name: 'deviceHealth', path: 'health', meta: expect.objectContaining({ title: '运行健康' }) }),
-      expect.objectContaining({ name: 'companionPersona', path: 'persona', meta: expect.objectContaining({ title: '角色管理' }) }),
-      expect.objectContaining({ name: 'companionRoleDetail', path: 'roles/detail/:id?', meta: expect.objectContaining({ menu: false, activeMenu: '/companion/persona' }) }),
-      expect.objectContaining({ name: 'companionExpressionPacks', path: 'expressions', meta: expect.objectContaining({ title: '表情与形象' }) }),
-      expect.objectContaining({ name: 'companionPersonalData', path: 'personal-data', meta: expect.objectContaining({ title: '对话与个人数据' }) }),
-      expect.objectContaining({ name: 'companionMemoryList', path: 'memories', meta: expect.objectContaining({ title: '长期记忆', keepAlive: 'companionMemoryDetail' }) }),
-      expect.objectContaining({
-        name: 'companionMemoryDetail',
-        path: 'memories/detail/:id?',
-        meta: expect.objectContaining({ menu: false, activeMenu: '/companion/memories', noKeepAlive: 'companionMemoryList' }),
-      }),
-      expect.objectContaining({ name: 'llmSettings', path: 'llm', meta: expect.objectContaining({ title: 'AI 配置' }) }),
-      expect.objectContaining({ name: 'speechSettings', path: 'speech', meta: expect.objectContaining({ title: '语音配置' }) }),
-      expect.objectContaining({ name: 'agentCapabilities', path: '', meta: expect.objectContaining({ title: '可用帮助与扩展' }) }),
-      expect.objectContaining({ name: 'reminderList', path: '', meta: expect.objectContaining({ keepAlive: 'reminderDetail' }) }),
-      expect.objectContaining({
-        name: 'reminderDetail',
-        path: 'detail/:id?',
-        meta: expect.objectContaining({ menu: false, activeMenu: '/reminders', noKeepAlive: 'reminderList' }),
-      }),
-      expect.objectContaining({ name: 'personalTaskList', path: '', meta: expect.objectContaining({ keepAlive: 'personalTaskDetail' }) }),
-      expect.objectContaining({
-        name: 'personalTaskDetail',
-        path: 'detail/:id?',
-        meta: expect.objectContaining({ menu: false, activeMenu: '/personal-tasks', noKeepAlive: 'personalTaskList' }),
-      }),
-    ]))
+  it('keeps all seventeen business URLs and named routes', () => {
+    const router = create()
+    const pages: Record<string, string> = {
+      '/dashboard': 'dashboardHome',
+      '/companion/chat': 'companionChat',
+      '/companion/workday': 'workdayCompanion',
+      '/settings/interaction': 'interactionSettings',
+      '/companion/persona': 'companionPersona',
+      '/companion/memories': 'companionMemoryList',
+      '/companion/expressions': 'companionExpressionPacks',
+      '/companion/personal-data': 'companionPersonalData',
+      '/reminders': 'reminderList',
+      '/personal-tasks': 'personalTaskList',
+      '/devices/overview': 'deviceOverview',
+      '/devices/pairing': 'devicePairing',
+      '/devices/health': 'deviceHealth',
+      '/settings/llm': 'llmSettings',
+      '/settings/speech': 'speechSettings',
+      '/settings/agent': 'agentCapabilities',
+      '/notifications': 'notificationIntegrationList',
+    }
+    for (const [path, name] of Object.entries(pages)) {
+      expect(router.resolve(path).name, path).toBe(name)
+      expect(router.resolve({ name }).path, name).toBe(path)
+      expect(router.resolve({ path, query: { roleId: 'partner', deviceId: 'device' } }).query).toEqual({ roleId: 'partner', deviceId: 'device' })
+    }
   })
-
-  it('places proactive care in the daily group', () => {
-    const daily = (asyncRoutes as any[]).find(route => route.meta?.title === '今日')
-    const companion = (asyncRoutes as any[]).find(route => route.meta?.title === '陪伴')
-    const dailyCompanion = daily?.children?.find((route: any) => route.name === 'todayCompanion')
-
-    expect(daily?.children).toEqual([
-      expect.objectContaining({ name: 'todayCompanion', meta: expect.objectContaining({ title: '今日陪伴', expand: true }) }),
-    ])
-    expect(dailyCompanion?.children).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'workdayCompanionMenu' }),
-      expect.objectContaining({ name: 'interactionSettingsMenu' }),
-    ]))
-    expect(companion?.children).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'interactionSettingsMenu' }),
-    ]))
+  it('keeps five detail URLs hidden and preserves their return/cache contracts', () => {
+    const router = create()
+    const details = [
+      ['companionRoleDetail', '/companion/roles/detail', '/companion/persona', 'companionPersona'],
+      ['companionMemoryDetail', '/companion/memories/detail', '/companion/memories', 'companionMemoryList'],
+      ['reminderDetail', '/reminders/detail', '/reminders', 'reminderList'],
+      ['personalTaskDetail', '/personal-tasks/detail', '/personal-tasks', 'personalTaskList'],
+      ['notificationIntegrationDetail', '/notifications/detail', '/notifications', 'notificationIntegrationList'],
+    ]
+    for (const [name, path, activeMenu, noKeepAlive] of details) {
+      expect(router.resolve(path).name).toBe(name)
+      expect(router.resolve({ name, params: { id: 'existing' } }).path).toBe(`${path}/existing`)
+      expect(router.resolve(path).meta).toMatchObject({ menu: false, activeMenu, keepAlive: true, noKeepAlive })
+    }
   })
-
-  it('uses the recommended top-level information architecture', () => {
-    expect((asyncRoutes as any[]).map(route => route.meta?.title)).toEqual([
-      '今日',
-      '陪伴',
-      '个人事务',
-      '设备与运行',
-      '系统与能力',
-    ])
+  it('prioritizes home and chat and groups care with partners and work with tasks', () => {
+    expect(asyncRoutes[0].children?.map(route => route.name)).toEqual(['dashboard', 'companionChatMenu'])
+    const all = flatten(asyncRoutes)
+    const partner = all.find(route => route.name === 'companion')
+    expect(partner.meta.title).toBe('我的伙伴')
+    expect(flatten(partner.children).some(route => route.name === 'interactionSettings')).toBe(true)
+    expect(flatten(all.find(route => route.name === 'taskManagement').children).some(route => route.name === 'workdayCompanion')).toBe(true)
+    const settings = all.find(route => route.name === 'settings')
+    expect(settings.meta).toMatchObject({ title: '设置与数据', expand: false })
+    expect(flatten(settings.children).map(route => route.name)).toEqual(expect.arrayContaining(['companionPersonalData', 'agentCapabilities', 'notificationIntegrationList']))
   })
-
-  it('keeps personal tasks simple and moves integrations into collapsed advanced settings', () => {
-    const reminderManagement = (asyncRoutes as any[]).find(route => route.meta?.title === '个人事务')
-    const taskManagement = reminderManagement?.children?.find((route: any) => route.name === 'taskManagement')
-
-    expect(reminderManagement?.children).toEqual([
-      expect.objectContaining({ name: 'taskManagement', meta: expect.objectContaining({ title: '事务管理' }) }),
-    ])
-    expect(taskManagement?.children).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'reminders', path: '/reminders' }),
-      expect.objectContaining({ name: 'personalTasks', path: '/personal-tasks' }),
-    ]))
-    expect(taskManagement?.children).toHaveLength(2)
-    const settings = (asyncRoutes as any[]).find(route => route.meta?.title === '系统与能力')
-    const advanced = settings.children.find((route: any) => route.name === 'advancedExtensions')
-    expect(advanced.meta.expand).toBe(false)
-    expect(advanced.children).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'notificationIntegrations', path: '/notifications' }),
-      expect.objectContaining({ name: 'agentCapabilitiesMenu', path: '/settings/agent' }),
-    ]))
-    expect((asyncRoutes as any[]).filter(route => route.meta?.title === '外部通知')).toHaveLength(0)
-  })
-
-  it('preserves existing capability and notification deep links', () => {
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: asyncRoutes.flatMap(group => group.children ?? []),
-    })
-    expect(router.resolve('/settings/agent').name).toBe('agentCapabilities')
-    expect(router.resolve('/notifications').name).toBe('notificationIntegrationList')
-    expect(router.resolve({ name: 'agentCapabilities' }).path).toBe('/settings/agent')
+  it('retains the advanced bookmark and unique names', () => {
+    const all = flatten(asyncRoutes)
+    const names = all.map(route => route.name).filter(Boolean)
+    expect(new Set(names).size).toBe(names.length)
+    expect(all.find(route => route.name === 'advancedExtensions').redirect).toBe('/settings/agent')
   })
 })

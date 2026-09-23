@@ -6,7 +6,7 @@ const api = vi.hoisted(() => ({ getDeliveryTimeline: vi.fn() }))
 vi.mock('@/api/modules/reminders', () => api)
 vi.mock('@fantastic-admin/components', () => {
   const pass = defineComponent({ setup: (_, { slots }) => () => h('div', slots.default?.()) })
-  return { FaCard: pass, FaLoading: pass, FaTag: pass, FaEmpty: pass, FaAlert: defineComponent({ props: ['description'], setup: props => () => h('div', String(props.description)) }) }
+  return { FaCard: pass, FaIcon: pass, FaTag: pass, FaEmpty: pass, FaAlert: defineComponent({ props: ['description'], setup: props => () => h('div', String(props.description)) }) }
 })
 
 const cleanups: (() => void)[] = []

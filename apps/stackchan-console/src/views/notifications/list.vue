@@ -363,171 +363,168 @@ onBeforeUnmount(() => eventBus.off('get-notification-integrations'))
 </script>
 
 <template>
-  <div :class="{ 'absolute flex flex-col size-full': tableAutoHeight }">
-    <FaPageHeader title="外部通知" description="为 Codex、Claude Code 或 CI 创建最小权限入口，并可靠投递原文语音通知。" />
-    <FaPageMain>
-      <FaTabs v-model="activeSection" :list="sectionTabs" list-class="justify-start overflow-x-auto" content-class="pt-5">
-        <template #integrations>
-          <FaAlert
-            class="mb-5"
-            title="令牌只显示一次"
-            description="令牌只允许创建和查询自身通知。生产必须使用 HTTPS；不要把令牌写入仓库、URL、日志、Pinia 或 localStorage。"
-          />
-          <FaTable v-loading="loading" row-key="id" stripe border :columns="integrationColumns" :data="integrations">
-            <template #toolbar>
-              <FaButton @click="onCreate">
-                新增集成
+  <AppPageShell title="外部通知" description="为 Codex、Claude Code 或 CI 创建最小权限入口，并可靠投递原文语音通知。" :class="{ 'h-full': tableAutoHeight }" :content-class="tableAutoHeight ? 'flex flex-1 min-h-0 flex-col overflow-auto' : ''">
+    <FaTabs v-model="activeSection" :list="sectionTabs" list-class="justify-start overflow-x-auto" content-class="pt-5">
+      <template #integrations>
+        <FaAlert
+          class="mb-5"
+          title="令牌只显示一次"
+          description="令牌只允许创建和查询自身通知。生产必须使用 HTTPS；不要把令牌写入仓库、URL、日志、Pinia 或 localStorage。"
+        />
+        <FaTable v-loading="loading" row-key="id" stripe border :columns="integrationColumns" :data="integrations">
+          <template #toolbar>
+            <FaButton @click="onCreate">
+              新增集成
+            </FaButton>
+          </template>
+          <template #cell-device="{ row }">
+            {{ deviceNames.get(row.original.deviceId) ?? row.original.deviceId }}
+          </template>
+          <template #cell-enabled="{ row }">
+            <FaTag :variant="row.original.enabled ? 'default' : 'outline'">
+              {{ row.original.enabled ? '启用' : '停用' }}
+            </FaTag>
+          </template>
+          <template #cell-digest="{ row }">
+            <FaTag :variant="row.original.digestWindowSeconds ? 'secondary' : 'outline'">
+              {{ row.original.digestWindowSeconds ? `${row.original.digestWindowSeconds} 秒` : '关闭' }}
+            </FaTag>
+          </template>
+          <template #cell-tokens="{ row }">
+            {{ activeTokens(row.original).length }} / {{ row.original.tokens.length }}
+          </template>
+          <template #cell-updatedAt="{ row }">
+            {{ formatTime(row.original.updatedAt) }}
+          </template>
+          <template #cell-operation="{ row }">
+            <div class="flex-center gap-2">
+              <FaButton variant="outline" size="icon-sm" @click="onEdit(row.original)">
+                <FaIcon name="i-ri:edit-line" />
               </FaButton>
+              <FaButton variant="outline" size="icon-sm" title="签发令牌" @click="openTokenModal(row.original)">
+                <FaIcon name="i-ri:key-2-line" />
+              </FaButton>
+              <FaDropdown
+                :items="[[
+                  ...activeTokens(row.original).map(token => ({ label: `撤销 ${formatTime(token.createdAt)} 的令牌`, variant: 'destructive' as const, handle: () => confirmRevoke(row.original, token) })),
+                ]]"
+              >
+                <FaButton variant="outline" size="icon-sm" :disabled="!activeTokens(row.original).length">
+                  <FaIcon name="i-ri:more-line" />
+                </FaButton>
+              </FaDropdown>
+              <FaButton
+                variant="destructive"
+                size="icon-sm"
+                title="删除集成"
+                :loading="actionId === `integration:${row.original.id}`"
+                @click="confirmDeleteIntegration(row.original)"
+              >
+                <FaIcon name="i-ri:delete-bin-line" />
+              </FaButton>
+            </div>
+          </template>
+        </FaTable>
+      </template>
+
+      <template #test>
+        <FaCard title="测试播报" description="显式创建一条真实外部通知；正文不会经过 LLM 改写。">
+          <div class="gap-3 grid lg:grid-cols-[minmax(220px,0.7fr)_minmax(320px,2fr)_auto] lg:items-end">
+            <FaLabel label="启用集成">
+              <FaSelect v-model="testIntegrationId" :options="testIntegrationOptions" placeholder="请选择集成" />
+            </FaLabel>
+            <FaLabel label="测试正文">
+              <FaInput v-model="testContent" maxlength="500" />
+            </FaLabel>
+            <FaButton :loading="actionId === testIntegrationId" :disabled="!testIntegrationId" @click="sendTest">
+              <FaIcon name="i-ri:volume-up-line" />加入播报队列
+            </FaButton>
+          </div>
+          <div class="mt-4 flex flex-wrap gap-5 items-center">
+            <span class="text-sm text-muted-foreground">允许的用户回执（可选）：</span>
+            <FaCheckboxGroup v-model="testResponseActions" :options="testResponseActionOptions" class="flex flex-wrap" />
+          </div>
+        </FaCard>
+      </template>
+
+      <template #queue>
+        <FaCard title="通知队列" description="查看投递、失败、过期和用户回执，必要时清理终态记录。">
+          <FaSearchBar :show-toggle="false">
+            <template #default>
+              <div class="gap-3 grid md:grid-cols-[1fr_1fr_auto] md:items-end">
+                <FaLabel label="来源集成">
+                  <FaSelect v-model="search.integrationId" :options="integrationOptions" @change="currentChange()" />
+                </FaLabel>
+                <FaLabel label="状态">
+                  <FaSelect v-model="search.status" :options="statusOptions" @change="currentChange()" />
+                </FaLabel>
+                <div class="flex gap-2 justify-end">
+                  <FaButton variant="outline" @click="resetSearch">
+                    重置
+                  </FaButton><FaButton @click="currentChange()">
+                    筛选
+                  </FaButton>
+                </div>
+              </div>
             </template>
-            <template #cell-device="{ row }">
-              {{ deviceNames.get(row.original.deviceId) ?? row.original.deviceId }}
+          </FaSearchBar>
+          <div class="mx--4 my-3 border-t border-t-dashed" />
+          <FaTable v-loading="notificationLoading" row-key="id" stripe border :columns="notificationColumns" :data="notifications">
+            <template #cell-content="{ row }">
+              <div class="max-w-120 truncate" :title="row.original.content">
+                {{ row.original.content }}
+              </div>
             </template>
-            <template #cell-enabled="{ row }">
-              <FaTag :variant="row.original.enabled ? 'default' : 'outline'">
-                {{ row.original.enabled ? '启用' : '停用' }}
-              </FaTag>
+            <template #cell-integration="{ row }">
+              {{ integrationNames.get(row.original.integrationId) ?? row.original.integrationId }}
             </template>
-            <template #cell-digest="{ row }">
-              <FaTag :variant="row.original.digestWindowSeconds ? 'secondary' : 'outline'">
-                {{ row.original.digestWindowSeconds ? `${row.original.digestWindowSeconds} 秒` : '关闭' }}
-              </FaTag>
+            <template #cell-status="{ row }">
+              <div class="flex flex-col gap-1 items-center">
+                <FaTag :variant="statusVariant(row.original.status)">
+                  {{ statusLabel(row.original.status) }}
+                </FaTag><span v-if="row.original.failureCode" class="text-xs text-destructive">{{ row.original.failureCode }}</span>
+              </div>
             </template>
-            <template #cell-tokens="{ row }">
-              {{ activeTokens(row.original).length }} / {{ row.original.tokens.length }}
+            <template #cell-createdAt="{ row }">
+              {{ formatTime(row.original.createdAt) }}
             </template>
-            <template #cell-updatedAt="{ row }">
-              {{ formatTime(row.original.updatedAt) }}
+            <template #cell-expiresAt="{ row }">
+              {{ formatTime(row.original.expiresAt) }}
+            </template>
+            <template #cell-response="{ row }">
+              <div v-if="row.original.response" class="flex flex-col gap-1 items-center">
+                <FaTag variant="outline">
+                  {{ responseLabel(row.original.response.action) }}
+                </FaTag>
+                <span v-if="row.original.response.snoozeMinutes" class="text-xs text-muted-foreground">{{ row.original.response.snoozeMinutes }} 分钟</span>
+              </div>
+              <span v-else-if="row.original.responseActions.length" class="text-xs text-muted-foreground">等待回应</span>
+              <span v-else>—</span>
             </template>
             <template #cell-operation="{ row }">
               <div class="flex-center gap-2">
-                <FaButton variant="outline" size="icon-sm" @click="onEdit(row.original)">
-                  <FaIcon name="i-ri:edit-line" />
-                </FaButton>
-                <FaButton variant="outline" size="icon-sm" title="签发令牌" @click="openTokenModal(row.original)">
-                  <FaIcon name="i-ri:key-2-line" />
-                </FaButton>
-                <FaDropdown
-                  :items="[[
-                    ...activeTokens(row.original).map(token => ({ label: `撤销 ${formatTime(token.createdAt)} 的令牌`, variant: 'destructive' as const, handle: () => confirmRevoke(row.original, token) })),
-                  ]]"
-                >
-                  <FaButton variant="outline" size="icon-sm" :disabled="!activeTokens(row.original).length">
-                    <FaIcon name="i-ri:more-line" />
+                <FaDropdown v-if="row.original.status === 'DELIVERED' && row.original.responseActions.length && (!row.original.response || row.original.response.action === 'SNOOZE')" :items="[row.original.responseActions.map(action => ({ label: action === 'SNOOZE' ? '10 分钟后提醒' : responseLabel(action), handle: () => respond(row.original, action) }))]">
+                  <FaButton variant="outline" size="icon-sm" title="记录用户回执" :loading="actionId === `response:${row.original.id}`">
+                    <FaIcon name="i-ri:chat-check-line" />
                   </FaButton>
                 </FaDropdown>
                 <FaButton
                   variant="destructive"
                   size="icon-sm"
-                  title="删除集成"
-                  :loading="actionId === `integration:${row.original.id}`"
-                  @click="confirmDeleteIntegration(row.original)"
+                  :disabled="row.original.status === 'DISPATCHED'"
+                  :loading="actionId === `notification:${row.original.id}`"
+                  :title="row.original.status === 'DISPATCHED' ? '正在播报，暂时不能删除' : '删除通知记录'"
+                  @click="confirmDeleteNotification(row.original)"
                 >
                   <FaIcon name="i-ri:delete-bin-line" />
                 </FaButton>
               </div>
             </template>
           </FaTable>
-        </template>
-
-        <template #test>
-          <FaCard title="测试播报" description="显式创建一条真实外部通知；正文不会经过 LLM 改写。">
-            <div class="gap-3 grid lg:grid-cols-[minmax(220px,0.7fr)_minmax(320px,2fr)_auto] lg:items-end">
-              <FaLabel label="启用集成">
-                <FaSelect v-model="testIntegrationId" :options="testIntegrationOptions" placeholder="请选择集成" />
-              </FaLabel>
-              <FaLabel label="测试正文">
-                <FaInput v-model="testContent" maxlength="500" />
-              </FaLabel>
-              <FaButton :loading="actionId === testIntegrationId" :disabled="!testIntegrationId" @click="sendTest">
-                <FaIcon name="i-ri:volume-up-line" />加入播报队列
-              </FaButton>
-            </div>
-            <div class="mt-4 flex flex-wrap gap-5 items-center">
-              <span class="text-sm text-muted-foreground">允许的用户回执（可选）：</span>
-              <FaCheckboxGroup v-model="testResponseActions" :options="testResponseActionOptions" class="flex flex-wrap" />
-            </div>
-          </FaCard>
-        </template>
-
-        <template #queue>
-          <FaCard title="通知队列" description="查看投递、失败、过期和用户回执，必要时清理终态记录。">
-            <FaSearchBar :show-toggle="false">
-              <template #default>
-                <div class="gap-3 grid md:grid-cols-[1fr_1fr_auto] md:items-end">
-                  <FaLabel label="来源集成">
-                    <FaSelect v-model="search.integrationId" :options="integrationOptions" @change="currentChange()" />
-                  </FaLabel>
-                  <FaLabel label="状态">
-                    <FaSelect v-model="search.status" :options="statusOptions" @change="currentChange()" />
-                  </FaLabel>
-                  <div class="flex gap-2 justify-end">
-                    <FaButton variant="outline" @click="resetSearch">
-                      重置
-                    </FaButton><FaButton @click="currentChange()">
-                      筛选
-                    </FaButton>
-                  </div>
-                </div>
-              </template>
-            </FaSearchBar>
-            <div class="mx--4 my-3 border-t border-t-dashed" />
-            <FaTable v-loading="notificationLoading" row-key="id" stripe border :columns="notificationColumns" :data="notifications">
-              <template #cell-content="{ row }">
-                <div class="max-w-120 truncate" :title="row.original.content">
-                  {{ row.original.content }}
-                </div>
-              </template>
-              <template #cell-integration="{ row }">
-                {{ integrationNames.get(row.original.integrationId) ?? row.original.integrationId }}
-              </template>
-              <template #cell-status="{ row }">
-                <div class="flex flex-col gap-1 items-center">
-                  <FaTag :variant="statusVariant(row.original.status)">
-                    {{ statusLabel(row.original.status) }}
-                  </FaTag><span v-if="row.original.failureCode" class="text-xs text-destructive">{{ row.original.failureCode }}</span>
-                </div>
-              </template>
-              <template #cell-createdAt="{ row }">
-                {{ formatTime(row.original.createdAt) }}
-              </template>
-              <template #cell-expiresAt="{ row }">
-                {{ formatTime(row.original.expiresAt) }}
-              </template>
-              <template #cell-response="{ row }">
-                <div v-if="row.original.response" class="flex flex-col gap-1 items-center">
-                  <FaTag variant="outline">
-                    {{ responseLabel(row.original.response.action) }}
-                  </FaTag>
-                  <span v-if="row.original.response.snoozeMinutes" class="text-xs text-muted-foreground">{{ row.original.response.snoozeMinutes }} 分钟</span>
-                </div>
-                <span v-else-if="row.original.responseActions.length" class="text-xs text-muted-foreground">等待回应</span>
-                <span v-else>—</span>
-              </template>
-              <template #cell-operation="{ row }">
-                <div class="flex-center gap-2">
-                  <FaDropdown v-if="row.original.status === 'DELIVERED' && row.original.responseActions.length && (!row.original.response || row.original.response.action === 'SNOOZE')" :items="[row.original.responseActions.map(action => ({ label: action === 'SNOOZE' ? '10 分钟后提醒' : responseLabel(action), handle: () => respond(row.original, action) }))]">
-                    <FaButton variant="outline" size="icon-sm" title="记录用户回执" :loading="actionId === `response:${row.original.id}`">
-                      <FaIcon name="i-ri:chat-check-line" />
-                    </FaButton>
-                  </FaDropdown>
-                  <FaButton
-                    variant="destructive"
-                    size="icon-sm"
-                    :disabled="row.original.status === 'DISPATCHED'"
-                    :loading="actionId === `notification:${row.original.id}`"
-                    :title="row.original.status === 'DISPATCHED' ? '正在播报，暂时不能删除' : '删除通知记录'"
-                    @click="confirmDeleteNotification(row.original)"
-                  >
-                    <FaIcon name="i-ri:delete-bin-line" />
-                  </FaButton>
-                </div>
-              </template>
-            </FaTable>
-            <FaPagination :page="pagination.page" :size="pagination.size" :total="pagination.total" class="mt-2" @page-change="currentChange" @size-change="sizeChange" />
-          </FaCard>
-        </template>
-      </FaTabs>
-    </FaPageMain>
+          <FaPagination :page="pagination.page" :size="pagination.size" :total="pagination.total" class="mt-2" @page-change="currentChange" @size-change="sizeChange" />
+        </FaCard>
+      </template>
+    </FaTabs>
 
     <FaModal v-model="tokenModalOpen" title="签发外部通知令牌" :footer="false" @closed="closeTokenModal">
       <div v-if="!issuedToken" class="space-y-4">
@@ -558,5 +555,5 @@ onBeforeUnmount(() => eventBus.off('get-notification-integrations'))
         </div>
       </div>
     </FaModal>
-  </div>
+  </AppPageShell>
 </template>

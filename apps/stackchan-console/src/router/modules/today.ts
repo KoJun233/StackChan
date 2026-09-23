@@ -9,13 +9,13 @@ const dashboardRoute: RouteRecordRaw = {
   path: '/dashboard',
   component: Layout,
   name: 'dashboard',
-  meta: { title: '今日概览', icon: 'i-ri:home-heart-line' },
+  meta: { title: '伙伴首页', icon: 'i-ri:home-heart-line' },
   children: [
     {
       path: '',
       name: 'dashboardHome',
       component: () => import('@/views/dashboard/index.vue'),
-      meta: { title: '今日概览', menu: false, breadcrumb: false },
+      meta: { title: '伙伴首页', menu: false, breadcrumb: false },
     },
   ],
 }
@@ -24,18 +24,18 @@ const chatRoute: RouteRecordRaw = {
   path: '/companion/chat',
   component: Layout,
   name: 'companionChatMenu',
-  meta: { title: '陪伴聊天', icon: 'i-ri:chat-smile-3-line' },
+  meta: { title: '聊天', icon: 'i-ri:chat-smile-3-line' },
   children: [
     {
       path: '',
       name: 'companionChat',
       component: () => import('@/views/companion/chat/index.vue'),
-      meta: { title: '陪伴聊天', menu: false, breadcrumb: false, keepAlive: true },
+      meta: { title: '聊天', menu: false, breadcrumb: false, keepAlive: true },
     },
   ],
 }
 
-const workdayRoute: RouteRecordRaw = {
+export const workdayRoute: RouteRecordRaw = {
   path: '/companion/workday',
   component: Layout,
   name: 'workdayCompanionMenu',
@@ -44,18 +44,18 @@ const workdayRoute: RouteRecordRaw = {
     {
       path: '',
       name: 'workdayCompanion',
-      component: () => import('@/views/settings/interaction/index.vue'),
+      component: () => import('@/views/companion/workday/index.vue'),
       meta: { title: '工作陪伴', menu: false, breadcrumb: false },
     },
   ],
 }
 
-const proactiveRoute: RouteRecordRaw = {
+export const proactiveRoute: RouteRecordRaw = {
   path: '/settings/interaction',
   component: Layout,
   name: 'interactionSettingsMenu',
   meta: {
-    title: '主动陪伴',
+    title: '陪伴方式',
     icon: 'i-ri:heart-add-2-line',
   },
   children: [
@@ -63,25 +63,14 @@ const proactiveRoute: RouteRecordRaw = {
       path: '',
       name: 'interactionSettings',
       component: () => import('@/views/settings/interaction/index.vue'),
-      meta: { title: '主动陪伴', menu: false, breadcrumb: false },
+      meta: { title: '陪伴方式', menu: false, breadcrumb: false },
     },
   ],
 }
 
-const todayCompanionRoute: RouteRecordRaw = {
-  path: '/today',
-  name: 'todayCompanion',
-  meta: {
-    title: '今日陪伴',
-    icon: 'i-ri:sun-line',
-    expand: true,
-  },
-  children: [dashboardRoute, chatRoute, workdayRoute, proactiveRoute],
-}
-
 const routes: RouteRecordMainRaw = {
-  meta: { title: '今日', icon: 'i-ri:sun-line', sort: 100 },
-  children: [todayCompanionRoute],
+  meta: { title: '日常', icon: 'i-ri:home-heart-line', sort: 100 },
+  children: [dashboardRoute, chatRoute],
 }
 
 export default routes

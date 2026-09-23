@@ -12,6 +12,7 @@
 | [`project/architecture.md`](project/architecture.md) | 架构说明 |
 | [`project/development.md`](project/development.md) | 开发环境与验证命令 |
 | [`project/roadmap.md`](project/roadmap.md) | 产品路线图 |
+| [`project/console-ux-audit-2026-09-19.md`](project/console-ux-audit-2026-09-19.md) | 控制台交互缺陷、布局、视觉、文案与分阶段改造建议（DRAFT） |
 | [`project/feature-review-2026-09-13.md`](project/feature-review-2026-09-13.md) | 陪伴优先的功能重合、用户价值、深度与迭代评审 |
 | [`project/workday-companion-v1.md`](project/workday-companion-v1.md) | 工作日桌面陪伴 V1 的范围、架构、任务拆分与验收 |
 | [`project/todo.md`](project/todo.md) | 下一阶段任务顺序、范围与验收条件 |

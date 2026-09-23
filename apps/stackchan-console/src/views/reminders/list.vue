@@ -40,14 +40,14 @@ const statusOptions = [
 
 const deviceNames = computed(() => new Map(devices.value.map(device => [device.id, device.displayName])))
 const roleNames = computed(() => new Map(roles.value.map(role => [role.id, role.name])))
-const roleOptions = computed(() => [{ label: '全部角色', value: '' }, ...roles.value.map(role => ({ label: role.name, value: role.id }))])
+const roleOptions = computed(() => [{ label: '全部伙伴', value: '' }, ...roles.value.map(role => ({ label: role.name, value: role.id }))])
 
 const tableColumns = computed<TableColumn<Reminder>[]>(() => [
   ...(batch.value.enable
     ? [{ type: 'selection', fixed: 'left', width: 48 } satisfies TableColumn<Reminder>]
     : []),
   { accessorKey: 'content', header: '提醒内容', minWidth: 240 },
-  { id: 'role', header: '角色', minWidth: 130 },
+  { id: 'role', header: '伙伴', minWidth: 130 },
   { id: 'device', header: '目标设备', minWidth: 150 },
   { id: 'scheduledAt', header: '提醒时间', minWidth: 180 },
   { id: 'recurrence', header: '重复', width: 110, align: 'center' },
@@ -218,154 +218,151 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div :class="{ 'absolute flex flex-col size-full': tableAutoHeight }">
-    <FaPageHeader title="提醒管理" description="创建和跟踪可靠提醒；离线或免打扰时按已配置策略延后处理。" class="mb-0" />
-    <FaPageMain :class="{ 'flex-1 overflow-auto': tableAutoHeight }" :main-class="{ 'flex-1 flex flex-col overflow-auto': tableAutoHeight }">
-      <FaSearchBar :show-toggle="false">
-        <template #default="{ fold, toggle }">
-          <div class="gap-x-8 gap-y-2 grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))]">
-            <FaLabel label="提醒内容" class="col-span-1">
-              <FaInput
-                v-model="search.content"
-                placeholder="请输入提醒内容，支持模糊查询"
-                clearable
-                class="w-full"
-                @keydown.enter="currentChange()"
-                @clear="currentChange()"
-              />
-            </FaLabel>
-            <FaLabel v-show="!fold" label="状态" class="col-span-1">
-              <FaSelect v-model="search.status" :options="statusOptions" class="w-full" @change="currentChange()" />
-            </FaLabel>
-            <FaLabel v-show="!fold" label="角色" class="col-span-1">
-              <FaSelect v-model="search.roleId" :options="roleOptions" class="w-full" @change="currentChange()" />
-            </FaLabel>
-            <div class="flex gap-2 col-end--1 justify-end">
-              <FaButton variant="outline" @click="searchReset(); currentChange()">
-                重置
-              </FaButton>
-              <FaButton @click="currentChange()">
-                <FaIcon name="i-ri:search-line" />
-                筛选
-              </FaButton>
-              <FaButton variant="ghost" @click="toggle">
-                {{ fold ? '展开' : '收起' }}
-                <FaIcon :name="fold ? 'i-ep:caret-bottom' : 'i-ep:caret-top'" />
-              </FaButton>
-            </div>
-          </div>
-        </template>
-      </FaSearchBar>
-      <div class="mx--4 my-3 border-t border-t-dashed" />
-      <FaTable
-        v-loading="loading"
-        table-root-class="rounded-lg overflow-hidden"
-        :class="{ 'min-h-0 flex-1': tableAutoHeight }"
-        row-key="id"
-        selectable
-        multiple
-        stripe
-        column-visibility
-        border
-        :columns="tableColumns"
-        :data="dataList"
-        @selection-change="batch.selectionDataList = $event"
-      >
-        <template #toolbar>
-          <div class="flex flex-1 gap-2 items-center">
-            <FaButton @click="onCreate">
-              新增提醒
+  <AppPageShell title="提醒" description="创建和跟踪可靠提醒；离线或免打扰时按已配置策略延后处理。" :class="{ 'h-full': tableAutoHeight }" :content-class="tableAutoHeight ? 'flex flex-1 min-h-0 flex-col overflow-auto' : ''">
+    <FaSearchBar :show-toggle="false">
+      <template #default="{ fold, toggle }">
+        <div class="gap-x-8 gap-y-2 grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))]">
+          <FaLabel label="提醒内容" class="col-span-1">
+            <FaInput
+              v-model="search.content"
+              placeholder="请输入提醒内容，支持模糊查询"
+              clearable
+              class="w-full"
+              @keydown.enter="currentChange()"
+              @clear="currentChange()"
+            />
+          </FaLabel>
+          <FaLabel v-show="!fold" label="状态" class="col-span-1">
+            <FaSelect v-model="search.status" :options="statusOptions" class="w-full" @change="currentChange()" />
+          </FaLabel>
+          <FaLabel v-show="!fold" label="伙伴" class="col-span-1">
+            <FaSelect v-model="search.roleId" :options="roleOptions" class="w-full" @change="currentChange()" />
+          </FaLabel>
+          <div class="flex gap-2 col-end--1 justify-end">
+            <FaButton variant="outline" @click="searchReset(); currentChange()">
+              重置
             </FaButton>
-            <FaDropdown
-              v-if="batch.enable"
-              :items="[[{ label: '批量删除', variant: 'destructive', disabled: !batch.selectionDataList.length, handle: () => confirmDelete(batch.selectionDataList) }]]"
-            >
-              <FaButton variant="outline" :disabled="!batch.selectionDataList.length">
-                批量操作
-                <FaIcon name="i-ep:arrow-down" />
-              </FaButton>
-            </FaDropdown>
-          </div>
-        </template>
-        <template #cell-content="{ row }">
-          <div class="max-w-100">
-            <div class="truncate" :title="row.original.content">
-              {{ row.original.content }}
-            </div>
-            <a
-              v-if="safeSourceUrl(row.original.proactiveSourceUrl)"
-              :href="safeSourceUrl(row.original.proactiveSourceUrl) || undefined"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="text-xs text-primary mt-1 underline-offset-2 block truncate hover:underline"
-              :title="row.original.proactiveSourceTitle || undefined"
-            >
-              来源：{{ row.original.proactiveSourceName }} · {{ row.original.proactiveSourceTitle }}
-            </a>
-            <div v-if="row.original.proactiveSourcePublishedAt" class="text-xs text-muted-foreground">
-              来源收录时间 {{ formatTime(row.original.proactiveSourcePublishedAt) }}
-            </div>
-          </div>
-        </template>
-        <template #cell-device="{ row }">
-          {{ deviceNames.get(row.original.deviceId) || row.original.deviceId }}
-        </template>
-        <template #cell-role="{ row }">
-          {{ roleNames.get(row.original.roleId) || row.original.roleId }}
-        </template>
-        <template #cell-scheduledAt="{ row }">
-          <div>{{ formatTime(row.original.scheduledAt) }}</div>
-          <div class="text-xs text-muted-foreground">
-            {{ row.original.zoneId }}
-          </div>
-        </template>
-        <template #cell-status="{ row }">
-          <div class="flex flex-col gap-1 items-center">
-            <FaTag :variant="statusVariant(row.original.status)">
-              {{ statusLabel(row.original.status) }}
-            </FaTag>
-            <span v-if="row.original.failureCode" class="text-xs text-destructive">
-              {{ row.original.failureCode }}
-            </span>
-          </div>
-        </template>
-        <template #cell-recurrence="{ row }">
-          <div>{{ recurrenceLabel(row.original) }}</div>
-          <div v-if="row.original.source === 'PROACTIVE'" class="text-xs text-muted-foreground">
-            主动问候
-          </div>
-        </template>
-        <template #cell-operation="{ row }">
-          <div class="flex-center gap-2">
-            <FaButton variant="outline" size="icon-sm" @click="onEdit(row.original)">
-              <FaIcon name="i-ri:edit-line" />
+            <FaButton @click="currentChange()">
+              <FaIcon name="i-ri:search-line" />
+              筛选
             </FaButton>
-            <FaDropdown
-              :items="[
-                row.original.status === 'PENDING'
-                  ? [
-                    { label: '10 分钟后提醒', handle: () => snooze(row.original) },
-                    { label: row.original.recurrenceType === 'NONE' ? '跳过提醒' : '跳过下一次', handle: () => skipNext(row.original) },
-                  ]
-                  : [],
-                [{ label: '删除', variant: 'destructive', handle: () => confirmDelete([row.original]) }],
-              ]"
-            >
-              <FaButton variant="outline" size="icon-sm">
-                <FaIcon name="i-ri:more-line" />
-              </FaButton>
-            </FaDropdown>
+            <FaButton variant="ghost" @click="toggle">
+              {{ fold ? '展开' : '收起' }}
+              <FaIcon :name="fold ? 'i-ep:caret-bottom' : 'i-ep:caret-top'" />
+            </FaButton>
           </div>
-        </template>
-      </FaTable>
-      <FaPagination
-        :page="pagination.page"
-        :size="pagination.size"
-        :total="pagination.total"
-        class="mt-2"
-        @page-change="currentChange"
-        @size-change="sizeChange"
-      />
-    </FaPageMain>
-  </div>
+        </div>
+      </template>
+    </FaSearchBar>
+    <div class="mx--4 my-3 border-t border-t-dashed" />
+    <FaTable
+      v-loading="loading"
+      table-root-class="rounded-lg overflow-hidden"
+      :class="{ 'min-h-0 flex-1': tableAutoHeight }"
+      row-key="id"
+      selectable
+      multiple
+      stripe
+      column-visibility
+      border
+      :columns="tableColumns"
+      :data="dataList"
+      @selection-change="batch.selectionDataList = $event"
+    >
+      <template #toolbar>
+        <div class="flex flex-1 gap-2 items-center">
+          <FaButton @click="onCreate">
+            新增提醒
+          </FaButton>
+          <FaDropdown
+            v-if="batch.enable"
+            :items="[[{ label: '批量删除', variant: 'destructive', disabled: !batch.selectionDataList.length, handle: () => confirmDelete(batch.selectionDataList) }]]"
+          >
+            <FaButton variant="outline" :disabled="!batch.selectionDataList.length">
+              批量操作
+              <FaIcon name="i-ep:arrow-down" />
+            </FaButton>
+          </FaDropdown>
+        </div>
+      </template>
+      <template #cell-content="{ row }">
+        <div class="max-w-100">
+          <div class="truncate" :title="row.original.content">
+            {{ row.original.content }}
+          </div>
+          <a
+            v-if="safeSourceUrl(row.original.proactiveSourceUrl)"
+            :href="safeSourceUrl(row.original.proactiveSourceUrl) || undefined"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-xs text-primary mt-1 underline-offset-2 block truncate hover:underline"
+            :title="row.original.proactiveSourceTitle || undefined"
+          >
+            来源：{{ row.original.proactiveSourceName }} · {{ row.original.proactiveSourceTitle }}
+          </a>
+          <div v-if="row.original.proactiveSourcePublishedAt" class="text-xs text-muted-foreground">
+            来源收录时间 {{ formatTime(row.original.proactiveSourcePublishedAt) }}
+          </div>
+        </div>
+      </template>
+      <template #cell-device="{ row }">
+        {{ deviceNames.get(row.original.deviceId) || row.original.deviceId }}
+      </template>
+      <template #cell-role="{ row }">
+        {{ roleNames.get(row.original.roleId) || row.original.roleId }}
+      </template>
+      <template #cell-scheduledAt="{ row }">
+        <div>{{ formatTime(row.original.scheduledAt) }}</div>
+        <div class="text-xs text-muted-foreground">
+          {{ row.original.zoneId }}
+        </div>
+      </template>
+      <template #cell-status="{ row }">
+        <div class="flex flex-col gap-1 items-center">
+          <FaTag :variant="statusVariant(row.original.status)">
+            {{ statusLabel(row.original.status) }}
+          </FaTag>
+          <span v-if="row.original.failureCode" class="text-xs text-destructive">
+            {{ row.original.failureCode }}
+          </span>
+        </div>
+      </template>
+      <template #cell-recurrence="{ row }">
+        <div>{{ recurrenceLabel(row.original) }}</div>
+        <div v-if="row.original.source === 'PROACTIVE'" class="text-xs text-muted-foreground">
+          主动问候
+        </div>
+      </template>
+      <template #cell-operation="{ row }">
+        <div class="flex-center gap-2">
+          <FaButton variant="outline" size="icon-sm" @click="onEdit(row.original)">
+            <FaIcon name="i-ri:edit-line" />
+          </FaButton>
+          <FaDropdown
+            :items="[
+              row.original.status === 'PENDING'
+                ? [
+                  { label: '10 分钟后提醒', handle: () => snooze(row.original) },
+                  { label: row.original.recurrenceType === 'NONE' ? '跳过提醒' : '跳过下一次', handle: () => skipNext(row.original) },
+                ]
+                : [],
+              [{ label: '删除', variant: 'destructive', handle: () => confirmDelete([row.original]) }],
+            ]"
+          >
+            <FaButton variant="outline" size="icon-sm">
+              <FaIcon name="i-ri:more-line" />
+            </FaButton>
+          </FaDropdown>
+        </div>
+      </template>
+    </FaTable>
+    <FaPagination
+      :page="pagination.page"
+      :size="pagination.size"
+      :total="pagination.total"
+      class="mt-2"
+      @page-change="currentChange"
+      @size-change="sizeChange"
+    />
+  </AppPageShell>
 </template>

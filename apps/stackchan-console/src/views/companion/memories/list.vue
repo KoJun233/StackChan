@@ -1,31 +1,19 @@
 <script setup lang="ts">
 import type { TableColumn } from '@fantastic-admin/components'
 import type { Device } from '@/api/modules/devices'
-import type {
-  LongTermMemory,
-  MemoryCategory,
-  MemoryConfirmationStatus,
-  MemoryScopeType,
-} from '@/api/modules/personaMemory'
+import type { LongTermMemory, MemoryCategory, MemoryConfirmationStatus, MemoryScopeType } from '@/api/modules/personaMemory'
 import type { CompanionRole } from '@/api/modules/roles'
 import { listDevices } from '@/api/modules/devices'
-import {
-  clearMemories,
-  confirmMemory,
-  deleteMemory,
-  listMemories,
-  rejectMemory,
-  setMemoryEnabled,
-} from '@/api/modules/personaMemory'
+import { clearMemories, confirmMemory, deleteMemory, listMemories, rejectMemory, setMemoryEnabled } from '@/api/modules/personaMemory'
 import { listRoles } from '@/api/modules/roles'
 import eventBus from '@/utils/eventBus'
 
 defineOptions({ name: 'CompanionMemoryList' })
-
 const router = useRouter()
 const { pagination, getParams, onSizeChange, onCurrentChange } = usePagination()
 const tableAutoHeight = ref(false)
 const loading = ref(false)
+let listRequest = 0
 const dataList = ref<LongTermMemory[]>([])
 const devices = ref<Device[]>([])
 const roles = ref<CompanionRole[]>([])
@@ -33,7 +21,6 @@ const batch = ref({
   enable: true,
   selectionDataList: [] as LongTermMemory[],
 })
-
 const searchDefault = {
   query: '',
   category: '' as MemoryCategory | '',
@@ -42,7 +29,6 @@ const searchDefault = {
   roleId: '',
 }
 const search = ref({ ...searchDefault })
-
 const categoryOptions = [
   { label: '全部类型', value: '' },
   { label: '用户档案', value: 'USER_PROFILE' },
@@ -59,17 +45,15 @@ const scopeOptions = [
   { label: '全局', value: 'GLOBAL' },
   { label: '指定设备', value: 'DEVICE' },
 ]
-
 const deviceNames = computed(() => new Map(devices.value.map(device => [device.id, device.displayName])))
 const roleNames = computed(() => new Map(roles.value.map(role => [role.id, role.name])))
-const roleOptions = computed(() => [{ label: '全部角色', value: '' }, ...roles.value.map(role => ({ label: role.name, value: role.id }))])
-
+const roleOptions = computed(() => [{ label: '全部伙伴', value: '' }, ...roles.value.map(role => ({ label: role.name, value: role.id }))])
 const tableColumns = computed<TableColumn<LongTermMemory>[]>(() => [
   ...(batch.value.enable
     ? [{ type: 'selection', fixed: 'left', width: 48 } satisfies TableColumn<LongTermMemory>]
     : []),
   { accessorKey: 'title', header: '记忆', minWidth: 260 },
-  { id: 'role', header: '角色', minWidth: 130 },
+  { id: 'role', header: '伙伴', minWidth: 130 },
   { id: 'category', header: '类型', width: 110, align: 'center' },
   { id: 'scope', header: '作用范围', minWidth: 150 },
   { id: 'status', header: '确认状态', width: 110, align: 'center' },
@@ -78,11 +62,9 @@ const tableColumns = computed<TableColumn<LongTermMemory>[]>(() => [
   { id: 'updatedAt', header: '更新时间', minWidth: 170 },
   { id: 'operation', header: '操作', width: 210, align: 'center', fixed: 'right' },
 ])
-
 function categoryLabel(category: MemoryCategory) {
   return category === 'USER_PROFILE' ? '用户档案' : '事件记忆'
 }
-
 function statusLabel(status: MemoryConfirmationStatus) {
   return {
     PENDING: '待确认',
@@ -90,7 +72,6 @@ function statusLabel(status: MemoryConfirmationStatus) {
     REJECTED: '已拒绝',
   }[status]
 }
-
 function statusVariant(status: MemoryConfirmationStatus): 'default' | 'destructive' | 'outline' | 'secondary' {
   if (status === 'CONFIRMED') {
     return 'default'
@@ -100,17 +81,21 @@ function statusVariant(status: MemoryConfirmationStatus): 'default' | 'destructi
   }
   return 'outline'
 }
-
 function formatTime(value: string) {
   return new Date(value).toLocaleString('zh-CN', { hour12: false })
 }
-
 function searchReset() {
   Object.assign(search.value, searchDefault)
 }
+const listError = ref('')
 
 async function getDataList() {
+  const request = ++listRequest
   loading.value = true
+  listError.value = ''
+  dataList.value = []
+  batch.value.selectionDataList = []
+  pagination.value.total = 0
   try {
     const params = getParams()
     const result = await listMemories({
@@ -122,14 +107,23 @@ async function getDataList() {
       scopeType: search.value.scopeType,
       roleId: search.value.roleId || undefined,
     })
+    if (request !== listRequest) {
+      return
+    }
     dataList.value = result.list
     pagination.value.total = result.total
   }
   catch (error) {
+    if (request !== listRequest) {
+      return
+    }
+    listError.value = error instanceof Error ? error.message : '无法获取记忆列表。'
     useFaToast().error('加载失败', { description: error instanceof Error ? error.message : '无法获取长期记忆列表。' })
   }
   finally {
-    loading.value = false
+    if (request === listRequest) {
+      loading.value = false
+    }
   }
 }
 
@@ -141,27 +135,21 @@ async function loadDevices() {
     useFaToast().error('设备加载失败', { description: error instanceof Error ? error.message : '无法获取设备列表。' })
   }
 }
-
 async function loadRoles() {
   roles.value = await listRoles()
 }
-
 function sizeChange(size: number) {
   onSizeChange(size).then(() => getDataList())
 }
-
 function currentChange(page = 1) {
   onCurrentChange(page).then(() => getDataList())
 }
-
 function onCreate() {
   router.push({ name: 'companionMemoryDetail' })
 }
-
 function onEdit(memory: LongTermMemory) {
   router.push({ name: 'companionMemoryDetail', params: { id: memory.id } })
 }
-
 async function applyAction(action: () => Promise<unknown>, success: string) {
   try {
     await action()
@@ -172,7 +160,6 @@ async function applyAction(action: () => Promise<unknown>, success: string) {
     useFaToast().error('操作失败', { description: error instanceof Error ? error.message : '无法更新长期记忆。' })
   }
 }
-
 function confirmDelete(rows: LongTermMemory[]) {
   if (!rows.length) {
     return
@@ -195,7 +182,6 @@ function confirmDelete(rows: LongTermMemory[]) {
     },
   })
 }
-
 function confirmClearAll() {
   useFaModal().confirm({
     title: '清空全部长期记忆',
@@ -214,183 +200,186 @@ function confirmClearAll() {
     },
   })
 }
-
 onMounted(() => {
   loadDevices()
   loadRoles()
   getDataList()
   eventBus.on('get-memory-list', getDataList)
 })
-
 onBeforeUnmount(() => eventBus.off('get-memory-list'))
 </script>
 
 <template>
-  <div :class="{ 'absolute flex flex-col size-full': tableAutoHeight }">
-    <FaPageHeader title="长期记忆" description="审核和管理机器人可长期使用的确认记忆，并控制是否允许主动提及。" class="mb-0" />
-    <FaPageMain :class="{ 'flex-1 overflow-auto': tableAutoHeight }" :main-class="{ 'flex-1 flex flex-col overflow-auto': tableAutoHeight }">
-      <FaAlert
-        title="只有已确认且启用的记忆会进入对话"
-        description="各伙伴独立保存记忆，模型建议需确认后才生效；确认替代会停用旧条目。停用或删除只停止长期记忆加载，原聊天仍可能出现在近期对话中，可到「对话与个人数据」管理；已有备份按保留周期轮转。"
-        class="mb-4"
-      />
-      <FaSearchBar :show-toggle="false">
-        <template #default="{ fold, toggle }">
-          <div class="gap-x-8 gap-y-2 grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))]">
-            <FaLabel label="关键词" class="col-span-1">
-              <FaInput
-                v-model="search.query"
-                placeholder="搜索标题或内容"
-                clearable
-                class="w-full"
-                @keydown.enter="currentChange()"
-                @clear="currentChange()"
-              />
-            </FaLabel>
-            <FaLabel label="确认状态" class="col-span-1">
-              <FaSelect v-model="search.confirmationStatus" :options="statusOptions" class="w-full" @change="currentChange()" />
-            </FaLabel>
-            <FaLabel v-show="!fold" label="记忆类型" class="col-span-1">
-              <FaSelect v-model="search.category" :options="categoryOptions" class="w-full" @change="currentChange()" />
-            </FaLabel>
-            <FaLabel v-show="!fold" label="作用范围" class="col-span-1">
-              <FaSelect v-model="search.scopeType" :options="scopeOptions" class="w-full" @change="currentChange()" />
-            </FaLabel>
-            <FaLabel v-show="!fold" label="角色" class="col-span-1">
-              <FaSelect v-model="search.roleId" :options="roleOptions" class="w-full" @change="currentChange()" />
-            </FaLabel>
-            <div class="flex gap-2 col-end--1 justify-end">
-              <FaButton variant="outline" @click="searchReset(); currentChange()">
-                重置
-              </FaButton>
-              <FaButton @click="currentChange()">
-                <FaIcon name="i-ri:search-line" />
-                筛选
-              </FaButton>
-              <FaButton variant="ghost" @click="toggle">
-                {{ fold ? '展开' : '收起' }}
-                <FaIcon :name="fold ? 'i-ep:caret-bottom' : 'i-ep:caret-top'" />
-              </FaButton>
-            </div>
-          </div>
-        </template>
-      </FaSearchBar>
-      <div class="mx--4 my-3 border-t border-t-dashed" />
-      <FaTable
-        v-loading="loading"
-        table-root-class="rounded-lg overflow-hidden"
-        :class="{ 'min-h-0 flex-1': tableAutoHeight }"
-        row-key="id"
-        selectable
-        multiple
-        stripe
-        column-visibility
-        border
-        :columns="tableColumns"
-        :data="dataList"
-        @selection-change="batch.selectionDataList = $event"
-      >
-        <template #toolbar>
-          <div class="flex flex-1 gap-2 items-center">
-            <FaButton @click="onCreate">
-              新增记忆
+  <AppPageShell title="记忆" description="审核和管理机器人可长期使用的确认记忆，并控制是否允许主动提及。" :class="{ 'h-full': tableAutoHeight }" :content-class="tableAutoHeight ? 'flex flex-1 min-h-0 flex-col overflow-auto' : ''">
+    <FaAlert
+      title="只有已确认且启用的记忆会进入对话"
+      description="各伙伴独立保存记忆，模型建议需确认后才生效；确认替代会停用旧条目。停用或删除只停止长期记忆加载，原聊天仍可能出现在近期对话中，可到「对话与个人数据」管理；已有备份按保留周期轮转。"
+      class="mb-4"
+    />
+    <FaSearchBar :show-toggle="false">
+      <template #default="{ fold, toggle }">
+        <div class="gap-x-8 gap-y-2 grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))]">
+          <FaLabel label="关键词" class="col-span-1">
+            <FaInput
+              v-model="search.query"
+              placeholder="搜索标题或内容"
+              clearable
+              class="w-full"
+              @keydown.enter="currentChange()"
+              @clear="currentChange()"
+            />
+          </FaLabel>
+          <FaLabel label="确认状态" class="col-span-1">
+            <FaSelect v-model="search.confirmationStatus" :options="statusOptions" class="w-full" @change="currentChange()" />
+          </FaLabel>
+          <FaLabel v-show="!fold" label="记忆类型" class="col-span-1">
+            <FaSelect v-model="search.category" :options="categoryOptions" class="w-full" @change="currentChange()" />
+          </FaLabel>
+          <FaLabel v-show="!fold" label="作用范围" class="col-span-1">
+            <FaSelect v-model="search.scopeType" :options="scopeOptions" class="w-full" @change="currentChange()" />
+          </FaLabel>
+          <FaLabel v-show="!fold" label="伙伴" class="col-span-1">
+            <FaSelect v-model="search.roleId" :options="roleOptions" class="w-full" @change="currentChange()" />
+          </FaLabel>
+          <div class="flex gap-2 col-end--1 justify-end">
+            <FaButton variant="outline" @click="searchReset(); currentChange()">
+              重置
             </FaButton>
-            <FaDropdown
-              v-if="batch.enable"
-              :items="[[
-                { label: '批量删除', variant: 'destructive', disabled: !batch.selectionDataList.length, handle: () => confirmDelete(batch.selectionDataList) },
-                { label: '清空全部记忆', variant: 'destructive', handle: confirmClearAll },
-              ]]"
-            >
-              <FaButton variant="outline">
-                批量操作
-                <FaIcon name="i-ep:arrow-down" />
-              </FaButton>
-            </FaDropdown>
-          </div>
-        </template>
-        <template #cell-title="{ row }">
-          <div class="max-w-110">
-            <div class="font-medium truncate" :title="row.original.title">
-              {{ row.original.title }}
-            </div>
-            <div class="text-sm text-muted-foreground line-clamp-2" :title="row.original.content">
-              {{ row.original.content }}
-            </div>
-            <div class="text-xs text-muted-foreground mt-1" :title="row.original.sourceDetail">
-              {{ row.original.sourceDetail }}
-            </div>
-            <div class="text-xs text-muted-foreground mt-1">
-              主题：{{ row.original.topicKey }}
-              <span v-if="row.original.possibleDuplicateIds.length"> · 可能重复 {{ row.original.possibleDuplicateIds.length }} 条</span>
-              <span v-if="row.original.replacesMemoryId"> · 待确认替代旧记忆</span>
-              <span v-if="row.original.supersededByMemoryId"> · 已被替代</span>
-            </div>
-          </div>
-        </template>
-        <template #cell-category="{ row }">
-          {{ categoryLabel(row.original.category) }}
-        </template>
-        <template #cell-role="{ row }">
-          {{ roleNames.get(row.original.roleId) || row.original.roleId }}
-        </template>
-        <template #cell-scope="{ row }">
-          <span v-if="row.original.scopeType === 'GLOBAL'">全局共享</span>
-          <span v-else>{{ deviceNames.get(row.original.deviceId || '') || '指定设备' }}</span>
-        </template>
-        <template #cell-status="{ row }">
-          <FaTag :variant="statusVariant(row.original.confirmationStatus)">
-            {{ statusLabel(row.original.confirmationStatus) }}
-          </FaTag>
-        </template>
-        <template #cell-enabled="{ row }">
-          <FaTag :variant="row.original.enabled ? 'default' : 'outline'">
-            {{ row.original.enabled ? '已启用' : '未启用' }}
-          </FaTag>
-        </template>
-        <template #cell-importance="{ row }">
-          {{ row.original.importance }} / 5
-        </template>
-        <template #cell-updatedAt="{ row }">
-          {{ formatTime(row.original.updatedAt) }}
-        </template>
-        <template #cell-operation="{ row }">
-          <div class="flex-center gap-2">
-            <template v-if="row.original.confirmationStatus === 'PENDING'">
-              <FaButton size="sm" @click="applyAction(() => confirmMemory(row.original.id), row.original.replacesMemoryId ? '新记忆已确认，旧记忆已保留审计并停用' : '记忆已确认并启用')">
-                {{ row.original.replacesMemoryId ? '确认替代' : '确认' }}
-              </FaButton>
-              <FaButton size="sm" variant="outline" @click="applyAction(() => rejectMemory(row.original.id), '记忆建议已拒绝')">
-                拒绝
-              </FaButton>
-            </template>
-            <FaButton
-              v-else-if="row.original.confirmationStatus === 'CONFIRMED' && !row.original.supersededByMemoryId"
-              size="sm"
-              variant="outline"
-              @click="applyAction(() => setMemoryEnabled(row.original.id, !row.original.enabled), row.original.enabled ? '记忆已停用' : '记忆已启用')"
-            >
-              {{ row.original.enabled ? '停用' : '启用' }}
+            <FaButton @click="currentChange()">
+              <FaIcon name="i-ri:search-line" />
+              筛选
             </FaButton>
-            <FaButton variant="outline" size="icon-sm" @click="onEdit(row.original)">
-              <FaIcon name="i-ri:edit-line" />
+            <FaButton variant="ghost" @click="toggle">
+              {{ fold ? '展开' : '收起' }}
+              <FaIcon :name="fold ? 'i-ep:caret-bottom' : 'i-ep:caret-top'" />
             </FaButton>
-            <FaDropdown :items="[[{ label: '删除', variant: 'destructive', handle: () => confirmDelete([row.original]) }]]">
-              <FaButton variant="outline" size="icon-sm">
-                <FaIcon name="i-ri:more-line" />
-              </FaButton>
-            </FaDropdown>
           </div>
-        </template>
-      </FaTable>
-      <FaPagination
-        :page="pagination.page"
-        :size="pagination.size"
-        :total="pagination.total"
-        class="mt-2"
-        @page-change="currentChange"
-        @size-change="sizeChange"
-      />
-    </FaPageMain>
-  </div>
+        </div>
+      </template>
+    </FaSearchBar>
+    <div class="mx--4 my-3 border-t border-t-dashed" />
+    <FaAlert v-if="listError" variant="destructive" title="记忆未加载" :description="listError">
+      <template #action>
+        <FaButton variant="outline" @click="getDataList">
+          重试
+        </FaButton>
+      </template>
+    </FaAlert>
+    <FaTable
+      v-loading="loading"
+      :empty-text="loading ? '正在读取记忆…' : listError ? '列表未获取' : '没有符合条件的记忆'"
+      table-root-class="rounded-lg overflow-hidden"
+      :class="{ 'min-h-0 flex-1': tableAutoHeight }"
+      row-key="id"
+      selectable
+      multiple
+      stripe
+      column-visibility
+      border
+      :columns="tableColumns"
+      :data="dataList"
+      @selection-change="batch.selectionDataList = $event"
+    >
+      <template #toolbar>
+        <div class="flex flex-1 gap-2 items-center">
+          <FaButton @click="onCreate">
+            新增记忆
+          </FaButton>
+          <FaDropdown
+            v-if="batch.enable"
+            :items="[[
+              { label: '批量删除', variant: 'destructive', disabled: !batch.selectionDataList.length, handle: () => confirmDelete(batch.selectionDataList) },
+              { label: '清空全部记忆', variant: 'destructive', handle: confirmClearAll },
+            ]]"
+          >
+            <FaButton variant="outline">
+              批量操作
+              <FaIcon name="i-ep:arrow-down" />
+            </FaButton>
+          </FaDropdown>
+        </div>
+      </template>
+      <template #cell-title="{ row }">
+        <div class="max-w-110">
+          <div class="font-medium truncate" :title="row.original.title">
+            {{ row.original.title }}
+          </div>
+          <div class="text-sm text-muted-foreground line-clamp-2" :title="row.original.content">
+            {{ row.original.content }}
+          </div>
+          <div class="text-xs text-muted-foreground mt-1" :title="row.original.sourceDetail">
+            {{ row.original.sourceDetail }}
+          </div>
+          <div class="text-xs text-muted-foreground mt-1">
+            主题：{{ row.original.topicKey }}
+            <span v-if="row.original.possibleDuplicateIds.length"> · 可能重复 {{ row.original.possibleDuplicateIds.length }} 条</span>
+            <span v-if="row.original.replacesMemoryId"> · 待确认替代旧记忆</span>
+            <span v-if="row.original.supersededByMemoryId"> · 已被替代</span>
+          </div>
+        </div>
+      </template>
+      <template #cell-category="{ row }">
+        {{ categoryLabel(row.original.category) }}
+      </template>
+      <template #cell-role="{ row }">
+        {{ roleNames.get(row.original.roleId) || row.original.roleId }}
+      </template>
+      <template #cell-scope="{ row }">
+        <span v-if="row.original.scopeType === 'GLOBAL'">全局共享</span>
+        <span v-else>{{ deviceNames.get(row.original.deviceId || '') || '指定设备' }}</span>
+      </template>
+      <template #cell-status="{ row }">
+        <FaTag :variant="statusVariant(row.original.confirmationStatus)">
+          {{ statusLabel(row.original.confirmationStatus) }}
+        </FaTag>
+      </template>
+      <template #cell-enabled="{ row }">
+        <FaTag :variant="row.original.enabled ? 'default' : 'outline'">
+          {{ row.original.enabled ? '已启用' : '未启用' }}
+        </FaTag>
+      </template>
+      <template #cell-importance="{ row }">
+        {{ row.original.importance }} / 5
+      </template>
+      <template #cell-updatedAt="{ row }">
+        {{ formatTime(row.original.updatedAt) }}
+      </template>
+      <template #cell-operation="{ row }">
+        <div class="flex-center gap-2">
+          <template v-if="row.original.confirmationStatus === 'PENDING'">
+            <FaButton size="sm" @click="applyAction(() => confirmMemory(row.original.id), row.original.replacesMemoryId ? '新记忆已确认，旧记忆已保留审计并停用' : '记忆已确认并启用')">
+              {{ row.original.replacesMemoryId ? '确认替代' : '确认' }}
+            </FaButton>
+            <FaButton size="sm" variant="outline" @click="applyAction(() => rejectMemory(row.original.id), '记忆建议已拒绝')">
+              拒绝
+            </FaButton>
+          </template>
+          <FaButton
+            v-else-if="row.original.confirmationStatus === 'CONFIRMED' && !row.original.supersededByMemoryId"
+            size="sm"
+            variant="outline"
+            @click="applyAction(() => setMemoryEnabled(row.original.id, !row.original.enabled), row.original.enabled ? '记忆已停用' : '记忆已启用')"
+          >
+            {{ row.original.enabled ? '停用' : '启用' }}
+          </FaButton>
+          <FaButton variant="outline" size="icon-sm" @click="onEdit(row.original)">
+            <FaIcon name="i-ri:edit-line" />
+          </FaButton>
+          <FaDropdown :items="[[{ label: '删除', variant: 'destructive', handle: () => confirmDelete([row.original]) }]]">
+            <FaButton variant="outline" size="icon-sm">
+              <FaIcon name="i-ri:more-line" />
+            </FaButton>
+          </FaDropdown>
+        </div>
+      </template>
+    </FaTable>
+    <FaPagination
+      :page="pagination.page"
+      :size="pagination.size"
+      :total="pagination.total"
+      class="mt-2"
+      @page-change="currentChange"
+      @size-change="sizeChange"
+    />
+  </AppPageShell>
 </template>
