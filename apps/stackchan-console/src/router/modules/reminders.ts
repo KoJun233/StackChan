@@ -1,5 +1,6 @@
 import type { RouteRecordMainRaw } from '@fantastic-admin/types'
 import type { RouteRecordRaw } from 'vue-router'
+import { workdayRoute } from './today'
 
 function Layout() {
   return import('@/layouts/index.vue')
@@ -79,10 +80,10 @@ const taskManagementRoute: RouteRecordRaw = {
   path: '/task-management',
   name: 'taskManagement',
   meta: {
-    title: '事务管理',
+    title: '我的事务',
     icon: 'i-ri:notification-3-line',
   },
-  children: [reminderRoute, personalTaskRoute],
+  children: [reminderRoute, personalTaskRoute, workdayRoute],
 }
 
 const routes: RouteRecordMainRaw = {

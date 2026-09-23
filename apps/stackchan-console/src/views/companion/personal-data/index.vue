@@ -27,19 +27,19 @@ const selectedConversation = ref<PersonalDataConversation | null>(null)
 const backupStatus = ref<BackupStatus | null>(null)
 const searchDefault = { query: '', deviceId: '', roleId: '', fromTime: '', toTime: '' }
 const search = ref({ ...searchDefault })
-const roleOptions = ref<{ label: string, value: string }[]>([{ label: '全部角色', value: '' }])
+const roleOptions = ref<{ label: string, value: string }[]>([{ label: '全部伙伴', value: '' }])
 
 const conversationColumns: TableColumn<PersonalDataConversation>[] = [
   { id: 'title', header: '对话', minWidth: 260 },
   { id: 'device', header: '来源', minWidth: 150 },
-  { accessorKey: 'roleName', header: '角色', minWidth: 130 },
+  { accessorKey: 'roleName', header: '伙伴', minWidth: 130 },
   { accessorKey: 'messageCount', header: '消息数', width: 90, align: 'center' },
   { id: 'updatedAt', header: '最近更新', minWidth: 170 },
   { id: 'operation', header: '操作', width: 210, align: 'center', fixed: 'right' },
 ]
 
 const messageColumns: TableColumn<ConversationMessage>[] = [
-  { id: 'role', header: '角色', width: 90, align: 'center' },
+  { id: 'role', header: '发言方', width: 90, align: 'center' },
   { id: 'content', header: '消息正文', minWidth: 360 },
   { id: 'createdAt', header: '时间', minWidth: 170 },
   { id: 'operation', header: '操作', width: 100, align: 'center' },
@@ -207,7 +207,7 @@ function confirmDeleteMessage(message: ConversationMessage) {
 onMounted(() => {
   Promise.all([
     listDevices().then(result => devices.value = result),
-    listRoles().then(result => roleOptions.value = [{ label: '全部角色', value: '' }, ...result.map(role => ({ label: role.name, value: role.id }))]),
+    listRoles().then(result => roleOptions.value = [{ label: '全部伙伴', value: '' }, ...result.map(role => ({ label: role.name, value: role.id }))]),
     loadConversations(),
     loadStatus(),
   ]).catch(() => undefined)
@@ -228,7 +228,7 @@ onMounted(() => {
           刷新状态
         </FaButton>
       </template>
-      <FaEmpty v-if="!backupStatus?.available" description="尚无成功备份或状态暂不可用" />
+      <AppEmpty v-if="!backupStatus?.available" description="尚无成功备份或状态暂不可用" />
       <div v-else class="gap-4 grid md:grid-cols-2 xl:grid-cols-4">
         <div class="p-4 border rounded-lg">
           <div class="text-sm text-muted-foreground">
@@ -282,7 +282,7 @@ onMounted(() => {
           <FaLabel label="设备来源">
             <FaSelect v-model="search.deviceId" :options="deviceOptions" class="w-full" />
           </FaLabel>
-          <FaLabel label="角色">
+          <FaLabel label="伙伴">
             <FaSelect v-model="search.roleId" :options="roleOptions" class="w-full" />
           </FaLabel>
           <FaLabel label="更新时间起点">

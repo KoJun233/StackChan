@@ -187,7 +187,7 @@ defineExpose({ submit })
       <FaFormItem name="scopeType" label="作用范围" required>
         <FaSelect v-model="model.scopeType" :options="scopeOptions" class="w-full" />
       </FaFormItem>
-      <FaFormItem name="roleId" label="归属角色" required :description="props.id ? '记忆创建后不可改绑角色。' : undefined">
+      <FaFormItem name="roleId" label="归属伙伴" required :description="props.id ? '记忆创建后不可改绑伙伴。' : undefined">
         <FaSelect v-model="model.roleId" :options="roleOptions" :disabled="Boolean(props.id)" class="w-full" />
       </FaFormItem>
       <FaFormItem v-if="model.scopeType === 'DEVICE'" name="deviceId" label="目标设备" required>

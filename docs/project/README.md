@@ -2,7 +2,7 @@
 
 当前陪伴迭代的人工验收入口：[陪伴体验验收与观察](companion-experience-acceptance.md)。
 
-当前软件交付的发布依据：[陪伴 V51 发布与回退](../runbooks/companion-v51-release.md)。
+当前控制台发布依据：[2026-09-21 UI 发布与回退](../runbooks/console-ux-20260921-release.md)。服务端沿用[陪伴 V51](../runbooks/companion-v51-release.md)。
 
 当前继续实施范围：[陪伴功能深化、收缩与部署完成清单](companion-completion-plan.md)。
 
@@ -40,6 +40,7 @@
 
 ## 稳定项目文档
 
+- [2026-09-19 前端体验排查与改造建议（DRAFT）](console-ux-audit-2026-09-19.md)
 - [架构说明](architecture.md)
 - [开发环境与命令](development.md)
 - [产品路线图](roadmap.md)

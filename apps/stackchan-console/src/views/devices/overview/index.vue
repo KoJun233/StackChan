@@ -5,13 +5,14 @@ import { listDevices, listDeviceVoiceTurns, stopDeviceMotion } from '@/api/modul
 import { getMemoryUsage } from '@/api/modules/personaMemory'
 
 defineOptions({ name: 'DeviceOverview' })
-
 const devices = ref<Device[]>([])
 const loading = ref(false)
 const commandDeviceId = ref<string | null>(null)
 const selectedDevice = ref<Device | null>(null)
 const voiceTurns = ref<VoiceTurn[]>([])
 const voiceTurnsLoading = ref(false)
+const voiceTurnsError = ref('')
+let voiceTurnsRequest = 0
 const memoryUsageByTurn = ref<Record<string, MemoryUsageReference[]>>({})
 const columns = [
   { accessorKey: 'displayName', header: '设备名称' },
@@ -26,7 +27,6 @@ const rows = computed(() => devices.value.map(device => ({
   onlineLabel: device.online ? '在线' : '离线',
   lastSeenLabel: device.lastSeenAt ? new Date(device.lastSeenAt).toLocaleString('zh-CN') : '从未上报',
 })))
-
 async function load() {
   loading.value = true
   try {
@@ -39,12 +39,10 @@ async function load() {
     loading.value = false
   }
 }
-
 async function stopDevice(device: Device) {
   if (!device.commandAvailable || commandDeviceId.value) {
     return
   }
-
   commandDeviceId.value = device.id
   try {
     await stopDeviceMotion(device.id)
@@ -58,7 +56,6 @@ async function stopDevice(device: Device) {
     commandDeviceId.value = null
   }
 }
-
 const stageLabels: Record<string, string> = {
   WAKE_DETECTED: '检测到唤醒',
   TOUCH_STARTED: '触摸发起',
@@ -78,7 +75,6 @@ const stageLabels: Record<string, string> = {
   CANCELLED: '回合已取消',
   FAILED: '回合失败',
 }
-
 const statusLabels: Record<VoiceTurnStatus, string> = {
   IN_PROGRESS: '处理中',
   RESPONSE_READY: '回复已就绪',
@@ -86,18 +82,23 @@ const statusLabels: Record<VoiceTurnStatus, string> = {
   CANCELLED: '已取消',
   FAILED: '失败',
 }
-
 function stageElapsed(turn: VoiceTurn, event: VoiceTurnEvent) {
   const elapsedMs = event.elapsedMs ?? Math.max(0, Date.parse(event.occurredAt) - Date.parse(turn.startedAt))
   return `+${(elapsedMs / 1000).toFixed(elapsedMs < 10000 ? 2 : 1)} 秒`
 }
-
 async function showVoiceTurns(device: Device) {
+  const request = ++voiceTurnsRequest
   selectedDevice.value = device
+  voiceTurns.value = []
+  memoryUsageByTurn.value = {}
   voiceTurnsLoading.value = true
+  voiceTurnsError.value = ''
   try {
-    voiceTurns.value = await listDeviceVoiceTurns(device.id)
-    const usageEntries = await Promise.all(voiceTurns.value.map(async (turn) => {
+    const turns = await listDeviceVoiceTurns(device.id)
+    if (request !== voiceTurnsRequest) {
+      return
+    }
+    const usageEntries = await Promise.all(turns.map(async (turn) => {
       try {
         const usage = await getMemoryUsage(turn.turnId)
         return [turn.turnId, usage.memories] as const
@@ -106,23 +107,32 @@ async function showVoiceTurns(device: Device) {
         return [turn.turnId, []] as const
       }
     }))
+    if (request !== voiceTurnsRequest) {
+      return
+    }
+    voiceTurns.value = turns
     memoryUsageByTurn.value = Object.fromEntries(usageEntries)
   }
   catch (error) {
+    if (request !== voiceTurnsRequest) {
+      return
+    }
+    voiceTurnsError.value = error instanceof Error ? error.message : '无法获取最近语音回合。'
     voiceTurns.value = []
     memoryUsageByTurn.value = {}
     useFaToast().error('加载交互诊断失败', { description: error instanceof Error ? error.message : '无法获取最近语音回合。' })
   }
   finally {
-    voiceTurnsLoading.value = false
+    if (request === voiceTurnsRequest) {
+      voiceTurnsLoading.value = false
+    }
   }
 }
-
 onMounted(load)
 </script>
 
 <template>
-  <AppPageShell title="设备总览" description="在线状态由服务器按最近心跳计算；安全停止只发送停机命令，不会启用任何舵机动作。">
+  <AppPageShell title="设备与日常控制" description="安全停止只发送停机命令，不会启用身体动作。">
     <FaCard>
       <template #header>
         <div class="flex gap-4 items-center justify-between">
@@ -148,6 +158,11 @@ onMounted(load)
       >
         <template #cell-actions="{ row }">
           <div class="flex flex-wrap gap-2">
+            <FaButton variant="outline" size="sm" as-child>
+              <RouterLink :to="{ path: '/settings/interaction', query: { deviceId: row.original.id, tab: 'device' } }">
+                音量与交互
+              </RouterLink>
+            </FaButton>
             <FaButton
               variant="outline"
               size="sm"
@@ -182,7 +197,8 @@ onMounted(load)
         </div>
       </template>
 
-      <FaEmpty v-if="!voiceTurnsLoading && voiceTurns.length === 0" description="暂无语音回合诊断数据" />
+      <FaAlert v-if="voiceTurnsError" variant="destructive" title="诊断未获取" :description="voiceTurnsError" />
+      <AppEmpty v-else-if="!voiceTurnsLoading && voiceTurns.length === 0" description="暂无语音回合诊断数据" />
       <div v-else class="space-y-4">
         <section
           v-for="turn in voiceTurns"

@@ -1,4 +1,4 @@
 {
-  "*.{ts,tsx,vue}": "eslint --cache --fix",
+  "*.{ts,tsx,vue}": "eslint --cache --fix --no-warn-ignored",
   "*.{css,scss,vue}": "stylelint --cache --fix"
 }

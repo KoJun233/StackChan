@@ -62,15 +62,15 @@ function time(value: string | null, zoneId: string) {
 
 <template>
   <FaCard title="将要提醒什么 · 刚才说了什么" description="只展示所选设备与伙伴。排期可能因离线、免打扰或忙碌顺延；播完不代表任务完成，也不代表外部业务已执行。">
-    <FaLoading :loading="loading">
+    <AppLoading :loading="loading">
       <FaAlert v-if="error" variant="destructive" title="未能读取播报" :description="error" />
-      <FaEmpty v-else-if="!deviceId || !roleId" description="请先选择设备和伙伴" />
+      <AppEmpty v-else-if="!deviceId || !roleId" description="请先选择设备和伙伴" />
       <div v-else-if="data" class="gap-6 grid md:grid-cols-2">
         <div>
           <p class="font-medium mb-3">
             等待或正在投递：{{ data.upcomingTotal }} 条
           </p>
-          <FaEmpty v-if="!data.upcoming.length" description="没有等待投递的消息" />
+          <AppEmpty v-if="!data.upcoming.length" description="没有等待投递的消息" />
           <div v-for="item in data.upcoming" :key="item.id" class="mb-3 p-3 border rounded">
             <FaTag variant="secondary">
               {{ sourceLabel(item) }}
@@ -90,7 +90,7 @@ function time(value: string | null, zoneId: string) {
           <p class="font-medium mb-3">
             最近 30 分钟成功播报
           </p>
-          <FaEmpty v-if="!data.recent.length" description="近期没有成功播报记录" />
+          <AppEmpty v-if="!data.recent.length" description="近期没有成功播报记录" />
           <div v-for="item in data.recent" :key="item.id" class="mb-3 p-3 border rounded">
             <FaTag variant="outline">
               {{ sourceLabel(item) }}
@@ -107,6 +107,6 @@ function time(value: string | null, zoneId: string) {
           </p>
         </div>
       </div>
-    </FaLoading>
+    </AppLoading>
   </FaCard>
 </template>

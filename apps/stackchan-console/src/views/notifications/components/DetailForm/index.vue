@@ -22,7 +22,7 @@ const model = ref({ id: props.id, name: '', deviceId: '', roleId: '', digestWind
 const validationSchema = toTypedSchema(z.object({
   name: z.string().trim().min(1, '请输入集成名称').max(120, '名称不能超过 120 个字符'),
   deviceId: z.string().uuid('请选择目标设备'),
-  roleId: z.string().refine(isCompanionRoleId, '请选择归属角色'),
+  roleId: z.string().refine(isCompanionRoleId, '请选择归属伙伴'),
   digestWindowSeconds: z.number().refine(value => value === 0 || (value >= 5 && value <= 300), '请输入 5–300 秒，或填 0 关闭'),
   enabled: z.boolean(),
 }))
@@ -126,7 +126,7 @@ defineExpose({ submit })
       <FaFormItem name="deviceId" label="目标设备" required description="令牌签发后仍固定使用这里选择的设备。">
         <FaSelect :options="deviceOptions" class="w-full" />
       </FaFormItem>
-      <FaFormItem name="roleId" label="归属角色" required :description="model.id ? '集成创建后不可改绑角色；归档角色会停用该集成。' : '外部通知和集成随角色归档而停用。'">
+      <FaFormItem name="roleId" label="归属伙伴" required :description="model.id ? '集成创建后不可改绑伙伴；归档伙伴会停用该集成。' : '外部通知和集成随伙伴归档而停用。'">
         <FaSelect :options="roles" :disabled="Boolean(model.id)" class="w-full" />
       </FaFormItem>
       <FaFormItem name="enabled" label="启用状态" description="停用后所有现有令牌立即拒绝新请求，已入队通知继续保留。">

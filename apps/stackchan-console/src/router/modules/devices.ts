@@ -10,7 +10,7 @@ const deviceRoute: RouteRecordRaw = {
   component: Layout,
   name: 'devices',
   meta: {
-    title: '机器人设备',
+    title: '机器人',
     icon: 'i-ri:robot-2-line',
   },
   children: [
@@ -19,7 +19,7 @@ const deviceRoute: RouteRecordRaw = {
       name: 'deviceOverview',
       component: () => import('@/views/devices/overview/index.vue'),
       meta: {
-        title: '设备总览',
+        title: '设备与日常控制',
         icon: 'i-ri:dashboard-2-line',
       },
     },

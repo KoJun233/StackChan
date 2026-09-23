@@ -26,7 +26,7 @@ const validationSchema = toTypedSchema(z.object({
   baseUrl: z.string().url('请输入有效的 HTTP 或 HTTPS 接口地址').refine(value => /^https?:\/\//.test(value), '接口地址必须以 http:// 或 https:// 开头'),
   model: z.string().trim().min(1, '请输入模型名称'),
   apiKey: z.string().max(4096, 'API 密钥过长'),
-  systemPrompt: z.string().max(12000, '角色设定不能超过 12000 个字符'),
+  systemPrompt: z.string().max(12000, '通用对话规则不能超过 12000 个字符'),
 }).superRefine((value, context) => {
   if (!apiKeyConfigured.value && !value.apiKey.trim()) {
     context.addIssue({ code: 'custom', message: '请填写 API 密钥', path: ['apiKey'] })
@@ -87,9 +87,9 @@ onMounted(load)
 </script>
 
 <template>
-  <AppPageShell title="AI 配置" description="使用 OpenAI 兼容接口连接你自己的模型服务；API 密钥仅在服务器端加密保存。">
-    <FaLoading :loading="loading">
-      <FaCard class="max-w-3xl">
+  <AppPageShell title="AI 配置" width="form" description="使用 OpenAI 兼容接口连接你自己的模型服务；API 密钥仅在服务器端加密保存。">
+    <AppLoading :loading="loading">
+      <FaCard class="w-full">
         <FaForm :model="model" :validation-schema="validationSchema" scroll-to-error @submit="submit">
           <div class="gap-6 grid md:grid-cols-2">
             <FaFormItem name="baseUrl" label="接口地址" required class="md:col-span-2" description="例如 https://dashscope.aliyuncs.com/compatible-mode/v1">
@@ -101,7 +101,7 @@ onMounted(load)
             <FaFormItem name="apiKey" label="API 密钥" :required="!apiKeyConfigured" :description="apiKeyConfigured ? '已保存密钥；留空即可保留原密钥。' : '密钥只会发送到服务器，不会回显到此页面。'">
               <FaInput v-model="model.apiKey" type="password" autocomplete="new-password" placeholder="sk-..." />
             </FaFormItem>
-            <FaFormItem name="systemPrompt" label="角色设定" class="md:col-span-2" description="这段设定会影响陪伴机器人的语气与边界。">
+            <FaFormItem name="systemPrompt" label="通用对话规则（高级）" class="md:col-span-2" description="适用于所有伙伴。单个伙伴的个性请在伙伴管理中修改。">
               <FaTextarea v-model="model.systemPrompt" rows="8" align="block" />
             </FaFormItem>
           </div>
@@ -115,6 +115,6 @@ onMounted(load)
           </div>
         </FaForm>
       </FaCard>
-    </FaLoading>
+    </AppLoading>
   </AppPageShell>
 </template>

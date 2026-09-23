@@ -29,7 +29,7 @@ async function load(id: string) {
     const role = await getRole(id)
     model.value = { name: role.name, tone: role.tone, replyLength: role.replyLength, proactivity: role.proactivity, backgroundInstructions: role.backgroundInstructions, topicBoundaries: role.topicBoundaries, taboos: role.taboos, ttsVoiceOverride: role.ttsVoiceOverride ?? '', expressionThemeColor: role.expressionThemeColor ?? '#FF4FA3' }
   }
-  catch (error) { useFaToast().error('加载失败', { description: error instanceof Error ? error.message : '无法读取角色。' }) }
+  catch (error) { useFaToast().error('加载失败', { description: error instanceof Error ? error.message : '无法读取伙伴。' }) }
   finally { loading.value = false }
 }
 
@@ -46,11 +46,11 @@ async function submit() {
     else {
       await createRole(input)
     }
-    useFaToast().success(props.id ? '角色已更新' : '角色已创建')
+    useFaToast().success(props.id ? '伙伴已更新' : '伙伴已创建')
     return true
   }
   catch (error) {
-    useFaToast().error('保存失败', { description: error instanceof Error ? error.message : '无法保存角色。' })
+    useFaToast().error('保存失败', { description: error instanceof Error ? error.message : '无法保存伙伴。' })
     return false
   }
   finally { loading.value = false }
@@ -61,7 +61,7 @@ defineExpose({ submit })
 </script>
 
 <template>
-  <FaLoading :loading="loading">
+  <AppLoading :loading="loading">
     <FaForm ref="formRef" :model="model" :validation-schema="schema" :label-width="120" class="gap-6 grid" scroll-to-error>
       <FaCard v-if="!props.id" title="从一种相处方式开始" description="可选：填入一份可修改的草稿，保存后才会创建独立伙伴。音色先继承全局，之后可以分别试听选择。">
         <div class="flex flex-wrap gap-3">
@@ -70,7 +70,7 @@ defineExpose({ submit })
           </FaButton>
         </div>
       </FaCard>
-      <FaFormItem name="name" label="角色名称" required>
+      <FaFormItem name="name" label="伙伴名称" required>
         <FaInput v-model="model.name" placeholder="例如：个人助理" />
       </FaFormItem>
       <div class="gap-4 grid md:grid-cols-3">
@@ -82,7 +82,7 @@ defineExpose({ submit })
           <FaSelect v-model="model.proactivity" :options="proactivityOptions" />
         </FaFormItem>
       </div>
-      <FaFormItem name="backgroundInstructions" label="背景与行为" description="最多 4000 字，作为受限数据附加在基础安全规则之后。">
+      <FaFormItem name="backgroundInstructions" label="背景与行为" description="描述这位伙伴的个性、背景和相处方式，最多 4000 字。">
         <FaTextarea v-model="model.backgroundInstructions" rows="8" align="block" />
       </FaFormItem>
       <FaFormItem name="topicBoundaries" label="话题边界">
@@ -91,15 +91,15 @@ defineExpose({ submit })
       <FaFormItem name="taboos" label="交互禁忌">
         <FaTextarea v-model="model.taboos" rows="5" align="block" />
       </FaFormItem>
-      <FaFormItem name="ttsVoiceOverride" label="角色音色" description="可选。填写当前语音供应商支持的音色标识；留空继承全局音色，覆盖音色不可用时也会自动回退全局音色。">
+      <FaFormItem name="ttsVoiceOverride" label="伙伴音色" description="可选。填写当前语音供应商支持的音色标识；留空继承全局音色，覆盖音色不可用时也会自动回退全局音色。">
         <FaInput v-model="model.ttsVoiceOverride" placeholder="例如：longanhuan_v3.6" />
       </FaFormItem>
-      <FaFormItem name="expressionThemeColor" label="表情主色" description="内置动态球体使用此主色派生高光、阴影和粒子；错误、离线和更新颜色不受角色覆盖。">
+      <FaFormItem name="expressionThemeColor" label="表情主色" description="内置动态球体使用此主色派生高光、阴影和粒子；错误、离线和更新颜色不受伙伴覆盖。">
         <div class="flex gap-3 items-center">
           <FaInput v-model="model.expressionThemeColor" type="color" class="w-20" /><FaInput v-model="model.expressionThemeColor" placeholder="#FF4FA3" class="max-w-48" />
         </div>
       </FaFormItem>
-      <FaAlert title="严格隔离" description="新角色会拥有独立的网页/语音会话、长期记忆、提醒和主动话题状态；音量、免打扰、模型和语音供应商仍按设备共享，只有音色可按角色覆盖。" />
+      <FaAlert title="严格隔离" description="新伙伴会拥有独立的网页/语音会话、长期记忆、提醒和主动话题状态；音量、免打扰、模型和语音供应商仍按设备共享，只有音色可按伙伴覆盖。" />
     </FaForm>
-  </FaLoading>
+  </AppLoading>
 </template>

@@ -82,7 +82,7 @@ vi.mock('@fantastic-admin/components', () => {
         })
       },
     }),
-    FaLoading: passthrough,
+    FaIcon: passthrough,
     FaNumberField: defineComponent({
       inheritAttrs: false,
       props: { modelValue: { type: Number, required: true } },

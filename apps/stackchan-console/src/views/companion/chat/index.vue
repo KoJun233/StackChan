@@ -1,21 +1,36 @@
 <script setup lang="ts">
 import type { TdChatItemMeta } from '@tdesign-vue-next/chat'
+import type { CompanionRole } from '@/api/modules/roles'
 import TChatActionbar from '@tdesign-vue-next/chat/es/chat-actionbar'
 import TChatContent from '@tdesign-vue-next/chat/es/chat-content'
 import TChatList from '@tdesign-vue-next/chat/es/chat-list'
+import { useMediaQuery } from '@vueuse/core'
 import { listRoles } from '@/api/modules/roles'
+import ChatHistory from './ChatHistory.vue'
 import '@tdesign-vue-next/chat/es/style/index.css'
 import 'tdesign-vue-next/es/style/index.css'
 
 defineOptions({ name: 'CompanionChat' })
-
 const conversationStore = useConversationStore()
-const { activeConversationId, activeRoleId, conversations, errorMessage, isLoading, isSending, lastFailedInput, messages } = storeToRefs(conversationStore)
+const { activeConversationId, activeRoleId, conversations, errorMessage, historyError, isCreating, isLoading, isSending, lastFailedInput, messages } = storeToRefs(conversationStore)
 const draft = ref('')
-const roleOptions = ref<{ label: string, value: string }[]>([])
-
+const drafts = new Map<string, string>()
+const route = useRoute()
+const roles = ref<CompanionRole[]>([])
+const currentRole = computed(() => roles.value.find(role => role.id === activeRoleId.value))
+const partnerName = computed(() => currentRole.value?.name ?? '伙伴')
+const historyOpen = ref(false)
+const desktop = useMediaQuery('(min-width: 1024px)')
+const chatLayout = useTemplateRef<HTMLDivElement>('chatLayout')
+const chatHeight = ref('calc(100dvh - 12rem)')
+const roleOptions = ref<{
+  label: string
+  value: string
+}[]>([])
+const initialized = ref(false)
+let appliedRoleQuery = ''
 const chatItems = computed<TdChatItemMeta[]>(() => messages.value.map(message => ({
-  name: message.role === 'USER' ? '你' : 'StackChan',
+  name: message.role === 'USER' ? '你' : partnerName.value,
   role: message.role === 'USER' ? 'user' : 'assistant',
   datetime: formatMessageTime(message.createdAt),
   content: [{
@@ -24,14 +39,12 @@ const chatItems = computed<TdChatItemMeta[]>(() => messages.value.map(message =>
   }],
   status: message.generationStatus === 'FAILED' ? 'error' : undefined,
 })))
-
 function formatMessageTime(value: string) {
   return new Intl.DateTimeFormat('zh-CN', {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
 }
-
 function chatContent(index: number) {
   const message = messages.value[index]
   if (!message) {
@@ -45,10 +58,9 @@ function chatContent(index: number) {
     data: message.content,
   }
 }
-
 async function send(value = draft.value) {
   const content = value.trim()
-  if (!content) {
+  if (!content || isSending.value || isCreating.value || isLoading.value || historyError.value) {
     return
   }
   draft.value = ''
@@ -56,13 +68,46 @@ async function send(value = draft.value) {
     await conversationStore.send(content)
   }
   catch (error) {
+    if (!draft.value) {
+      draft.value = content
+    }
     useFaToast().error('发送失败', { description: error instanceof Error ? error.message : '消息发送失败，请稍后重试。' })
   }
 }
-
+async function newConversation() {
+  try {
+    await conversationStore.startNewConversation()
+    historyOpen.value = false
+  }
+  catch (error) {
+    useFaToast().error('创建失败', { description: error instanceof Error ? error.message : '请重新创建对话。' })
+  }
+}
+async function selectConversation(id: string) {
+  try {
+    await conversationStore.selectConversation(id)
+    historyOpen.value = false
+  }
+  catch { /* The current history error is shown in the conversation panel. */ }
+}
+async function selectRole(id: string) {
+  if (isSending.value || isCreating.value) {
+    return
+  }
+  drafts.set(activeRoleId.value ?? '', draft.value)
+  draft.value = drafts.get(id) ?? ''
+  try {
+    await conversationStore.selectRole(id)
+  }
+  catch { /* The current history error is shown in the conversation panel. */ }
+}
 async function retry() {
   try {
+    const failed = lastFailedInput.value
     await conversationStore.retryFailed()
+    if (!lastFailedInput.value && draft.value === failed) {
+      draft.value = ''
+    }
   }
   catch (error) {
     useFaToast().error('重试失败', {
@@ -70,7 +115,6 @@ async function retry() {
     })
   }
 }
-
 function handleComposerKeydown(event: KeyboardEvent) {
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing) {
     return
@@ -78,58 +122,106 @@ function handleComposerKeydown(event: KeyboardEvent) {
   event.preventDefault()
   void send()
 }
-
 onMounted(async () => {
   try {
-    const roles = await listRoles()
-    roleOptions.value = roles.filter(role => !role.archivedAt).map(role => ({ label: role.name, value: role.id }))
-    if (!activeRoleId.value) {
-      activeRoleId.value = roles.find(role => role.defaultRole)?.id ?? roleOptions.value[0]?.value
+    roles.value = await listRoles()
+    roleOptions.value = roles.value.filter(role => !role.archivedAt).map(role => ({ label: role.name, value: role.id }))
+    const requested = String(route.query.roleId ?? '')
+    appliedRoleQuery = requested
+    const target = roleOptions.value.some(role => role.value === requested) ? requested : roleOptions.value.some(role => role.value === activeRoleId.value) ? activeRoleId.value : roles.value.find(role => role.defaultRole)?.id ?? roleOptions.value[0]?.value
+    if (target && target !== activeRoleId.value) {
+      await selectRole(target)
     }
-    await conversationStore.loadConversations()
+    else {
+      await conversationStore.loadConversations()
+    }
   }
   catch (error) {
     useFaToast().error('加载失败', { description: error instanceof Error ? error.message : '无法加载历史对话。' })
   }
+  finally {
+    initialized.value = true
+  }
+})
+watch([() => route.name, () => route.query.roleId, initialized, isSending, isCreating], () => {
+  if (route.name !== 'companionChat') {
+    appliedRoleQuery = ''
+    return
+  }
+  const requested = String(route.query.roleId ?? '')
+  if (initialized.value && !isSending.value && !isCreating.value && requested !== appliedRoleQuery
+    && roleOptions.value.some(role => role.value === requested)) {
+    appliedRoleQuery = requested
+    if (requested !== activeRoleId.value) {
+      void selectRole(requested)
+    }
+  }
+})
+function measureChat() {
+  if (!chatLayout.value) {
+    return
+  }
+  const viewport = window.visualViewport
+  const bottom = (viewport?.height ?? window.innerHeight) + (viewport?.offsetTop ?? 0)
+  chatHeight.value = `${Math.max(180, bottom - chatLayout.value.getBoundingClientRect().top - 16)}px`
+}
+onMounted(async () => {
+  await nextTick()
+  measureChat()
+  window.addEventListener('resize', measureChat)
+  window.visualViewport?.addEventListener('resize', measureChat)
+  window.visualViewport?.addEventListener('scroll', measureChat)
+})
+onActivated(() => nextTick(measureChat))
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', measureChat)
+  window.visualViewport?.removeEventListener('resize', measureChat)
+  window.visualViewport?.removeEventListener('scroll', measureChat)
+})
+watch(desktop, () => {
+  historyOpen.value = false
+  nextTick(measureChat)
 })
 </script>
 
 <template>
-  <AppPageShell title="陪伴聊天" description="选择一个角色继续历史对话；消息由现有服务端会话与流式生成能力管理。">
-    <div class="chat-layout">
-      <FaCard title="会话" description="角色与历史会话不会混在同一条时间线中。" class="session-panel min-h-0" content-class="flex min-h-0 flex-1 flex-col">
-        <FaSelect :model-value="activeRoleId" :options="roleOptions" class="mb-3 w-full" :disabled="isSending" @update:model-value="conversationStore.selectRole(String($event))" />
-        <template #action>
-          <FaButton size="sm" :disabled="isSending" @click="conversationStore.startNewConversation">
-            <FaIcon name="i-ri:add-line" />
-            新对话
-          </FaButton>
-        </template>
-        <FaScrollArea class="h-[160px] lg:flex-1 lg:h-auto lg:min-h-0">
-          <FaEmpty v-if="!conversations.length" description="还没有对话" />
-          <div v-else class="pr-2 space-y-1">
-            <FaButton
-              v-for="conversation in conversations"
-              :key="conversation.id"
-              class="w-full truncate justify-start"
-              :disabled="isSending"
-              :variant="activeConversationId === conversation.id ? 'secondary' : 'ghost'"
-              @click="conversationStore.selectConversation(conversation.id)"
-            >
-              {{ conversation.title }}
-            </FaButton>
-          </div>
-        </FaScrollArea>
+  <AppPageShell title="聊天" width="wide">
+    <template #actions>
+      <FaButton v-if="!desktop" variant="outline" @click="historyOpen = true">
+        伙伴与历史
+      </FaButton>
+    </template>
+    <div ref="chatLayout" class="chat-layout" :style="{ height: chatHeight }">
+      <FaCard v-if="desktop" class="min-h-0" content-class="h-full min-h-0">
+        <ChatHistory :role-id="activeRoleId" :conversation-id="activeConversationId" :roles="roleOptions" :conversations="conversations" :busy="isSending || isCreating" :creating="isCreating" :loading="isLoading" @role="selectRole" @conversation="selectConversation" @create="newConversation" />
       </FaCard>
 
       <FaCard
-        title="当前对话"
-        description="支持 Markdown、复制回复、自动滚动、停止生成与失败重试。"
-        class="stackchan-chat min-h-0 overflow-hidden"
-        content-class="flex min-h-0 flex-1 flex-col"
+        :title="partnerName"
+        class="stackchan-chat min-h-0 overflow-hidden max-sm:py-3 max-sm:gap-3"
+        header-class="max-sm:px-3"
+        content-class="flex min-h-0 flex-1 flex-col max-sm:px-3"
       >
-        <FaLoading :loading="isLoading" class="h-full">
+        <template #header>
+          <div class="flex gap-2 items-center">
+            <AppPartnerPortrait compact :name="partnerName" :color="currentRole?.expressionThemeColor" /><div>
+              <h2 class="font-semibold">
+                {{ partnerName }}
+              </h2><p class="text-xs text-muted-foreground">
+                {{ isSending ? '正在回应…' : '聊聊今天，也听听彼此' }}
+              </p>
+            </div>
+          </div>
+        </template>
+        <AppLoading :loading="isLoading" class="flex-1 h-full min-h-0">
           <div class="chat-workspace">
+            <FaAlert v-if="historyError" variant="destructive" title="对话未加载" :description="historyError">
+              <template #action>
+                <FaButton variant="outline" @click="selectRole(activeRoleId ?? '')">
+                  重新加载
+                </FaButton>
+              </template>
+            </FaAlert>
             <TChatList
               v-if="chatItems.length"
               :data="chatItems"
@@ -163,7 +255,7 @@ onMounted(async () => {
                 />
               </template>
             </TChatList>
-            <FaEmpty v-else class="chat-empty" description="和你的机器人说点什么吧" />
+            <AppEmpty v-else class="chat-empty" description="和你的机器人说点什么吧" />
             <div class="chat-composer">
               <FaAlert v-if="errorMessage" variant="destructive" title="消息发送失败" :description="errorMessage" class="mb-3">
                 <template v-if="lastFailedInput" #action>
@@ -175,7 +267,7 @@ onMounted(async () => {
               <div class="composer-field">
                 <FaTextarea
                   v-model="draft"
-                  :disabled="isSending"
+                  :disabled="isSending || isCreating || isLoading || !!historyError"
                   aria-label="对话消息"
                   placeholder="输入你想和机器人说的话…"
                   class="w-full"
@@ -188,7 +280,7 @@ onMounted(async () => {
                     <FaIcon name="i-ri:stop-circle-line" />
                     停止生成
                   </FaButton>
-                  <FaButton v-else :disabled="!draft.trim()" @click="send()">
+                  <FaButton v-else :disabled="!draft.trim() || isCreating || isLoading || !!historyError" @click="send()">
                     <FaIcon name="i-ri:send-plane-2-line" />
                     发送
                   </FaButton>
@@ -196,9 +288,12 @@ onMounted(async () => {
               </div>
             </div>
           </div>
-        </FaLoading>
+        </AppLoading>
       </FaCard>
     </div>
+    <FaDrawer v-if="!desktop" v-model="historyOpen" title="伙伴与历史" side="left" :footer="false" open-auto-focus content-class="h-full min-h-0">
+      <ChatHistory :role-id="activeRoleId" :conversation-id="activeConversationId" :roles="roleOptions" :conversations="conversations" :busy="isSending || isCreating" :creating="isCreating" :loading="isLoading" @role="selectRole" @conversation="selectConversation" @create="newConversation" />
+    </FaDrawer>
   </AppPageShell>
 </template>
 
@@ -220,7 +315,8 @@ onMounted(async () => {
 .chat-layout {
   display: grid;
   gap: 1rem;
-  min-height: 640px;
+  min-height: 180px;
+  overflow: hidden;
 }
 
 .stackchan-chat :deep(.t-chat__list) {
@@ -239,9 +335,9 @@ onMounted(async () => {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  height: clamp(520px, 70dvh, 680px);
+  height: 100%;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 .chat-message-list,
@@ -253,7 +349,7 @@ onMounted(async () => {
 
 .chat-composer {
   flex: 0 0 auto;
-  padding-top: 1rem;
+  padding-top: 0.5rem;
   background: oklch(var(--card));
   border-top: 1px solid oklch(var(--border));
 }
@@ -283,7 +379,6 @@ onMounted(async () => {
 @media (width >= 1024px) {
   .chat-layout {
     grid-template-columns: 220px minmax(0, 1fr);
-    height: calc(100dvh - 12rem);
   }
 
   .chat-workspace {
@@ -298,9 +393,9 @@ onMounted(async () => {
 }
 
 @media (width <= 639px) {
-  .composer-actions {
-    flex-direction: column;
-    align-items: stretch;
-  }
+  .chat-empty { padding-block: 0.5rem; }
+  .composer-actions > span { display: none; }
+  .composer-actions { justify-content: flex-end; }
+  .composer-field { padding: 0.5rem; }
 }
 </style>

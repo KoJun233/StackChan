@@ -268,175 +268,172 @@ onMounted(() => {
 </script>
 
 <template>
-  <div>
-    <FaPageHeader title="语音配置" description="分别配置语音识别、语音合成和音频输入输出，并在保存前验证供应商连接。" />
-    <FaPageMain>
-      <FaLoading :loading="loading">
-        <div class="mx-auto gap-6 grid max-w-4xl">
-          <FaCard>
-            <FaForm
-              id="speech-settings-form"
-              :model="model"
-              :validation-schema="validationSchema"
-              keep-values-on-unmount
-              scroll-to-error
-              class="gap-x-8 gap-y-6 grid grid-cols-1 items-start md:grid-cols-2"
-              @submit="submit"
-              @invalid-submit="invalidSubmit"
+  <AppPageShell title="语音配置" description="默认对所有伙伴生效；伙伴单独设置的音色优先。" width="form">
+    <AppLoading :loading="loading">
+      <div class="mx-auto gap-6 grid w-full">
+        <FaCard>
+          <FaForm
+            id="speech-settings-form"
+            :model="model"
+            :validation-schema="validationSchema"
+            keep-values-on-unmount
+            scroll-to-error
+            class="gap-x-8 gap-y-6 grid grid-cols-1 items-start md:grid-cols-2"
+            @submit="submit"
+            @invalid-submit="invalidSubmit"
+          >
+            <FaTabs v-model="activeSection" :list="sectionTabs" list-class="justify-start" content-class="pt-5" class="md:col-span-2">
+              <template #provider>
+                <div class="gap-x-8 gap-y-6 grid grid-cols-1 md:grid-cols-2">
+                  <FaFormItem name="providerType" label="语音服务商" required class="md:col-span-2">
+                    <FaSelect v-model="model.providerType" :options="providerOptions" class="w-full" />
+                  </FaFormItem>
+                  <FaAlert
+                    title="接入方式严格决定协议"
+                    description="实时只走 WebSocket，非实时只走 HTTP。模型名会按输入原样发送，不会根据名称自动切换协议，也不会失败后回退到另一种协议。"
+                    class="md:col-span-2"
+                  />
+                  <FaAlert
+                    v-if="model.providerType === 'OPENAI_COMPATIBLE'"
+                    title="OpenAI-compatible 协议范围"
+                    description="当前 OpenAI-compatible 适配器只实现非实时 HTTP 音频接口；选择实时时不会改走 HTTP，连接测试和实际调用会直接失败。"
+                    class="md:col-span-2"
+                  />
+                  <FaFormItem
+                    v-if="model.providerType === 'OPENAI_COMPATIBLE'"
+                    name="baseUrl"
+                    label="接口地址"
+                    required
+                    class="md:col-span-2"
+                    description="OpenAI-compatible 基础地址，例如 https://api.openai.com/v1"
+                  >
+                    <FaInput v-model="model.baseUrl" placeholder="https://..." class="w-full" />
+                  </FaFormItem>
+                  <FaFormItem
+                    v-if="model.providerType === 'DASHSCOPE'"
+                    name="workspaceId"
+                    label="Workspace ID"
+                    required
+                    class="md:col-span-2"
+                    description="填写百炼业务空间 ID；它不是 API Key。"
+                  >
+                    <FaInput v-model="model.workspaceId" autocomplete="off" placeholder="llm-..." class="w-full" />
+                  </FaFormItem>
+                  <FaFormItem name="asrMode" label="语音识别接入方式" required>
+                    <FaSelect v-model="model.asrMode" :options="accessModeOptions" class="w-full" />
+                  </FaFormItem>
+                  <FaFormItem name="asrModel" label="语音识别模型" required description="模型名原样传给当前服务商，不限制命名。">
+                    <FaInput v-model="model.asrModel" placeholder="请输入语音识别模型名" class="w-full" />
+                  </FaFormItem>
+                  <FaFormItem name="ttsMode" label="语音合成接入方式" required>
+                    <FaSelect v-model="model.ttsMode" :options="accessModeOptions" class="w-full" />
+                  </FaFormItem>
+                  <FaFormItem name="ttsModel" label="语音合成模型" required description="模型名原样传给当前服务商，不限制命名。">
+                    <FaInput v-model="model.ttsModel" placeholder="请输入语音合成模型名" class="w-full" />
+                  </FaFormItem>
+                  <FaFormItem name="ttsVoice" label="语音音色" required>
+                    <FaInput v-model="model.ttsVoice" placeholder="请输入语音音色" class="w-full" />
+                  </FaFormItem>
+                  <FaFormItem name="apiKey" label="API 密钥" :required="!apiKeyConfigured" :description="apiKeyConfigured ? '已保存密钥；留空即可保留原密钥。' : '密钥只会发送到服务器，不会回显到此页面。'">
+                    <FaInput v-model="model.apiKey" type="password" autocomplete="new-password" placeholder="sk-..." class="w-full" />
+                  </FaFormItem>
+                </div>
+              </template>
+              <template #audio>
+                <div class="gap-x-8 gap-y-6 grid grid-cols-1 md:grid-cols-2">
+                  <FaAlert
+                    title="机器人本地唤醒与录音"
+                    description="保存后会立即同步到在线机器人，并在机器人每次重新连接时补发。降低能量阈值会更容易听到较轻的说话声，但过低可能把环境噪声当作语音。"
+                    class="md:col-span-2"
+                  />
+                  <FaFormItem name="wakeSensitivity" label="唤醒灵敏度" required class="md:col-span-2">
+                    <FaSelect v-model="model.wakeSensitivity" :options="wakeSensitivityOptions" class="w-full" />
+                  </FaFormItem>
+                  <FaFormItem
+                    name="speechStartThreshold"
+                    label="开始说话阈值"
+                    required
+                    description="平均能量达到此值后开始记录有效语音；数值越低越灵敏。推荐 350。"
+                  >
+                    <FaNumberField v-model="model.speechStartThreshold" :min="100" :max="5000" :step="10" class="w-full" />
+                  </FaFormItem>
+                  <FaFormItem
+                    name="speechSilenceThreshold"
+                    label="静音阈值"
+                    required
+                    description="低于此值连续 0.75 秒后结束录音，必须小于开始说话阈值。推荐 200。"
+                  >
+                    <FaNumberField v-model="model.speechSilenceThreshold" :min="50" :max="4000" :step="10" class="w-full" />
+                  </FaFormItem>
+                </div>
+              </template>
+            </FaTabs>
+            <FaFixedBar position="bottom" class="flex gap-3 justify-center md:col-span-2">
+              <FaButton type="button" variant="outline" :loading="testing" @click="testConnection">
+                测试语音识别与合成
+              </FaButton>
+              <FaButton type="submit" form="speech-settings-form" :loading="loading">
+                保存配置
+              </FaButton>
+            </FaFixedBar>
+          </FaForm>
+        </FaCard>
+        <FaCard title="乐鑫内置唤醒词">
+          <FaForm
+            id="wake-model-form"
+            :model="wakeModel"
+            :validation-schema="wakeModelValidationSchema"
+            class="gap-x-8 gap-y-6 grid grid-cols-1 items-start md:grid-cols-2"
+            @submit="submitWakeModel"
+            @invalid-submit="invalidWakeModelSubmit"
+          >
+            <FaFormItem name="deviceId" label="目标机器人" required>
+              <FaSelect
+                v-model="wakeModel.deviceId"
+                :options="deviceOptions"
+                placeholder="请选择机器人"
+                class="w-full"
+              />
+            </FaFormItem>
+            <FaFormItem
+              name="modelName"
+              label="唤醒短语"
+              required
+              description="仅显示当前固件兼容的 ESP-SR 2.4.6 官方内置模型；无需上传文件或重新刷固件。"
             >
-              <FaTabs v-model="activeSection" :list="sectionTabs" list-class="justify-start" content-class="pt-5" class="md:col-span-2">
-                <template #provider>
-                  <div class="gap-x-8 gap-y-6 grid grid-cols-1 md:grid-cols-2">
-                    <FaFormItem name="providerType" label="语音服务商" required class="md:col-span-2">
-                      <FaSelect v-model="model.providerType" :options="providerOptions" class="w-full" />
-                    </FaFormItem>
-                    <FaAlert
-                      title="接入方式严格决定协议"
-                      description="实时只走 WebSocket，非实时只走 HTTP。模型名会按输入原样发送，不会根据名称自动切换协议，也不会失败后回退到另一种协议。"
-                      class="md:col-span-2"
-                    />
-                    <FaAlert
-                      v-if="model.providerType === 'OPENAI_COMPATIBLE'"
-                      title="OpenAI-compatible 协议范围"
-                      description="当前 OpenAI-compatible 适配器只实现非实时 HTTP 音频接口；选择实时时不会改走 HTTP，连接测试和实际调用会直接失败。"
-                      class="md:col-span-2"
-                    />
-                    <FaFormItem
-                      v-if="model.providerType === 'OPENAI_COMPATIBLE'"
-                      name="baseUrl"
-                      label="接口地址"
-                      required
-                      class="md:col-span-2"
-                      description="OpenAI-compatible 基础地址，例如 https://api.openai.com/v1"
-                    >
-                      <FaInput v-model="model.baseUrl" placeholder="https://..." class="w-full" />
-                    </FaFormItem>
-                    <FaFormItem
-                      v-if="model.providerType === 'DASHSCOPE'"
-                      name="workspaceId"
-                      label="Workspace ID"
-                      required
-                      class="md:col-span-2"
-                      description="填写百炼业务空间 ID；它不是 API Key。"
-                    >
-                      <FaInput v-model="model.workspaceId" autocomplete="off" placeholder="llm-..." class="w-full" />
-                    </FaFormItem>
-                    <FaFormItem name="asrMode" label="语音识别接入方式" required>
-                      <FaSelect v-model="model.asrMode" :options="accessModeOptions" class="w-full" />
-                    </FaFormItem>
-                    <FaFormItem name="asrModel" label="语音识别模型" required description="模型名原样传给当前服务商，不限制命名。">
-                      <FaInput v-model="model.asrModel" placeholder="请输入语音识别模型名" class="w-full" />
-                    </FaFormItem>
-                    <FaFormItem name="ttsMode" label="语音合成接入方式" required>
-                      <FaSelect v-model="model.ttsMode" :options="accessModeOptions" class="w-full" />
-                    </FaFormItem>
-                    <FaFormItem name="ttsModel" label="语音合成模型" required description="模型名原样传给当前服务商，不限制命名。">
-                      <FaInput v-model="model.ttsModel" placeholder="请输入语音合成模型名" class="w-full" />
-                    </FaFormItem>
-                    <FaFormItem name="ttsVoice" label="语音音色" required>
-                      <FaInput v-model="model.ttsVoice" placeholder="请输入语音音色" class="w-full" />
-                    </FaFormItem>
-                    <FaFormItem name="apiKey" label="API 密钥" :required="!apiKeyConfigured" :description="apiKeyConfigured ? '已保存密钥；留空即可保留原密钥。' : '密钥只会发送到服务器，不会回显到此页面。'">
-                      <FaInput v-model="model.apiKey" type="password" autocomplete="new-password" placeholder="sk-..." class="w-full" />
-                    </FaFormItem>
-                  </div>
-                </template>
-                <template #audio>
-                  <div class="gap-x-8 gap-y-6 grid grid-cols-1 md:grid-cols-2">
-                    <FaAlert
-                      title="机器人本地唤醒与录音"
-                      description="保存后会立即同步到在线机器人，并在机器人每次重新连接时补发。降低能量阈值会更容易听到较轻的说话声，但过低可能把环境噪声当作语音。"
-                      class="md:col-span-2"
-                    />
-                    <FaFormItem name="wakeSensitivity" label="唤醒灵敏度" required class="md:col-span-2">
-                      <FaSelect v-model="model.wakeSensitivity" :options="wakeSensitivityOptions" class="w-full" />
-                    </FaFormItem>
-                    <FaFormItem
-                      name="speechStartThreshold"
-                      label="开始说话阈值"
-                      required
-                      description="平均能量达到此值后开始记录有效语音；数值越低越灵敏。推荐 350。"
-                    >
-                      <FaNumberField v-model="model.speechStartThreshold" :min="100" :max="5000" :step="10" class="w-full" />
-                    </FaFormItem>
-                    <FaFormItem
-                      name="speechSilenceThreshold"
-                      label="静音阈值"
-                      required
-                      description="低于此值连续 0.75 秒后结束录音，必须小于开始说话阈值。推荐 200。"
-                    >
-                      <FaNumberField v-model="model.speechSilenceThreshold" :min="50" :max="4000" :step="10" class="w-full" />
-                    </FaFormItem>
-                  </div>
-                </template>
-              </FaTabs>
-              <FaFixedBar position="bottom" class="flex gap-3 justify-center md:col-span-2">
-                <FaButton type="button" variant="outline" :loading="testing" @click="testConnection">
-                  测试语音识别与合成
-                </FaButton>
-                <FaButton type="submit" form="speech-settings-form" :loading="loading">
-                  保存配置
-                </FaButton>
-              </FaFixedBar>
-            </FaForm>
-          </FaCard>
-          <FaCard title="乐鑫内置唤醒词">
-            <FaForm
-              id="wake-model-form"
-              :model="wakeModel"
-              :validation-schema="wakeModelValidationSchema"
-              class="gap-x-8 gap-y-6 grid grid-cols-1 items-start md:grid-cols-2"
-              @submit="submitWakeModel"
-              @invalid-submit="invalidWakeModelSubmit"
-            >
-              <FaFormItem name="deviceId" label="目标机器人" required>
-                <FaSelect
-                  v-model="wakeModel.deviceId"
-                  :options="deviceOptions"
-                  placeholder="请选择机器人"
-                  class="w-full"
-                />
-              </FaFormItem>
-              <FaFormItem
-                name="modelName"
-                label="唤醒短语"
-                required
-                description="仅显示当前固件兼容的 ESP-SR 2.4.6 官方内置模型；无需上传文件或重新刷固件。"
+              <FaSelect
+                v-model="wakeModel.modelName"
+                :options="wakeModelOptions"
+                placeholder="请选择乐鑫内置唤醒词"
+                class="w-full"
+              />
+            </FaFormItem>
+            <FaAlert
+              title="切换会使机器人自动重启"
+              description="点击后，服务器会打包所选乐鑫模型与出厂回退模型，通过设备鉴权下载并写入非活动槽；启动失败时机器人会自动恢复上一模型。"
+              class="md:col-span-2"
+            />
+            <FaAlert
+              v-if="latestWakeModelJob"
+              :title="wakeModelStatusText[latestWakeModelJob.status]"
+              :description="latestWakeModelJob.failureCode
+                ? (wakeModelFailureText[latestWakeModelJob.failureCode] ?? '任务未能完成。')
+                : `唤醒短语：${latestWakeModelJob.phrase}`"
+              class="md:col-span-2"
+            />
+            <div class="flex justify-end md:col-span-2">
+              <FaButton
+                type="submit"
+                form="wake-model-form"
+                :loading="wakeModelLoading"
+                :disabled="devices.length === 0 || Boolean(latestWakeModelJob && activeWakeModelStatuses.has(latestWakeModelJob.status))"
               >
-                <FaSelect
-                  v-model="wakeModel.modelName"
-                  :options="wakeModelOptions"
-                  placeholder="请选择乐鑫内置唤醒词"
-                  class="w-full"
-                />
-              </FaFormItem>
-              <FaAlert
-                title="切换会使机器人自动重启"
-                description="点击后，服务器会打包所选乐鑫模型与出厂回退模型，通过设备鉴权下载并写入非活动槽；启动失败时机器人会自动恢复上一模型。"
-                class="md:col-span-2"
-              />
-              <FaAlert
-                v-if="latestWakeModelJob"
-                :title="wakeModelStatusText[latestWakeModelJob.status]"
-                :description="latestWakeModelJob.failureCode
-                  ? (wakeModelFailureText[latestWakeModelJob.failureCode] ?? '任务未能完成。')
-                  : `唤醒短语：${latestWakeModelJob.phrase}`"
-                class="md:col-span-2"
-              />
-              <div class="flex justify-end md:col-span-2">
-                <FaButton
-                  type="submit"
-                  form="wake-model-form"
-                  :loading="wakeModelLoading"
-                  :disabled="devices.length === 0 || Boolean(latestWakeModelJob && activeWakeModelStatuses.has(latestWakeModelJob.status))"
-                >
-                  切换并安装
-                </FaButton>
-              </div>
-            </FaForm>
-          </FaCard>
-        </div>
-      </FaLoading>
-    </FaPageMain>
-  </div>
+                切换并安装
+              </FaButton>
+            </div>
+          </FaForm>
+        </FaCard>
+      </div>
+    </AppLoading>
+  </AppPageShell>
 </template>

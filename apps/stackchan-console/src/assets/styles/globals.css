@@ -68,6 +68,26 @@ body {
   box-sizing: border-box;
   margin: 0;
   -webkit-tap-highlight-color: transparent;
+  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  line-height: 1.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@media (pointer: coarse) {
+  button:not([role="switch"]),
+  [role="combobox"] {
+    min-height: 44px;
+  }
 }
 
 #app {
