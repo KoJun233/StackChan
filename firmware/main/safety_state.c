@@ -10,6 +10,7 @@
 static const char *TAG = "safety_state";
 static safety_diagnostics_t s_diagnostics;
 static int64_t s_motion_deadline_us;
+static uint32_t s_audio_users;
 static safety_motion_stop_callback_t s_stop_callback;
 static void *s_stop_callback_context;
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -63,6 +64,7 @@ void safety_state_init(void)
     s_diagnostics.last_failure = SAFETY_FAILURE_NONE;
     s_motion_deadline_us = 0;
     s_stop_callback = NULL;
+    s_audio_users = 0;
     s_stop_callback_context = NULL;
     taskEXIT_CRITICAL(&s_lock);
     ESP_LOGI(TAG, "Safety state is motion_disabled");
@@ -120,6 +122,8 @@ bool safety_state_set_admin_enabled(bool enabled)
         record_failure_locked(SAFETY_FAILURE_NOT_CALIBRATED);
     } else if (s_diagnostics.motion_runtime == SAFETY_MOTION_RUNNING) {
         record_failure_locked(SAFETY_FAILURE_BUSY);
+    } else if (s_audio_users > 0) {
+        record_failure_locked(SAFETY_FAILURE_AUDIO_BUSY);
     } else {
         s_diagnostics.state = SAFETY_STATE_MOTION_ARMED;
         accepted = true;
@@ -156,7 +160,7 @@ bool safety_state_begin_motion(safety_motion_template_t motion,
         rejection = SAFETY_FAILURE_ADMIN_DISABLED;
     } else if (!guard->connected) {
         rejection = SAFETY_FAILURE_OFFLINE;
-    } else if (guard->audio_busy) {
+    } else if (guard->audio_busy || s_audio_users > 0) {
         rejection = SAFETY_FAILURE_AUDIO_BUSY;
     } else if (guard->updating) {
         rejection = SAFETY_FAILURE_UPDATING;
@@ -232,6 +236,27 @@ void safety_state_stop_motion_with_reason(safety_failure_code_t reason)
     record_failure_locked(reason);
     taskEXIT_CRITICAL(&s_lock);
     invoke_stop_callback(should_stop);
+}
+
+void safety_state_begin_audio(void)
+{
+    bool should_stop = false;
+    taskENTER_CRITICAL(&s_lock);
+    if (s_audio_users < UINT32_MAX) s_audio_users++;
+    should_stop = stop_hardware_if_running_locked();
+    if (should_stop) {
+        s_diagnostics.state = SAFETY_STATE_MOTION_DISABLED;
+        record_failure_locked(SAFETY_FAILURE_VOICE_STOP);
+    }
+    taskEXIT_CRITICAL(&s_lock);
+    invoke_stop_callback(should_stop);
+}
+
+void safety_state_end_audio(void)
+{
+    taskENTER_CRITICAL(&s_lock);
+    if (s_audio_users > 0) s_audio_users--;
+    taskEXIT_CRITICAL(&s_lock);
 }
 
 void safety_state_get_diagnostics(safety_diagnostics_t *diagnostics)

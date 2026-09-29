@@ -393,12 +393,14 @@ static void websocket_event_handler(void *handler_args,
         return;
     }
     if (command.type == DEVICE_COMMAND_SPEAK_REMINDER) {
-        safety_state_stop_motion_with_reason(SAFETY_FAILURE_VOICE_STOP);
+        // Hold the gate from queueing until playback ends, including queue wait.
+        safety_state_begin_audio();
         companion_hardware_mark_activity();
         reminder_command_t reminder = {0};
         memcpy(reminder.command_id, command.command_id, sizeof(reminder.command_id));
         memcpy(reminder.reminder_id, command.reminder_id, sizeof(reminder.reminder_id));
         if (connection->reminder_queue == NULL || xQueueSend(connection->reminder_queue, &reminder, 0) != pdTRUE) {
+            safety_state_end_audio();
             send_command_ack(connection, command.command_id, false, DEVICE_COMMAND_RESULT_FAILED);
         }
         return;
@@ -895,6 +897,7 @@ static bool run_websocket_connection(const device_identity_t *identity)
             bool cancelled = false;
             esp_err_t reminder_err = voice_control_play_reminder(
                 identity, reminder.reminder_id, &cancelled);
+            safety_state_end_audio();
             bool accepted = reminder_err == ESP_OK && !cancelled;
             send_command_ack(
                 &connection,
@@ -931,6 +934,9 @@ static bool run_websocket_connection(const device_identity_t *identity)
     (void)esp_websocket_client_stop(connection.client);
     (void)esp_websocket_client_destroy(connection.client);
     if (connection.reminder_queue != NULL) {
+        reminder_command_t discarded = {0};
+        while (xQueueReceive(connection.reminder_queue, &discarded, 0) == pdTRUE)
+            safety_state_end_audio();
         vQueueDelete(connection.reminder_queue);
     }
     if (connection.wake_model_queue != NULL) {

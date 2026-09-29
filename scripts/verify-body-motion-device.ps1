@@ -1,13 +1,13 @@
 param(
-    [ValidateSet('Status', 'ApiStatus', 'AutoOff', 'AutoWake', 'Calibrate', 'Enable', 'Disable', 'Stop', 'StopDuringNod', 'NOD_SMALL', 'LOOK_USER', 'THINK', 'DROWSY', 'WAKE')]
-    [string]$Step = 'Status'
+    [ValidateSet('Status', 'ApiStatus', 'AutoOff', 'AutoWake', 'AutoTaskNod', 'AutoWorkdayDrowsy', 'AutoWebThink', 'Calibrate', 'Enable', 'Disable', 'Stop', 'StopDuringNod', 'NOD_SMALL', 'LOOK_USER', 'THINK', 'DROWSY', 'WAKE')]
+    [string]$Step = 'Status',
+    [ValidatePattern('^[A-Za-z0-9._-]{1,31}$')][string]$FirmwareVersion = 'd18b3cd'
 )
 
 # One-device LAN physical verification. The default step only reads telemetry.
 # Mutating steps use an ephemeral administrator and never print credentials.
 $ErrorActionPreference = 'Stop'
 $deviceId = '0c4d09ea-ff9b-4701-9702-428c01cac264'
-$firmwareVersion = 'd18b3cd'
 $baseUrl = 'http://127.0.0.1:8080'
 $databaseContainer = 'stackchan-foundation-postgres-1'
 
@@ -47,10 +47,10 @@ if ($Step -eq 'StopDuringNod' -and
      $state[4] -ne 'true' -or $state[5] -ne 'true')) {
     throw 'Stop-during-motion preflight requires armed, calibrated and live servo feedback.'
 }
-if ($Step -eq 'AutoWake' -and
+if ($Step -in @('AutoWake', 'AutoTaskNod', 'AutoWorkdayDrowsy', 'AutoWebThink') -and
     ($state[1] -ne 'motion_armed' -or $state[2] -ne 'ARMED' -or
      $state[4] -ne 'true' -or $state[5] -ne 'true')) {
-    throw 'Automatic wake preflight requires armed, calibrated and live servo feedback.'
+    throw 'Automatic motion preflight requires armed, calibrated and live servo feedback.'
 }
 if ($Step -eq 'Enable' -and ($state[1] -ne 'motion_disabled' -or $state[5] -ne 'true')) {
     throw 'Enable preflight requires disabled motion and saved calibration.'
@@ -132,6 +132,143 @@ try {
                     $null = Invoke-RestMethod "$runtimeUrl`:stop" -Method Post -WebSession $session -Headers $headers
                 }
                 $null = Invoke-RestMethod "$deviceUrl/body-motion" -Method Put -WebSession $session -Headers $headers -ContentType 'application/json' -Body '{"enabled":false}'
+            }
+        }
+        'AutoTaskNod' {
+            $automatic = Invoke-RestMethod "$deviceUrl/body-motion/automatic" -WebSession $session
+            if ($automatic.enabled) { throw 'Automatic task nod preflight requires automatic motion off.' }
+            $recent = QueryDatabase "select count(*) from body_motion_commands where device_id = '$deviceId' and automatic = true and status = 'COMPLETED' and updated_at > now() - interval '10 minutes';"
+            if ($recent -ne '0') { throw 'Automatic motion cooldown is still active.' }
+            $taskId = $null
+            try {
+                $taskBody = @{
+                    deviceId = $deviceId
+                    title = 'BODY-002 自动点头验收（临时）'
+                    notes = ''
+                    zoneId = 'Asia/Shanghai'
+                } | ConvertTo-Json -Compress
+                $task = Invoke-RestMethod "$baseUrl/api/v1/personal-tasks" -Method Post -WebSession $session -Headers $headers -ContentType 'application/json' -Body $taskBody
+                $taskId = $task.id
+                if (!$taskId -or $task.deviceId -ne $deviceId -or $task.status -ne 'OPEN') {
+                    throw 'Temporary task creation did not return the expected open task.'
+                }
+                $automatic = Invoke-RestMethod "$deviceUrl/body-motion/automatic" -Method Put -WebSession $session -Headers $headers -ContentType 'application/json' -Body '{"enabled":true}'
+                if (!$automatic.enabled) { throw 'Automatic motion did not enable.' }
+                $completed = Invoke-RestMethod "$baseUrl/api/v1/personal-tasks/$taskId`:complete" -Method Post -WebSession $session -Headers $headers
+                if ($completed.status -ne 'COMPLETED') { throw 'Temporary task did not complete.' }
+                $row = 'none'
+                for ($attempt = 0; $attempt -lt 24; $attempt++) {
+                    Start-Sleep -Seconds 1
+                    $row = QueryDatabase "select coalesce((select id::text || '|' || status || '|' || coalesce(failure_code, '') from body_motion_commands where device_id = '$deviceId' and automatic = true and motion = 'NOD_SMALL' and event_key like 'task-complete:${taskId}:%' order by created_at desc limit 1), 'none');"
+                    if ($row -ne 'none') {
+                        $fields = $row -split '\|'
+                        if ($fields[1] -notin @('SENT', 'ACCEPTED')) { break }
+                    }
+                }
+                Write-Output "Automatic task NOD_SMALL result: $row"
+                if ($row -eq 'none' -or $fields[1] -ne 'COMPLETED' -or $fields[2] -ne 'NONE') {
+                    throw 'Automatic task NOD_SMALL did not return COMPLETED / NONE.'
+                }
+            }
+            finally {
+                $null = Invoke-RestMethod "$deviceUrl/body-motion/automatic" -Method Put -WebSession $session -Headers $headers -ContentType 'application/json' -Body '{"enabled":false}'
+                $null = Invoke-RestMethod "$deviceUrl/body-motion" -Method Put -WebSession $session -Headers $headers -ContentType 'application/json' -Body '{"enabled":false}'
+                if ($taskId) {
+                    $null = Invoke-RestMethod "$baseUrl/api/v1/personal-tasks/$taskId" -Method Delete -WebSession $session -Headers $headers
+                }
+            }
+        }
+        'AutoWorkdayDrowsy' {
+            $automatic = Invoke-RestMethod "$deviceUrl/body-motion/automatic" -WebSession $session
+            $runtimeUrl = "$baseUrl/api/v1/workday/$deviceId/runtime"
+            $runtime = Invoke-RestMethod $runtimeUrl -WebSession $session
+            if ($automatic.enabled -or $runtime.state -ne 'OFF') {
+                throw 'Automatic drowsy preflight requires automatic motion and workday off.'
+            }
+            $recent = QueryDatabase "select count(*) from body_motion_commands where device_id = '$deviceId' and automatic = true and status = 'COMPLETED' and updated_at > now() - interval '10 minutes';"
+            if ($recent -ne '0') { throw 'Automatic motion cooldown is still active.' }
+            $previous = QueryDatabase "select coalesce((select id::text from body_motion_commands where device_id = '$deviceId' and automatic = true and motion = 'DROWSY' order by created_at desc limit 1), 'none');"
+            try {
+                $runtime = Invoke-RestMethod "$runtimeUrl`:start" -Method Post -WebSession $session -Headers $headers
+                if ($runtime.state -eq 'OFF') { throw 'Workday did not start.' }
+                $current = ReadDeviceState 120
+                if ($current[1] -ne 'motion_armed' -or $current[2] -ne 'ARMED') {
+                    throw 'Workday start changed the device motion state.'
+                }
+                $automatic = Invoke-RestMethod "$deviceUrl/body-motion/automatic" -Method Put -WebSession $session -Headers $headers -ContentType 'application/json' -Body '{"enabled":true}'
+                if (!$automatic.enabled) { throw 'Automatic motion did not enable.' }
+                $runtime = Invoke-RestMethod "$runtimeUrl`:stop" -Method Post -WebSession $session -Headers $headers
+                if ($runtime.state -ne 'OFF') { throw 'Workday did not stop.' }
+                $row = 'none'
+                for ($attempt = 0; $attempt -lt 24; $attempt++) {
+                    Start-Sleep -Seconds 1
+                    $row = QueryDatabase "select coalesce((select id::text || '|' || status || '|' || coalesce(failure_code, '') from body_motion_commands where device_id = '$deviceId' and automatic = true and motion = 'DROWSY' and event_key like 'workday-stop:%' order by created_at desc limit 1), 'none');"
+                    if ($row -ne 'none') {
+                        $fields = $row -split '\|'
+                        if ($fields[1] -notin @('SENT', 'ACCEPTED')) { break }
+                    }
+                }
+                Write-Output "Automatic workday DROWSY result: $row"
+                if ($row -eq 'none' -or $row.StartsWith($previous + '|') -or
+                        $fields[1] -ne 'COMPLETED' -or $fields[2] -ne 'NONE') {
+                    throw 'Automatic workday DROWSY did not return COMPLETED / NONE.'
+                }
+            }
+            finally {
+                $null = Invoke-RestMethod "$deviceUrl/body-motion/automatic" -Method Put -WebSession $session -Headers $headers -ContentType 'application/json' -Body '{"enabled":false}'
+                $currentRuntime = Invoke-RestMethod $runtimeUrl -WebSession $session
+                if ($currentRuntime.state -ne 'OFF') {
+                    $null = Invoke-RestMethod "$runtimeUrl`:stop" -Method Post -WebSession $session -Headers $headers
+                }
+                $null = Invoke-RestMethod "$deviceUrl/body-motion" -Method Put -WebSession $session -Headers $headers -ContentType 'application/json' -Body '{"enabled":false}'
+            }
+        }
+        'AutoWebThink' {
+            $automatic = Invoke-RestMethod "$deviceUrl/body-motion/automatic" -WebSession $session
+            if ($automatic.enabled) { throw 'Automatic web think preflight requires automatic motion off.' }
+            $recent = QueryDatabase "select count(*) from body_motion_commands where device_id = '$deviceId' and automatic = true and status = 'COMPLETED' and updated_at > now() - interval '10 minutes';"
+            if ($recent -ne '0') { throw 'Automatic motion cooldown is still active.' }
+            $previous = QueryDatabase "select coalesce((select id::text from body_motion_commands where device_id = '$deviceId' and automatic = true and motion = 'THINK' order by created_at desc limit 1), 'none');"
+            $conversationId = $null
+            try {
+                $conversation = Invoke-RestMethod "$baseUrl/api/v1/conversations" -Method Post -WebSession $session -Headers $headers -ContentType 'application/json' -Body '{}'
+                $conversationId = $conversation.id
+                if (!$conversationId) { throw 'Temporary conversation creation did not return an ID.' }
+                $automatic = Invoke-RestMethod "$deviceUrl/body-motion/automatic" -Method Put -WebSession $session -Headers $headers -ContentType 'application/json' -Body '{"enabled":true}'
+                if (!$automatic.enabled) { throw 'Automatic motion did not enable.' }
+                $messageBody = @{
+                    clientMessageId = [guid]::NewGuid().ToString()
+                    deviceId = $deviceId
+                    content = '请给出二十条简短的桌面整理建议，每条一句，不要调用工具。'
+                } | ConvertTo-Json -Compress
+                $response = Invoke-WebRequest "$baseUrl/api/v1/conversations/$conversationId/messages`:stream" -Method Post -WebSession $session -Headers $headers -ContentType 'application/json' -Body $messageBody -TimeoutSec 180
+                if ($response.StatusCode -ne 200 -or $response.Content -notmatch 'event:\s*completed') {
+                    throw 'Temporary text conversation did not complete.'
+                }
+                $row = 'none'
+                for ($attempt = 0; $attempt -lt 24; $attempt++) {
+                    Start-Sleep -Seconds 1
+                    $row = QueryDatabase "select coalesce((select id::text || '|' || status || '|' || coalesce(failure_code, '') from body_motion_commands where device_id = '$deviceId' and automatic = true and motion = 'THINK' and event_key like 'web-think:%' order by created_at desc limit 1), 'none');"
+                    if ($row -ne 'none' -and !$row.StartsWith($previous + '|')) {
+                        $fields = $row -split '\|'
+                        if ($fields[1] -notin @('SENT', 'ACCEPTED')) { break }
+                    }
+                }
+                Write-Output "Automatic web THINK result: $row"
+                if ($row -eq 'none' -or $row.StartsWith($previous + '|')) {
+                    throw 'Text reply completed before the two-second THINK trigger, or automatic THINK was rejected.'
+                }
+                $fields = $row -split '\|'
+                if ($fields[1] -ne 'COMPLETED' -or $fields[2] -ne 'NONE') {
+                    throw 'Automatic web THINK did not return COMPLETED / NONE.'
+                }
+            }
+            finally {
+                $null = Invoke-RestMethod "$deviceUrl/body-motion/automatic" -Method Put -WebSession $session -Headers $headers -ContentType 'application/json' -Body '{"enabled":false}'
+                $null = Invoke-RestMethod "$deviceUrl/body-motion" -Method Put -WebSession $session -Headers $headers -ContentType 'application/json' -Body '{"enabled":false}'
+                if ($conversationId) {
+                    $null = Invoke-RestMethod "$baseUrl/api/v1/personal-data/conversations/$conversationId" -Method Delete -WebSession $session -Headers $headers
+                }
             }
         }
         'Calibrate' {
@@ -230,12 +367,12 @@ if ($Step -notin @('Status', 'ApiStatus', 'AutoOff') -and $motions -notcontains 
         # boundary while the command itself has already taken effect.
         $state = ReadDeviceState 120
         if (($Step -eq 'Enable' -and $state[1] -eq 'motion_armed' -and $state[2] -eq 'ARMED') -or
-            ($Step -in @('Disable', 'Stop', 'StopDuringNod', 'AutoWake') -and $state[1] -eq 'motion_disabled' -and $state[2] -eq 'DISABLED')) {
+            ($Step -in @('Disable', 'Stop', 'StopDuringNod', 'AutoWake', 'AutoTaskNod', 'AutoWorkdayDrowsy', 'AutoWebThink') -and $state[1] -eq 'motion_disabled' -and $state[2] -eq 'DISABLED')) {
             $confirmed = $true
             break
         }
     }
-    if (!$confirmed -and $Step -in @('Enable', 'Disable', 'Stop', 'StopDuringNod', 'AutoWake')) {
+    if (!$confirmed -and $Step -in @('Enable', 'Disable', 'Stop', 'StopDuringNod', 'AutoWake', 'AutoTaskNod', 'AutoWorkdayDrowsy', 'AutoWebThink')) {
         throw "Device did not confirm $Step within 36 seconds."
     }
     Write-Output "Device after $Step`: safety=$($state[1]) motion=$($state[2]) feedback=$($state[4]) calibrated=$($state[5]) failure=$($state[6])"

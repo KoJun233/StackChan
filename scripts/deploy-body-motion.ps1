@@ -1,9 +1,15 @@
 # Replace the LAN server and console after a stopped-source backup and isolated V53 restore.
 # Credentials remain in process memory; the release backup retains a DPAPI protected copy.
+param(
+    [string]$CandidateImage = 'stackchan-foundation-server:body002-think-7d8c55a',
+    [ValidatePattern('^[A-Za-z0-9._-]{1,80}$')][string]$BuildVersion = 'body002-think-7d8c55a',
+    [ValidateRange(1, 999)][int]$ExpectedSchema = 53,
+    [switch]$PreserveConsole
+)
 $ErrorActionPreference = 'Stop'
 $repository = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $sourceName = 'stackchan-foundation-server-1'
-$candidate = 'stackchan-foundation-server:body002-think-7d8c55a'
+$candidate = $CandidateImage
 $previousEnvironment = @{}
 $stopped = $false
 $replacementStarted = $false
@@ -24,6 +30,15 @@ try {
     if ($values.COMPANION_LAN_DEVELOPMENT -ne 'true' -or $values.COMPANION_PRODUCTION -eq 'true') {
         throw 'This release preserves only the existing LAN development mode.'
     }
+    $oldImage = $source.Config.Image
+    $oldVersion = $values.COMPANION_BUILD_VERSION
+    if ($PreserveConsole) {
+        $sourcePublic = & docker.exe exec $sourceName sha256sum /app/public/index.html
+        $candidatePublic = & docker.exe run --rm --network none --entrypoint sha256sum $candidate /app/public/index.html
+        if ($LASTEXITCODE -ne 0 -or $sourcePublic -ne $candidatePublic) {
+            throw 'Candidate changes the deployed console shell; deployment stopped.'
+        }
+    }
     $deploymentValues = @{
         POSTGRES_PASSWORD = $values.SPRING_DATASOURCE_PASSWORD
         COMPANION_DEVICE_TOKEN_SECRET = $values.COMPANION_DEVICE_TOKEN_SECRET
@@ -32,19 +47,24 @@ try {
         SPRING_PROFILES_ACTIVE = $values.SPRING_PROFILES_ACTIVE
         SERVER_FORWARD_HEADERS_STRATEGY = $values.SERVER_FORWARD_HEADERS_STRATEGY
     }
+    if ($PreserveConsole) {
+        $deploymentValues.STACKCHAN_CONSOLE_RELEASE_IMAGE = $candidate
+        $deploymentValues.STACKCHAN_CONSOLE_RELEASE_VERSION = $BuildVersion
+    }
     foreach ($key in $deploymentValues.Keys) {
         $previousEnvironment[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
         [Environment]::SetEnvironmentVariable($key, $deploymentValues[$key], 'Process')
     }
-    $compose = @('compose', '-p', 'stackchan-foundation', '-f', 'compose.yaml', '-f', 'compose.lan.yaml', '-f', 'compose.body-motion.yaml')
+    $releaseOverride = if ($PreserveConsole) { 'compose.console-ux.yaml' } else { 'compose.body-motion.yaml' }
+    $compose = @('compose', '-p', 'stackchan-foundation', '-f', 'compose.yaml', '-f', 'compose.lan.yaml', '-f', $releaseOverride)
     $rawConfig = & docker.exe @compose config --format json 2>&1
     if ($LASTEXITCODE -ne 0) { throw 'Compose validation failed.' }
     $configuration = $rawConfig -join "`n" | ConvertFrom-Json -AsHashtable
     $rawImage = & docker.exe image inspect $candidate 2>&1
     if ($LASTEXITCODE -ne 0) { throw 'Candidate image missing.' }
-    $candidateImage = ($rawImage -join "`n" | ConvertFrom-Json)[0]
+    $candidateImageInfo = ($rawImage -join "`n" | ConvertFrom-Json)[0]
     $expected = @{}
-    foreach ($entry in $candidateImage.Config.Env) {
+    foreach ($entry in $candidateImageInfo.Config.Env) {
         $parts = $entry -split '=', 2
         if ($parts.Length -eq 2) { $expected[$parts[0]] = $parts[1] }
     }
@@ -67,8 +87,8 @@ try {
     & docker.exe stop $sourceName > $null
     if ($LASTEXITCODE -ne 0) { throw 'Unable to stop the old server for backup.' }
     $stopped = $true
-    $backupResult = & (Join-Path $PSScriptRoot 'verify-companion-full-restore.ps1') -CandidateImage $candidate -ExpectedSchema 53 | ConvertFrom-Json
-    if ($backupResult.schema -ne 53 -or !$backupResult.databaseCountsMatch -or !$backupResult.syntheticAdminLogin) {
+    $backupResult = & (Join-Path $PSScriptRoot 'verify-companion-full-restore.ps1') -CandidateImage $candidate -ExpectedSchema $ExpectedSchema | ConvertFrom-Json
+    if ($backupResult.schema -ne $ExpectedSchema -or !$backupResult.databaseCountsMatch -or !$backupResult.syntheticAdminLogin) {
         throw 'Stopped-source restore verification failed.'
     }
     Write-Output "Stopped-source backup and isolated V53 restore passed: $($backupResult.backupVolume)"
@@ -89,12 +109,18 @@ try {
     $rawRunning = & docker.exe inspect $sourceName 2>&1
     if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect the replacement server.' }
     $running = ($rawRunning -join "`n" | ConvertFrom-Json)[0]
-    if ($running.Image -ne $candidateImage.Id -or $running.Config.Env -notcontains 'COMPANION_BUILD_VERSION=body002-think-7d8c55a') {
+    if ($running.Image -ne $candidateImageInfo.Id -or $running.Config.Env -notcontains "COMPANION_BUILD_VERSION=$BuildVersion") {
         throw 'Replacement image or build version does not match the candidate.'
     }
     Write-Output 'BODY-002 server health and version: ok'
 }
 catch {
+    if ($stopped -and $replacementStarted -and $PreserveConsole) {
+        [Environment]::SetEnvironmentVariable('STACKCHAN_CONSOLE_RELEASE_IMAGE', $oldImage, 'Process')
+        [Environment]::SetEnvironmentVariable('STACKCHAN_CONSOLE_RELEASE_VERSION', $oldVersion, 'Process')
+        & docker.exe @compose up -d --no-deps --no-build server *> $null
+        if ($LASTEXITCODE -ne 0) { Write-Warning 'Original server rollback needs inspection.' }
+    }
     if ($stopped -and !$replacementStarted) { & docker.exe start $sourceName > $null }
     throw
 }
