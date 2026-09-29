@@ -12,6 +12,8 @@ import java.util.UUID;
 import com.kj.stackchan.calendar.ICloudCalendarConnectionStatus;
 import com.kj.stackchan.calendar.ICloudCalendarService;
 import com.kj.stackchan.device.DeviceCommandGateway;
+import com.kj.stackchan.device.BodyMotionAutoService;
+import com.kj.stackchan.device.DeviceBodyDiagnostics;
 import com.kj.stackchan.device.DeviceEntity;
 import com.kj.stackchan.device.DeviceEventService;
 import com.kj.stackchan.device.DeviceRepository;
@@ -58,6 +60,7 @@ class WorkdayCompanionServiceTest {
     @Mock private VoiceTurnRepository voiceTurnRepository;
     @Mock private DeviceRepository deviceRepository;
     @Mock private DeviceCommandGateway commandGateway;
+    @Mock private BodyMotionAutoService bodyMotionAutoService;
     @Mock private CompanionRoleService roleService;
     @Mock private PersonalTaskService taskService;
     @Mock private WorkdayPilotService pilotService;
@@ -74,6 +77,7 @@ class WorkdayCompanionServiceTest {
                 commandGateway, roleService, taskService, Clock.fixed(NOW, ZoneOffset.UTC)
         );
         service.setPilotService(pilotService);
+        service.setBodyMotionAutoService(bodyMotionAutoService);
         lenient().when(commandGateway.isConnected(DEVICE_ID)).thenReturn(true);
         lenient().when(interactionSettingsService.resolve(DEVICE_ID)).thenReturn(interaction);
         lenient().when(interactionSettingsService.isDnd(interaction, NOW)).thenReturn(false);
@@ -156,7 +160,32 @@ class WorkdayCompanionServiceTest {
 
         service.presenceChanged(DEVICE_ID, true);
 
-        verify(commandGateway, never()).playBodyMotion(any(), any());
+        verify(bodyMotionAutoService, never()).request(any(), any(), any());
+    }
+
+    @Test
+    void rearrivalRequestsLookUserOnlyWhenArmedAndProximityIsSupported() {
+        DeviceEntity device = org.mockito.Mockito.mock(DeviceEntity.class);
+        DeviceBodyDiagnostics body = org.mockito.Mockito.mock(DeviceBodyDiagnostics.class);
+        when(runtimeService.get(DEVICE_ID)).thenReturn(runtime(
+                WorkdayRuntimeState.ACTIVE_ABSENT, LocalDate.of(2026, 8, 29),
+                WorkdayBriefStatus.SUCCESS, NOW.minusSeconds(3600)
+        ));
+        when(runtimeService.updatePresenceWithOutcome(DEVICE_ID, true)).thenReturn(
+                new WorkdayRuntimeService.PresenceUpdateSnapshot(
+                        runtime(WorkdayRuntimeState.ACTIVE_PRESENT, LocalDate.of(2026, 8, 29),
+                                WorkdayBriefStatus.SUCCESS, NOW.minusSeconds(3600)), true
+                )
+        );
+        when(deviceRepository.findById(DEVICE_ID)).thenReturn(Optional.of(device));
+        when(device.getSafetyState()).thenReturn(DeviceEventService.MOTION_ARMED);
+        when(device.getBodyDiagnostics()).thenReturn(body);
+        when(body.proximitySupported()).thenReturn(true);
+
+        service.presenceChanged(DEVICE_ID, true);
+
+        verify(bodyMotionAutoService).request(eq(DEVICE_ID), eq("LOOK_USER"),
+                eq("workday-return:" + NOW));
     }
 
     @Test

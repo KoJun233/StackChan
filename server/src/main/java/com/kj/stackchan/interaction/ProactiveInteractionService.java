@@ -39,6 +39,10 @@ public class ProactiveInteractionService {
     private final CompanionRoleService roleService;
     private final ProactiveInterestBriefSource interestBriefSource;
     private ProactivePauseService pauseService;
+    private DeviceQuietTodayService quietService;
+
+    @Autowired(required = false)
+    public void setQuietService(DeviceQuietTodayService quietService) { this.quietService = quietService; }
 
     @Autowired
     public void setPauseService(ProactivePauseService pauseService) { this.pauseService = pauseService; }
@@ -93,6 +97,7 @@ public class ProactiveInteractionService {
         int generated = 0;
         for (var settings : settingsService.proactiveCandidates()) {
             if (!settingsService.isProactiveEligible(settings, now)
+                    || (quietService != null && quietService.isQuiet(settings.deviceId(), now))
                     || !commandGateway.isConnected(settings.deviceId())
                     || voiceTurnRepository.existsByDeviceIdAndStatusInAndUpdatedAtAfter(
                             settings.deviceId(), ACTIVE_VOICE_STATUSES, now.minus(ACTIVE_VOICE_MAX_AGE)

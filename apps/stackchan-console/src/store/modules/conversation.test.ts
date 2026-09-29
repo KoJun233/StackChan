@@ -48,7 +48,11 @@ describe('conversation store', () => {
       handlers.onCompleted({ messageId: 'assistant-message-id', content: '今天也辛苦了。' })
     })
     const store = useConversationStore()
-    await store.send('今天有点累')
+    await store.send('今天有点累', '0c4d09ea-ff9b-4701-9702-428c01cac264')
+    expect(companionApi.streamMessage).toHaveBeenCalledWith('conversation-id', expect.objectContaining({
+      content: '今天有点累',
+      deviceId: '0c4d09ea-ff9b-4701-9702-428c01cac264',
+    }), expect.anything(), expect.anything())
     expect(store.activeConversationId).toBe('conversation-id')
     expect(store.messages).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'user-message-id', content: '今天有点累', role: 'USER' }),
@@ -93,20 +97,27 @@ describe('conversation store', () => {
   })
   it('reuses the client message id when reconciling a transport failure', async () => {
     const requestIds: string[] = []
+    const deviceIds: Array<string | undefined> = []
     companionApi.streamMessage
       .mockImplementationOnce(async (_conversationId, input) => {
         requestIds.push(input.clientMessageId)
+        deviceIds.push(input.deviceId)
         throw new TypeError('network disconnected')
       })
       .mockImplementationOnce(async (_conversationId, input, handlers) => {
         requestIds.push(input.clientMessageId)
+        deviceIds.push(input.deviceId)
         handlers.onMessage({ conversationId: 'conversation-id', userMessageId: 'u', assistantMessageId: 'a' })
         handlers.onCompleted({ messageId: 'a', content: 'done' })
       })
     const store = useConversationStore()
-    await expect(store.send('hello')).rejects.toThrow('network disconnected')
+    await expect(store.send('hello', '0c4d09ea-ff9b-4701-9702-428c01cac264')).rejects.toThrow('network disconnected')
     await store.retryFailed()
     expect(requestIds[1]).toBe(requestIds[0])
+    expect(deviceIds).toEqual([
+      '0c4d09ea-ff9b-4701-9702-428c01cac264',
+      '0c4d09ea-ff9b-4701-9702-428c01cac264',
+    ])
     expect(store.lastFailedInput).toBe('')
   })
   it('generates a new client message id after a confirmed server failure', async () => {

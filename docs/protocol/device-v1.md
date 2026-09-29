@@ -141,7 +141,7 @@ The motion-safety command remains:
 {"type":"stop_motion","command_id":"550e8400-e29b-41d4-a716-446655440000"}
 ```
 
-BODY-001 adds three administrator-only, online-only commands:
+BODY-001 adds three fixed-schema, online-only commands. Calibration and enabling require an explicit administrator action; a fixed template can be requested by an administrator or by the deterministic workday flow after the device has already reported `motion_armed`:
 
 ```json
 {"type":"calibrate_body_center","command_id":"550e8400-e29b-41d4-a716-446655440000"}
@@ -272,4 +272,14 @@ The immediate playback stop command is:
 
 The device accepts this command only for its current authenticated WebSocket session, requests interruption of active speaker playback, and returns a normal command acknowledgement. Reminder playback subsequently acknowledges its original `speak_reminder` command as cancelled; a voice turn reports its existing `CANCELLED` stage. If nothing is playing, `stop_audio` is an idempotent no-op. The command never stops safety processing or enables motion.
 
-The server sends every body command only to a currently live, authenticated session and creates no offline motion-command queue. Voice-detection configuration is persisted centrally and resent on reconnect; body enable is deliberately not resent. Only the explicit administrator body endpoints can create the three body commands. Inbound events, acknowledgements, voice turns, reminders, Agent tools, voice configuration, resource installation and model operations cannot enable or parameterize motion.
+The server sends every body command only to a currently live, authenticated session and creates no offline motion-command queue. Voice-detection configuration is persisted centrally and resent on reconnect; body enable is deliberately not resent. Only the explicit administrator body endpoint can calibrate or enable motion. The explicit administrator template endpoint and enabled, bounded workday/page events can request a fixed `play_body_motion` template; firmware still makes the final safety decision. Inbound events, acknowledgements, voice turns, reminders, Agent tools, voice configuration, resource installation and model operations cannot enable or parameterize motion.
+
+For `play_body_motion`, the normal `command_ack` means only that the fixed template entered the one-command device queue. After execution, current firmware sends one final, privacy-safe result tied to the same command ID:
+
+```json
+{"type":"body_motion_result","sequence":3,"command_id":"550e8400-e29b-41d4-a716-446655440000","motion":"NOD_SMALL","status":"COMPLETED","failure_code":"NONE"}
+```
+
+`status` is exactly `COMPLETED`, `STOPPED`, or `FAILED`. A completed result must have `failure_code=NONE`; failures use the existing fixed safety codes. No angles, position feedback, touch channels, audio, or free text are transmitted. The server accepts only exact fields from the authenticated device, matches the device, command ID and motion, and keeps the first final result. For manual commands, a result query after 15 seconds marks a missing result `UNCONFIRMED`; automatic commands are checked when the next automatic event is considered. A late matching result may still replace that uncertainty. Old firmware does not emit this event, so its accepted ACK cannot be displayed as physical completion. Device-side results are kept in a bounded volatile queue across a WebSocket reconnect, but not across reboot or power loss. Server-side command records survive restarts.
+
+Automatic body motion is separately disabled by default. It uses only named page/top-touch/verified-proximity business events, a persistent event key, a 10-minute interval after completed automatic motion, and at most eight completed automatic motions per device-local day. It does not resend after disconnection or replay a missed event. When the next automatic event finds an earlier command without a final result after 15 seconds, it marks that command unconfirmed and disables the automatic setting pending manual review; no background sweep is implemented. Device-wide `quiet today` suppresses later proactive speech, random silent expressions, and automatic body motion until the next local midnight; explicit ordinary reminders and manual body tests remain available. The voice-turn gate and reboot-disabled gate remain unchanged.

@@ -184,6 +184,11 @@ esp_err_t device_protocol_encode_command_ack_with_result(char *output, size_t ou
                                                          const char *command_id,
                                                          bool accepted,
                                                          device_command_result_t result);
+esp_err_t device_protocol_encode_body_motion_result(char *output, size_t output_size,
+                                                    uint32_t sequence, const char *command_id,
+                                                    safety_motion_template_t motion,
+                                                    const char *status,
+                                                    safety_failure_code_t failure);
 esp_err_t device_protocol_encode_wake_model_status(char *output, size_t output_size,
                                                    uint32_t sequence, const char *job_id,
                                                    const char *status, const char *model_name,

@@ -46,6 +46,7 @@
 #define TRANSPORT_IDLE_POLL_MS 100
 /* Five seconds of headroom covers the 100 ms poll plus bounded send work before the v1 30 s deadline. */
 #define HEARTBEAT_SEND_INTERVAL_US (25LL * 1000LL * 1000LL)
+#define PRESENCE_HEARTBEAT_MIN_INTERVAL_US (1LL * 1000LL * 1000LL)
 #define WIFI_RECONNECT_INITIAL_SECONDS 1
 #define WIFI_RECONNECT_MAX_SECONDS 60
 #define WEBSOCKET_TEXT_OPCODE 0x1
@@ -409,16 +410,22 @@ static void websocket_event_handler(void *handler_args,
         return;
     }
     if (command.type == DEVICE_COMMAND_CALIBRATE_BODY_CENTER) {
+        bool wake_paused = voice_control_pause_wake_for_body_action();
         safety_motion_guard_t guard = current_motion_guard();
-        bool accepted = guard.connected && !guard.audio_busy && !guard.updating &&
+        bool accepted = wake_paused && guard.connected && !guard.audio_busy && !guard.updating &&
                         !guard.device_error && body_hardware_calibrate_center() == ESP_OK;
+        if (wake_paused) voice_control_resume_wake_after_body_action();
         send_command_ack(connection, command.command_id, accepted,
                          accepted ? DEVICE_COMMAND_RESULT_NONE : DEVICE_COMMAND_RESULT_FAILED);
         return;
     }
     if (command.type == DEVICE_COMMAND_PLAY_BODY_MOTION) {
+        bool wake_paused = voice_control_pause_wake_for_body_action();
         safety_motion_guard_t guard = current_motion_guard();
-        bool accepted = body_hardware_play_motion(command.body_motion_template, &guard);
+        bool accepted = wake_paused &&
+                        body_hardware_play_motion(command.body_motion_template,
+                                                  &guard, command.command_id);
+        if (wake_paused && !accepted) voice_control_resume_wake_after_body_action();
         send_command_ack(connection, command.command_id, accepted,
                          accepted ? DEVICE_COMMAND_RESULT_NONE : DEVICE_COMMAND_RESULT_FAILED);
         return;
@@ -727,35 +734,48 @@ static bool run_websocket_connection(const device_identity_t *identity)
         }
     }
     int64_t next_heartbeat_us = esp_timer_get_time();
+    int64_t last_heartbeat_us = 0;
+    bool last_reported_present = false;
+    bool last_reported_proximity_supported = false;
     while (err == ESP_OK && !connection.failed &&
            (xEventGroupGetBits(s_transport_events) & WIFI_CONNECTED_BIT) != 0) {
         int64_t now_us = esp_timer_get_time();
-        if (connection.connected && now_us >= next_heartbeat_us) {
-            char heartbeat[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
-            uint32_t sequence = connection_next_sequence(&connection);
-            const esp_app_desc_t *app_description = esp_app_get_description();
-            companion_expression_diagnostics_t expression = {0};
+        if (connection.connected) {
             device_body_diagnostics_t body = {0};
-            companion_hardware_get_expression_diagnostics(&expression);
             body_hardware_get_diagnostics(&body);
-            if (sequence == 0 ||
-                app_description == NULL ||
-                device_protocol_encode_heartbeat_with_body(
-                    heartbeat, sizeof(heartbeat), sequence, 0, transport_rssi(),
-                    app_description->version, expression.target_fps, expression.actual_fps,
-                    expression.draw_time_us, expression.transfer_time_us,
-                    expression.display_lock_wait_us, expression.dropped_frames,
-                    expression.audio_underruns, expression.minimum_free_heap,
-                    companion_expression_layer_name(expression.active_layer),
-                    expression.degrade_reason, expression.dynamic_renderer,
-                    expression.imu_supported, &body) != ESP_OK ||
-                !connection_send_text(&connection, heartbeat)) {
-                connection.failed = true;
-                safety_state_stop_motion();
-                break;
+            bool presence_changed = connection.heartbeat_sent &&
+                (body.proximity_supported != last_reported_proximity_supported ||
+                 (body.proximity_supported && body.present != last_reported_present));
+            if (now_us >= next_heartbeat_us ||
+                (presence_changed &&
+                 now_us - last_heartbeat_us >= PRESENCE_HEARTBEAT_MIN_INTERVAL_US)) {
+                char heartbeat[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
+                uint32_t sequence = connection_next_sequence(&connection);
+                const esp_app_desc_t *app_description = esp_app_get_description();
+                companion_expression_diagnostics_t expression = {0};
+                companion_hardware_get_expression_diagnostics(&expression);
+                if (sequence == 0 ||
+                    app_description == NULL ||
+                    device_protocol_encode_heartbeat_with_body(
+                        heartbeat, sizeof(heartbeat), sequence, 0, transport_rssi(),
+                        app_description->version, expression.target_fps, expression.actual_fps,
+                        expression.draw_time_us, expression.transfer_time_us,
+                        expression.display_lock_wait_us, expression.dropped_frames,
+                        expression.audio_underruns, expression.minimum_free_heap,
+                        companion_expression_layer_name(expression.active_layer),
+                        expression.degrade_reason, expression.dynamic_renderer,
+                        expression.imu_supported, &body) != ESP_OK ||
+                    !connection_send_text(&connection, heartbeat)) {
+                    connection.failed = true;
+                    safety_state_stop_motion();
+                    break;
+                }
+                connection.heartbeat_sent = true;
+                last_reported_present = body.present;
+                last_reported_proximity_supported = body.proximity_supported;
+                last_heartbeat_us = now_us;
+                next_heartbeat_us = now_us + HEARTBEAT_SEND_INTERVAL_US;
             }
-            connection.heartbeat_sent = true;
-            next_heartbeat_us = now_us + HEARTBEAT_SEND_INTERVAL_US;
         }
         if (connection.connected && body_hardware_take_workday_toggle()) {
             char payload[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
@@ -767,6 +787,23 @@ static bool run_websocket_connection(const device_identity_t *identity)
                 safety_state_stop_motion();
                 break;
             }
+        }
+        body_motion_result_t motion_result = {0};
+        if (connection.connected && body_hardware_peek_motion_result(&motion_result)) {
+            char payload[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
+            uint32_t sequence = connection_next_sequence(&connection);
+            const char *status = motion_result.status == BODY_MOTION_COMPLETED ? "COMPLETED" :
+                                 motion_result.status == BODY_MOTION_STOPPED ? "STOPPED" : "FAILED";
+            if (sequence == 0 ||
+                device_protocol_encode_body_motion_result(
+                    payload, sizeof(payload), sequence, motion_result.command_id,
+                    motion_result.motion, status, motion_result.failure) != ESP_OK ||
+                !connection_send_text(&connection, payload)) {
+                connection.failed = true;
+                safety_state_stop_motion();
+                break;
+            }
+            (void)body_hardware_take_motion_result(&motion_result);
         }
         if (connection.connected && !connection.wake_model_report_sent) {
             wake_model_ota_report_t report = {0};
@@ -982,7 +1019,7 @@ static void transport_task(void *argument)
     }
 }
 
-esp_err_t device_transport_start(void)
+esp_err_t device_transport_reserve(void)
 {
     if (s_transport_events != NULL) {
         return ESP_ERR_INVALID_STATE;
@@ -1024,8 +1061,21 @@ esp_err_t device_transport_start(void)
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
 
+    return ESP_OK;
+}
+
+esp_err_t device_transport_start(void)
+{
+    if (s_transport_events == NULL || s_transport_task_handle == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     esp_err_t wifi_err = initialize_wifi_monitor();
     if (wifi_err != ESP_OK) {
+        ESP_LOGE(TAG, "Wi-Fi monitor initialization failed: %s internal_free=%u internal_largest=%u",
+                 esp_err_to_name(wifi_err),
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
         vTaskDelete(s_transport_task_handle);
         s_transport_task_handle = NULL;
         cleanup_wifi_monitor();

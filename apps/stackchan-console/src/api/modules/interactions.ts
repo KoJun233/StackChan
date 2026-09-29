@@ -77,6 +77,24 @@ export interface ProactivePause {
   pausedUntil: string | null
 }
 
+export interface DeviceQuietToday {
+  deviceId: string
+  pausedUntil: string | null
+  quiet: boolean
+}
+
+export function getDeviceQuietToday(deviceId: string): Promise<DeviceQuietToday> {
+  return apiJson(`/api/v1/settings/interactions/${encodeURIComponent(deviceId)}/quiet-today`)
+}
+
+export function startDeviceQuietToday(deviceId: string): Promise<DeviceQuietToday> {
+  return apiJson(`/api/v1/settings/interactions/${encodeURIComponent(deviceId)}/quiet-today`, { method: 'POST' })
+}
+
+export function resumeDeviceQuietToday(deviceId: string): Promise<DeviceQuietToday> {
+  return apiJson(`/api/v1/settings/interactions/${encodeURIComponent(deviceId)}/quiet-today:resume`, { method: 'POST' })
+}
+
 function proactivePausePath(deviceId: string, roleId: string) {
   return `/api/v1/settings/interactions/${encodeURIComponent(deviceId)}/roles/${encodeURIComponent(roleId)}/proactive-pause`
 }

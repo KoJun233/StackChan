@@ -21,7 +21,25 @@ bool body_hardware_set_motion_enabled(bool enabled);
 
 /** Queues exactly one firmware-owned motion template after all local guards pass. */
 bool body_hardware_play_motion(safety_motion_template_t motion,
-                               const safety_motion_guard_t *guard);
+                               const safety_motion_guard_t *guard,
+                               const char *command_id);
+
+typedef enum {
+    BODY_MOTION_COMPLETED = 0,
+    BODY_MOTION_STOPPED,
+    BODY_MOTION_FAILED,
+} body_motion_result_status_t;
+
+typedef struct {
+    char command_id[DEVICE_PROTOCOL_COMMAND_ID_MAX_LEN];
+    safety_motion_template_t motion;
+    body_motion_result_status_t status;
+    safety_failure_code_t failure;
+} body_motion_result_t;
+
+/** Takes one final execution result; a transport ACK only means the command was queued. */
+bool body_hardware_take_motion_result(body_motion_result_t *result);
+bool body_hardware_peek_motion_result(body_motion_result_t *result);
 
 /** Copies capability and privacy-safe sensor diagnostics for the heartbeat. */
 void body_hardware_get_diagnostics(device_body_diagnostics_t *diagnostics);

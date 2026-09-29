@@ -43,6 +43,7 @@
 #define VOICE_TOUCH_TASK_STACK_SIZE 4096
 #define VOICE_TOUCH_TASK_PRIORITY 4
 #define VOICE_TOUCH_POLL_MS 50
+#define VOICE_MOTION_PAUSE_WAIT_MS 1000
 #define VOICE_SAMPLE_RATE 16000
 #define VOICE_CAPTURE_MAX_SECONDS 8
 #define VOICE_CAPTURE_MAX_SAMPLES (VOICE_SAMPLE_RATE * VOICE_CAPTURE_MAX_SECONDS)
@@ -74,6 +75,8 @@ static bool s_feedback_dismiss_requested;
 static bool s_press_to_talk_requested;
 static bool s_press_to_talk_held;
 static bool s_active_turn;
+static bool s_wake_pause_requested;
+static bool s_wake_capture_paused;
 static char s_active_turn_id[DEVICE_PROTOCOL_TURN_ID_LEN];
 static int64_t s_active_turn_started_us;
 
@@ -241,6 +244,40 @@ bool voice_control_motion_blocked(void)
     blocked = s_active_turn || s_interaction_phase != TOUCH_INTERACTION_IDLE;
     taskEXIT_CRITICAL(&s_interaction_lock);
     return blocked;
+}
+
+bool voice_control_pause_wake_for_body_action(void)
+{
+    if (!s_started) return false;
+    taskENTER_CRITICAL(&s_interaction_lock);
+    if (s_wake_pause_requested || s_active_turn ||
+        s_interaction_phase != TOUCH_INTERACTION_IDLE) {
+        taskEXIT_CRITICAL(&s_interaction_lock);
+        return false;
+    }
+    s_wake_pause_requested = true;
+    s_wake_capture_paused = false;
+    taskEXIT_CRITICAL(&s_interaction_lock);
+
+    for (uint32_t elapsed = 0; elapsed < VOICE_MOTION_PAUSE_WAIT_MS; elapsed += 10) {
+        taskENTER_CRITICAL(&s_interaction_lock);
+        bool paused = s_wake_capture_paused;
+        bool voice_busy = s_active_turn || s_interaction_phase != TOUCH_INTERACTION_IDLE;
+        taskEXIT_CRITICAL(&s_interaction_lock);
+        if (paused && !voice_busy) return true;
+        if (voice_busy) break;
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    voice_control_resume_wake_after_body_action();
+    return false;
+}
+
+void voice_control_resume_wake_after_body_action(void)
+{
+    taskENTER_CRITICAL(&s_interaction_lock);
+    s_wake_pause_requested = false;
+    s_wake_capture_paused = false;
+    taskEXIT_CRITICAL(&s_interaction_lock);
 }
 
 static void request_feedback_dismissal(void)
@@ -1412,6 +1449,14 @@ static void voice_task(void *argument)
             active_settings = current_detection_settings();
             execute_voice_conversation(DEVICE_VOICE_STAGE_TOUCH_STARTED, true);
             destroy_active_wakenet(&active);
+            continue;
+        }
+        taskENTER_CRITICAL(&s_interaction_lock);
+        bool pause_wake = s_wake_pause_requested;
+        s_wake_capture_paused = pause_wake;
+        taskEXIT_CRITICAL(&s_interaction_lock);
+        if (pause_wake) {
+            vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
         voice_detection_settings_t desired_settings = current_detection_settings();

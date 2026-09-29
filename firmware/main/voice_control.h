@@ -7,6 +7,10 @@
 
 #include "device_identity.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum {
     VOICE_WAKE_SENSITIVITY_NORMAL = 0,
     VOICE_WAKE_SENSITIVITY_SENSITIVE,
@@ -30,7 +34,17 @@ void voice_control_cancel_active_turn(void);
 /** Returns true while a user voice turn must take priority over body movement. */
 bool voice_control_motion_blocked(void);
 
+/** Pauses passive WakeNet sampling before calibration or fixed motion; fails during an active voice turn. */
+bool voice_control_pause_wake_for_body_action(void);
+
+/** Restores passive WakeNet sampling after the body action finishes or is rejected. */
+void voice_control_resume_wake_after_body_action(void);
+
 /** Fetches the fixed same-origin reminder WAV and plays it synchronously. */
 esp_err_t voice_control_play_reminder(const device_identity_t *identity,
                                       const char *reminder_id,
                                       bool *cancelled);
+
+#ifdef __cplusplus
+}
+#endif

@@ -14,6 +14,10 @@ public interface DeviceCommandGateway {
 
     boolean playBodyMotion(UUID deviceId, String motion);
 
+    default boolean playBodyMotion(UUID deviceId, String motion, String commandId) {
+        return playBodyMotion(deviceId, motion);
+    }
+
     boolean speakReminder(UUID deviceId, UUID reminderId, String commandId);
 
     boolean installWakeModel(

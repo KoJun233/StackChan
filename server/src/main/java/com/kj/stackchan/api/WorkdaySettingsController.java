@@ -90,12 +90,12 @@ public class WorkdaySettingsController {
 
     @PostMapping("/{deviceId}/runtime:start")
     public WorkdayRuntimeService.WorkdayRuntimeSnapshot start(@PathVariable UUID deviceId) {
-        return companionService.start(deviceId);
+        return companionService.startFromPage(deviceId);
     }
 
     @PostMapping("/{deviceId}/runtime:stop")
     public WorkdayRuntimeService.WorkdayRuntimeSnapshot stop(@PathVariable UUID deviceId) {
-        return companionService.stop(deviceId);
+        return companionService.stopFromPage(deviceId);
     }
 
     @PostMapping(path = "/{deviceId}/rest:respond", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -103,7 +103,7 @@ public class WorkdaySettingsController {
             @PathVariable UUID deviceId,
             @Valid @RequestBody WorkdayRestResponseRequest request
     ) {
-        return companionService.respondToRest(deviceId, request.action());
+        return companionService.respondToRestFromPage(deviceId, request.action());
     }
 
     @GetMapping("/{deviceId}/metrics")

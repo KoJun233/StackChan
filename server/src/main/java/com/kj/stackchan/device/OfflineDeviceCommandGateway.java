@@ -41,6 +41,11 @@ class OfflineDeviceCommandGateway implements DeviceCommandGateway {
     }
 
     @Override
+    public boolean playBodyMotion(UUID deviceId, String motion, String commandId) {
+        return connectionRegistry.sendBodyMotion(deviceId, motion, commandId);
+    }
+
+    @Override
     public boolean speakReminder(UUID deviceId, UUID reminderId, String commandId) {
         return connectionRegistry.sendReminder(deviceId, reminderId, commandId);
     }

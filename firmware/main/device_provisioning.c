@@ -8,6 +8,7 @@
 #include "driver/usb_serial_jtag.h"
 #include "esp_app_desc.h"
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -35,6 +36,7 @@
 #define WIFI_CONNECT_POLL_MS 200
 
 static const char *TAG = "device_provisioning";
+static TaskHandle_t s_provisioning_task_handle;
 
 typedef struct {
     char payload[CLAIM_RESPONSE_MAX_LEN];
@@ -370,6 +372,7 @@ static void calibrate_body_center(void)
 static void provisioning_task(void *argument)
 {
     (void)argument;
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     char line[PROVISIONING_LINE_MAX_LEN] = {0};
     char received[PROVISIONING_READ_BUFFER_LEN] = {0};
     size_t line_length = 0;
@@ -433,8 +436,23 @@ esp_err_t device_provisioning_start(void)
     if (driver_err != ESP_OK && driver_err != ESP_ERR_INVALID_STATE) {
         return driver_err;
     }
-    return xTaskCreate(provisioning_task, "device_provisioning", PROVISIONING_TASK_STACK_SIZE, NULL,
-                       PROVISIONING_TASK_PRIORITY, NULL) == pdPASS
-               ? ESP_OK
-               : ESP_ERR_NO_MEM;
+    ESP_LOGI(TAG, "Provisioning task reservation: stack=%u internal_free=%u internal_largest=%u",
+             (unsigned)PROVISIONING_TASK_STACK_SIZE,
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    if (xTaskCreate(provisioning_task, "device_provisioning", PROVISIONING_TASK_STACK_SIZE, NULL,
+                    PROVISIONING_TASK_PRIORITY, &s_provisioning_task_handle) != pdPASS) {
+        ESP_LOGE(TAG, "Provisioning task reservation failed: internal_free=%u internal_largest=%u",
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
+void device_provisioning_activate(void)
+{
+    if (s_provisioning_task_handle != NULL) {
+        xTaskNotifyGive(s_provisioning_task_handle);
+    }
 }

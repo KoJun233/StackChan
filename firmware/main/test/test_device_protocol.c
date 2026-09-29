@@ -92,6 +92,9 @@ TEST_CASE("body motion watchdog stops hardware and disables motion", "[body_safe
     safety_state_tick(2100000);
     safety_diagnostics_t diagnostics = {0};
     safety_state_get_diagnostics(&diagnostics);
+    TEST_ASSERT_EQUAL(SAFETY_MOTION_RUNNING, diagnostics.motion_runtime);
+    safety_state_tick(3300000);
+    safety_state_get_diagnostics(&diagnostics);
     TEST_ASSERT_EQUAL_UINT32(1, s_motion_stop_count);
     TEST_ASSERT_EQUAL(SAFETY_FAILURE_TIMEOUT, diagnostics.last_failure);
     TEST_ASSERT_EQUAL(SAFETY_STATE_MOTION_DISABLED, diagnostics.state);
@@ -905,6 +908,31 @@ TEST_CASE("body commands reject arbitrary servo parameters", "[device_protocol]"
     TEST_ASSERT_EQUAL(SAFETY_MOTION_NOD_SMALL, command.body_motion_template);
     TEST_ASSERT_FALSE(device_protocol_parse_command(dance, strlen(dance), &command));
     TEST_ASSERT_FALSE(device_protocol_parse_command(angle, strlen(angle), &command));
+}
+
+TEST_CASE("body result reports a fixed template final outcome by command id", "[device_protocol]")
+{
+    char payload[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
+    TEST_ASSERT_EQUAL(ESP_OK, device_protocol_encode_body_motion_result(
+        payload, sizeof(payload), 7, "cmd-motion", SAFETY_MOTION_NOD_SMALL,
+        "COMPLETED", SAFETY_FAILURE_NONE));
+    cJSON *root = cJSON_Parse(payload);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_EQUAL_STRING("body_motion_result",
+                             cJSON_GetObjectItemCaseSensitive(root, "type")->valuestring);
+    TEST_ASSERT_EQUAL_STRING("cmd-motion",
+                             cJSON_GetObjectItemCaseSensitive(root, "command_id")->valuestring);
+    TEST_ASSERT_EQUAL_STRING("NOD_SMALL",
+                             cJSON_GetObjectItemCaseSensitive(root, "motion")->valuestring);
+    TEST_ASSERT_EQUAL_STRING("COMPLETED",
+                             cJSON_GetObjectItemCaseSensitive(root, "status")->valuestring);
+    cJSON_Delete(root);
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, device_protocol_encode_body_motion_result(
+        payload, sizeof(payload), 8, "cmd-motion", SAFETY_MOTION_WAKE,
+        "COMPLETED", SAFETY_FAILURE_FEEDBACK_FAULT));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, device_protocol_encode_body_motion_result(
+        payload, sizeof(payload), 8, "cmd-motion", SAFETY_MOTION_TEMPLATE_COUNT,
+        "FAILED", SAFETY_FAILURE_FEEDBACK_FAULT));
 }
 
 TEST_CASE("speak_reminder requires the exact fixed command schema", "[device_protocol]")

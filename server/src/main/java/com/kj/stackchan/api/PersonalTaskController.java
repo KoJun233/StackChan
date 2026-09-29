@@ -6,6 +6,8 @@ import java.util.UUID;
 import com.kj.stackchan.task.PersonalTaskPriority;
 import com.kj.stackchan.task.PersonalTaskService;
 import com.kj.stackchan.task.PersonalTaskStatus;
+import com.kj.stackchan.device.BodyMotionAutoService;
+import org.springframework.beans.factory.annotation.Autowired;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -28,6 +30,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class PersonalTaskController {
 
     private final PersonalTaskService taskService;
+    private BodyMotionAutoService bodyMotionAutoService;
+
+    @Autowired(required = false)
+    void setBodyMotionAutoService(BodyMotionAutoService bodyMotionAutoService) {
+        this.bodyMotionAutoService = bodyMotionAutoService;
+    }
 
     public PersonalTaskController(PersonalTaskService taskService) {
         this.taskService = taskService;
@@ -67,7 +75,13 @@ public class PersonalTaskController {
 
     @PostMapping("/{id}:complete")
     public PersonalTaskService.TaskSnapshot complete(@PathVariable UUID id) {
-        return taskService.complete(id);
+        var before = taskService.get(id);
+        var completed = taskService.complete(id);
+        if (before.status() == PersonalTaskStatus.OPEN && bodyMotionAutoService != null) {
+            bodyMotionAutoService.request(completed.deviceId(), "NOD_SMALL",
+                    "task-complete:" + completed.id() + ":" + completed.completedAt());
+        }
+        return completed;
     }
 
     @PostMapping("/{id}:reopen")
