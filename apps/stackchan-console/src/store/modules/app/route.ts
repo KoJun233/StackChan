@@ -31,7 +31,7 @@ export const useAppRouteStore = defineStore(
         })
         returnRoutes.forEach((item) => {
           if (item.children) {
-            item.children = deleteMiddleRouteComponent(item.children)
+            item.children = deleteMiddleRouteComponent(item.children, !!item.component)
           }
           return item
         })
@@ -43,18 +43,20 @@ export const useAppRouteStore = defineStore(
       const routes = [...systemRoutesRaw]
       routes.forEach((item) => {
         if (item.children) {
-          item.children = deleteMiddleRouteComponent(item.children)
+          item.children = deleteMiddleRouteComponent(item.children, !!item.component)
         }
       })
       return routes
     })
-    // 删除路由中间层级对应的组件
-    function deleteMiddleRouteComponent(routes: RouteRecordRaw[]) {
+    // 一条页面路径只保留最外层布局；无布局的菜单分组须保留子路由的布局。
+    function deleteMiddleRouteComponent(routes: RouteRecordRaw[], hasLayout: boolean) {
       const res: RouteRecordRaw[] = []
       routes.forEach((route) => {
         if (route.children?.length) {
-          delete route.component
-          route.children = deleteMiddleRouteComponent(route.children)
+          if (hasLayout) {
+            delete route.component
+          }
+          route.children = deleteMiddleRouteComponent(route.children, hasLayout || !!route.component)
         }
         else {
           delete route.children

@@ -1,10 +1,17 @@
 # Replace only the console assets while retaining the running backend binary and configuration.
-param([switch]$Rollback)
+param(
+    [switch]$Rollback,
+    [string]$CandidateImage,
+    [string]$BuildVersion
+)
 $ErrorActionPreference = 'Stop'
+if ([bool]$CandidateImage -ne [bool]$BuildVersion -or ($Rollback -and $CandidateImage)) {
+    throw 'Specify CandidateImage and BuildVersion together, without Rollback.'
+}
 $repository = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $sourceName = 'stackchan-foundation-server-1'
-$candidate = if ($Rollback) { 'stackchan-foundation-server:companion-v51-20260914' } else { 'stackchan-foundation-server:console-ux-20260921' }
-$version = if ($Rollback) { 'companion-v51-20260914' } else { 'console-ux-20260921' }
+$candidate = if ($CandidateImage) { $CandidateImage } elseif ($Rollback) { 'stackchan-foundation-server:companion-v51-20260914' } else { 'stackchan-foundation-server:console-ux-20260921' }
+$version = if ($BuildVersion) { $BuildVersion } elseif ($Rollback) { 'companion-v51-20260914' } else { 'console-ux-20260921' }
 $previousEnvironment = @{}
 Push-Location $repository
 try {
@@ -43,9 +50,9 @@ try {
     $configuration = $rawConfig -join "`n" | ConvertFrom-Json -AsHashtable
     $rawImage = & docker.exe image inspect $candidate 2>&1
     if ($LASTEXITCODE -ne 0) { throw 'Candidate image missing.' }
-    $candidateImage = ($rawImage -join "`n" | ConvertFrom-Json)[0]
+    $candidateImageInfo = ($rawImage -join "`n" | ConvertFrom-Json)[0]
     $expected = @{}
-    foreach ($entry in $candidateImage.Config.Env) {
+    foreach ($entry in $candidateImageInfo.Config.Env) {
         $parts = $entry -split '=', 2
         $expected[$parts[0]] = $parts[1]
     }

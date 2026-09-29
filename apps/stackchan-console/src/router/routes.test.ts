@@ -1,5 +1,7 @@
+import { createPinia, setActivePinia } from 'pinia'
 import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { useAppRouteStore } from '@/store/modules/app/route'
 import { asyncRoutes, systemRoutes } from './routes'
 
 function flatten(routes: any[]): any[] {
@@ -36,6 +38,42 @@ describe('console navigation compatibility', () => {
       expect(router.resolve(path).name, path).toBe(name)
       expect(router.resolve({ name }).path, name).toBe(path)
       expect(router.resolve({ path, query: { roleId: 'partner', deviceId: 'device' } }).query).toEqual({ roleId: 'partner', deviceId: 'device' })
+    }
+  })
+  it('keeps exactly one layout around every business page after route generation', () => {
+    setActivePinia(createPinia())
+    const routeStore = useAppRouteStore()
+    routeStore.generateRoutesAtFront(asyncRoutes)
+    const router = createRouter({ history: createMemoryHistory(), routes: routeStore.routes })
+    const paths = [
+      '/dashboard',
+      '/companion/chat',
+      '/companion/workday',
+      '/settings/interaction',
+      '/companion/persona',
+      '/companion/memories',
+      '/companion/expressions',
+      '/companion/personal-data',
+      '/reminders',
+      '/personal-tasks',
+      '/devices/overview',
+      '/devices/pairing',
+      '/devices/health',
+      '/settings/llm',
+      '/settings/speech',
+      '/settings/agent',
+      '/notifications',
+      '/companion/roles/detail',
+      '/companion/memories/detail',
+      '/reminders/detail',
+      '/personal-tasks/detail',
+      '/notifications/detail',
+    ]
+
+    for (const path of paths) {
+      const components = router.resolve(path).matched.map(record => record.components?.default).filter(Boolean)
+      expect(components.length, path).toBe(2)
+      expect(components[0]?.name, path).toBe('Layout')
     }
   })
   it('keeps five detail URLs hidden and preserves their return/cache contracts', () => {

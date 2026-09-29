@@ -102,15 +102,15 @@ const isToolbarEnable = computed(() => {
 
 const isLink = computed(() => !!routeInfo.meta.link)
 
-watch(() => appSettingsStore.settings.menu.subMenuCollapse, (val) => {
-  if (appSettingsStore.mode === 'mobile') {
-    if (!val) {
-      document.body.classList.add('overflow-hidden')
-    }
-    else {
-      document.body.classList.remove('overflow-hidden')
-    }
-  }
+watch([
+  () => appSettingsStore.mode,
+  () => appSettingsStore.settings.menu.subMenuCollapse,
+], ([mode, collapsed]) => {
+  document.body.classList.toggle('overflow-hidden', mode === 'mobile' && !collapsed)
+}, { immediate: true })
+
+onUnmounted(() => {
+  document.body.classList.remove('overflow-hidden')
 })
 
 watch(() => routeInfo.path, () => {
