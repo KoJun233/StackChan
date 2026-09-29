@@ -1,13 +1,13 @@
 import type { Ref } from 'vue'
-import type { BodyMotion, Device } from '@/api/modules/devices'
-import type { MissedReminderPolicy, ProactivePause, ProactiveTopicCooldown, SaveInteractionSettingsInput } from '@/api/modules/interactions'
+import type { BodyMotion, BodyMotionCommand, Device } from '@/api/modules/devices'
+import type { DeviceQuietToday, MissedReminderPolicy, ProactivePause, ProactiveTopicCooldown, SaveInteractionSettingsInput } from '@/api/modules/interactions'
 import type { ICloudCalendarConnection, ICloudCalendarEvent, SaveWorkdaySettingsInput, WorkdayMetrics, WorkdayPilotReport, WorkdayRestAction, WorkdayRuntime, WorkdayWeather, WorkdayWeatherLocationInput } from '@/api/modules/workday'
 import { toTypedSchema } from '@vee-validate/zod'
 import { useNow } from '@vueuse/core'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import * as z from 'zod'
-import { calibrateDeviceBody, configureDeviceBodyMotion, listDevices, playDeviceBodyMotion, stopDeviceMotion } from '@/api/modules/devices'
-import { getInteractionSettings, getProactivePause, listProactiveTopics, pauseProactive, resumeProactive, resumeProactiveTopic, saveInteractionSettings, stopDeviceAudio } from '@/api/modules/interactions'
+import { calibrateDeviceBody, configureAutoBodyMotion, configureDeviceBodyMotion, getAutoBodyMotion, getDeviceBodyMotionResult, listDevices, playDeviceBodyMotion, stopDeviceMotion } from '@/api/modules/devices'
+import { getDeviceQuietToday, getInteractionSettings, getProactivePause, listProactiveTopics, pauseProactive, resumeDeviceQuietToday, resumeProactive, resumeProactiveTopic, saveInteractionSettings, startDeviceQuietToday, stopDeviceAudio } from '@/api/modules/interactions'
 import { currentTimeZone } from '@/api/modules/reminders'
 import { getDeviceActiveRole, listRoles } from '@/api/modules/roles'
 import { connectICloudCalendar, disconnectICloudCalendar, getICloudCalendarConnection, getICloudCalendarEvents, getWorkdayMetrics, getWorkdayPilot, getWorkdayRuntime, getWorkdaySettings, getWorkdayWeather, markWorkdayFalseTrigger, respondToWorkdayRest, restartWorkdayPilot, saveWorkdaySettings, startWorkday, startWorkdayPilot, stopWorkday, syncICloudCalendar, syncWorkdayWeather, testICloudCalendarConnection, testWorkdayWeather, undoWorkdayFalseTrigger, updateAllowedICloudCalendars } from '@/api/modules/workday'
@@ -56,10 +56,14 @@ export function useCompanionSettings(scope: 'care' | 'workday', providedForm?: R
   const topicCooldowns = ref<ProactiveTopicCooldown[]>([])
   const topicRoleId = ref('')
   const proactivePause = ref<ProactivePause | null>(null)
+  const deviceQuiet = ref<DeviceQuietToday | null>(null)
+  const quietAction = ref(false)
   const pauseAction = ref(false)
   const pauseNow = useNow({ interval: 30000 })
   const proactivePaused = computed(() => !!proactivePause.value?.pausedUntil
     && new Date(proactivePause.value.pausedUntil).getTime() > pauseNow.value.getTime())
+  const deviceQuietActive = computed(() => !!deviceQuiet.value?.pausedUntil
+    && new Date(deviceQuiet.value.pausedUntil).getTime() > pauseNow.value.getTime())
   const topicRoleOptions = ref<{
     label: string
     value: string
@@ -90,8 +94,12 @@ export function useCompanionSettings(scope: 'care' | 'workday', providedForm?: R
   const workdayAction = ref<'start' | 'stop' | WorkdayRestAction | ''>('')
   const pilotAction = ref<'start' | 'restart' | 'mark' | 'undo' | ''>('')
   const bodyAction = ref<'calibrate' | 'disable' | 'enable' | BodyMotion | ''>('')
+  const bodyResult = ref<BodyMotionCommand | null>(null)
+  const bodyResultError = ref('')
+  const autoBodyEnabled = ref(false)
+  const autoBodyLoading = ref(false)
   const targetBusy = computed(() => saving.value || stopping.value || pauseAction.value || !!resumingTopic.value
-    || !!calendarAction.value || !!weatherAction.value || !!workdayAction.value || !!pilotAction.value || !!bodyAction.value)
+    || quietAction.value || !!calendarAction.value || !!weatherAction.value || !!workdayAction.value || !!pilotAction.value || !!bodyAction.value)
   const route = useRoute()
   const activeSection = ref<SettingsSection>('device')
   const isWorkdayPage = computed(() => scope === 'workday')
@@ -301,6 +309,7 @@ export function useCompanionSettings(scope: 'care' | 'workday', providedForm?: R
     auxiliaryErrors.value = []
     topicRoleId.value = ''
     proactivePause.value = null
+    deviceQuiet.value = null
     topicCooldowns.value = []
     topicsError.value = ''
     topicsLoading.value = false
@@ -314,6 +323,9 @@ export function useCompanionSettings(scope: 'care' | 'workday', providedForm?: R
     calendarEventsError.value = ''
     icloudAccountEmail.value = ''
     icloudAppSpecificPassword.value = ''
+    autoBodyEnabled.value = false
+    bodyResult.value = null
+    bodyResultError.value = ''
     try {
       if (isWorkdayPage.value) {
         const workday = await getWorkdaySettings(deviceId)
@@ -338,6 +350,24 @@ export function useCompanionSettings(scope: 'care' | 'workday', providedForm?: R
       }
       else {
         void loadActivePartner(deviceId, request)
+        void getDeviceQuietToday(deviceId).then((value) => {
+          if (request === settingsRequest && model.value.deviceId === deviceId) {
+            deviceQuiet.value = value
+          }
+        }).catch(() => {
+          if (request === settingsRequest) {
+            auxiliaryErrors.value.push('设备安静状态未获取')
+          }
+        })
+        void getAutoBodyMotion(deviceId).then((value) => {
+          if (request === settingsRequest && model.value.deviceId === deviceId) {
+            autoBodyEnabled.value = value.enabled
+          }
+        }).catch(() => {
+          if (request === settingsRequest) {
+            auxiliaryErrors.value.push('自动动作设置未获取')
+          }
+        })
       }
     }
     catch (error) {
@@ -935,14 +965,14 @@ export function useCompanionSettings(scope: 'care' | 'workday', providedForm?: R
       PASS: '门槛通过',
     }[workdayPilot.value.status]
   }
-  async function runBodyAction(action: typeof bodyAction.value, operation: () => Promise<void>, message: string) {
+  async function runBodyAction(action: typeof bodyAction.value, operation: () => Promise<unknown>, message: string) {
     if (!model.value.deviceId || bodyAction.value) {
       return
     }
     bodyAction.value = action
     try {
       await operation()
-      useFaToast().success(message, { description: '命令已送达设备，实际结果以下一次心跳诊断为准。' })
+      useFaToast().success(message, { description: '命令已下发；身体动作的最终结果会单独显示。' })
     }
     catch (error) {
       useFaToast().error('身体动作命令失败', {
@@ -960,10 +990,76 @@ export function useCompanionSettings(scope: 'care' | 'workday', providedForm?: R
     await runBodyAction(enabled ? 'enable' : 'disable', () => configureDeviceBodyMotion(model.value.deviceId, enabled), enabled ? '已请求启用身体动作' : '已禁用身体动作')
   }
   async function playBody(motion: BodyMotion) {
-    await runBodyAction(motion, () => playDeviceBodyMotion(model.value.deviceId, motion), '已下发固定动作')
+    if (!model.value.deviceId || bodyAction.value) {
+      return
+    }
+    const deviceId = model.value.deviceId
+    bodyResult.value = null
+    bodyResultError.value = ''
+    bodyAction.value = motion
+    try {
+      const command = await playDeviceBodyMotion(deviceId, motion)
+      bodyResult.value = command
+      useFaToast().success('动作命令已下发', { description: '等待设备受理和执行结果。' })
+      for (let attempt = 0; attempt < 32; attempt++) {
+        if (['COMPLETED', 'STOPPED', 'FAILED', 'REJECTED', 'DELIVERY_FAILED', 'UNCONFIRMED'].includes(bodyResult.value.status)) {
+          break
+        }
+        await new Promise(resolve => setTimeout(resolve, 500))
+        bodyResult.value = await getDeviceBodyMotionResult(deviceId, command.id)
+      }
+      if (!['COMPLETED', 'STOPPED', 'FAILED', 'REJECTED'].includes(bodyResult.value.status)) {
+        bodyResultError.value = '设备结果尚未确认，请查看安全诊断后再决定是否重试。'
+      }
+    }
+    catch (error) {
+      bodyResultError.value = error instanceof Error ? error.message : '无法取得设备执行结果。'
+      useFaToast().error('身体动作命令或结果查询失败', { description: bodyResultError.value })
+    }
+    finally {
+      bodyAction.value = ''
+    }
+  }
+  async function updateDeviceQuiet(quiet: boolean) {
+    const deviceId = model.value.deviceId
+    if (!deviceId || quietAction.value) {
+      return
+    }
+    quietAction.value = true
+    try {
+      deviceQuiet.value = quiet
+        ? await startDeviceQuietToday(deviceId)
+        : await resumeDeviceQuietToday(deviceId)
+    }
+    catch (error) {
+      useFaToast().error('设备安静状态设置失败', {
+        description: error instanceof Error ? error.message : '请稍后重试。',
+      })
+    }
+    finally {
+      quietAction.value = false
+    }
   }
   async function stopBody() {
     await runBodyAction('disable', () => stopDeviceMotion(model.value.deviceId), '已发送本地停止命令')
+  }
+  async function setAutoBody(enabled: boolean) {
+    const deviceId = model.value.deviceId
+    if (!deviceId || autoBodyLoading.value) {
+      return
+    }
+    autoBodyLoading.value = true
+    try {
+      autoBodyEnabled.value = (await configureAutoBodyMotion(deviceId, enabled)).enabled
+    }
+    catch (error) {
+      useFaToast().error('自动动作设置失败', {
+        description: error instanceof Error ? error.message : '请稍后重试。',
+      })
+    }
+    finally {
+      autoBodyLoading.value = false
+    }
   }
   function confirmLeave() {
     if (!dirty.value) {
@@ -1066,6 +1162,10 @@ export function useCompanionSettings(scope: 'care' | 'workday', providedForm?: R
     topicCooldowns,
     topicRoleId,
     proactivePause,
+    deviceQuiet,
+    deviceQuietActive,
+    quietAction,
+    updateDeviceQuiet,
     pauseAction,
     pauseNow,
     proactivePaused,
@@ -1093,6 +1193,11 @@ export function useCompanionSettings(scope: 'care' | 'workday', providedForm?: R
     workdayAction,
     pilotAction,
     bodyAction,
+    bodyResult,
+    bodyResultError,
+    autoBodyEnabled,
+    autoBodyLoading,
+    setAutoBody,
     route,
     activeSection,
     isWorkdayPage,

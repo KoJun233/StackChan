@@ -61,6 +61,30 @@ class ReminderDeliveryServiceTest {
         org.mockito.Mockito.verifyNoInteractions(pauses);
     }
 
+    @Test
+    void deviceQuietCancelsWorkdayProactiveVoiceButLeavesAnExplicitReminderAlone() {
+        UUID device = UUID.randomUUID();
+        UUID role = UUID.randomUUID();
+        var workday = new ReminderEntity(role, device, "休息提醒", NOW, "UTC",
+                ReminderRecurrence.NONE, 1, null, ReminderSource.PROACTIVE,
+                "workday:rest:2026-07-19:1", ProactiveGenerationStatus.FIXED, NOW);
+        var ordinary = new ReminderEntity(role, device, "喝水", NOW, "UTC",
+                ReminderRecurrence.NONE, 1, null, ReminderSource.USER, NOW);
+        var quiet = org.mockito.Mockito.mock(com.kj.stackchan.interaction.DeviceQuietTodayService.class);
+        when(quiet.isQuiet(device, NOW)).thenReturn(true);
+        when(repository.findTop20ByStatusAndScheduledAtLessThanEqualOrderByScheduledAtAscIdAsc(ReminderStatus.PENDING, NOW))
+                .thenReturn(List.of(workday, ordinary));
+        when(gateway.isConnected(device)).thenReturn(true);
+        when(speechRuntimeClient.synthesize("喝水", role)).thenReturn(new byte[44]);
+        when(gateway.speakReminder(org.mockito.ArgumentMatchers.eq(device),
+                org.mockito.ArgumentMatchers.eq(ordinary.getId()), anyString())).thenReturn(true);
+        var service = service();
+        service.setQuietService(quiet);
+        service.dispatchDueReminders();
+        assertThat(workday.getStatus()).isEqualTo(ReminderStatus.CANCELLED);
+        assertThat(ordinary.getStatus()).isEqualTo(ReminderStatus.DISPATCHED);
+    }
+
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
     void pausedPartnerCancelsQueuedGenericGreetingsBeforeSending(boolean duringSynthesis) {

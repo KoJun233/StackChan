@@ -5,6 +5,7 @@ type RetryMode = 'RECONCILE' | 'REGENERATE'
 interface FailedRequest {
   conversationId?: string
   roleId?: string
+  deviceId?: string
   content: string
   clientMessageId: string
   retryMode: RetryMode
@@ -202,14 +203,14 @@ export const useConversationStore = defineStore('conversation', () => {
     const conversation = await createForCurrentRole()
     return conversation.id
   }
-  async function send(content: string) {
+  async function send(content: string, deviceId?: string) {
     const text = content.trim()
     if (!text || isSending.value || isCreating.value || isLoading.value || historyError.value) {
       return
     }
-    await sendRequest(text, crypto.randomUUID())
+    await sendRequest(text, crypto.randomUUID(), deviceId)
   }
-  async function sendRequest(content: string, clientMessageId: string) {
+  async function sendRequest(content: string, clientMessageId: string, deviceId?: string) {
     let conversationId = activeConversationId.value
     const roleId = activeRoleId.value
     const controller = new AbortController()
@@ -226,6 +227,7 @@ export const useConversationStore = defineStore('conversation', () => {
       await streamMessage(conversationId, {
         clientMessageId,
         content,
+        ...(deviceId ? { deviceId } : {}),
       }, {
         onMessage: (event) => {
           assistantMessageId = event.assistantMessageId
@@ -268,6 +270,7 @@ export const useConversationStore = defineStore('conversation', () => {
       failedRequest.value = {
         conversationId,
         roleId,
+        deviceId,
         content,
         clientMessageId,
         retryMode: error instanceof StreamMessageServerError ? 'REGENERATE' : 'RECONCILE',
@@ -291,7 +294,7 @@ export const useConversationStore = defineStore('conversation', () => {
       clearFailure()
       return
     }
-    await sendRequest(request.content, request.retryMode === 'RECONCILE' ? request.clientMessageId : crypto.randomUUID())
+    await sendRequest(request.content, request.retryMode === 'RECONCILE' ? request.clientMessageId : crypto.randomUUID(), request.deviceId)
   }
   function cancel() {
     abortController.value?.abort()

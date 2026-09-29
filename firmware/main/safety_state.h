@@ -26,6 +26,9 @@ typedef enum {
     SAFETY_MOTION_TEMPLATE_COUNT,
 } safety_motion_template_t;
 
+/* VM is switched off between motions. Include its cold-start wait in every deadline. */
+#define SAFETY_MOTION_POWER_SETTLE_MS 1200
+
 typedef enum {
     SAFETY_FAILURE_NONE = 0,
     SAFETY_FAILURE_CAPABILITY_MISSING,

@@ -15,6 +15,7 @@ import com.kj.stackchan.device.DeviceCommandGateway;
 import com.kj.stackchan.device.DeviceEntity;
 import com.kj.stackchan.device.DeviceEventService;
 import com.kj.stackchan.device.DeviceRepository;
+import com.kj.stackchan.device.BodyMotionAutoService;
 import com.kj.stackchan.interaction.InteractionSettingsService;
 import com.kj.stackchan.reminder.ProactiveGenerationStatus;
 import com.kj.stackchan.reminder.ReminderEntity;
@@ -56,6 +57,7 @@ public class WorkdayCompanionService {
     private final PersonalTaskService taskService;
     private final Clock clock;
     private WorkdayPilotService pilotService;
+    private BodyMotionAutoService bodyMotionAutoService;
 
     public WorkdayCompanionService(
             WorkdayRuntimeService runtimeService,
@@ -90,6 +92,11 @@ public class WorkdayCompanionService {
         this.pilotService = pilotService;
     }
 
+    @Autowired(required = false)
+    public void setBodyMotionAutoService(BodyMotionAutoService bodyMotionAutoService) {
+        this.bodyMotionAutoService = bodyMotionAutoService;
+    }
+
     public WorkdayRuntimeService.WorkdayRuntimeSnapshot start(UUID deviceId) {
         if (!commandGateway.isConnected(deviceId)) {
             throw new InvalidWorkdayStateException("Device is offline");
@@ -106,9 +113,14 @@ public class WorkdayCompanionService {
         WorkdayRuntimeService.WorkdayRuntimeSnapshot runtime = runtimeService.start(deviceId, present);
         CompanionRoleService.RoleSnapshot role = roleService.getActive(deviceId);
         commandGateway.configureExpression(deviceId, role.expressionThemeColor(), "JOY", "WEAK", 5);
-        playIfArmed(device, "WAKE");
         processActiveDevice(deviceId);
         return runtimeService.get(deviceId);
+    }
+
+    public WorkdayRuntimeService.WorkdayRuntimeSnapshot startFromPage(UUID deviceId) {
+        var runtime = start(deviceId);
+        requestAuto(deviceId, "WAKE", "workday-start:" + runtime.startedAt());
+        return runtime;
     }
 
     public WorkdayRuntimeService.WorkdayRuntimeSnapshot stop(UUID deviceId) {
@@ -118,14 +130,30 @@ public class WorkdayCompanionService {
         return stopped;
     }
 
+    public WorkdayRuntimeService.WorkdayRuntimeSnapshot stopFromPage(UUID deviceId) {
+        boolean wasActive = runtimeService.get(deviceId).state() != WorkdayRuntimeState.OFF;
+        var runtime = stop(deviceId);
+        if (wasActive) requestAuto(deviceId, "DROWSY", "workday-stop:" + runtime.stateChangedAt());
+        return runtime;
+    }
+
     public WorkdayRuntimeService.WorkdayRuntimeSnapshot toggleFromDevice(UUID deviceId) {
         return runtimeService.get(deviceId).state() == WorkdayRuntimeState.OFF
-                ? start(deviceId) : stop(deviceId);
+                ? startFromPage(deviceId) : stopFromPage(deviceId);
     }
 
     public WorkdayRuntimeService.WorkdayRuntimeSnapshot respondToRest(UUID deviceId, WorkdayRestAction action) {
         WorkdayRuntimeService.WorkdayRuntimeSnapshot runtime = runtimeService.respondToRest(deviceId, action);
         cancelPending(deviceId, REST_TOPIC);
+        return runtime;
+    }
+
+    public WorkdayRuntimeService.WorkdayRuntimeSnapshot respondToRestFromPage(
+            UUID deviceId, WorkdayRestAction action) {
+        var runtime = respondToRest(deviceId, action);
+        if (action == WorkdayRestAction.START_REST) {
+            requestAuto(deviceId, "NOD_SMALL", "workday-rest:" + runtime.stateChangedAt());
+        }
         return runtime;
     }
 
@@ -139,7 +167,11 @@ public class WorkdayCompanionService {
             DeviceEntity device = deviceRepository.findById(deviceId).orElse(null);
             CompanionRoleService.RoleSnapshot role = roleService.getActive(deviceId);
             commandGateway.configureExpression(deviceId, role.expressionThemeColor(), "JOY", "WEAK", 4);
-            playIfArmed(device, "LOOK_USER");
+            if (device != null && DeviceEventService.MOTION_ARMED.equals(device.getSafetyState()) &&
+                    device.getBodyDiagnostics() != null &&
+                    device.getBodyDiagnostics().proximitySupported()) {
+                requestAuto(deviceId, "LOOK_USER", "workday-return:" + update.runtime().stateChangedAt());
+            }
         }
     }
 
@@ -362,10 +394,8 @@ public class WorkdayCompanionService {
         }
     }
 
-    private void playIfArmed(DeviceEntity device, String motion) {
-        if (device != null && DeviceEventService.MOTION_ARMED.equals(device.getSafetyState())) {
-            commandGateway.playBodyMotion(device.getId(), motion);
-        }
+    private void requestAuto(UUID deviceId, String motion, String eventKey) {
+        if (bodyMotionAutoService != null) bodyMotionAutoService.request(deviceId, motion, eventKey);
     }
 
     private String briefPrefix(LocalDate workDate) {

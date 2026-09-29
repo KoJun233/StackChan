@@ -23,6 +23,7 @@ export interface ConversationMessage {
 export interface StreamMessageInput {
   clientMessageId: string
   content: string
+  deviceId?: string
 }
 
 export interface MessageStartedEvent {
@@ -84,7 +85,7 @@ export async function streamMessage(
     credentials: 'same-origin',
     signal,
     headers: {
-      Accept: 'text/event-stream',
+      'Accept': 'text/event-stream',
       'Content-Type': 'application/json',
       ...csrfHeaders(),
     },

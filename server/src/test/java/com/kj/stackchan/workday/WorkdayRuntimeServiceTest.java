@@ -126,6 +126,20 @@ class WorkdayRuntimeServiceTest {
     }
 
     @Test
+    void returningAfterTheConfiguredAbsenceIsReportedAsRearrival() {
+        serviceAt("2026-08-24T01:00:00Z").start(DEVICE_ID, true);
+        serviceAt("2026-08-24T01:05:00Z").updatePresence(DEVICE_ID, false);
+
+        var absent = serviceAt("2026-08-24T01:15:00Z").tick(DEVICE_ID);
+        var arrival = serviceAt("2026-08-24T01:50:00Z")
+                .updatePresenceWithOutcome(DEVICE_ID, true);
+
+        assertThat(absent.state()).isEqualTo(WorkdayRuntimeState.ACTIVE_ABSENT);
+        assertThat(arrival.rearrival()).isTrue();
+        assertThat(arrival.runtime().state()).isEqualTo(WorkdayRuntimeState.ACTIVE_PRESENT);
+    }
+
+    @Test
     void claimsTheFirstBriefOnceAndCountsItsTerminalResultOnce() {
         serviceAt("2026-08-24T01:00:00Z").start(DEVICE_ID, true);
 

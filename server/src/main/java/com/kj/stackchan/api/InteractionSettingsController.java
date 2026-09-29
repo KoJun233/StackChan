@@ -6,6 +6,8 @@ import java.util.UUID;
 import com.kj.stackchan.device.DeviceCommandGateway;
 import com.kj.stackchan.device.DeviceInteractionSettingsCoordinator;
 import com.kj.stackchan.interaction.InteractionSettingsService;
+import com.kj.stackchan.interaction.DeviceQuietTodayService;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.kj.stackchan.interaction.MissedReminderPolicy;
 import com.kj.stackchan.interaction.ProactiveTopicCooldownService;
 import com.kj.stackchan.speech.VoiceTurnDiagnosticsService;
@@ -34,6 +36,12 @@ public class InteractionSettingsController {
     private final DeviceCommandGateway commandGateway;
     private final VoiceTurnDiagnosticsService voiceTurnDiagnosticsService;
     private final ProactiveTopicCooldownService topicCooldownService;
+    private DeviceQuietTodayService quietTodayService;
+
+    @Autowired(required = false)
+    void setQuietTodayService(DeviceQuietTodayService quietTodayService) {
+        this.quietTodayService = quietTodayService;
+    }
 
     public InteractionSettingsController(
             InteractionSettingsService settingsService,
@@ -71,6 +79,24 @@ public class InteractionSettingsController {
             voiceTurnDiagnosticsService.cancelActiveTurns(deviceId);
         }
         return new CommandResponse(accepted);
+    }
+
+    @GetMapping("/{deviceId}/quiet-today")
+    public DeviceQuietTodayService.Snapshot quietToday(@PathVariable UUID deviceId) {
+        if (quietTodayService == null) throw new IllegalStateException("Quiet mode unavailable");
+        return quietTodayService.get(deviceId);
+    }
+
+    @PostMapping("/{deviceId}/quiet-today")
+    public DeviceQuietTodayService.Snapshot startQuietToday(@PathVariable UUID deviceId) {
+        if (quietTodayService == null) throw new IllegalStateException("Quiet mode unavailable");
+        return quietTodayService.quietForToday(deviceId);
+    }
+
+    @PostMapping("/{deviceId}/quiet-today:resume")
+    public DeviceQuietTodayService.Snapshot resumeQuietToday(@PathVariable UUID deviceId) {
+        if (quietTodayService == null) throw new IllegalStateException("Quiet mode unavailable");
+        return quietTodayService.resume(deviceId);
     }
 
     @GetMapping("/{deviceId}/proactive-topics")

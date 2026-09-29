@@ -3,9 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 import Chat from './index.vue'
 
-const api = vi.hoisted(() => ({ create: vi.fn(), list: vi.fn(), messages: vi.fn(), stream: vi.fn() }))
+const api = vi.hoisted(() => ({ create: vi.fn(), devices: vi.fn(), list: vi.fn(), messages: vi.fn(), stream: vi.fn() }))
 const partnerId = '550e8400-e29b-41d4-a716-446655440000'
+const deviceId = '0c4d09ea-ff9b-4701-9702-428c01cac264'
 vi.mock('@/api/modules/roles', () => ({ listRoles: async () => [{ id: '550e8400-e29b-41d4-a716-446655440000', name: '小伙伴', defaultRole: true }] }))
+vi.mock('@/api/modules/devices', () => ({ listDevices: api.devices }))
 vi.mock('@/api/modules/companion', () => ({
   createConversation: api.create,
   listConversations: api.list,
@@ -79,6 +81,7 @@ describe('chat page recovery and native events', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     api.list.mockResolvedValue([])
+    api.devices.mockResolvedValue([{ id: deviceId, displayName: '机器人', online: true, body: { bodyMotionSupported: true } }])
     api.messages.mockResolvedValue([])
     api.create.mockResolvedValue({ id: 'conversation', roleId: partnerId, title: '新对话' })
     api.stream.mockResolvedValue(undefined)
@@ -119,5 +122,14 @@ describe('chat page recovery and native events', () => {
     expect(api.create).not.toHaveBeenCalled()
     textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
     await vi.waitFor(() => expect(api.stream).toHaveBeenCalledOnce())
+  })
+
+  it('binds the only online motion-capable robot to a text reply', async () => {
+    const container = await mountChat()
+    await vi.waitFor(() => expect(api.devices).toHaveBeenCalledOnce())
+    await type(container, '想一想')
+    click(container, '发送')
+    await vi.waitFor(() => expect(api.stream).toHaveBeenCalledOnce())
+    expect(api.stream.mock.calls[0][1]).toMatchObject({ content: '想一想', deviceId })
   })
 })

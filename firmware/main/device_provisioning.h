@@ -42,5 +42,8 @@ bool device_provisioning_parse_claim_response(const char *json,
                                               const char *server_base_url,
                                               device_identity_t *identity);
 
-/** Starts the bounded USB provisioning task after Wi-Fi transport startup. */
+/** Reserves the bounded USB provisioning task before Wi-Fi startup. */
 esp_err_t device_provisioning_start(void);
+
+/** Allows USB requests only after the transport and Wi-Fi monitor are ready. */
+void device_provisioning_activate(void);

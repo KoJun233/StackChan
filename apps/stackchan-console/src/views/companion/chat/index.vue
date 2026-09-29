@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { TdChatItemMeta } from '@tdesign-vue-next/chat'
+import type { Device } from '@/api/modules/devices'
 import type { CompanionRole } from '@/api/modules/roles'
 import TChatActionbar from '@tdesign-vue-next/chat/es/chat-actionbar'
 import TChatContent from '@tdesign-vue-next/chat/es/chat-content'
 import TChatList from '@tdesign-vue-next/chat/es/chat-list'
 import { useMediaQuery } from '@vueuse/core'
+import { listDevices } from '@/api/modules/devices'
 import { listRoles } from '@/api/modules/roles'
 import ChatHistory from './ChatHistory.vue'
 import '@tdesign-vue-next/chat/es/style/index.css'
@@ -17,6 +19,15 @@ const draft = ref('')
 const drafts = new Map<string, string>()
 const route = useRoute()
 const roles = ref<CompanionRole[]>([])
+const devices = ref<Device[]>([])
+const selectedDeviceId = ref('')
+const deviceOptions = computed(() => [
+  { label: '不联动身体动作', value: '' },
+  ...devices.value.filter(device => device.body.bodyMotionSupported).map(device => ({
+    label: `${device.displayName} · ${device.online ? '在线' : '离线'}`,
+    value: device.id,
+  })),
+])
 const currentRole = computed(() => roles.value.find(role => role.id === activeRoleId.value))
 const partnerName = computed(() => currentRole.value?.name ?? '伙伴')
 const historyOpen = ref(false)
@@ -65,7 +76,7 @@ async function send(value = draft.value) {
   }
   draft.value = ''
   try {
-    await conversationStore.send(content)
+    await conversationStore.send(content, selectedDeviceId.value || undefined)
   }
   catch (error) {
     if (!draft.value) {
@@ -122,6 +133,19 @@ function handleComposerKeydown(event: KeyboardEvent) {
   event.preventDefault()
   void send()
 }
+onMounted(async () => {
+  try {
+    devices.value = await listDevices()
+    const requested = String(route.query.deviceId ?? '')
+    const available = devices.value.filter(device => device.body.bodyMotionSupported && device.online)
+    selectedDeviceId.value = available.some(device => device.id === requested)
+      ? requested
+      : available.length === 1 ? available[0].id : ''
+  }
+  catch {
+    selectedDeviceId.value = ''
+  }
+})
 onMounted(async () => {
   try {
     roles.value = await listRoles()
@@ -257,6 +281,13 @@ watch(desktop, () => {
             </TChatList>
             <AppEmpty v-else class="chat-empty" description="和你的机器人说点什么吧" />
             <div class="chat-composer">
+              <div v-if="deviceOptions.length > 1" class="mb-3 flex gap-3 items-center">
+                <label for="chat-device" class="text-sm whitespace-nowrap">联动机器人</label>
+                <FaSelect id="chat-device" v-model="selectedDeviceId" :options="deviceOptions" :disabled="isSending" class="flex-1 min-w-0" />
+              </div>
+              <p v-if="selectedDeviceId" class="text-xs text-muted-foreground mb-3">
+                较长的文字回复可触发一次思考动作；需先在陪伴设置中允许自动动作并显式启用舵机。语音期间不会转动。
+              </p>
               <FaAlert v-if="errorMessage" variant="destructive" title="消息发送失败" :description="errorMessage" class="mb-3">
                 <template v-if="lastFailedInput" #action>
                   <FaButton size="sm" variant="outline" @click="retry">

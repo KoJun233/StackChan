@@ -7,6 +7,7 @@ import java.time.ZoneId;
 import java.util.List;
 
 import com.kj.stackchan.device.DeviceCommandGateway;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.kj.stackchan.expression.CompanionEmotion;
 import com.kj.stackchan.expression.DeviceExpressionService;
 import com.kj.stackchan.expression.EmotionIntensity;
@@ -34,6 +35,10 @@ public class SilentPresenceService {
     private final DeviceExpressionService expressionService;
     private final CompanionRoleService roleService;
     private final Clock clock;
+    private DeviceQuietTodayService quietService;
+
+    @Autowired(required = false)
+    public void setQuietService(DeviceQuietTodayService quietService) { this.quietService = quietService; }
 
     public SilentPresenceService(
             InteractionSettingsService settingsService,
@@ -59,6 +64,7 @@ public class SilentPresenceService {
         int shown = 0;
         for (var settings : settingsService.silentPresenceCandidates()) {
             if (!settingsService.isSilentPresenceEligible(settings, now)
+                    || (quietService != null && quietService.isQuiet(settings.deviceId(), now))
                     || !commandGateway.isConnected(settings.deviceId())
                     || voiceTurnRepository.existsByDeviceIdAndStatusInAndUpdatedAtAfter(
                             settings.deviceId(), ACTIVE_VOICE_STATUSES, now.minus(ACTIVE_VOICE_MAX_AGE)

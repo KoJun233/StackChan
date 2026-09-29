@@ -1,5 +1,6 @@
 param(
     [string]$CandidateImage = 'stackchan-foundation-server:companion-v51-20260914',
+    [int]$ExpectedSchema = 51,
     [string]$SourceServer = 'stackchan-foundation-server-1',
     [string]$SourceBackup = 'stackchan-foundation-postgres-backup-1'
 )
@@ -99,7 +100,7 @@ try {
     $environment.SPRING_DATASOURCE_USERNAME = 'postgres'
     # Preserve the application's normal bean graph. The internal network and lack
     # of published ports prevent both real devices and external services connecting.
-    $environment.COMPANION_BUILD_VERSION = 'companion-v51-restore-check'
+    $environment.COMPANION_BUILD_VERSION = "schema-v$ExpectedSchema-restore-check"
     $environment.JAVA_TOOL_OPTIONS = '-Xmx384m'
     $runArguments = @('run', '-d', '--name', "$restore-app", '--network', $restore, '--mount', "type=volume,src=$restore-skills,dst=/app/data/agent-skills")
     foreach ($key in $environment.Keys) { $runArguments += @('-e', "$key=$($environment[$key])") }
@@ -114,7 +115,7 @@ try {
     }
     if (!$healthy) { throw 'Isolated application health failed; private logs remain in its container until cleanup.' }
     $version = RestoreSql 'select max(version::int) from flyway_schema_history where success;'
-    if ($version.Trim() -ne '51') { throw 'Restored application did not migrate to V51.' }
+    if ($version.Trim() -ne "$ExpectedSchema") { throw "Restored application did not migrate to V$ExpectedSchema." }
     $csrf = Docker @('exec', "$restore-app", 'curl', '-fsS', '-c', '/tmp/restore-cookies', "$url/api/v1/auth/csrf") | ConvertFrom-Json
     $loginStatus = Docker @('exec', '-i', "$restore-app", 'curl', '-fsS', '-b', '/tmp/restore-cookies', '-c', '/tmp/restore-cookies', '-H', "$($csrf.headerName): $($csrf.token)", '-H', 'Content-Type: application/json', '--data-binary', '@-', '-o', '/dev/null', '-w', '%{http_code}', "$url/api/v1/auth/login") (@{ username = $testUser; password = $testPassword } | ConvertTo-Json -Compress)
     if ($loginStatus.Trim() -ne '204') { throw 'Restored synthetic administrator login failed.' }
@@ -125,7 +126,7 @@ try {
     if ($identityBefore -ne $identityAfter) { throw 'Original administrator records changed during restore.' }
     [pscustomobject]@{
         backupVolume = $bundle; backupAt = $manifest.createdAt; databaseSha256 = $manifest.sha256
-        oldImage = $source.Image; candidateImage = $CandidateImage; schema = 51
+        oldImage = $source.Image; candidateImage = $CandidateImage; schema = $ExpectedSchema
         databaseCountsMatch = $true; skillArchiveRestored = $true; configurationDpapiRoundTrip = $true
         encryptedSettingsVerified = $decrypted; originalAdminRecordsPreserved = $true
         syntheticAdminLogin = $true; consoleShell = $true; outboundNetwork = 'isolated-internal'

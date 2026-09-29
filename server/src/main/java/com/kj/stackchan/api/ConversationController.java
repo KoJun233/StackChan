@@ -3,6 +3,8 @@ package com.kj.stackchan.api;
 import java.util.List;
 import java.util.UUID;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.kj.stackchan.agent.AgentChannel;
 import com.kj.stackchan.agent.AgentInvocationContext;
@@ -12,6 +14,7 @@ import com.kj.stackchan.conversation.ConversationSnapshot;
 import com.kj.stackchan.conversation.ConversationService;
 import com.kj.stackchan.conversation.GenerationStart;
 import com.kj.stackchan.conversation.MessageRole;
+import com.kj.stackchan.device.BodyMotionAutoService;
 import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.llm.LlmProviderUnavailableException;
 import com.kj.stackchan.memory.CompanionPromptService;
@@ -24,6 +27,8 @@ import jakarta.validation.constraints.Size;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
@@ -38,11 +43,15 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestParam;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.Disposable;
 import reactor.core.scheduler.Schedulers;
 
 @RestController
 @RequestMapping("/api/v1/conversations")
 public class ConversationController {
+
+    private static final Duration THINK_DELAY = Duration.ofSeconds(2);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ConversationController.class);
 
     private final ConversationService conversationService;
     private final AgentOrchestrator agentOrchestrator;
@@ -51,6 +60,9 @@ public class ConversationController {
 
     @Autowired(required = false)
     private CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator;
+
+    @Autowired(required = false)
+    private BodyMotionAutoService bodyMotionAutoService;
 
     public ConversationController(
             ConversationService conversationService,
@@ -104,6 +116,7 @@ public class ConversationController {
         }
         GenerationContentBuffer generatedContent = new GenerationContentBuffer();
         return Flux.defer(() -> {
+            AtomicBoolean generationActive = new AtomicBoolean(true);
             List<Message> modelHistory = history.stream().map(this::toModelMessage).toList();
             CompanionPromptService.PromptAssembly promptAssembly = companionPromptService.assembleWithMemoryContext(
                     conversationId,
@@ -139,6 +152,7 @@ public class ConversationController {
                         return event("delta", new DeltaEvent(start.assistantMessageId(), text));
                     });
             Mono<ServerSentEvent<Object>> completed = Mono.fromSupplier(() -> {
+                generationActive.set(false);
                 String content = generatedContent.snapshot();
                 conversationService.completeGeneration(start.assistantMessageId(), content);
                 if (completedTurnMemoryCoordinator != null) {
@@ -153,6 +167,18 @@ public class ConversationController {
                 }
                 return event("completed", new CompletedEvent(start.assistantMessageId(), content));
             });
+            Disposable thinkTask = request.deviceId() == null || bodyMotionAutoService == null
+                    ? () -> { }
+                    : Schedulers.boundedElastic().schedule(() -> {
+                        if (generationActive.get()) {
+                            try {
+                                bodyMotionAutoService.request(request.deviceId(), "THINK",
+                                        "web-think:" + start.assistantMessageId());
+                            } catch (RuntimeException error) {
+                                LOGGER.warn("Automatic THINK request failed");
+                            }
+                        }
+                    }, THINK_DELAY.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
             return Flux.concat(
                     Mono.just(event("message", new MessageStartedEvent(
                             start.conversationId(),
@@ -161,7 +187,10 @@ public class ConversationController {
                     ))),
                     deltas,
                     completed
-            );
+            ).doFinally(signal -> {
+                generationActive.set(false);
+                thinkTask.dispose();
+            });
         })
                 .subscribeOn(Schedulers.boundedElastic())
                 .onErrorResume(error -> {
@@ -223,7 +252,8 @@ public class ConversationController {
 
     public record StreamMessageRequest(
             @NotNull UUID clientMessageId,
-            @NotBlank @Size(max = 12000) String content
+            @NotBlank @Size(max = 12000) String content,
+            UUID deviceId
     ) {
     }
 

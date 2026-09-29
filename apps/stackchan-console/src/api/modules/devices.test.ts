@@ -56,12 +56,24 @@ describe('device management API', () => {
   })
 
   it('sends only structured body calibration, enable, and named motion commands', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 202 }))
+    const command = {
+      id: 'command-id',
+      deviceId: 'device/id',
+      motion: 'NOD_SMALL',
+      status: 'SENT',
+      failureCode: null,
+      createdAt: '2026-09-24T00:00:00Z',
+      updatedAt: '2026-09-24T00:00:00Z',
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 202 }))
+      .mockResolvedValueOnce(new Response(null, { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(command), { status: 202 }))
     vi.stubGlobal('fetch', fetchMock)
 
     await calibrateDeviceBody('device/id')
     await configureDeviceBodyMotion('device/id', true)
-    await playDeviceBodyMotion('device/id', 'NOD_SMALL')
+    await expect(playDeviceBodyMotion('device/id', 'NOD_SMALL')).resolves.toEqual(command)
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,

@@ -712,6 +712,35 @@ esp_err_t device_protocol_encode_command_ack_with_result(char *output,
     return err;
 }
 
+esp_err_t device_protocol_encode_body_motion_result(char *output, size_t output_size,
+                                                    uint32_t sequence, const char *command_id,
+                                                    safety_motion_template_t motion,
+                                                    const char *status,
+                                                    safety_failure_code_t failure)
+{
+    const char *motion_name = safety_motion_template_name(motion);
+    const char *failure_name = safety_failure_code_name(failure);
+    if (output == NULL || output_size == 0 || sequence == 0 ||
+        !is_valid_command_id(command_id) || motion_name == NULL || status == NULL ||
+        failure_name == NULL ||
+        (strcmp(status, "COMPLETED") != 0 && strcmp(status, "STOPPED") != 0 &&
+         strcmp(status, "FAILED") != 0) ||
+        (strcmp(status, "COMPLETED") == 0 && failure != SAFETY_FAILURE_NONE)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) return ESP_ERR_NO_MEM;
+    bool complete = cJSON_AddStringToObject(root, "type", "body_motion_result") != NULL &&
+                    cJSON_AddNumberToObject(root, "sequence", sequence) != NULL &&
+                    cJSON_AddStringToObject(root, "command_id", command_id) != NULL &&
+                    cJSON_AddStringToObject(root, "motion", motion_name) != NULL &&
+                    cJSON_AddStringToObject(root, "status", status) != NULL &&
+                    cJSON_AddStringToObject(root, "failure_code", failure_name) != NULL;
+    esp_err_t err = complete ? print_json(root, output, output_size) : ESP_ERR_NO_MEM;
+    cJSON_Delete(root);
+    return err;
+}
+
 esp_err_t device_protocol_encode_wake_model_status(char *output,
                                                    size_t output_size,
                                                    uint32_t sequence,

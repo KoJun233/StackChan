@@ -17,6 +17,16 @@ export interface Device {
 
 export type BodyMotion = 'DROWSY' | 'LOOK_USER' | 'NOD_SMALL' | 'THINK' | 'WAKE'
 
+export interface BodyMotionCommand {
+  id: string
+  deviceId: string
+  motion: BodyMotion
+  status: 'SENT' | 'ACCEPTED' | 'REJECTED' | 'COMPLETED' | 'STOPPED' | 'FAILED' | 'DELIVERY_FAILED' | 'UNCONFIRMED'
+  failureCode: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export interface DeviceBodyDiagnostics {
   ambientLight: 'BRIGHT' | 'DARK' | 'DIM' | 'NORMAL' | 'UNAVAILABLE'
   ambientLightSupported: boolean
@@ -97,9 +107,29 @@ export async function calibrateDeviceBody(deviceId: string): Promise<void> {
   await sendDeviceCommand(`/api/v1/devices/${encodeURIComponent(deviceId)}/commands/calibrate-body`)
 }
 
-export async function playDeviceBodyMotion(deviceId: string, motion: BodyMotion): Promise<void> {
-  await sendDeviceCommand(`/api/v1/devices/${encodeURIComponent(deviceId)}/commands/body-motion`, {
+export function playDeviceBodyMotion(deviceId: string, motion: BodyMotion): Promise<BodyMotionCommand> {
+  return apiJson<BodyMotionCommand>(`/api/v1/devices/${encodeURIComponent(deviceId)}/commands/body-motion`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ motion }),
+  })
+}
+
+export function getDeviceBodyMotionResult(deviceId: string, commandId: string): Promise<BodyMotionCommand> {
+  return apiJson<BodyMotionCommand>(
+    `/api/v1/devices/${encodeURIComponent(deviceId)}/commands/body-motion/${encodeURIComponent(commandId)}`,
+  )
+}
+
+export function getAutoBodyMotion(deviceId: string): Promise<{ enabled: boolean }> {
+  return apiJson(`/api/v1/devices/${encodeURIComponent(deviceId)}/body-motion/automatic`)
+}
+
+export function configureAutoBodyMotion(deviceId: string, enabled: boolean): Promise<{ enabled: boolean }> {
+  return apiJson(`/api/v1/devices/${encodeURIComponent(deviceId)}/body-motion/automatic`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
   })
 }
 

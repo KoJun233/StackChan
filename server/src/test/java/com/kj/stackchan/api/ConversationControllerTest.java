@@ -1,6 +1,7 @@
 package com.kj.stackchan.api;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -12,6 +13,7 @@ import com.kj.stackchan.conversation.ConversationService;
 import com.kj.stackchan.conversation.GenerationStart;
 import com.kj.stackchan.conversation.GenerationStatus;
 import com.kj.stackchan.conversation.MessageRole;
+import com.kj.stackchan.device.BodyMotionAutoService;
 import com.kj.stackchan.llm.LlmProviderUnavailableException;
 import com.kj.stackchan.llm.LlmSettingsService;
 import com.kj.stackchan.llm.ResolvedLlmSettings;
@@ -41,6 +43,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.after;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.http.MediaType.TEXT_EVENT_STREAM;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -75,6 +79,9 @@ class ConversationControllerTest {
 
     @MockitoBean
     private CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator;
+
+    @MockitoBean
+    private BodyMotionAutoService bodyMotionAutoService;
 
     @MockitoBean
     private AdminUserRepository adminUserRepository;
@@ -135,6 +142,61 @@ class ConversationControllerTest {
         verify(completedTurnMemoryCoordinator).complete(
                 assistantMessageId, assistantMessageId, null, "今天有点累", "你好", List.of(), true
         );
+    }
+
+    @Test
+    void requestsThinkOnlyWhileAnExplicitlyBoundWebReplyIsStillProcessing() throws Exception {
+        UUID conversationId = UUID.randomUUID();
+        UUID clientMessageId = UUID.randomUUID();
+        UUID assistantMessageId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        when(conversationService.loadHistory(conversationId)).thenReturn(List.of());
+        when(conversationService.startGeneration(conversationId, clientMessageId, "慢一点"))
+                .thenReturn(new GenerationStart(conversationId, UUID.randomUUID(), assistantMessageId,
+                        false, GenerationStatus.STREAMING, ""));
+        when(llmSettingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings(
+                "https://example.invalid/v1", "model", "system", "key"));
+        when(agentOrchestrator.stream(any(AgentOrchestrator.AgentRequest.class)))
+                .thenReturn(Mono.delay(Duration.ofMillis(3_500)).map(tick -> "回答").flux());
+
+        MvcResult result = mockMvc.perform(post("/api/v1/conversations/{conversationId}/messages:stream", conversationId)
+                        .with(user("admin").roles("ADMIN")).with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"clientMessageId\":\"" + clientMessageId
+                                + "\",\"content\":\"慢一点\",\"deviceId\":\"" + deviceId + "\"}"))
+                .andExpect(request().asyncStarted()).andReturn();
+
+        verify(bodyMotionAutoService, timeout(3_000)).request(deviceId, "THINK",
+                "web-think:" + assistantMessageId);
+        result.getAsyncResult(7_000);
+        mockMvc.perform(asyncDispatch(result)).andExpect(status().isOk())
+                .andExpect(content().string(containsString("event:completed")));
+    }
+
+    @Test
+    void cancelsThinkWhenTheBoundWebReplyFinishesBeforeTheDelay() throws Exception {
+        UUID conversationId = UUID.randomUUID();
+        UUID clientMessageId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        when(conversationService.loadHistory(conversationId)).thenReturn(List.of());
+        when(conversationService.startGeneration(conversationId, clientMessageId, "快一点"))
+                .thenReturn(new GenerationStart(conversationId, UUID.randomUUID(), UUID.randomUUID(),
+                        false, GenerationStatus.STREAMING, ""));
+        when(llmSettingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings(
+                "https://example.invalid/v1", "model", "system", "key"));
+        when(agentOrchestrator.stream(any(AgentOrchestrator.AgentRequest.class)))
+                .thenReturn(Flux.just("好的"));
+
+        MvcResult result = mockMvc.perform(post("/api/v1/conversations/{conversationId}/messages:stream", conversationId)
+                        .with(user("admin").roles("ADMIN")).with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"clientMessageId\":\"" + clientMessageId
+                                + "\",\"content\":\"快一点\",\"deviceId\":\"" + deviceId + "\"}"))
+                .andExpect(request().asyncStarted()).andReturn();
+
+        result.getAsyncResult(5_000);
+        mockMvc.perform(asyncDispatch(result)).andExpect(status().isOk());
+        verify(bodyMotionAutoService, after(2_200).never()).request(any(), any(), any());
     }
 
     @Test

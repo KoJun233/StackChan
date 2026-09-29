@@ -2,9 +2,11 @@
 
 当前陪伴迭代的人工验收入口：[陪伴体验验收与观察](companion-experience-acceptance.md)。
 
+当前身体动作实施与交接：[BODY-002 五种 K151 身体动作的完成与交接计划](body-motion-completion-plan.md)。服务端与管理端已发布至现有 LAN 8080；固件 `d18b3cd` 已保留 NVS 应用 OTA 安装并在线，默认禁用动作。五模板在 `8a81b07` 上的设备结果及用户现场观察通过；`c018d25` 点头回归、远程及头顶触摸停动、自动 `WAKE` 结果通过。`ffd0217` 已捕获靠近 `present=yes`、移开 `present=no` 的成对设备事件；原 25 秒心跳会漏掉短暂在场，`d18b3cd` 已修复并完成双构建、OTA 与上线检查。自动 `LOOK_USER`、语音及断线停止尚无新版实体证据。[当前固件状态](status/firmware.md)及[本次发布记录](../runbooks/body-motion-20260924-release.md)。
+
 当前控制台发布依据：[2026-09-21 UI 发布与回退](../runbooks/console-ux-20260921-release.md)。服务端沿用[陪伴 V51](../runbooks/companion-v51-release.md)。
 
-当前继续实施范围：[陪伴功能深化、收缩与部署完成清单](companion-completion-plan.md)。
+最近已完成的软件深化范围：[陪伴功能深化、收缩与部署完成清单](companion-completion-plan.md)。
 
 ## 稳定文档与状态文档
 
@@ -40,6 +42,7 @@
 
 ## 稳定项目文档
 
+- [BODY-002 五种 K151 身体动作的完成与交接计划](body-motion-completion-plan.md)
 - [2026-09-19 前端体验排查与改造建议（DRAFT）](console-ux-audit-2026-09-19.md)
 - [架构说明](architecture.md)
 - [开发环境与命令](development.md)

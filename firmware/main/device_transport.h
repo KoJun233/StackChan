@@ -9,7 +9,10 @@
 #include "device_identity.h"
 #include "device_protocol.h"
 
-/** Starts the identity-gated Wi-Fi/WebSocket transport task. */
+/** Reserves the transport task and its queues before Wi-Fi fragments internal SRAM. */
+esp_err_t device_transport_reserve(void);
+
+/** Initializes Wi-Fi after startup tasks have reserved their stacks. */
 esp_err_t device_transport_start(void);
 
 /**

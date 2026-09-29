@@ -8,6 +8,9 @@ import java.util.List;
 import java.util.UUID;
 
 import com.kj.stackchan.device.DeviceCommandGateway;
+import com.kj.stackchan.device.BodyMotionCommandEntity;
+import com.kj.stackchan.device.BodyMotionCommandService;
+import com.kj.stackchan.device.BodyMotionAutoService;
 import com.kj.stackchan.device.DeviceBodyDiagnostics;
 import com.kj.stackchan.device.DeviceEntity;
 import com.kj.stackchan.device.DeviceRepository;
@@ -38,17 +41,23 @@ public class DeviceController {
     private final DeviceCommandGateway deviceCommandGateway;
     private final Clock clock;
     private final CompanionRoleService roleService;
+    private final BodyMotionCommandService bodyMotionCommandService;
+    private final BodyMotionAutoService bodyMotionAutoService;
 
     public DeviceController(
             DeviceRepository deviceRepository,
             DeviceCommandGateway deviceCommandGateway,
             Clock clock,
-            ObjectProvider<CompanionRoleService> roleService
+            ObjectProvider<CompanionRoleService> roleService,
+            ObjectProvider<BodyMotionCommandService> bodyMotionCommandService,
+            ObjectProvider<BodyMotionAutoService> bodyMotionAutoService
     ) {
         this.deviceRepository = deviceRepository;
         this.deviceCommandGateway = deviceCommandGateway;
         this.clock = clock;
         this.roleService = roleService.getIfAvailable();
+        this.bodyMotionCommandService = bodyMotionCommandService.getIfAvailable();
+        this.bodyMotionAutoService = bodyMotionAutoService.getIfAvailable();
     }
 
     @GetMapping
@@ -103,14 +112,45 @@ public class DeviceController {
 
     @PostMapping(path = "/{deviceId}/commands/body-motion", consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public void playBodyMotion(
+    public BodyMotionCommandEntity playBodyMotion(
             @PathVariable UUID deviceId,
             @Valid @RequestBody BodyMotionRequest request
     ) {
-        if (!deviceCommandGateway.playBodyMotion(deviceId, request.motion().name())) {
-            throw new DeviceOfflineException();
+        if (bodyMotionCommandService == null) {
+            if (!deviceCommandGateway.playBodyMotion(deviceId, request.motion().name()))
+                throw new DeviceOfflineException();
+            return null;
         }
+        BodyMotionCommandEntity command = bodyMotionCommandService.issue(deviceId, request.motion().name());
+        if ("DELIVERY_FAILED".equals(command.getStatus())) throw new DeviceOfflineException();
+        return command;
     }
+
+    @GetMapping(path = "/{deviceId}/commands/body-motion/{commandId}")
+    public BodyMotionCommandEntity bodyMotionResult(@PathVariable UUID deviceId,
+                                                    @PathVariable UUID commandId) {
+        if (bodyMotionCommandService == null) throw new IllegalStateException("Body motion results unavailable");
+        BodyMotionCommandEntity command = bodyMotionCommandService.get(deviceId, commandId);
+        if (command == null) throw new org.springframework.web.server.ResponseStatusException(HttpStatus.NOT_FOUND);
+        return command;
+    }
+
+    @GetMapping(path = "/{deviceId}/body-motion/automatic")
+    public AutoMotionResponse autoMotion(@PathVariable UUID deviceId) {
+        if (bodyMotionAutoService == null) throw new IllegalStateException("Auto motion unavailable");
+        return new AutoMotionResponse(bodyMotionAutoService.isEnabled(deviceId));
+    }
+
+    @PutMapping(path = "/{deviceId}/body-motion/automatic", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public AutoMotionResponse configureAutoMotion(@PathVariable UUID deviceId,
+                                                  @Valid @RequestBody AutoMotionRequest request) {
+        if (bodyMotionAutoService == null) throw new IllegalStateException("Auto motion unavailable");
+        bodyMotionAutoService.setEnabled(deviceId, request.enabled());
+        return new AutoMotionResponse(bodyMotionAutoService.isEnabled(deviceId));
+    }
+
+    public record AutoMotionRequest(@NotNull Boolean enabled) { }
+    public record AutoMotionResponse(boolean enabled) { }
 
     @GetMapping(path = "/{deviceId}/active-role")
     public CompanionRoleService.RoleSnapshot activeRole(@PathVariable UUID deviceId) {

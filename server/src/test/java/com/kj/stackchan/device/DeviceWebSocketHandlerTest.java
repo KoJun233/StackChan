@@ -44,6 +44,7 @@ class DeviceWebSocketHandlerTest {
     private final VoiceTurnCancellationService voiceTurnCancellationService =
             mock(VoiceTurnCancellationService.class);
     private final DeviceExpressionService deviceExpressionService = mock(DeviceExpressionService.class);
+    private final BodyMotionCommandService bodyMotionCommandService = mock(BodyMotionCommandService.class);
     private final DeviceWebSocketHandler handler = new DeviceWebSocketHandler(
             connectionRegistry,
             deviceEventService,
@@ -58,6 +59,7 @@ class DeviceWebSocketHandlerTest {
     private DeviceWebSocketHandler handler() {
         handler.setFirmwareUpdateStatusService(firmwareUpdateStatusService);
         handler.setDeviceExpressionService(deviceExpressionService);
+        handler.setBodyMotionCommandService(bodyMotionCommandService);
         return handler;
     }
 
@@ -447,6 +449,27 @@ class DeviceWebSocketHandlerTest {
         ));
 
         verify(deviceEventService).toggleWorkday(DEVICE_ID);
+    }
+
+    @Test
+    void acceptsOnlyBoundedMotionResultsAndBindsThemToTheAuthenticatedDevice() throws Exception {
+        WebSocketSession session = authenticatedSession();
+        handler().afterConnectionEstablished(session);
+        String commandId = "550e8400-e29b-41d4-a716-446655440000";
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"body_motion_result","sequence":9,"command_id":"%s",\
+                "motion":"NOD_SMALL","status":"COMPLETED","failure_code":"NONE"}
+                """.formatted(commandId)));
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"body_motion_result","sequence":10,"command_id":"%s",\
+                "motion":"NOD_SMALL","status":"COMPLETED","failure_code":"NONE","position":510}
+                """.formatted(commandId)));
+
+        verify(bodyMotionCommandService).recordResult(
+                DEVICE_ID, commandId, "NOD_SMALL", "COMPLETED", "NONE");
+        ArgumentCaptor<TextMessage> message = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session).sendMessage(message.capture());
+        assertThat(message.getValue().getPayload()).contains("invalid_event");
     }
 
     private WebSocketSession authenticatedSession() {

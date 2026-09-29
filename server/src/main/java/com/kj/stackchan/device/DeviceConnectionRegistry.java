@@ -134,10 +134,14 @@ public class DeviceConnectionRegistry {
     }
 
     public boolean sendBodyMotion(UUID deviceId, String motion) {
+        return sendBodyMotion(deviceId, motion, UUID.randomUUID().toString());
+    }
+
+    public boolean sendBodyMotion(UUID deviceId, String motion, String commandId) {
         try {
             return sendPayload(deviceId, objectMapper.writeValueAsString(
                     new PlayBodyMotionCommand(
-                            "play_body_motion", UUID.randomUUID().toString(), motion)));
+                            "play_body_motion", commandId, motion)));
         } catch (JsonProcessingException exception) {
             return false;
         }

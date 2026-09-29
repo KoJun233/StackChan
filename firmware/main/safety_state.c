@@ -19,7 +19,7 @@ static int64_t motion_timeout_us(safety_motion_template_t motion)
     switch (motion) {
     case SAFETY_MOTION_WAKE: return 1800000LL;
     case SAFETY_MOTION_LOOK_USER: return 1600000LL;
-    case SAFETY_MOTION_NOD_SMALL: return 2200000LL;
+    case SAFETY_MOTION_NOD_SMALL: return 3000000LL;
     case SAFETY_MOTION_THINK: return 2400000LL;
     case SAFETY_MOTION_DROWSY: return 2600000LL;
     default: return 0;
@@ -172,7 +172,9 @@ bool safety_state_begin_motion(safety_motion_template_t motion,
     }
     s_diagnostics.active_template = motion;
     s_diagnostics.motion_runtime = SAFETY_MOTION_RUNNING;
-    s_motion_deadline_us = now_us + timeout_us + SAFETY_MOTION_TIMEOUT_GRACE_US;
+    s_motion_deadline_us = now_us + timeout_us +
+                           (int64_t)SAFETY_MOTION_POWER_SETTLE_MS * 1000LL +
+                           SAFETY_MOTION_TIMEOUT_GRACE_US;
     taskEXIT_CRITICAL(&s_lock);
     return true;
 }

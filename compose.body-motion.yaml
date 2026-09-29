@@ -1,0 +1,5 @@
+services:
+  server:
+    image: stackchan-foundation-server:body002-think-7d8c55a
+    environment:
+      COMPANION_BUILD_VERSION: body002-think-7d8c55a

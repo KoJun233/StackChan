@@ -63,6 +63,10 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             "UNAVAILABLE", "DARK", "DIM", "NORMAL", "BRIGHT"
     );
     private static final Set<String> BODY_MOTION_STATES = Set.of("DISABLED", "ARMED", "RUNNING");
+    private static final Set<String> BODY_MOTIONS = Set.of("WAKE", "LOOK_USER", "NOD_SMALL", "THINK", "DROWSY");
+    private static final Set<String> BODY_RESULT_STATUSES = Set.of("COMPLETED", "STOPPED", "FAILED");
+    private static final Set<String> BODY_MOTION_RESULT_FIELDS = Set.of(
+            "type", "sequence", "command_id", "motion", "status", "failure_code");
     private static final Set<String> BODY_FAILURE_CODES = Set.of(
             "NONE", "CAPABILITY_MISSING", "NOT_CALIBRATED", "ADMIN_DISABLED",
             "AUDIO_BUSY", "OFFLINE", "UPDATING", "DEVICE_ERROR", "BUSY",
@@ -125,6 +129,12 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     private DeviceExpressionPackCoordinator expressionPackCoordinator;
     private DeviceFirmwareUpdateStatusService firmwareUpdateStatusService;
     private DeviceExpressionService deviceExpressionService;
+    private BodyMotionCommandService bodyMotionCommandService;
+
+    @Autowired(required = false)
+    void setBodyMotionCommandService(BodyMotionCommandService bodyMotionCommandService) {
+        this.bodyMotionCommandService = bodyMotionCommandService;
+    }
 
     @Autowired(required = false)
     void setExpressionPackCoordinator(DeviceExpressionPackCoordinator expressionPackCoordinator) {
@@ -405,7 +415,17 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             }
             return;
         }
+        if (event instanceof BodyMotionResultEvent motionResult) {
+            if (bodyMotionCommandService != null) {
+                bodyMotionCommandService.recordResult(deviceId, motionResult.commandId(),
+                        motionResult.motion(), motionResult.status(), motionResult.failureCode());
+            }
+            return;
+        }
         CommandAcknowledgementEvent acknowledgement = (CommandAcknowledgementEvent) event;
+        if (bodyMotionCommandService != null &&
+                bodyMotionCommandService.recordAcknowledgement(
+                        deviceId, acknowledgement.commandId(), acknowledgement.accepted())) return;
         logger.debug(
                 "Device {} acknowledged command {} with accepted={} result={}",
                 deviceId,
@@ -435,6 +455,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             return switch (type) {
                 case "heartbeat" -> parseHeartbeat(root);
                 case "command_ack" -> parseCommandAcknowledgement(root);
+                case "body_motion_result" -> parseBodyMotionResult(root);
                 case "wake_model_status" -> parseWakeModelStatus(root);
                 case "firmware_update_status" -> parseFirmwareUpdateStatus(root);
                 case "voice_turn_stage" -> parseVoiceTurnStage(root);
@@ -562,6 +583,22 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
                 dropped, underruns, minimumHeap, layer, EXPRESSION_DEGRADE_REASONS[reasonCode],
                 dynamicRenderer.booleanValue(), imu.booleanValue(), proximity.booleanValue(),
                 lifecycleClips != null && lifecycleClips.isBoolean() && lifecycleClips.booleanValue());
+    }
+
+    private BodyMotionResultEvent parseBodyMotionResult(JsonNode root) {
+        requireOnlyFields(root, BODY_MOTION_RESULT_FIELDS);
+        long sequence = requiredPositiveSequence(root);
+        UUID commandId = requiredUuid(root, "command_id");
+        String motion = requiredText(root, "motion");
+        String status = requiredText(root, "status");
+        String failureCode = requiredText(root, "failure_code");
+        if (!BODY_MOTIONS.contains(motion) || !BODY_RESULT_STATUSES.contains(status) ||
+                !BODY_FAILURE_CODES.contains(failureCode) ||
+                ("COMPLETED".equals(status) && !"NONE".equals(failureCode)) ||
+                ("FAILED".equals(status) && "NONE".equals(failureCode))) {
+            throw new InvalidDeviceEventException();
+        }
+        return new BodyMotionResultEvent(sequence, commandId.toString(), motion, status, failureCode);
     }
 
     private CommandAcknowledgementEvent parseCommandAcknowledgement(JsonNode root) {
@@ -750,12 +787,16 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     }
 
     private sealed interface DeviceInboundEvent permits HeartbeatEvent, CommandAcknowledgementEvent,
-            WakeModelStatusEvent, FirmwareUpdateStatusEvent, VoiceTurnStageEvent, WorkdayToggleEvent {
+            WakeModelStatusEvent, FirmwareUpdateStatusEvent, VoiceTurnStageEvent, WorkdayToggleEvent,
+            BodyMotionResultEvent {
 
         long sequence();
     }
 
     private record WorkdayToggleEvent(long sequence) implements DeviceInboundEvent { }
+
+    private record BodyMotionResultEvent(long sequence, String commandId, String motion,
+                                         String status, String failureCode) implements DeviceInboundEvent { }
 
     private record HeartbeatEvent(
             long sequence,

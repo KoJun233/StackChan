@@ -99,9 +99,9 @@ void app_main(void)
         }
     }
     log_startup_headroom("voice");
-    esp_err_t transport_err = device_transport_start();
+    esp_err_t transport_err = device_transport_reserve();
     if (transport_err != ESP_OK) {
-        ESP_LOGE(TAG, "Transport task did not start: %s", esp_err_to_name(transport_err));
+        ESP_LOGE(TAG, "Transport task reservation failed: %s", esp_err_to_name(transport_err));
         safety_state_stop_motion();
         return;
     }
@@ -109,6 +109,13 @@ void app_main(void)
     if (provisioning_err != ESP_OK) {
         ESP_LOGE(TAG, "Provisioning task did not start: %s", esp_err_to_name(provisioning_err));
         safety_state_stop_motion();
+    }
+    transport_err = device_transport_start();
+    if (transport_err != ESP_OK) {
+        ESP_LOGE(TAG, "Transport task did not start: %s", esp_err_to_name(transport_err));
+        safety_state_stop_motion();
+    } else if (provisioning_err == ESP_OK) {
+        device_provisioning_activate();
     }
     if (firmware_ota_err == ESP_OK && firmware_ota_is_pending() && hardware_err == ESP_OK &&
         wake_model_err == ESP_OK && transport_err == ESP_OK && provisioning_err == ESP_OK) {

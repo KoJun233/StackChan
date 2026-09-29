@@ -1,11 +1,17 @@
 # 前端工作流
 
-- 状态：READY_FOR_REVIEW
-- 最后更新：2026-09-23
-- 当前分支：`codex/console-experience-redesign`
-- 基准提交：`13ad66c`
-- 最后验证提交：`13ad66c`
-- 最后验证范围：本任务分支改动；39 文件 141/141、类型/构建、部分合成浏览器实测及 8080 发布资源一致性；提交字段标识基准
+- 状态：ACTIVE
+- 最后更新：2026-09-29
+- 当前分支：`codex/body-motion-five-actions`
+- 基准提交：`2f75da3`
+- 最后验证提交：`2f75da3`
+- 最后验证范围：BODY-002 控制台 142 项测试及生产构建、现有 LAN 8080 发布为本任务分支历史证据；本次传输修复未修改前端。状态字段以主线基准提交作可解析锚点；本任务最终单提交自身的哈希无法写入同一提交
+
+## BODY-002 当前进度
+
+管理端保留五个手动模板入口，新增每条动作的 `SENT/ACCEPTED/COMPLETED/STOPPED/FAILED/UNCONFIRMED` 状态展示，以及独立且默认关闭的低频自动动作开关。陪伴设置页增加设备级“今天安静点”及提前恢复；页面明确说明普通提醒继续。`pnpm --filter @stackchan/console test --maxWorkers=1` 通过 39 文件、141 项；镜像中的 production build 通过类型检查和构建。测试期间开发代理曾报告 localhost:3000 连接拒绝及 Vite 退出延迟，但最终退出码为 0。原 BODY-002 页面已发布到现有 8080，首页返回 200。新候选 `7d8c55a` 为文字聊天增加机器人选择；唯一在线且支持身体动作的设备会默认选中，可手动改为不联动，并把设备 ID 随文字请求提交。定向 20 项测试和生产构建通过；新页面已随 `body002-think-7d8c55a` 发布，首页与 15 个资源 GET 均为 200。浏览器控制连接因插件服务文件缺失而失败，尚无真实页面点击证据。下一条精确操作：浏览器可用时核对设备选择与状态文案；用户在设备旁后逐个核对实体结果。
+
+以下为 2026-09-21 控制台改造与发布的历史状态，不代表 BODY-002 已部署。
 
 ## 当前目标
 
@@ -35,7 +41,7 @@
 
 ## 验证命令与最近结果
 
-`pnpm --filter @stackchan/console test --maxWorkers=1`：39 文件 141/141；`pnpm --filter @stackchan/console run build`（含 vue-tsc）通过；定向 ESLint/Stylelint 通过。保留 Vitest 本地连接/退出等待与 Vite 大块体积提示。部署预检确认后端 JAR、所有环境键值（版本除外）及数据卷一致，HTTP 健康和静态资源哈希通过。文档门槛为 docs:check、docs:check:test 与 git diff --check。
+`pnpm --filter @stackchan/console test --maxWorkers=1`：39 文件 142/142；`pnpm --filter @stackchan/console run build`（含 vue-tsc）通过；定向 ESLint/Stylelint 通过。保留 Vitest 本地连接/退出等待与 Vite 大块体积提示。部署预检确认后端 JAR、所有环境键值（版本除外）及数据卷一致，HTTP 健康和静态资源哈希通过。文档门槛为 docs:check、docs:check:test 与 git diff --check。
 
 ## 相关设计、计划和决策
 

@@ -17,6 +17,10 @@ const {
   topicCooldowns,
   topicRoleId,
   proactivePause,
+  deviceQuiet,
+  deviceQuietActive,
+  quietAction,
+  updateDeviceQuiet,
   pauseAction,
   proactivePaused,
   topicRoleOptions,
@@ -27,6 +31,11 @@ const {
   resumingTopic,
   model,
   bodyAction,
+  bodyResult,
+  bodyResultError,
+  autoBodyEnabled,
+  autoBodyLoading,
+  setAutoBody,
   activeSection,
   isWorkdayPage,
   pageTitle,
@@ -199,6 +208,13 @@ const {
                   </div>
 
                   <div class="pt-5 border-t">
+                    <div class="mb-4 space-y-1">
+                      <label for="auto-body-motion" class="text-sm font-medium">允许低频自动动作</label>
+                      <p class="text-xs text-muted-foreground">
+                        默认关闭。仅在线、已校准并显式启用动作时，工作开始、确认返场、页面确认休息或完成任务、页面结束工作才会申请固定动作；完成后至少间隔十分钟，每天最多八次。
+                      </p>
+                      <FaSwitch id="auto-body-motion" :model-value="autoBodyEnabled" :disabled="autoBodyLoading || !selectedDevice?.body.bodyMotionSupported" @update:model-value="value => setAutoBody(!!value)" />
+                    </div>
                     <div class="text-sm font-medium mb-3">
                       固件内置动作模板
                     </div>
@@ -215,6 +231,12 @@ const {
                         {{ motion.label }}
                       </FaButton>
                     </div>
+                    <FaAlert
+                      v-if="bodyResult && bodyResult.deviceId === model.deviceId"
+                      title="最近一次动作结果"
+                      :description="`${bodyResult.motion}：${({ SENT: '已下发，等待设备受理', ACCEPTED: '设备已受理，正在执行', REJECTED: '设备已拒绝', COMPLETED: '设备报告动作完成', STOPPED: '动作已停止', FAILED: '动作失败', DELIVERY_FAILED: '命令未送达', UNCONFIRMED: '超过十五秒未收到执行结果' }[bodyResult.status])}${bodyResult.failureCode && bodyResult.failureCode !== 'NONE' ? `（${bodyResult.failureCode}）` : ''}`"
+                    />
+                    <FaAlert v-if="bodyResultError" title="结果未确认" :description="bodyResultError" />
                   </div>
                 </div>
               </FaCard>
@@ -225,6 +247,21 @@ const {
             <div class="space-y-5">
               <FaCard title="现在想安静一会儿？">
                 <div class="space-y-3">
+                  <p class="text-sm">
+                    {{ deviceQuietActive && deviceQuiet?.pausedUntil ? `这台机器人今天安静至 ${new Date(deviceQuiet.pausedUntil).toLocaleString(undefined, { timeZone: model.zoneId })}（设备时间）` : '这台机器人未处于今日安静状态' }}
+                  </p>
+                  <p class="text-xs text-muted-foreground">
+                    今日安静作用于这台设备上的所有伙伴：暂停主动语音、随机无声表情和自动身体动作；你明确设置的普通提醒继续。
+                  </p>
+                  <div class="flex gap-2">
+                    <FaButton type="button" variant="outline" :disabled="quietAction || deviceQuietActive" @click="updateDeviceQuiet(true)">
+                      今天安静点
+                    </FaButton>
+                    <FaButton v-if="deviceQuietActive" type="button" variant="outline" :disabled="quietAction" @click="updateDeviceQuiet(false)">
+                      提前恢复设备陪伴
+                    </FaButton>
+                  </div>
+                  <div class="pt-3 border-t" />
                   <div class="text-sm font-medium mb-3">
                     查看伙伴
                   </div>

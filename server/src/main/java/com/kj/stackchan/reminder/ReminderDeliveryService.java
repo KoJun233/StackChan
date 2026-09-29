@@ -42,6 +42,12 @@ public class ReminderDeliveryService {
     private CompanionRoleService roleService;
     private com.kj.stackchan.interaction.ProactiveTopicCooldownService topicCooldownService;
     private com.kj.stackchan.interaction.ProactivePauseService pauseService;
+    private com.kj.stackchan.interaction.DeviceQuietTodayService quietService;
+
+    @Autowired(required = false)
+    public void setQuietService(com.kj.stackchan.interaction.DeviceQuietTodayService service) {
+        this.quietService = service;
+    }
 
     @Autowired
     public void setPauseService(com.kj.stackchan.interaction.ProactivePauseService service) { this.pauseService = service; }
@@ -101,13 +107,15 @@ public class ReminderDeliveryService {
 
     private boolean cancelMutedProactive(ReminderEntity reminder, Instant now) {
         if (reminder.getSource() != ReminderSource.PROACTIVE) return false;
+        boolean quiet = quietService != null && quietService.isQuiet(reminder.getDeviceId(), now);
         // Workday brief/rest/pilot messages share the legacy PROACTIVE source but have their own controls.
-        if (reminder.getProactiveTopicKey() != null && reminder.getProactiveTopicKey().startsWith("workday:")) return false;
+        if (!quiet && reminder.getProactiveTopicKey() != null &&
+                reminder.getProactiveTopicKey().startsWith("workday:")) return false;
         boolean paused = pauseService != null && pauseService.isPaused(reminder.getDeviceId(), reminder.getRoleId(), now);
         boolean muted = topicCooldownService != null && reminder.getProactiveTopicKey() != null
                 && !reminder.getProactiveTopicKey().isBlank()
                 && topicCooldownService.isUserMuted(reminder.getDeviceId(), reminder.getRoleId(), reminder.getProactiveTopicKey());
-        if (!paused && !muted) return false;
+        if (!quiet && !paused && !muted) return false;
         reminder.completeOccurrence(ReminderStatus.CANCELLED, null, now);
         reminderRepository.save(reminder);
         return true;
