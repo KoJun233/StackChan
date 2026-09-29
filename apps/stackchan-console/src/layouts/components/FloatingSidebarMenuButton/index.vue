@@ -234,10 +234,12 @@ onUnmounted(() => {
 
 <template>
   <FaButton
-    v-if="appSettingsStore.mode === 'mobile' && !appSettingsStore.settings.topbar.toolbar"
+    v-if="appSettingsStore.mode === 'mobile' && appSettingsStore.settings.menu.subMenuCollapse"
     ref="buttonRef"
     variant="outline"
     size="icon"
+    aria-label="打开侧边栏导航"
+    title="打开侧边栏导航"
     class="rounded-full size-10 select-none shadow-sm fixed z-1008 touch-none"
     :class="{ 'cursor-grabbing': dragState.active, 'cursor-grab': !dragState.active }"
     :style="buttonStyle"
