@@ -83,6 +83,10 @@ void safety_state_fail_motion(safety_failure_code_t failure);
 void safety_state_tick(int64_t now_us);
 void safety_state_stop_motion(void);
 void safety_state_stop_motion_with_reason(safety_failure_code_t reason);
+/** Balanced audio leases inhibit movement without revoking an idle admin permit.
+ *  An interrupted motion is still stopped and permanently disabled. */
+void safety_state_begin_audio(void);
+void safety_state_end_audio(void);
 void safety_state_get_diagnostics(safety_diagnostics_t *diagnostics);
 const char *safety_state_name(safety_state_t state);
 const char *safety_motion_runtime_name(safety_motion_runtime_t runtime);

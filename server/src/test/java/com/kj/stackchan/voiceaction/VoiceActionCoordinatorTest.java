@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import com.kj.stackchan.interaction.InteractionSettingsService;
 import com.kj.stackchan.interaction.ProactiveTopicCooldownService;
+import com.kj.stackchan.interaction.DeviceQuietTodayService;
 import com.kj.stackchan.memory.LongTermMemoryService;
 import com.kj.stackchan.notification.InteractiveNotificationService;
 import com.kj.stackchan.notification.NotificationResponseAction;
@@ -37,6 +38,69 @@ class VoiceActionCoordinatorTest {
     @Mock private ConversationService conversationService;
     @Mock private PersonalTaskService personalTaskService;
     private VoiceActionCoordinator coordinator;
+
+    @Test
+    void todayQuietUsesTheDeviceScopeFromEitherPartnerWithoutChangingRolePausesOrReminders() {
+        UUID device = UUID.randomUUID();
+        var quiet = mock(DeviceQuietTodayService.class);
+        var pauses = mock(com.kj.stackchan.interaction.ProactivePauseService.class);
+        coordinator.setQuietTodayService(quiet);
+        coordinator.setPauseService(pauses);
+
+        assertThat(coordinator.handle(device, UUID.randomUUID(), UUID.randomUUID(), "今天安静点").reply())
+                .contains("所有伙伴", "自动身体动作", "普通提醒照常");
+        coordinator.handle(device, UUID.randomUUID(), UUID.randomUUID(), "今日安静一点！");
+
+        verify(quiet, times(2)).quietForToday(device);
+        verifyNoInteractions(pauses, conversationService, settingsService, reminderService, personalTaskService);
+    }
+
+    @Test
+    void deviceQuietResumeClearsPendingOperationAndDoesNotResumePartnerPauseOrEnableMotion() {
+        UUID device = UUID.randomUUID();
+        UUID conversation = UUID.randomUUID();
+        UUID proposalId = UUID.randomUUID();
+        var quiet = mock(DeviceQuietTodayService.class);
+        var pauses = mock(com.kj.stackchan.interaction.ProactivePauseService.class);
+        coordinator.setQuietTodayService(quiet);
+        coordinator.setPauseService(pauses);
+        when(proposalService.latestPending(device, conversation)).thenReturn(
+                new VoiceActionProposalService.ProposalSnapshot(proposalId, VoiceActionType.START_WORKDAY,
+                        VoiceActionStatus.PENDING, true, null, null, null, null, null, null,
+                        null, null, Instant.parse("2026-08-02T08:02:00Z")));
+
+        assertThat(coordinator.handle(device, conversation, UUID.randomUUID(), "提前恢复设备陪伴").reply())
+                .contains("伙伴暂停", "原先的开关");
+
+        verify(quiet).resume(device);
+        verify(proposalService).cancel(proposalId, device, conversation);
+        verify(proposalService, never()).confirm(any(), any(), any());
+        verifyNoInteractions(pauses, settingsService, reminderService, personalTaskService);
+    }
+
+    @Test
+    void quotedNegatedOrExtendedQuietTextDoesNotChangeDeviceOrPartnerState() {
+        var quiet = mock(DeviceQuietTodayService.class);
+        var pauses = mock(com.kj.stackchan.interaction.ProactivePauseService.class);
+        coordinator.setQuietTodayService(quiet);
+        coordinator.setPauseService(pauses);
+        for (String text : new String[]{"他说今天安静点是什么意思", "不要今天安静点", "今天安静点了吗？",
+                "今天安静点，然后聊音乐", "我不想恢复设备陪伴", "恢复设备陪伴是什么意思"}) {
+            coordinator.handle(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), text);
+        }
+        verifyNoInteractions(quiet, pauses);
+    }
+
+    @Test
+    void unavailableDeviceQuietDoesNotFallBackToAWeakerPartnerPause() {
+        var pauses = mock(com.kj.stackchan.interaction.ProactivePauseService.class);
+        coordinator.setPauseService(pauses);
+        assertThat(coordinator.handle(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "今天安静点").reply())
+                .contains("没有改变设置");
+        assertThat(coordinator.handle(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "恢复设备陪伴").reply())
+                .contains("没有改变设置");
+        verifyNoInteractions(pauses, proposalService, conversationService, reminderService);
+    }
 
     @Test
     void explicitTemporaryPauseAndResumeUseCurrentPartnerWithoutChangingReminderSettings() {

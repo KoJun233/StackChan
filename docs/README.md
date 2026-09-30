@@ -37,6 +37,7 @@
 | --- | --- |
 | [`local-console-chat-smoke-test.md`](runbooks/local-console-chat-smoke-test.md) | 本地控制台聊天验收 |
 | [`physical-device-smoke-test.md`](runbooks/physical-device-smoke-test.md) | CoreS3 实体设备验收 |
+| [`body-motion-20260929-field-acceptance.md`](runbooks/body-motion-20260929-field-acceptance.md) | 身体动作接近返场与安全停动现场验收 |
 | [`postgres-volume-migration.md`](runbooks/postgres-volume-migration.md) | PostgreSQL 数据卷迁移 |
 | [`secure-deployment.md`](runbooks/secure-deployment.md) | HTTPS-only 生产部署 |
 | [`agent-tools-mcp.md`](runbooks/agent-tools-mcp.md) | ReactAgent、Skill、Tool 与 MCP 配置和验收 |

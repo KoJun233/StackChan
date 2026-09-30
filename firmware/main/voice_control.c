@@ -144,7 +144,7 @@ static bool press_to_talk_held(void)
 
 static void begin_turn(const char *turn_id, int64_t started_us)
 {
-    safety_state_stop_motion_with_reason(SAFETY_FAILURE_VOICE_STOP);
+    safety_state_begin_audio();
     taskENTER_CRITICAL(&s_interaction_lock);
     s_cancel_requested = false;
     s_feedback_dismiss_requested = false;
@@ -163,6 +163,7 @@ static void finish_turn(void)
     s_press_to_talk_held = false;
     memset(s_active_turn_id, 0, sizeof(s_active_turn_id));
     taskEXIT_CRITICAL(&s_interaction_lock);
+    safety_state_end_audio();
 }
 
 static bool take_press_to_talk_request(void)

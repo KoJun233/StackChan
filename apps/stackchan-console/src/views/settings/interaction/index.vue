@@ -211,13 +211,21 @@ const {
                     <div class="mb-4 space-y-1">
                       <label for="auto-body-motion" class="text-sm font-medium">允许低频自动动作</label>
                       <p class="text-xs text-muted-foreground">
-                        默认关闭。仅在线、已校准并显式启用动作时，工作开始、确认返场、页面确认休息或完成任务、页面结束工作才会申请固定动作；完成后至少间隔十分钟，每天最多八次。
+                        默认关闭。设备在线、已校准且舵机已启用时，工作开始、确认返场、页面确认休息或完成任务、页面结束工作，以及超过两秒的网页文字回复可申请固定动作；完成后至少间隔十分钟，每天最多八次。
                       </p>
                       <FaSwitch id="auto-body-motion" :model-value="autoBodyEnabled" :disabled="autoBodyLoading || !selectedDevice?.body.bodyMotionSupported" @update:model-value="value => setAutoBody(!!value)" />
+                      <FaAlert
+                        v-if="autoBodyEnabled && selectedDevice?.body.motionState !== 'ARMED' && selectedDevice?.body.motionState !== 'RUNNING'"
+                        title="自动动作当前不会执行"
+                        :description="selectedDevice?.online ? '自动动作已允许，但舵机仍处于禁用状态。确认头部周围安全后，请点击「显式启用动作」。语音回合、断线、重启或安全停止后，舵机不会自动恢复启用。' : '自动动作已允许，但设备当前离线。设备重连后不会自动启用舵机；确认头部周围安全后，请点击「显式启用动作」。'"
+                      />
                     </div>
                     <div class="text-sm font-medium mb-3">
                       固件内置动作模板
                     </div>
+                    <p class="text-xs text-muted-foreground mb-3">
+                      “看向主人”是在确认靠近后固定抬头再回正，不识别或跟随手掌的位置。
+                    </p>
                     <div class="flex flex-wrap gap-3">
                       <FaButton
                         v-for="motion in bodyMotions"

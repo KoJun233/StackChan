@@ -2,9 +2,9 @@
 
 当前陪伴迭代的人工验收入口：[陪伴体验验收与观察](companion-experience-acceptance.md)。
 
-当前身体动作实施与交接：[BODY-002 五种 K151 身体动作的完成与交接计划](body-motion-completion-plan.md)。服务端与管理端已发布至现有 LAN 8080；固件 `d18b3cd` 已保留 NVS 应用 OTA 安装并在线，默认禁用动作。五模板在 `8a81b07` 上的设备结果及用户现场观察通过；`c018d25` 点头回归、远程及头顶触摸停动、自动 `WAKE` 结果通过。`ffd0217` 已捕获靠近 `present=yes`、移开 `present=no` 的成对设备事件；原 25 秒心跳会漏掉短暂在场，`d18b3cd` 已修复并完成双构建、OTA 与上线检查。自动 `LOOK_USER`、语音及断线停止尚无新版实体证据。[当前固件状态](status/firmware.md)及[本次发布记录](../runbooks/body-motion-20260924-release.md)。
+当前身体动作实施与交接：[BODY-002 五种 K151 身体动作的完成与交接计划](body-motion-completion-plan.md)。固件 `1b46c28` 已通过保留 NVS OTA 安装，普通语音结束后的动作许可及单次点头设备结果和现场观察通过，低频自动动作已恢复；重启仍默认禁用。五模板及五项主要自动业务触发、头顶触摸和断线停动已有历史现场证据。真正运行中本地语音回合的实体停动和日常陪伴价值未验。最新实现与安装证据见[语音许可修复](../runbooks/body-motion-audio-permit-20261001.md)、[当前固件状态](status/firmware.md)；此前证据见[现场验收](../runbooks/body-motion-20260929-field-acceptance.md)。
 
-当前控制台发布依据：[2026-09-21 UI 发布与回退](../runbooks/console-ux-20260921-release.md)。服务端沿用[陪伴 V51](../runbooks/companion-v51-release.md)。
+当前服务端已发布 `device-quiet-voice-20261001`，语音与页面的“今天安静点”统一为设备级；完整回归 611/611 和隔离 V53 恢复通过，音频实现与配置保留，见[今日安静控制发布](../runbooks/device-quiet-voice-20261001.md)。控制台沿用 9 月 29 日身体动作提示版本，详见[部署状态](status/deployment.md)；较早 UI 与 V51 记录仅为历史证据。
 
 最近已完成的软件深化范围：[陪伴功能深化、收缩与部署完成清单](companion-completion-plan.md)。
 

@@ -1,13 +1,16 @@
-param([switch]$Install)
+param(
+    [switch]$Install,
+    [ValidatePattern('^[A-Za-z0-9._-]{1,31}$')][string]$CurrentVersion = 'ffd0217',
+    [ValidatePattern('^[A-Za-z0-9._-]{1,31}$')][string]$TargetVersion = 'd18b3cd',
+    [ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$ExpectedSha256 = '6C6E6002841742CAB467EDFCDD81DEF9DABB68F51FDF9072653908E9EDE13983',
+    [ValidateRange(1, 3145728)][int]$ExpectedSize = 1659952,
+    [string]$ArtifactPath = (Join-Path $PSScriptRoot '..\firmware\build-body002-lan-http-quad\stackchan_firmware.bin')
+)
 
 # One-device LAN development OTA. Preflight is read-only; -Install uses the
 # device, application artifact and NVS plan authorized for this task.
 $ErrorActionPreference = 'Stop'
 $deviceId = '0c4d09ea-ff9b-4701-9702-428c01cac264'
-$currentVersion = 'ffd0217'
-$targetVersion = 'd18b3cd'
-$expectedSha256 = '6C6E6002841742CAB467EDFCDD81DEF9DABB68F51FDF9072653908E9EDE13983'
-$artifactPath = Join-Path $PSScriptRoot '..\firmware\build-body002-lan-http-quad\stackchan_firmware.bin'
 $baseUrl = 'http://127.0.0.1:8080'
 $databaseContainer = 'stackchan-foundation-postgres-1'
 
@@ -23,7 +26,7 @@ $embeddedVersion = [System.Text.Encoding]::ASCII.GetString($bytes, 48, 32).Trim(
 $projectName = [System.Text.Encoding]::ASCII.GetString($bytes, 80, 32).Trim([char]0)
 $actualSha256 = (Get-FileHash -LiteralPath $artifact.FullName -Algorithm SHA256).Hash
 if ($embeddedVersion -ne $targetVersion -or $projectName -ne 'stackchan_firmware' -or
-        $actualSha256 -ne $expectedSha256 -or $bytes.Length -ne 1659952) {
+        $actualSha256 -ne $expectedSha256 -or $bytes.Length -ne $ExpectedSize) {
     throw 'Firmware version, project, size or SHA-256 differs from the approved candidate.'
 }
 $deviceRow = QueryDatabase "select firmware_version || '|' || safety_state || '|' || body_motion_state || '|' || application_ota_supported || '|' || (last_seen_at > now() - interval '2 minutes') from devices where id = '$deviceId';"

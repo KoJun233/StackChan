@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
 
 import com.kj.stackchan.interaction.InteractionSettingsService;
 import com.kj.stackchan.interaction.ProactiveTopicCooldownService;
+import com.kj.stackchan.interaction.DeviceQuietTodayService;
 import com.kj.stackchan.memory.LongTermMemoryService;
 import com.kj.stackchan.memory.MemoryCategory;
 import com.kj.stackchan.reminder.ReminderRecurrence;
@@ -56,11 +57,17 @@ public class VoiceActionCoordinator {
     private final ConversationService conversationService;
     private final PersonalTaskService personalTaskService;
     private com.kj.stackchan.interaction.ProactivePauseService pauseService;
+    private DeviceQuietTodayService quietTodayService;
 
     @Autowired
     public void setPauseService(com.kj.stackchan.interaction.ProactivePauseService pauseService) { this.pauseService = pauseService; }
 
-    private static final Pattern PAUSE_TODAY = Pattern.compile("^(?:(?:今天|今日)(?:别|不要)(?:再)?主动(?:聊|聊天|找我聊天)[了。！!]*|今天安静(?:一)?点[。！!]*)$");
+    @Autowired
+    public void setQuietTodayService(DeviceQuietTodayService quietTodayService) { this.quietTodayService = quietTodayService; }
+
+    private static final Pattern QUIET_TODAY = Pattern.compile("^(?:今天|今日)安静(?:一)?点[。！!]*$");
+    private static final Pattern RESUME_DEVICE_QUIET = Pattern.compile("^(?:提前恢复|恢复)设备陪伴[。！!]*$");
+    private static final Pattern PAUSE_TODAY = Pattern.compile("^(?:今天|今日)(?:别|不要)(?:再)?主动(?:聊|聊天|找我聊天)[了。！!]*$");
     private static final Pattern PAUSE_MINUTES = Pattern.compile("^暂停主动(?:聊天|开场)\\s*(\\d{1,4})\\s*分钟[。！!]*$");
     private static final Pattern RESUME_PROACTIVE = Pattern.compile("^(?:恢复主动(?:聊天|开场)|可以继续主动(?:聊天|找我聊天)了)[。！!]*$");
 
@@ -112,6 +119,20 @@ public class VoiceActionCoordinator {
     public ActionResult handle(UUID deviceId, UUID conversationId, UUID turnId, String transcript) {
         String text = transcript == null ? "" : transcript.trim();
         if (text.isBlank()) return null;
+        boolean quietToday = QUIET_TODAY.matcher(text).matches();
+        boolean resumeDeviceQuiet = RESUME_DEVICE_QUIET.matcher(text).matches();
+        if (quietToday || resumeDeviceQuiet) {
+            if (quietTodayService == null) {
+                return new ActionResult("暂时不能调整这台机器人的今日安静状态，这次没有改变设置。", true);
+            }
+            cancelPendingOperation(deviceId, conversationId);
+            if (quietToday) {
+                quietTodayService.quietForToday(deviceId);
+                return new ActionResult("好的，这台机器人今天暂停所有伙伴的主动聊天、无声陪伴表情和自动身体动作，普通提醒照常。设备当地时间明天恢复。", true);
+            }
+            quietTodayService.resume(deviceId);
+            return new ActionResult("已解除这台机器人的今日安静状态，仍遵守原先的开关、伙伴暂停和时段设置。", true);
+        }
         if (pauseService != null) {
             var minutes = PAUSE_MINUTES.matcher(text);
             boolean today = PAUSE_TODAY.matcher(text).matches();
