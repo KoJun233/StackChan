@@ -74,12 +74,15 @@ class DashScopeTtsHttpClient {
                     .block(PROVIDER_TIMEOUT);
         } catch (WebClientResponseException exception) {
             ProviderError providerError = providerError(exception);
+            if (exception.getStatusCode().value() == 403 &&
+                    "AllocationQuota.FreeTierOnly".equals(providerError.code())) {
+                throw SpeechProviderUnavailableException.freeQuotaOnly();
+            }
             LOGGER.warn(
-                    "DashScope TTS HTTP request rejected: status={} request_id={} provider_code={} provider_message={} cause_type={}",
+                    "DashScope TTS HTTP request rejected: status={} request_id={} provider_code={} cause_type={}",
                     exception.getStatusCode().value(),
                     providerError.requestId(),
                     providerError.code(),
-                    providerError.message(),
                     exception.getClass().getSimpleName()
             );
             throw new SpeechProviderUnavailableException(

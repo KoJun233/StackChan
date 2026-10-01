@@ -21,6 +21,12 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class SpeechSettingsServiceTest {
 
+    @Test
+    void defaultsToNormalWakeSensitivityWithoutOverridingExplicitSensitivity() {
+        when(repository.findById(SpeechProviderSettingsEntity.CURRENT_SETTINGS_ID)).thenReturn(Optional.empty());
+        assertThat(service().getSettings().wakeSensitivity()).isEqualTo(VoiceWakeSensitivity.NORMAL);
+    }
+
     private static final Instant NOW = Instant.parse("2026-07-19T10:30:00Z");
 
     @Mock

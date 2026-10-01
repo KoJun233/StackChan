@@ -52,7 +52,7 @@ const model = ref<SpeechFormModel>({
   ttsMode: 'NON_REALTIME',
   ttsModel: '',
   ttsVoice: '',
-  wakeSensitivity: 'SENSITIVE',
+  wakeSensitivity: 'NORMAL',
   workspaceId: '',
 })
 const apiKeyConfigured = ref(false)
@@ -81,8 +81,8 @@ const accessModeOptions = [
 ]
 
 const wakeSensitivityOptions = [
-  { label: '普通（误唤醒更少）', value: 'NORMAL' },
-  { label: '灵敏（推荐）', value: 'SENSITIVE' },
+  { label: '稳健（推荐）', value: 'NORMAL' },
+  { label: '灵敏', value: 'SENSITIVE' },
 ]
 
 const validationSchema = toTypedSchema(createSpeechSettingsSchema(() => apiKeyConfigured.value))
@@ -135,7 +135,7 @@ async function load() {
       ttsMode: settings.ttsMode || 'NON_REALTIME',
       ttsModel: settings.ttsModel || '',
       ttsVoice: settings.ttsVoice || '',
-      wakeSensitivity: settings.wakeSensitivity || 'SENSITIVE',
+      wakeSensitivity: settings.wakeSensitivity || 'NORMAL',
       workspaceId: settings.workspaceId || '',
     }
     apiKeyConfigured.value = settings.apiKeyConfigured

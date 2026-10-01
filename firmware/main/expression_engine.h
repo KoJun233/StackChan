@@ -92,6 +92,8 @@ typedef struct {
     companion_face_state_t system_state;
     companion_emotion_t emotion;
     companion_emotion_intensity_t intensity;
+    companion_emotion_t body_emotion;
+    uint32_t body_emotion_expires_ms;
     companion_expression_behavior_t behavior;
     companion_expression_layer_t active_layer;
     uint32_t emotion_expires_ms;
@@ -125,6 +127,8 @@ void companion_expression_engine_trigger(companion_expression_engine_t *engine,
 void companion_expression_engine_set_updating(companion_expression_engine_t *engine,
                                               bool updating,
                                               uint32_t now_ms);
+void companion_expression_engine_set_body_emotion(companion_expression_engine_t *engine,
+                                                  companion_emotion_t emotion, uint32_t now_ms);
 void companion_expression_engine_preview(companion_expression_engine_t *engine,
                                          companion_expression_preview_t preview,
                                          uint8_t value,

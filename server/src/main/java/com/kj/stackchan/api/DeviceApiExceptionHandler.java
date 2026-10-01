@@ -86,6 +86,9 @@ public class DeviceApiExceptionHandler {
     public static final ApiError SPEECH_PROVIDER_UNAVAILABLE = new ApiError(
             "speech_provider_unavailable", SpeechProviderUnavailableException.SAFE_MESSAGE
     );
+    public static final ApiError SPEECH_FREE_QUOTA_ONLY = new ApiError(
+            "speech_free_quota_only", "阿里云免费额度限制已阻止语音服务，请检查模型额度和计费设置。"
+    );
     public static final ApiError AUTHENTICATION_FAILED = new ApiError(
             "authentication_failed", "用户名或密码不正确。"
     );
@@ -219,6 +222,9 @@ public class DeviceApiExceptionHandler {
 
     @ExceptionHandler(SpeechProviderUnavailableException.class)
     ResponseEntity<ApiError> speechProviderUnavailable(SpeechProviderUnavailableException exception) {
+        if (SpeechProviderUnavailableException.FREE_QUOTA_ONLY_CODE.equals(exception.diagnosticCode())) {
+            return response(HttpStatus.SERVICE_UNAVAILABLE, SPEECH_FREE_QUOTA_ONLY);
+        }
         return response(HttpStatus.SERVICE_UNAVAILABLE, SPEECH_PROVIDER_UNAVAILABLE);
     }
 

@@ -1,74 +1,44 @@
 # 前端工作流
 
 - 状态：READY_FOR_REVIEW
-- 最后更新：2026-09-29
-- 当前分支：`codex/body-motion-acceptance-20260929`
-- 基准提交：`0914e43`
-- 最后验证提交：`0914e43`
-- 最后验证范围：自动动作禁用态提示通过控制台 40 文件 144/144、类型检查和 production build；现有 8080 首页及 18 个引用静态资源 HTTP 哈希与本地构建一致
-
-本次工作树验证结果见下；任务提交哈希无法写入自身。
-
-## 2026-09-29 自动动作状态提示
-
-自动动作开关与舵机显式启用是两个独立条件。现在用户允许自动动作、但设备离线或舵机处于禁用状态时，陪伴设置页明确提示当前不会执行，并说明确认周围安全后需显式启用；语音回合、断线、重启或安全停止后不会自动恢复。开关说明补齐网页文字回复超过两秒的 `THINK` 触发。没有更改动作触发和安全门控逻辑。控制台 40 文件 144/144、类型检查和 production build 通过；既有 Vitest localhost:3000 连接及退出等待提示不影响退出码。`body-motion-readiness-20260929` 已发布到原 8080，首页与 18 个引用资源 HTTP SHA-256 一致；发布记录见[现场验收](../../runbooks/body-motion-20260929-field-acceptance.md)。单个中文任务提交已推送；下一条精确操作：用户在自然使用中观察状态提示是否易懂，并创建 PR、审核和合并任务分支。
-
-## 2026-09-29 固定动作说明
-
-用户在自动返场现场看到头部抬起再回正，没有跟随手掌。代码确认 `LOOK_USER` 水平保持中位，只做固定抬头；单点 LTR553 接近传感器只能判断在场，不能判断手掌方向。用户选择保留固定回应，管理页五模板入口现已明确说明不跟随。40 文件 144/144、类型检查、production build 和定向 ESLint 通过；新镜像 `body-motion-clarity-20260929` 已发布到原 8080，首页与 15 个资源 HTTP 哈希匹配。实体返场和发布证据见[现场验收](../../runbooks/body-motion-20260929-field-acceptance.md)。下一条精确操作：本轮分支形成单个中文任务提交并按授权边界交接用户 PR 审核；页面可由用户刷新原地址查看。
-
-## 2026-09-29 跨页面侧栏布局修复
-
-用户在首次发布后确认 AI 配置等页面仍失去侧栏，手机和 PC 均可复现。根因为动态路由整理删除了所有带子页面的中间组件，连提醒、待办、设置等页面唯一的主布局也被删掉。现按路径保留恰好一层主布局；新增回归覆盖 17 个业务入口和 5 个详情页，完整测试 144/144、类型检查、production build 与定向 ESLint 通过。用户已授权修正并部署，现有 8080 运行 `sidebar-layout-v2-20260929`，健康、首页及 15 个引用资源哈希通过，服务端 JAR、配置和数据卷保持；详见[本次发布](../../runbooks/sidebar-route-layout-20260929-release.md)。
-
-用户在 8080 试用后反馈“可以了，我这里看着没问题了”，现场复核按其反馈通过；浏览器控制组件缺少服务文件，Agent 没有独立点击记录，也不推定用户逐页、逐设备验证范围。侧栏任务已由 PR #44 合入 master；本轮从该主线继续。
-
-## 首次窄屏入口补丁（未解决跨页面侧栏问题）
-
-窄屏路由切换会自动收起侧栏，原悬浮入口却只在工具栏关闭时出现；工具栏随页面滚动移出视野后，提醒等页面没有可见导航入口。现在侧栏收起时始终显示可拖动的悬浮入口，工具栏设置不再影响它；展开侧栏时隐藏悬浮入口。布局在模式切换或卸载时同步释放页面滚动锁，避免残留状态影响其他页面。新增挂载回归覆盖工具栏开启、打开侧栏和路由收起后的再次出现。
-
-首次补丁曾于 2026-09-29 11:38 发布到现有 8080，健康和静态资源哈希通过，但用户复测证明其没有解决侧栏跨页消失；详见[首次发布记录](../../runbooks/sidebar-navigation-20260929-release.md)。该版本已经被上方的路由布局修正替换。
-
-## BODY-002 历史进度
-
-管理端保留五个手动模板入口，新增每条动作的 `SENT/ACCEPTED/COMPLETED/STOPPED/FAILED/UNCONFIRMED` 状态展示，以及独立且默认关闭的低频自动动作开关。陪伴设置页增加设备级“今天安静点”及提前恢复；页面明确说明普通提醒继续。`pnpm --filter @stackchan/console test --maxWorkers=1` 通过 39 文件、141 项；镜像中的 production build 通过类型检查和构建。测试期间开发代理曾报告 localhost:3000 连接拒绝及 Vite 退出延迟，但最终退出码为 0。原 BODY-002 页面已发布到现有 8080，首页返回 200。新候选 `7d8c55a` 为文字聊天增加机器人选择；唯一在线且支持身体动作的设备会默认选中，可手动改为不联动，并把设备 ID 随文字请求提交。定向 20 项测试和生产构建通过；新页面已随 `body002-think-7d8c55a` 发布，首页与 15 个资源 GET 均为 200。浏览器控制连接因插件服务文件缺失而失败，尚无真实页面点击证据。下一条精确操作：浏览器可用时核对设备选择与状态文案；用户在设备旁后逐个核对实体结果。
-
-以下为 2026-09-21 控制台改造与发布的历史状态，不代表 BODY-002 已部署。
+- 最后更新：2026-10-02
+- 当前分支：`codex/companion-interaction-delivery`
+- 基准提交：`69a98cd`
+- 最后验证提交：`69a98cd`
+- 最后验证范围：本轮工作树 41 文件 147/147、类型检查、production build、定向 ESLint/Stylelint 通过
 
 ## 当前目标
 
-按用户最新指示停止剩余浏览器验收，将已实现的新 UI 发布到现有 8080，交由用户使用后反馈。此交付已完成，不再等待浏览器工具恢复。
+完成 COMPANION-007 语音诊断、稳健默认和一次关心来源/状态展示，不重做全站 UI，见[交付文档](../companion-interaction-delivery.md)。
 
 ## 已完成
 
-[实施记录](../console-experience-implementation.md)所列 B01–B08、U01–U10 的代码改造及回归；页面壳、浅深主题、菜单、伙伴首页、聊天、陪伴/工作、形象、扩展和文案收敛。实测另修默认伙伴初始化冲突及短屏发送按钮裁切。伙伴切换确认、保存等待、乱序/失败与操作范围回归通过。
-
-2026-09-21 20:58:52 发布 console-ux-20260921；8080 首页及 15 个引用静态资源与 dist 哈希一致，服务健康正常。详见[发布与回退](../../runbooks/console-ux-20260921-release.md)。
+ASR/模型/TTS 独立耗时、安全码和未知缺省；首声延迟用同设备采音结束/播放开始。区分恢复聆听与手动就绪，新默认稳健（推荐）保留保存值。提醒/首页区分 FOLLOW_UP 已确认的一次关心和 EXPIRED；可以取消/删除，不允许普通提醒式编辑/稍后播报绕过确认。旧 API 与伙伴隔离保持，诊断/来源回归通过。
 
 ## 正在进行
 
-新版已在 8080 运行，等待用户试用反馈。代码与文档整理为当前任务分支的单个中文提交；用户已授权推送该分支，PR 和最终合并由用户执行。
+companion007-d3459d2 已发布原 LAN 8080，首页及 15 项资源指纹一致。获许可仅修该应用提醒页，沿用 FaPagination 换行/有界页码滚动；147/147、类型/build、定向 ESLint/Stylelint 通过。分页断言在旧版手机失败，新版桌面/手机通过；真实登录、诊断/语音配置 GET、唤醒下拉选项及合成关心/过期/缺失/错误/2500 条分页流程和 16 张截图通过，没有业务写请求或页面错误。
 
 ## 下一步操作
 
-用户刷新现有 8080 页面并试用；如发现问题，按页面、步骤、预期与实际结果定位修复。GitHub 上由用户创建 PR、审核与合并。需要恢复旧 UI 时按发布手册执行同 JAR 镜像回退。
+前端实现及实际无头验收完成；2026-10-02 用户确认整体非动作清单正常，并明确授权只推送当前任务分支；推送并核对远端 HEAD 后由用户创建 PR、审核/合并，不继续 UI 扩张。需要回归时在用户许可范围运行 ./scripts/verify-companion-console-headless.ps1 -AllowTemporaryAdministrator，固定隔离镜像、LAN 守卫、业务只读；诊断/提醒稀有状态仅合成 GET，不写真实数据。结束注销、验证 401 并删除临时账号，不重新开启 Windows 控制。
 
 ## 阻塞项
 
-本次发布无阻塞。Browser 缺文件及 Computer Use URL 识别失败仍存在，但用户已明确取消其作为此次交付前置条件。A08、A10–A16 等完整视觉、焦点及实体手机验收未通过也未预填通过，移交用户试用。
+无实现或视觉阻塞；Windows 历史故障不再重试。镜像和临时管理员两项审核拒绝均在单独新许可后解除；已验证临时账号/容器零残留、每个测试会话注销后受保护 GET 为 401。中断遗留账号已清理，旧内存会话随正式替换消除。用户完整清单确认单独记录，不把 UI 合成状态当作真实音频/跨日证明，见总览。
 
 ## 关键文件
 
-[实施记录](../console-experience-implementation.md)、[原排查报告](../console-ux-audit-2026-09-19.md)、apps/stackchan-console/src/、packages/themes/index.ts、scripts/deploy-console-ui.ps1、compose.console-ux.yaml。
+apps/stackchan-console/src/api/modules/devices.ts、reminders.ts、views/devices/overview/、views/settings/speech/index.vue、views/reminders/list.vue、views/dashboard/DeliveryTimeline.vue。
 
 ## 验证命令与最近结果
 
-`pnpm --filter @stackchan/console test --maxWorkers=1`：39 文件 142/142；`pnpm --filter @stackchan/console run build`（含 vue-tsc）通过；定向 ESLint/Stylelint 通过。保留 Vitest 本地连接/退出等待与 Vite 大块体积提示。部署预检确认后端 JAR、所有环境键值（版本除外）及数据卷一致，HTTP 健康和静态资源哈希通过。文档门槛为 docs:check、docs:check:test 与 git diff --check。
+Node 24.19.0 满足 engines，未改锁文件。console 内 node ../../node_modules/vitest/vitest.mjs run --maxWorkers=1：41 文件 147/147；类型/build 和提醒页定向 ESLint/Stylelint 通过。隔离 Playwright 1.63.0 / Chromium 153.0.8010.12，1440x900、390x844、分页边界/首尾可达、合成阶段/缺省/错误及跟进菜单通过，16 张截图人工检查。缺临时账号许可参数的负向守卫通过。保留原代理拒绝、退出等待及大块提示，退出码 0；docs/diff 和检查器 7/7 收尾复跑。
 
 ## 相关设计、计划和决策
 
-[完整排查报告](../console-ux-audit-2026-09-19.md)、[实施与移交](../console-experience-implementation.md)、[部署手册](../../runbooks/console-ux-20260921-release.md)。保留 ADR 0047 的 TDesign Chat 展示例外与 ADR 0069 的旧链接/授权/数据保留边界。
+[交付文档](../companion-interaction-delivery.md)、[ADR 0070](../decisions/0070-hybrid-voice-and-confirmed-companion-care.md)、[本轮发布记录](../../runbooks/companion-interaction-20261001.md)。侧栏修复已合入，旧证据见[历史发布](../../runbooks/sidebar-route-layout-20260929-release.md)。
 
 ## 安全与兼容性约束
 
-部署授权仅用于本次现有 8080 更新；保持 LAN 开发模式，生产仍需 HTTPS。没有固件刷写、凭据轮换、数据恢复或真实删除。未跟踪缓存与 JVM 日志保持原样。
+保留 Fantastic-admin/Fa、旧 URL 和授权，未扩主题/UI 范围；本次外部推送仅授权当前任务分支，不推送 master、不创建或合并 PR。用户缓存/日志与 components.d.ts 空内容差异不作为业务修改。

@@ -12,7 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class SpeechSettingsService {
 
-    public static final VoiceWakeSensitivity DEFAULT_WAKE_SENSITIVITY = VoiceWakeSensitivity.SENSITIVE;
+    public static final VoiceWakeSensitivity DEFAULT_WAKE_SENSITIVITY = VoiceWakeSensitivity.NORMAL;
     public static final int DEFAULT_SPEECH_START_THRESHOLD = 350;
     public static final int DEFAULT_SPEECH_SILENCE_THRESHOLD = 200;
     public static final int MIN_SPEECH_START_THRESHOLD = 100;

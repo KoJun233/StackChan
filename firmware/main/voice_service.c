@@ -434,13 +434,6 @@ static esp_err_t perform_streaming_post(esp_http_client_handle_t client,
         }
     }
 
-    if (restore_power_save) {
-        esp_err_t power_err = esp_wifi_set_ps(previous_power_save);
-        if (power_err != ESP_OK) {
-            ESP_LOGW(TAG, "Could not restore Wi-Fi power save after voice upload: %s",
-                     esp_err_to_name(power_err));
-        }
-    }
     esp_err_t timeout_err = esp_http_client_set_timeout_ms(client, VOICE_SERVICE_TIMEOUT_MS);
     if (err == ESP_OK && timeout_err != ESP_OK) {
         err = timeout_err;
@@ -451,9 +444,17 @@ static esp_err_t perform_streaming_post(esp_http_client_handle_t client,
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Voice upload stopped: error=%s sent=%u/%u",
                  esp_err_to_name(err), (unsigned)sent, (unsigned)request_size);
-        return err;
+    } else {
+        err = read_http_response(client);
     }
-    return read_http_response(client);
+    if (restore_power_save) {
+        esp_err_t power_err = esp_wifi_set_ps(previous_power_save);
+        if (power_err != ESP_OK) {
+            ESP_LOGW(TAG, "Could not restore Wi-Fi power save after voice response: %s",
+                     esp_err_to_name(power_err));
+        }
+    }
+    return err;
 }
 
 static esp_err_t perform_request(const device_identity_t *identity,
@@ -675,7 +676,8 @@ esp_err_t voice_service_live_upload_finish(voice_service_live_upload_t *upload,
     esp_err_t err = write_bounded(
         upload->client, terminal_chunk, sizeof(terminal_chunk) - 1);
     int64_t body_finished_us = esp_timer_get_time();
-    restore_live_upload_power_save(upload);
+    /* Keep receive latency low until the WAV response has arrived. All exit paths
+       restore the previous power-save setting in destroy_live_upload. */
     if (err == ESP_OK) {
         err = esp_http_client_set_timeout_ms(upload->client, VOICE_SERVICE_TIMEOUT_MS);
     }

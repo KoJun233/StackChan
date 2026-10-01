@@ -165,16 +165,38 @@ public class VoiceActionCoordinator {
             );
         }
         VoiceActionProposalService.ProposalSnapshot pending = proposalService.latestPending(deviceId, conversationId);
+        if (pending != null && (pending.actionType() == VoiceActionType.CONFIRM_MEMORY
+                || pending.actionType() == VoiceActionType.CREATE_FOLLOW_UP)
+                && (text.matches("^(换个话题|聊点别的)[。！!,.，]?$" )
+                    || text.startsWith("记住") || text.startsWith("请记住"))) {
+            proposalService.cancel(pending.id(), deviceId, conversationId);
+            pending = null;
+        }
         if (isCancel(text) && pending != null) {
             proposalService.cancel(pending.id(), deviceId, conversationId);
             return new ActionResult("已取消这次操作。", true);
         }
         if (isConfirm(text) && pending != null) {
+            if ((text.startsWith("确认记住") && pending.actionType() != VoiceActionType.CONFIRM_MEMORY)
+                    || (text.startsWith("确认安排") && pending.actionType() != VoiceActionType.CREATE_FOLLOW_UP)) {
+                return new ActionResult(proposalService.restatement(pending), true);
+            }
             VoiceActionProposalService.ProposalSnapshot executed = proposalService.confirm(pending.id(), deviceId, conversationId);
-            return new ActionResult(executed.status() == VoiceActionStatus.EXECUTED ? "已执行。" : statusReply(executed), true);
+            return new ActionResult(executed.status() == VoiceActionStatus.EXECUTED
+                    ? switch (executed.actionType()) {
+                        case CONFIRM_MEMORY -> "已为当前伙伴记住。";
+                        case CREATE_FOLLOW_UP -> "已安排这次关心，只问一次。";
+                        default -> "已执行。";
+                    } : statusReply(executed), true);
         }
         if (pending != null) {
             return new ActionResult(proposalService.restatement(pending), true);
+        }
+        if (CompanionFollowUpParser.isRequest(text)) {
+            var draft = CompanionFollowUpParser.parse(text, settingsService.resolve(deviceId).zoneId(), clock);
+            if (draft == null) return new ActionResult("请把时间和想关心的事一起说清楚，例如：明天下午三点问问我面试结果。这次没有安排。", true);
+            return new ActionResult(proposalService.restatement(
+                    proposalService.propose(deviceId, conversationId, turnId, draft)), true);
         }
         ActionResult personalTaskAction = proposePersonalTaskAction(deviceId, conversationId, turnId, text);
         if (personalTaskAction != null) return personalTaskAction;
@@ -250,9 +272,14 @@ public class VoiceActionCoordinator {
         }
         if (text.startsWith("记住") || text.startsWith("请记住")) {
             String content = text.replaceFirst("^(请)?记住[：:，,]?\\s*", "").trim();
+            if (content.isBlank()) return new ActionResult("请说清楚希望记住什么，这次没有生成记忆。", true);
+            String title = content.codePointCount(0, content.length()) <= 60 ? content
+                    : content.substring(0, content.offsetByCodePoints(0, 60));
             VoiceActionProposalService.ProposalSnapshot proposal = proposalService.propose(deviceId, conversationId, turnId,
-                    new VoiceActionDraft(VoiceActionType.CREATE_MEMORY_SUGGESTION, false, content, "语音记忆建议",
+                    new VoiceActionDraft(VoiceActionType.CREATE_MEMORY_SUGGESTION, false, content, title,
                             null, null, null, null, null, null, null, MemoryCategory.USER_PROFILE.name(), null));
+            if (proposal.status() != VoiceActionStatus.EXECUTED) return new ActionResult(statusReply(proposal), true);
+            proposal = proposalService.prepareMemoryConfirmation(proposal.id(), deviceId, conversationId);
             return new ActionResult(proposalService.restatement(proposal), true);
         }
         if (text.contains("下一条提醒") || text.contains("下一个提醒")) {
@@ -270,6 +297,9 @@ public class VoiceActionCoordinator {
                     deviceId, conversationId, turnId, zone, text);
             if (proposal != null && proposal.actionType() == VoiceActionType.CREATE_MEMORY_SUGGESTION) {
                 proposal = proposalService.executeMemorySuggestion(proposal.id(), deviceId, conversationId);
+                if (proposal.status() == VoiceActionStatus.EXECUTED) {
+                    proposal = proposalService.prepareMemoryConfirmation(proposal.id(), deviceId, conversationId);
+                }
             }
             if (proposal != null) {
                 return new ActionResult(proposalService.restatement(proposal), true);
@@ -278,7 +308,7 @@ public class VoiceActionCoordinator {
         return null;
     }
 
-    private boolean isConfirm(String text) { return text.matches("^(确认|确定|执行|好的|好|可以|是的)[。！!,.，]?$"); }
+    private boolean isConfirm(String text) { return text.matches("^(确认记住|确认安排|确认|确定|执行|好的|好|可以|是的)[。！!,.，]?$"); }
 
     private ActionResult proposeRecentResponse(UUID deviceId, UUID conversationId, UUID turnId, String text) {
         var snooze = Pattern.compile("^(?:这个|刚才的|刚才那条)?(?:稍后|推迟|延后)(?:\\s*(\\d{1,4}|十)\\s*分钟)?(?:再提醒我|再说|再提醒)?[。！!,.，]?$").matcher(text);

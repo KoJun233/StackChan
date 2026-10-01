@@ -15,6 +15,28 @@ afterEach(() => {
   vi.resetAllMocks()
 })
 
+it('labels confirmed care separately from ordinary and unsolicited reminders', async () => {
+  api.getDeliveryTimeline.mockResolvedValueOnce({
+    upcoming: [{ id: 'care', content: '面试结果', source: 'FOLLOW_UP', status: 'PENDING', zoneId: 'UTC', scheduledAt: '2026-09-14T00:00:00Z' }],
+    upcomingTotal: 1,
+    recent: [],
+    recentHasMore: false,
+  })
+  const host = document.createElement('div')
+  document.body.append(host)
+  const app = createApp({ render: () => h(DeliveryTimelineView, { deviceId: 'device', roleId: 'role', refreshKey: 0 }) })
+  app.mount(host)
+  cleanups.push(() => {
+    app.unmount()
+    host.remove()
+  })
+  await nextTick()
+  await nextTick()
+  await nextTick()
+  expect(host.textContent).toContain('已确认的一次关心')
+  expect(host.textContent).toContain('面试结果')
+})
+
 it('discards late partner data and clears old content when refresh fails', async () => {
   let resolveOld!: (value: unknown) => void
   api.getDeliveryTimeline.mockImplementationOnce(() => new Promise((resolve) => {

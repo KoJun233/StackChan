@@ -53,6 +53,23 @@ if (-not $deviceEndpointHeader.Contains('/api/v1/device/voice/turn/live')) {
     throw 'The fixed same-origin live voice endpoint is missing'
 }
 
+$postBody = [regex]::Match($voiceServiceSource, '(?s)static esp_err_t perform_streaming_post\(.*?(?=static esp_err_t perform_request)').Value
+$readIndex = $postBody.IndexOf('err = read_http_response(client);')
+$restoreIndex = $postBody.IndexOf('esp_wifi_set_ps(previous_power_save)')
+if ($readIndex -lt 0 -or $restoreIndex -le $readIndex -or $postBody.Contains('return read_http_response(client);')) {
+    throw 'Legacy voice response must arrive before restoring Wi-Fi power save on both success and failure'
+}
+$liveFinishBody = [regex]::Match($voiceServiceSource, '(?s)esp_err_t voice_service_live_upload_finish\(.*?(?=void voice_service_live_upload_abort)').Value
+if (!$liveFinishBody.Contains('read_http_response(upload->client)') -or
+    $liveFinishBody.Contains('restore_live_upload_power_save(upload);')) {
+    throw 'Live voice response must retain low-latency Wi-Fi until owner cleanup'
+}
+$cleanupBody = [regex]::Match($voiceServiceSource, '(?s)static void destroy_live_upload\(.*?(?=static esp_err_t perform_streaming_post)').Value
+if (!$cleanupBody.Contains('restore_live_upload_power_save(upload);') -or
+    @([regex]::Matches($liveFinishBody, 'destroy_live_upload\(upload, false\);')).Count -ne 2) {
+    throw 'Both live response success and failure must restore the original Wi-Fi setting through cleanup'
+}
+
 $httpBufferMatch = [regex]::Match(
     $voiceServiceSource,
     '(?m)^#define\s+VOICE_SERVICE_HTTP_BUFFER_SIZE\s+(\d+)U?\r?$'
@@ -69,14 +86,17 @@ if (-not $uploadChunkMatch.Success -or [int]$uploadChunkMatch.Groups[1].Value -g
 }
 
 $voiceControlSource = Get-Content -LiteralPath $voiceControlSourcePath -Raw
+$capturePolicyHeader = Get-Content -LiteralPath (Join-Path $FirmwareDirectory 'main\voice_capture_policy.h') -Raw
+if (-not $capturePolicyHeader.Contains('#define VOICE_CAPTURE_START_WINDOWS 2U') -or
+    -not $capturePolicyHeader.Contains('#define VOICE_CAPTURE_SILENCE_WINDOWS 8U')) {
+    throw 'Production capture policy must retain bounded start confirmation and silence windows'
+}
 if (-not $voiceControlSource.Contains('heap_caps_calloc(') -or
     -not $voiceControlSource.Contains('sizeof(*stream_context), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT')) {
     throw 'Streaming turn metadata must remain in PSRAM instead of consuming the voice task stack'
 }
 foreach ($requiredFragment in @(
     '#define VOICE_CAPTURE_WINDOW_MS 100',
-    '#define VOICE_START_CONFIRM_WINDOWS 2',
-    '#define VOICE_SILENCE_WINDOWS 8',
     'xTaskCreatePinnedToCoreWithCaps(live_capture_upload_worker',
     'xTaskCreatePinnedToCoreWithCaps(streaming_playback_worker',
     'xQueueCreate(',

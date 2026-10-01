@@ -71,7 +71,7 @@ class SpeechSettingsControllerTest {
         mockMvc.perform(get("/api/v1/settings/speech").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(content().json("""
-                        {"providerType":"OPENAI_COMPATIBLE","baseUrl":"https://speech.example.com/v1","workspaceId":"","asrModel":"whisper-1","asrMode":"NON_REALTIME","ttsModel":"tts-1","ttsMode":"NON_REALTIME","ttsVoice":"alloy","wakeSensitivity":"SENSITIVE","speechStartThreshold":350,"speechSilenceThreshold":200,"apiKeyConfigured":true,"updatedAt":"2026-07-19T10:30:00Z"}
+                        {"providerType":"OPENAI_COMPATIBLE","baseUrl":"https://speech.example.com/v1","workspaceId":"","asrModel":"whisper-1","asrMode":"NON_REALTIME","ttsModel":"tts-1","ttsMode":"NON_REALTIME","ttsVoice":"alloy","wakeSensitivity":"NORMAL","speechStartThreshold":350,"speechSilenceThreshold":200,"apiKeyConfigured":true,"updatedAt":"2026-07-19T10:30:00Z"}
                         """, STRICT));
     }
 

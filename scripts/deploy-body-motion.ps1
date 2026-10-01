@@ -1,4 +1,4 @@
-# Replace the LAN server and console after a stopped-source backup and isolated V53 restore.
+# Replace the LAN server and console after a stopped-source backup and isolated restore.
 # Credentials remain in process memory; the release backup retains a DPAPI protected copy.
 param(
     [string]$CandidateImage = 'stackchan-foundation-server:body002-think-7d8c55a',
@@ -13,6 +13,7 @@ $candidate = $CandidateImage
 $previousEnvironment = @{}
 $stopped = $false
 $replacementStarted = $false
+$sourceSchema = $null
 
 Push-Location $repository
 try {
@@ -47,15 +48,13 @@ try {
         SPRING_PROFILES_ACTIVE = $values.SPRING_PROFILES_ACTIVE
         SERVER_FORWARD_HEADERS_STRATEGY = $values.SERVER_FORWARD_HEADERS_STRATEGY
     }
-    if ($PreserveConsole) {
-        $deploymentValues.STACKCHAN_CONSOLE_RELEASE_IMAGE = $candidate
-        $deploymentValues.STACKCHAN_CONSOLE_RELEASE_VERSION = $BuildVersion
-    }
+    $deploymentValues.STACKCHAN_CONSOLE_RELEASE_IMAGE = $candidate
+    $deploymentValues.STACKCHAN_CONSOLE_RELEASE_VERSION = $BuildVersion
     foreach ($key in $deploymentValues.Keys) {
         $previousEnvironment[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
         [Environment]::SetEnvironmentVariable($key, $deploymentValues[$key], 'Process')
     }
-    $releaseOverride = if ($PreserveConsole) { 'compose.console-ux.yaml' } else { 'compose.body-motion.yaml' }
+    $releaseOverride = 'compose.console-ux.yaml'
     $compose = @('compose', '-p', 'stackchan-foundation', '-f', 'compose.yaml', '-f', 'compose.lan.yaml', '-f', $releaseOverride)
     $rawConfig = & docker.exe @compose config --format json 2>&1
     if ($LASTEXITCODE -ne 0) { throw 'Compose validation failed.' }
@@ -82,6 +81,10 @@ try {
         "$volumeName|$($_.target)|$(![bool]$_.read_only)"
     } | Sort-Object)
     if (Compare-Object $oldMounts $plannedMounts) { throw 'Volume layout changed; deployment stopped.' }
+    $schemaResult = & docker.exe exec stackchan-foundation-postgres-1 psql -XAt -U stackchan -d stackchan -c "select max(version::integer) from flyway_schema_history where success and version ~ '^[0-9]+$';"
+    if ($LASTEXITCODE -ne 0 -or $schemaResult -notmatch '^\d+$') { throw 'Cannot determine source schema.' }
+    $sourceSchema = [int]$schemaResult
+    if ($sourceSchema -gt $ExpectedSchema) { throw 'Candidate schema is older than source.' }
     Write-Output 'Preflight passed: existing LAN configuration and volumes preserved.'
 
     & docker.exe stop $sourceName > $null
@@ -91,7 +94,7 @@ try {
     if ($backupResult.schema -ne $ExpectedSchema -or !$backupResult.databaseCountsMatch -or !$backupResult.syntheticAdminLogin) {
         throw 'Stopped-source restore verification failed.'
     }
-    Write-Output "Stopped-source backup and isolated V53 restore passed: $($backupResult.backupVolume)"
+    Write-Output "Stopped-source backup and isolated V$ExpectedSchema restore passed: $($backupResult.backupVolume)"
 
     $replacementStarted = $true
     & docker.exe @compose up -d --no-deps --no-build server
@@ -105,7 +108,7 @@ try {
         catch { }
         Start-Sleep -Seconds 1
     }
-    if (!$healthy) { throw 'Candidate health/version check failed. Do not start an old application against V53 automatically.' }
+    if (!$healthy) { throw 'Candidate health/version check failed. Do not start an old application against an upgraded schema automatically.' }
     $rawRunning = & docker.exe inspect $sourceName 2>&1
     if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect the replacement server.' }
     $running = ($rawRunning -join "`n" | ConvertFrom-Json)[0]
@@ -115,7 +118,7 @@ try {
     Write-Output 'BODY-002 server health and version: ok'
 }
 catch {
-    if ($stopped -and $replacementStarted -and $PreserveConsole) {
+    if ($stopped -and $replacementStarted -and $PreserveConsole -and $sourceSchema -eq $ExpectedSchema) {
         [Environment]::SetEnvironmentVariable('STACKCHAN_CONSOLE_RELEASE_IMAGE', $oldImage, 'Process')
         [Environment]::SetEnvironmentVariable('STACKCHAN_CONSOLE_RELEASE_VERSION', $oldVersion, 'Process')
         & docker.exe @compose up -d --no-deps --no-build server *> $null

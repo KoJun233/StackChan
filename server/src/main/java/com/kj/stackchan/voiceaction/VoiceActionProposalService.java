@@ -42,6 +42,12 @@ public class VoiceActionProposalService {
     private final InteractiveNotificationService notificationService;
     private final WorkdayCompanionService workdayCompanionService;
     private final PersonalTaskService personalTaskService;
+    private com.kj.stackchan.conversation.DeviceVoiceConversationService deviceConversations;
+
+    @Autowired
+    public void setDeviceConversations(com.kj.stackchan.conversation.DeviceVoiceConversationService service) {
+        this.deviceConversations = service;
+    }
 
     @Autowired
     public VoiceActionProposalService(VoiceActionProposalRepository proposalRepository,
@@ -190,11 +196,45 @@ public class VoiceActionProposalService {
         return proposal;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public ProposalSnapshot latestPending(UUID deviceId, UUID conversationId) {
-        return proposalRepository.findFirstByActorIdAndDeviceIdAndConversationIdAndStatusOrderByCreatedAtDesc(
+        var latest = proposalRepository.findFirstByActorIdAndDeviceIdAndConversationIdAndStatusOrderByCreatedAtDesc(
                         SINGLE_ADMIN, deviceId, conversationId, VoiceActionStatus.PENDING)
-                .map(this::snapshot).orElse(null);
+                .orElse(null);
+        if (latest == null) return null;
+        var locked = findScopedForUpdate(latest.getId(), deviceId, conversationId);
+        if (locked.getStatus() != VoiceActionStatus.PENDING) return null;
+        if (!locked.getExpiresAt().isAfter(clock.instant())) {
+            locked.markExpired(clock.instant());
+            auditRepository.save(new VoiceActionAuditEntity(locked, VoiceActionAuditEvent.EXPIRED, null, clock.instant()));
+            proposalRepository.flush();
+            return null;
+        }
+        return snapshot(locked);
+    }
+
+    @Transactional
+    public ProposalSnapshot prepareMemoryConfirmation(UUID suggestionId, UUID deviceId, UUID conversationId) {
+        var suggestion = findScopedForUpdate(suggestionId, deviceId, conversationId);
+        if (suggestion.getActionType() != VoiceActionType.CREATE_MEMORY_SUGGESTION
+                || suggestion.getStatus() != VoiceActionStatus.EXECUTED || suggestion.getResultReference() == null
+                || !suggestion.getExpiresAt().isAfter(clock.instant())) {
+            throw new VoiceActionException("No successful explicit memory suggestion");
+        }
+        requireCompanionScope(suggestion);
+        var memory = memoryService.get(suggestion.getResultReference());
+        if (!suggestion.getRoleId().equals(memory.roleId()) || memory.scopeType() != MemoryScopeType.DEVICE
+                || !deviceId.equals(memory.deviceId())
+                || memory.source() != com.kj.stackchan.memory.MemorySource.ASSISTANT_SUGGESTED
+                || memory.confirmationStatus() != com.kj.stackchan.memory.MemoryConfirmationStatus.PENDING
+                || !suggestion.getSourceTurnId().equals(memory.sourceTurnId())) {
+            throw new VoiceActionException("Memory suggestion scope changed");
+        }
+        // Release the unique pending slot before Hibernate inserts the confirmation proposal.
+        proposalRepository.flush();
+        return snapshot(persist(deviceId, conversationId, suggestion.getSourceTurnId(),
+                new VoiceActionDraft(VoiceActionType.CONFIRM_MEMORY, true, memory.content(), memory.title(),
+                        null, null, null, null, null, memory.updatedAt(), null, null, memory.id())));
     }
 
     @Transactional
@@ -253,6 +293,9 @@ public class VoiceActionProposalService {
             case SET_TEMPORARY_DND -> "要将免打扰持续到 " + proposal.targetAt() + "。确认执行吗？";
             case SET_VOLUME -> "要将音量调到 " + proposal.volumePercent() + "%。确认执行吗？";
             case CREATE_MEMORY_SUGGESTION -> "已生成一条待确认记忆建议。";
+            case CONFIRM_MEMORY -> "要为当前伙伴记住：“" + proposal.content() + "”。确认记住吗？同主题旧记忆会被替换。";
+            case CREATE_FOLLOW_UP -> "要在 " + proposal.title() + " 问问你“" + proposal.content()
+                    + "”。只问一次；安静或暂停时不打扰，错过四小时就作废。确认安排吗？";
             case SWITCH_ROLE -> "要切换到角色“" + proposal.content() + "”。确认执行吗？";
             case ACKNOWLEDGE_NOTIFICATION -> notificationLabel(proposal.content()) + "，要标记为已知晓。确认执行吗？";
             case SNOOZE_NOTIFICATION -> notificationLabel(proposal.content()) + "，要在 " + proposal.durationMinutes() + " 分钟后再次播报。确认执行吗？";
@@ -274,6 +317,8 @@ public class VoiceActionProposalService {
             proposal.markExecuting(now);
         }
         try {
+            if (proposal.getActionType() == VoiceActionType.CONFIRM_MEMORY
+                    || proposal.getActionType() == VoiceActionType.CREATE_FOLLOW_UP) requireCompanionScope(proposal);
             if (proposal.getActionType() == VoiceActionType.CREATE_REMINDER && proposal.getTargetReference() != null) {
                 reminderService.requireHeardUserReminder(proposal.getTargetReference(), proposal.getDeviceId(),
                         proposal.getRoleId(), proposal.getTargetAt(), proposal.getContent());
@@ -304,6 +349,11 @@ public class VoiceActionProposalService {
                                 MemoryCategory.valueOf(proposal.getMemoryCategory()), proposal.getTitle(), proposal.getContent()),
                         "voice_action_proposal",
                         proposal.getSourceTurnId())).id();
+                case CONFIRM_MEMORY -> memoryService.confirmVoiceCandidate(proposal.getTargetReference(),
+                        proposal.getRoleId(), proposal.getDeviceId(), proposal.getSourceTurnId(),
+                        proposal.getTargetAt(), proposal.getTitle(), proposal.getContent()).id();
+                case CREATE_FOLLOW_UP -> reminderService.createConfirmedFollowUp(proposal.getRoleId(),
+                        proposal.getDeviceId(), proposal.getContent(), proposal.getScheduledAt(), proposal.getZoneId()).id();
                 case ACKNOWLEDGE_NOTIFICATION -> executeNotificationResponse(
                         proposal, NotificationResponseAction.ACKNOWLEDGE, null);
                 case SNOOZE_NOTIFICATION -> executeNotificationResponse(
@@ -359,6 +409,19 @@ public class VoiceActionProposalService {
         if (draft.actionType() != VoiceActionType.CREATE_MEMORY_SUGGESTION && !draft.confirmationRequired()) {
             throw new VoiceActionException("Voice action confirmation is required");
         }
+        if (draft.actionType() == VoiceActionType.CONFIRM_MEMORY
+                && (draft.targetReference() == null || draft.targetAt() == null || draft.title() == null
+                || draft.content() == null || draft.content().isBlank())) {
+            throw new VoiceActionException("Voice memory confirmation requires a fixed candidate");
+        }
+        if (draft.actionType() == VoiceActionType.CREATE_FOLLOW_UP
+                && (draft.content() == null || draft.content().isBlank() || draft.content().length() > 120
+                || draft.scheduledAt() == null || !draft.scheduledAt().isAfter(clock.instant())
+                || draft.scheduledAt().isAfter(clock.instant().plus(Duration.ofDays(30)))
+                || draft.zoneId() == null || !"NONE".equals(draft.recurrenceType())
+                || !Integer.valueOf(1).equals(draft.recurrenceInterval()) || draft.targetReference() != null)) {
+            throw new VoiceActionException("Follow-up needs an explicit future time and topic");
+        }
         if ((draft.actionType() == VoiceActionType.SNOOZE_NEXT_REMINDER)
                 && (draft.durationMinutes() == null || draft.durationMinutes() < 1 || draft.durationMinutes() > 1440)) {
             throw new VoiceActionException("Voice action snooze duration is invalid");
@@ -411,6 +474,15 @@ public class VoiceActionProposalService {
         return conversationService == null
                 ? com.kj.stackchan.role.CompanionRoleEntity.DEFAULT_ROLE_ID
                 : conversationService.roleId(conversationId);
+    }
+
+    private void requireCompanionScope(VoiceActionProposalEntity proposal) {
+        if (!proposal.getRoleId().equals(resolveRoleId(proposal.getConversationId()))
+                || (roleService != null && !proposal.getRoleId().equals(roleService.getActive(proposal.getDeviceId()).id()))
+                || (deviceConversations != null && !deviceConversations.findDeviceIdByConversationId(
+                        proposal.getConversationId()).filter(proposal.getDeviceId()::equals).isPresent())) {
+            throw new VoiceActionException("Companion consent belongs to another partner or device");
+        }
     }
 
     private UUID executeNotificationResponse(

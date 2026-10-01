@@ -9,6 +9,7 @@
 #include "body_hardware.h"
 #include "companion_hardware.h"
 #include "voice_control.h"
+#include "body_touch_policy.h"
 
 #include <algorithm>
 #include <array>
@@ -143,7 +144,6 @@ constexpr int BODY_TASK_STACK_SIZE = 6144;
 constexpr int BODY_TASK_PRIORITY = 2;
 constexpr int BODY_TASK_CORE = 1;
 constexpr int BODY_POLL_MS = 50;
-constexpr int64_t WORKDAY_TOGGLE_HOLD_US = 1500LL * 1000LL;
 // The factory firmware leaves VM enabled well before servo initialization.
 // Our fail-closed design powers VM only for an operation, so allow the boost
 // rail and both servos to finish a cold start before requesting feedback.
@@ -224,6 +224,9 @@ bool s_servo_feedback_supported;
 bool s_calibrated;
 bool s_present;
 bool s_top_touch_pressed;
+bool s_top_touch_used_for_stop;
+bool s_top_touch_idle_at_press;
+bool s_top_touch_affection_pending;
 uint8_t s_top_touch_confirm_count;
 bool s_workday_toggle_pending;
 int64_t s_top_touch_started_us;
@@ -955,16 +958,23 @@ void update_top_touch_locked()
     int64_t now_us = esp_timer_get_time();
     if (pressed && !s_top_touch_pressed) {
         s_top_touch_started_us = now_us;
+        s_top_touch_used_for_stop = false;
+        s_top_touch_idle_at_press = !voice_control_motion_blocked();
         safety_diagnostics_t safety = {};
         safety_state_get_diagnostics(&safety);
         if (safety.motion_runtime == SAFETY_MOTION_RUNNING) {
+            s_top_touch_used_for_stop = true;
             ESP_LOGW(TAG, "Servo top touch confirmed: samples=%u",
                      static_cast<unsigned>(s_top_touch_confirm_count));
             safety_state_stop_motion_with_reason(SAFETY_FAILURE_TOUCH_STOP);
         }
     } else if (!pressed && s_top_touch_pressed) {
-        if (s_top_touch_started_us > 0 && now_us - s_top_touch_started_us >= WORKDAY_TOGGLE_HOLD_US) {
-            s_workday_toggle_pending = true;
+        if (s_top_touch_started_us > 0) {
+            body_touch_action_t action = body_touch_release_action(
+                    (uint32_t)((now_us - s_top_touch_started_us) / 1000LL), s_top_touch_used_for_stop,
+                    s_top_touch_idle_at_press, !voice_control_motion_blocked());
+            if (action == BODY_TOUCH_WORKDAY_TOGGLE) s_workday_toggle_pending = true;
+            else if (action == BODY_TOUCH_AFFECTION) s_top_touch_affection_pending = true;
         }
         s_top_touch_started_us = 0;
     }
@@ -1388,9 +1398,16 @@ void body_task(void *argument)
     MotionRequest request = {};
     for (;;) {
         if (xQueueReceive(s_motion_queue, &request, pdMS_TO_TICKS(BODY_POLL_MS)) == pdTRUE) {
+            companion_emotion_t emotion = COMPANION_EMOTION_CONTENT;
+            if (request.motion == SAFETY_MOTION_LOOK_USER) emotion = COMPANION_EMOTION_SURPRISED;
+            else if (request.motion == SAFETY_MOTION_THINK) emotion = COMPANION_EMOTION_FOCUSED;
+            else if (request.motion == SAFETY_MOTION_WAKE) emotion = COMPANION_EMOTION_HAPPY;
+            else if (request.motion == SAFETY_MOTION_DROWSY) emotion = COMPANION_EMOTION_TIRED;
+            companion_hardware_set_body_emotion(emotion);
             if (take_mutex(portMAX_DELAY)) {
                 body_motion_result_t result = execute_motion_locked(request);
                 xSemaphoreGive(s_mutex);
+                companion_hardware_set_body_emotion(COMPANION_EMOTION_NEUTRAL);
                 // Keep the motion gate busy until its final result has a slot.
                 if (xQueueSend(s_motion_result_queue, &result, 0) != pdTRUE) {
                     safety_state_fail_motion(SAFETY_FAILURE_HARDWARE_FAILURE);
@@ -1399,6 +1416,7 @@ void body_task(void *argument)
                 }
                 voice_control_resume_wake_after_body_action();
             } else {
+                companion_hardware_set_body_emotion(COMPANION_EMOTION_NEUTRAL);
                 safety_state_fail_motion(SAFETY_FAILURE_HARDWARE_FAILURE);
                 voice_control_resume_wake_after_body_action();
             }
@@ -1406,7 +1424,10 @@ void body_task(void *argument)
             update_ltr553_locked();
             update_top_touch_locked();
             safety_state_tick(esp_timer_get_time());
+            bool affection = s_top_touch_affection_pending;
+            s_top_touch_affection_pending = false;
             xSemaphoreGive(s_mutex);
+            if (affection && !voice_control_motion_blocked()) companion_hardware_respond_to_top_touch();
         }
     }
 }

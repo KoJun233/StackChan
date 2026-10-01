@@ -78,7 +78,7 @@ static cJSON *parse_strict_object(const uint8_t *payload, size_t payload_size, s
     }
     const char *parse_end = NULL;
     cJSON *root = cJSON_ParseWithLengthOpts((const char *)payload, payload_size, &parse_end, false);
-    if (root == NULL || !cJSON_IsObject(root) || cJSON_GetArraySize(root) != field_count ||
+    if (root == NULL || !cJSON_IsObject(root) || cJSON_GetArraySize(root) != (int)field_count ||
         !strict_json_has_only_trailing_whitespace((const char *)payload, payload_size, parse_end)) {
         cJSON_Delete(root);
         return NULL;
@@ -134,6 +134,15 @@ bool voice_protocol_parse_stream_complete(const uint8_t *payload,
                  count->valueint == (int)expected_segment_count;
     cJSON_Delete(root);
     return valid;
+}
+
+bool voice_protocol_accept_stream_audio(const uint8_t *payload, size_t payload_size,
+                                        uint32_t *expected_sequence, const uint8_t **wav, size_t *wav_size)
+{
+    if (expected_sequence == NULL || *expected_sequence >= VOICE_PROTOCOL_STREAM_MAX_SEGMENTS ||
+        !voice_protocol_parse_stream_audio(payload, payload_size, *expected_sequence, wav, wav_size)) return false;
+    (*expected_sequence)++;
+    return true;
 }
 
 bool voice_protocol_parse_stream_error(const uint8_t *payload,

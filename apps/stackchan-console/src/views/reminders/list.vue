@@ -36,6 +36,7 @@ const statusOptions = [
   { label: '失败', value: 'FAILED' },
   { label: '已取消', value: 'CANCELLED' },
   { label: '已跳过', value: 'SKIPPED' },
+  { label: '已过期', value: 'EXPIRED' },
 ]
 
 const deviceNames = computed(() => new Map(devices.value.map(device => [device.id, device.displayName])))
@@ -68,6 +69,7 @@ function statusLabel(status: ReminderStatus) {
     FAILED: '失败',
     CANCELLED: '已取消',
     SKIPPED: '已跳过',
+    EXPIRED: '已过期',
   }[status]
 }
 
@@ -332,17 +334,20 @@ onBeforeUnmount(() => {
         <div v-if="row.original.source === 'PROACTIVE'" class="text-xs text-muted-foreground">
           主动问候
         </div>
+        <div v-if="row.original.source === 'FOLLOW_UP'" class="text-xs text-muted-foreground">
+          一次关心
+        </div>
       </template>
       <template #cell-operation="{ row }">
         <div class="flex-center gap-2">
-          <FaButton variant="outline" size="icon-sm" @click="onEdit(row.original)">
+          <FaButton v-if="row.original.source !== 'FOLLOW_UP'" variant="outline" size="icon-sm" @click="onEdit(row.original)">
             <FaIcon name="i-ri:edit-line" />
           </FaButton>
           <FaDropdown
             :items="[
               row.original.status === 'PENDING'
                 ? [
-                  { label: '10 分钟后提醒', handle: () => snooze(row.original) },
+                  ...(row.original.source === 'FOLLOW_UP' ? [] : [{ label: '10 分钟后提醒', handle: () => snooze(row.original) }]),
                   { label: row.original.recurrenceType === 'NONE' ? '跳过提醒' : '跳过下一次', handle: () => skipNext(row.original) },
                 ]
                 : [],
@@ -360,9 +365,30 @@ onBeforeUnmount(() => {
       :page="pagination.page"
       :size="pagination.size"
       :total="pagination.total"
-      class="mt-2"
+      class="reminder-pagination mt-2"
       @page-change="currentChange"
       @size-change="sizeChange"
     />
   </AppPageShell>
 </template>
+
+<style scoped>
+.reminder-pagination {
+  flex-wrap: wrap;
+  row-gap: 0.5rem;
+}
+
+.reminder-pagination :deep(> *) {
+  flex-shrink: 0;
+}
+
+.reminder-pagination :deep([data-slot="pagination-content"]) {
+  justify-content: flex-start;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.reminder-pagination :deep([data-slot="pagination-content"] > *) {
+  flex-shrink: 0;
+}
+</style>

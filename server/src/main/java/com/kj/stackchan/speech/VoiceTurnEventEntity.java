@@ -38,6 +38,12 @@ public class VoiceTurnEventEntity {
     @Column(name = "elapsed_ms")
     private Integer elapsedMs;
 
+    @Column(name = "duration_ms")
+    private Integer durationMs;
+
+    @Column(name = "diagnostic_code", length = 80)
+    private String diagnosticCode;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "failure_code", length = 40)
     private VoiceTurnFailureCode failureCode;
@@ -53,6 +59,12 @@ public class VoiceTurnEventEntity {
             Integer elapsedMs,
             VoiceTurnFailureCode failureCode
     ) {
+        this(turnId, stage, source, occurredAt, elapsedMs, failureCode, null, null);
+    }
+
+    VoiceTurnEventEntity(UUID turnId, VoiceTurnStage stage, VoiceTurnStageSource source,
+                         Instant occurredAt, Integer elapsedMs, VoiceTurnFailureCode failureCode,
+                         Integer durationMs, String diagnosticCode) {
         this.id = UUID.randomUUID();
         this.turnId = turnId;
         this.stage = stage;
@@ -60,6 +72,8 @@ public class VoiceTurnEventEntity {
         this.occurredAt = occurredAt;
         this.elapsedMs = elapsedMs;
         this.failureCode = failureCode;
+        this.durationMs = durationMs;
+        this.diagnosticCode = diagnosticCode;
     }
 
     public UUID getId() {
@@ -88,5 +102,13 @@ public class VoiceTurnEventEntity {
 
     public VoiceTurnFailureCode getFailureCode() {
         return failureCode;
+    }
+
+    public Integer getDurationMs() {
+        return durationMs;
+    }
+
+    public String getDiagnosticCode() {
+        return diagnosticCode;
     }
 }

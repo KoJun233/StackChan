@@ -118,12 +118,12 @@ public class LongTermMemoryService {
         return toSnapshot(repository.save(memory));
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = InvalidMemoryException.class)
     public MemorySnapshot suggest(MemorySuggestionCommand command) {
         return suggest(CompanionRoleEntity.DEFAULT_ROLE_ID, command);
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = InvalidMemoryException.class)
     public MemorySnapshot suggest(UUID roleId, MemorySuggestionCommand command) {
         ValidatedMemory validated = validate(command.memory());
         String sourceDetail = normalize(command.sourceDetail(), 500, "Memory suggestion reason is invalid", false);
@@ -157,7 +157,7 @@ public class LongTermMemoryService {
     @Transactional
     public MemorySnapshot update(UUID id, MemoryCommand command) {
         ValidatedMemory validated = validate(command);
-        LongTermMemoryEntity memory = find(id);
+        LongTermMemoryEntity memory = findForUpdate(id);
         String sourceDetail = memory.getSource() == MemorySource.USER_ENTERED
                 ? USER_ENTERED_DETAIL
                 : memory.getSourceDetail();
@@ -201,14 +201,46 @@ public class LongTermMemoryService {
 
     @Transactional
     public MemorySnapshot reject(UUID id) {
-        LongTermMemoryEntity memory = find(id);
+        LongTermMemoryEntity memory = findForUpdate(id);
         memory.reject(clock.instant());
+        return toSnapshot(memory);
+    }
+
+    @Transactional(noRollbackFor = {InvalidMemoryException.class, MemoryNotFoundException.class})
+    public MemorySnapshot confirmVoiceCandidate(UUID id, UUID roleId, UUID deviceId, UUID sourceTurnId,
+                                                Instant expectedUpdatedAt, String title, String content) {
+        LongTermMemoryEntity memory = repository.findByIdForUpdate(id).orElseThrow(MemoryNotFoundException::new);
+        if (memory.getConfirmationStatus() != MemoryConfirmationStatus.PENDING
+                || memory.getSource() != MemorySource.ASSISTANT_SUGGESTED
+                || memory.getScopeType() != MemoryScopeType.DEVICE
+                || !roleId.equals(memory.getRoleId()) || !deviceId.equals(memory.getDeviceId())
+                || !java.util.Objects.equals(sourceTurnId, memory.getSourceTurnId())
+                || !java.util.Objects.equals(expectedUpdatedAt, memory.getUpdatedAt())
+                || !java.util.Objects.equals(title, memory.getTitle())
+                || !java.util.Objects.equals(content, memory.getContent())) {
+            throw new InvalidMemoryException("Voice memory consent is no longer current");
+        }
+        Instant now = clock.instant();
+        if (memory.getReplacesMemoryId() != null) {
+            LongTermMemoryEntity previous = repository.findByIdForUpdate(memory.getReplacesMemoryId())
+                    .orElseThrow(MemoryNotFoundException::new);
+            if (!roleId.equals(previous.getRoleId()) || previous.getScopeType() != MemoryScopeType.DEVICE
+                    || !deviceId.equals(previous.getDeviceId()) || previous.getCategory() != memory.getCategory()
+                    || !previous.getTopicKey().equals(memory.getTopicKey())
+                    || previous.getConfirmationStatus() != MemoryConfirmationStatus.CONFIRMED
+                    || !previous.isEnabled() || previous.getSupersededByMemoryId() != null
+                    || previous.getUpdatedAt().isAfter(memory.getCreatedAt())) {
+                throw new InvalidMemoryException("Replacement memory changed after the suggestion");
+            }
+            previous.markSuperseded(memory.getId(), now);
+        }
+        memory.confirm(now);
         return toSnapshot(memory);
     }
 
     @Transactional
     public MemorySnapshot setEnabled(UUID id, boolean enabled) {
-        LongTermMemoryEntity memory = find(id);
+        LongTermMemoryEntity memory = findForUpdate(id);
         if (enabled && memory.getConfirmationStatus() != MemoryConfirmationStatus.CONFIRMED) {
             throw new InvalidMemoryException("Only confirmed memory can be enabled");
         }
@@ -221,7 +253,7 @@ public class LongTermMemoryService {
 
     @Transactional
     public void delete(UUID id) {
-        repository.delete(find(id));
+        repository.delete(findForUpdate(id));
     }
 
     @Transactional
@@ -455,6 +487,10 @@ public class LongTermMemoryService {
 
     private LongTermMemoryEntity find(UUID id) {
         return repository.findById(id).orElseThrow(MemoryNotFoundException::new);
+    }
+
+    private LongTermMemoryEntity findForUpdate(UUID id) {
+        return repository.findByIdForUpdate(id).orElseThrow(MemoryNotFoundException::new);
     }
 
     private MemorySnapshot toSnapshot(LongTermMemoryEntity memory) {

@@ -30,6 +30,9 @@ public class VoiceActionProposalTool {
                 throw new VoiceActionException("Model-generated proposals cannot select business object identifiers");
             }
             VoiceActionType type = VoiceActionType.valueOf(input.actionType());
+            if (type == VoiceActionType.CONFIRM_MEMORY || type == VoiceActionType.CREATE_FOLLOW_UP) {
+                throw new VoiceActionException("Companion consent requires a server-selected explicit request");
+            }
             draft = new VoiceActionDraft(type, type != VoiceActionType.CREATE_MEMORY_SUGGESTION,
                     input.content(), input.title(), parseInstant(input.scheduledAt()), input.zoneId(),
                     input.recurrenceType(), input.recurrenceInterval(), input.durationMinutes(),

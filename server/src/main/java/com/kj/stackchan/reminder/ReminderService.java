@@ -100,6 +100,9 @@ public class ReminderService {
     public ReminderSnapshot update(UUID id, ReminderCommand command) {
         ValidatedCommand validated = validate(command);
         ReminderEntity reminder = reminderRepository.findById(id).orElseThrow(ReminderNotFoundException::new);
+        if (reminder.getSource() == ReminderSource.FOLLOW_UP) {
+            throw new InvalidReminderException("Cancel the follow-up and confirm a new time instead");
+        }
         reminder.update(
                 validated.deviceId(),
                 validated.content(),
@@ -111,6 +114,23 @@ public class ReminderService {
                 clock.instant()
         );
         return toSnapshot(reminder);
+    }
+
+    @Transactional(noRollbackFor = InvalidReminderException.class)
+    public ReminderSnapshot createConfirmedFollowUp(UUID roleId, UUID deviceId, String topic,
+                                                   Instant scheduledAt, String zoneId) {
+        if (topic == null || topic.isBlank() || topic.length() > 120
+                || scheduledAt == null || scheduledAt.isAfter(clock.instant().plus(java.time.Duration.ofDays(30)))) {
+            throw new InvalidReminderException("Follow-up topic or time is invalid");
+        }
+        var validated = validate(new ReminderCommand(deviceId, "你之前让我问问“" + topic.trim()
+                + "”，现在怎么样了？", scheduledAt, zoneId, ReminderRecurrence.NONE, 1));
+        var reminder = new ReminderEntity(requireRole(roleId), validated.deviceId(), validated.content(),
+                validated.scheduledAt(), validated.zoneId(), ReminderRecurrence.NONE, 1, null,
+                ReminderSource.FOLLOW_UP, "follow-up:" + UUID.randomUUID(),
+                ProactiveGenerationStatus.FIXED, clock.instant());
+        reminder.assignFollowUpExpiry(scheduledAt.plus(java.time.Duration.ofHours(4)));
+        return toSnapshot(reminderRepository.save(reminder));
     }
 
     @Transactional
@@ -136,6 +156,9 @@ public class ReminderService {
             throw new InvalidReminderException("Reminder snooze duration is invalid");
         }
         ReminderEntity reminder = reminderRepository.findById(id).orElseThrow(ReminderNotFoundException::new);
+        if (reminder.getSource() == ReminderSource.FOLLOW_UP) {
+            throw new InvalidReminderException("Follow-up expiry cannot be extended by snoozing");
+        }
         if (reminder.getStatus() != ReminderStatus.PENDING || reminder.getDeliveryGroupId() != null) {
             throw new InvalidReminderException("Only pending reminders can be snoozed");
         }

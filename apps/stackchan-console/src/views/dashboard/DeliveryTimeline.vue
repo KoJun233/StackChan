@@ -36,6 +36,9 @@ watch(() => [props.deviceId, props.roleId, props.refreshKey], async () => {
 }, { immediate: true })
 
 function sourceLabel(item: Reminder) {
+  if (item.source === 'FOLLOW_UP') {
+    return '已确认的一次关心'
+  }
   if (item.source === 'EXTERNAL') {
     return '外部通知'
   }

@@ -187,6 +187,8 @@ public class VoiceTurnService {
             List<UUID> usedMemoryIds = List.of();
             boolean extractMemorySuggestion = false;
             boolean generationCompleted = false;
+            long phaseStartedNanos = System.nanoTime();
+            Integer modelDurationMs = null;
             try {
                 long asrStartedNanos = System.nanoTime();
                 String transcript = speechRuntimeClient.transcribe(wavAudio).trim();
@@ -194,7 +196,9 @@ public class VoiceTurnService {
                 if (transcript.isBlank()) {
                     throw new VoiceInputException("没有识别到清晰语音");
                 }
-                recordStage(deviceId, turnId, VoiceTurnStage.ASR_COMPLETED, null);
+                recordTimedStage(deviceId, turnId, VoiceTurnStage.ASR_COMPLETED, null,
+                        boundedDuration(asrStartedNanos), null);
+                phaseStartedNanos = System.nanoTime();
                 logger.info(
                         "Voice turn timing: turn_id={} stage=ASR_COMPLETED stage_ms={} request_ms={}",
                         turnId,
@@ -260,6 +264,7 @@ public class VoiceTurnService {
                         usedMemoryIds = promptAssembly.memoryIds();
                         extractMemorySuggestion = true;
                         long agentStartedNanos = System.nanoTime();
+                        phaseStartedNanos = agentStartedNanos;
                         logger.info(
                                 "Voice turn timing: turn_id={} stage=AGENT_STARTED request_ms={}",
                                 turnId,
@@ -285,6 +290,7 @@ public class VoiceTurnService {
                                 .doOnNext(streamedReply::append)
                                 .collect(Collectors.joining())
                                 .block();
+                        modelDurationMs = boundedDuration(agentStartedNanos);
                         logger.info(
                                 "Voice turn timing: turn_id={} stage=AGENT_COMPLETED stage_ms={} request_ms={}",
                                 turnId,
@@ -305,15 +311,19 @@ public class VoiceTurnService {
                 if (deviceExpressionService != null) {
                     deviceExpressionService.apply(deviceId, roleId, expression);
                 }
-                recordStage(deviceId, turnId, VoiceTurnStage.LLM_COMPLETED, null);
+                recordTimedStage(deviceId, turnId, VoiceTurnStage.LLM_COMPLETED, null,
+                        modelDurationMs, actionResult != null && actionResult.handled() ? "deterministic_action" : null);
                 lastCompletedStage = VoiceTurnStage.LLM_COMPLETED;
                 cancellation.throwIfCancelled();
                 long ttsStartedNanos = System.nanoTime();
+                phaseStartedNanos = ttsStartedNanos;
+                int ttsDurationMs;
                 byte[] audio = null;
                 int segmentCount = 0;
                 if (segmentSink == null) {
                     long segmentStartedNanos = System.nanoTime();
                     audio = speechRuntimeClient.synthesize(reply, roleId);
+                    ttsDurationMs = boundedDuration(segmentStartedNanos);
                     cancellation.throwIfCancelled();
                     logger.info(
                             "Voice turn timing: turn_id={} stage=TTS_AUDIO_READY sequence=0 characters={} "
@@ -327,6 +337,7 @@ public class VoiceTurnService {
                 } else {
                     long segmentStartedNanos = System.nanoTime();
                     byte[] segmentAudio = speechRuntimeClient.synthesize(reply, roleId);
+                    ttsDurationMs = boundedDuration(segmentStartedNanos);
                     cancellation.throwIfCancelled();
                     long frameStartedNanos = System.nanoTime();
                     segmentSink.audio(0, segmentAudio);
@@ -353,7 +364,7 @@ public class VoiceTurnService {
                     }
                 }
                 if (segmentSink != null) segmentSink.complete(segmentCount);
-                recordStage(deviceId, turnId, VoiceTurnStage.TTS_COMPLETED, null);
+                recordTimedStage(deviceId, turnId, VoiceTurnStage.TTS_COMPLETED, null, ttsDurationMs, null);
                 logger.info(
                         "Voice turn timing: turn_id={} stage=TTS_COMPLETED segments={} stage_ms={} request_ms={}",
                         turnId,
@@ -378,11 +389,14 @@ public class VoiceTurnService {
                             partialReply(reply, streamedReply)
                     );
                 }
-                recordStage(
+                recordTimedStage(
                         deviceId,
                         turnId,
                         VoiceTurnStage.FAILED,
-                        failureCode(exception, lastCompletedStage)
+                        failureCode(exception, lastCompletedStage),
+                        boundedDuration(phaseStartedNanos),
+                        exception instanceof SpeechProviderUnavailableException unavailable
+                                ? unavailable.diagnosticCode() : null
                 );
                 throw exception;
             }
@@ -421,6 +435,20 @@ public class VoiceTurnService {
 
     private long elapsedMillis(long startedNanos) {
         return Duration.ofNanos(System.nanoTime() - startedNanos).toMillis();
+    }
+
+    private int boundedDuration(long startedNanos) {
+        return (int) Math.max(0L, Math.min(300_000L, elapsedMillis(startedNanos)));
+    }
+
+    private void recordTimedStage(UUID deviceId, UUID turnId, VoiceTurnStage stage,
+                                  VoiceTurnFailureCode failureCode, Integer durationMs,
+                                  String diagnosticCode) {
+        try {
+            diagnosticsService.recordServerStage(deviceId, turnId, stage, failureCode, durationMs, diagnosticCode);
+        } catch (RuntimeException exception) {
+            logger.warn("Voice turn diagnostics unavailable for turn={} stage={}", turnId, stage);
+        }
     }
 
     private VoiceTurnFailureCode failureCode(RuntimeException exception, VoiceTurnStage lastCompletedStage) {

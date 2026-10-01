@@ -15,6 +15,7 @@
 #include "expression_engine.h"
 #include "expression_pack.h"
 #include "lifecycle_clip_player.h"
+#include "touch_interaction.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -81,6 +82,11 @@ static lv_obj_t *s_orbit_tip;
 static lv_obj_t *s_sleep_small;
 static lv_obj_t *s_sleep_large;
 static lv_obj_t *s_static_image;
+static lv_obj_t *s_capture_submit;
+static bool s_capture_submit_visible;
+static lv_obj_t *s_voice_mode_label;
+static bool s_voice_mode_visible;
+static bool s_voice_mode_automatic = true;
 static lv_image_dsc_t s_static_image_dsc;
 static uint8_t *s_static_image_data;
 
@@ -304,10 +310,13 @@ static void restore_expression_fps_after_screensaver(void)
     taskEXIT_CRITICAL(&s_expression_lock);
 }
 
-static void emit_touch_event(companion_touch_event_type_t type, int64_t occurred_us)
+static void emit_touch_event(companion_touch_event_type_t type, int64_t occurred_us,
+                            const lv_point_t &point)
 {
     if (s_touch_event_queue == nullptr) return;
-    companion_touch_event_t event = {.type = type, .occurred_us = occurred_us};
+    companion_touch_event_t event = {
+        .type = type, .occurred_us = occurred_us, .x = (int16_t)point.x, .y = (int16_t)point.y,
+    };
     if (xQueueSend(s_touch_event_queue, &event, 0) != pdTRUE) {
         ESP_LOGW(TAG, "Touch event queue full; edge dropped safely");
     }
@@ -444,6 +453,19 @@ static void create_expression_scene_locked(void)
     s_static_image = lv_image_create(s_screen);
     lv_obj_set_pos(s_static_image, 0, 0);
     lifecycle_clip_player_init(s_screen, BALL_SURFACE_X, BALL_SURFACE_Y);
+    s_capture_submit = lv_obj_create(s_screen);
+    lv_obj_remove_style_all(s_capture_submit);
+    lv_obj_set_pos(s_capture_submit, TOUCH_INTERACTION_SUBMIT_X, TOUCH_INTERACTION_SUBMIT_Y);
+    lv_obj_set_size(s_capture_submit, TOUCH_INTERACTION_SUBMIT_SIZE, TOUCH_INTERACTION_SUBMIT_SIZE);
+    lv_obj_set_style_radius(s_capture_submit, 8, 0);
+    lv_obj_set_style_bg_color(s_capture_submit, lv_color_hex(0x267D58), 0);
+    lv_obj_set_style_bg_opa(s_capture_submit, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(s_capture_submit, LV_OBJ_FLAG_SCROLLABLE);
+    s_voice_mode_label = lv_label_create(s_capture_submit);
+    lv_label_set_text_static(s_voice_mode_label, LV_SYMBOL_OK);
+    lv_obj_set_style_text_color(s_voice_mode_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_center(s_voice_mode_label);
+    set_hidden(s_capture_submit, true);
 
 #if defined(STACKCHAN_MEDIA003_EAF_PROBE) || defined(STACKCHAN_MEDIA003_EMOTE_PROBE)
     media003_backend_probe_init(s_screen, BALL_SURFACE_X, BALL_SURFACE_Y);
@@ -958,7 +980,7 @@ extern "C" void companion_hardware_set_connected(bool connected)
     xSemaphoreGive(s_board_mutex);
 }
 
-static bool sample_touch(bool *touched, uint32_t *lock_wait_us)
+static bool sample_touch(bool *touched, lv_point_t *point, uint32_t *lock_wait_us)
 {
     if (touched == nullptr || lock_wait_us == nullptr) return false;
     int64_t started_us = esp_timer_get_time();
@@ -969,6 +991,15 @@ static bool sample_touch(bool *touched, uint32_t *lock_wait_us)
     *lock_wait_us += elapsed_us(started_us, esp_timer_get_time());
     *touched = s_touch_indev != nullptr &&
                lv_indev_get_state(s_touch_indev) == LV_INDEV_STATE_PRESSED;
+    if (s_touch_indev != nullptr) lv_indev_get_point(s_touch_indev, point);
+    bool control_visible = (s_capture_submit_visible || s_voice_mode_visible) && !s_expression_engine.updating;
+    set_hidden(s_capture_submit, !control_visible);
+    if (control_visible) {
+        lv_label_set_text_static(s_voice_mode_label, s_capture_submit_visible ? LV_SYMBOL_OK :
+                                (s_voice_mode_automatic ? "WAKE" : "PTT"));
+        lv_obj_center(s_voice_mode_label);
+        lv_obj_move_to_index(s_capture_submit, -1);
+    }
     bsp_display_unlock();
     return true;
 }
@@ -980,6 +1011,7 @@ static void ui_task(void *argument)
     bool previously_touched = false;
     bool current_touch = false;
     bool consume_current_touch = false;
+    lv_point_t touch_point = {};
     for (;;) {
         int64_t now = esp_timer_get_time();
         bool touched = current_touch;
@@ -989,7 +1021,7 @@ static void ui_task(void *argument)
         int64_t lock_started_us = now;
         if (now >= s_next_input_poll_us && take_mutex(s_board_mutex, pdMS_TO_TICKS(100))) {
             lock_wait_us = elapsed_us(lock_started_us, esp_timer_get_time());
-            input_sampled = sample_touch(&touched, &lock_wait_us);
+            input_sampled = sample_touch(&touched, &touch_point, &lock_wait_us);
             if (input_sampled) current_touch = touched;
             int64_t sensor_now = esp_timer_get_time();
             s_next_input_poll_us = sensor_now + (int64_t)INPUT_POLL_MS * 1000LL;
@@ -1001,7 +1033,7 @@ static void ui_task(void *argument)
         if (input_sampled && touched && !previously_touched) {
             consume_current_touch = screensaver_was_active;
             if (!consume_current_touch) {
-                emit_touch_event(COMPANION_TOUCH_PRESSED, now);
+                emit_touch_event(COMPANION_TOUCH_PRESSED, now, touch_point);
                 if (take_mutex(s_board_mutex, pdMS_TO_TICKS(20))) {
                     companion_expression_engine_suggest_emotion(
                         &s_expression_engine, COMPANION_EMOTION_LOVING,
@@ -1011,7 +1043,7 @@ static void ui_task(void *argument)
                 }
             }
         } else if (input_sampled && !touched && previously_touched) {
-            if (!consume_current_touch) emit_touch_event(COMPANION_TOUCH_RELEASED, now);
+            if (!consume_current_touch) emit_touch_event(COMPANION_TOUCH_RELEASED, now, touch_point);
             consume_current_touch = false;
         }
         if (input_sampled) previously_touched = touched;
@@ -1313,6 +1345,45 @@ extern "C" bool companion_hardware_wait_touch_event(companion_touch_event_t *eve
     TickType_t timeout = pdMS_TO_TICKS(timeout_ms);
     if (timeout_ms > 0 && timeout == 0) timeout = 1;
     return xQueueReceive(s_touch_event_queue, event, timeout) == pdTRUE;
+}
+
+extern "C" void companion_hardware_show_capture_submit(bool visible)
+{
+    if (!s_initialized || !take_mutex(s_board_mutex, pdMS_TO_TICKS(250))) return;
+    s_capture_submit_visible = visible;
+    xSemaphoreGive(s_board_mutex);
+    ui_wake_timer_callback(nullptr);
+}
+
+extern "C" void companion_hardware_show_voice_input_mode(bool visible, bool automatic)
+{
+    if (!s_initialized || !take_mutex(s_board_mutex, pdMS_TO_TICKS(250))) return;
+    s_voice_mode_visible = visible;
+    s_voice_mode_automatic = automatic;
+    xSemaphoreGive(s_board_mutex);
+    ui_wake_timer_callback(nullptr);
+}
+
+extern "C" void companion_hardware_respond_to_top_touch(void)
+{
+    if (!s_initialized || !take_mutex(s_board_mutex, pdMS_TO_TICKS(50))) return;
+    bool eligible = visible_state_locked() == COMPANION_FACE_IDLE && !s_expression_engine.updating;
+    if (eligible) {
+        companion_expression_engine_suggest_emotion(&s_expression_engine, COMPANION_EMOTION_LOVING,
+                COMPANION_EMOTION_INTENSITY_WEAK, 5000U, (uint32_t)(esp_timer_get_time() / 1000LL));
+        s_next_face_frame_us = esp_timer_get_time();
+    }
+    xSemaphoreGive(s_board_mutex);
+    if (eligible) companion_hardware_mark_activity();
+}
+
+extern "C" void companion_hardware_set_body_emotion(companion_emotion_t emotion)
+{
+    if (!s_initialized || !take_mutex(s_board_mutex, pdMS_TO_TICKS(50))) return;
+    companion_expression_engine_set_body_emotion(&s_expression_engine, emotion,
+            (uint32_t)(esp_timer_get_time() / 1000LL));
+    s_next_face_frame_us = esp_timer_get_time();
+    xSemaphoreGive(s_board_mutex);
 }
 
 extern "C" esp_err_t companion_hardware_configure_expression(

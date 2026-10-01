@@ -19,6 +19,7 @@ public enum VoiceTurnStage {
     FOLLOW_UP_TIMEOUT,
     CONVERSATION_ENDED,
     LISTENING_RESUMED,
+    MANUAL_INPUT_READY,
     CANCELLED,
     FAILED;
 
@@ -34,6 +35,7 @@ public enum VoiceTurnStage {
             FOLLOW_UP_TIMEOUT,
             CONVERSATION_ENDED,
             LISTENING_RESUMED,
+            MANUAL_INPUT_READY,
             CANCELLED,
             FAILED
     );
