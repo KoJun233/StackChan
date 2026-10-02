@@ -49,6 +49,9 @@ bool voice_protocol_parse_stream_complete(const uint8_t *payload,
                                           size_t payload_size,
                                           uint32_t expected_segment_count);
 
+bool voice_protocol_accept_stream_audio(const uint8_t *payload, size_t payload_size,
+                                        uint32_t *expected_sequence, const uint8_t **wav, size_t *wav_size);
+
 bool voice_protocol_parse_stream_error(const uint8_t *payload,
                                        size_t payload_size,
                                        voice_stream_error_t *error);

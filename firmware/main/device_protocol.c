@@ -113,6 +113,8 @@ static const char *voice_stage_name(device_voice_turn_stage_t stage)
         return "CONVERSATION_ENDED";
     case DEVICE_VOICE_STAGE_LISTENING_RESUMED:
         return "LISTENING_RESUMED";
+    case DEVICE_VOICE_STAGE_MANUAL_INPUT_READY:
+        return "MANUAL_INPUT_READY";
     case DEVICE_VOICE_STAGE_CANCELLED:
         return "CANCELLED";
     case DEVICE_VOICE_STAGE_FAILED:

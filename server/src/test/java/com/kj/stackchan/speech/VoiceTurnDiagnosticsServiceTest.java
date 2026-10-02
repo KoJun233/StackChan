@@ -30,6 +30,29 @@ class VoiceTurnDiagnosticsServiceTest {
     private VoiceTurnEventRepository eventRepository;
 
     @Test
+    void persistsBoundedPhaseDurationAndSafeCodeWithoutDeviceClockValues() {
+        UUID deviceId = UUID.randomUUID();
+        UUID turnId = UUID.randomUUID();
+        when(turnRepository.findById(turnId)).thenReturn(Optional.empty());
+        service().recordServerStage(deviceId, turnId, VoiceTurnStage.FAILED,
+                VoiceTurnFailureCode.ASR_UNAVAILABLE, 1250, "dashscope_free_quota_only");
+        ArgumentCaptor<VoiceTurnEventEntity> event = ArgumentCaptor.forClass(VoiceTurnEventEntity.class);
+        verify(eventRepository).save(event.capture());
+        assertThat(event.getValue().getDurationMs()).isEqualTo(1250);
+        assertThat(event.getValue().getDiagnosticCode()).isEqualTo("dashscope_free_quota_only");
+        assertThat(event.getValue().getElapsedMs()).isNull();
+    }
+
+    @Test
+    void rejectsUnboundedDurationsAndUnstructuredDiagnosticPayloads() {
+        assertThatThrownBy(() -> service().recordServerStage(UUID.randomUUID(), UUID.randomUUID(),
+                VoiceTurnStage.ASR_COMPLETED, null, 300001, null)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service().recordServerStage(UUID.randomUUID(), UUID.randomUUID(),
+                VoiceTurnStage.FAILED, VoiceTurnFailureCode.ASR_UNAVAILABLE, 10, "Bearer secret"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void recordsOnlyStructuredDeviceStageMetadata() {
         UUID deviceId = UUID.randomUUID();
         UUID turnId = UUID.randomUUID();
@@ -99,6 +122,22 @@ class VoiceTurnDiagnosticsServiceTest {
 
         assertThat(turn.getStatus()).isEqualTo(VoiceTurnStatus.COMPLETED);
         assertThat(turn.getFailureCode()).isNull();
+    }
+
+    @Test
+    void manualInputReadyCompletesWithoutClaimingWakeListeningAndPreservesFailures() {
+        UUID deviceId = UUID.randomUUID();
+        UUID turnId = UUID.randomUUID();
+        VoiceTurnEntity turn = new VoiceTurnEntity(turnId, deviceId, NOW);
+        when(turnRepository.findById(turnId)).thenReturn(Optional.of(turn));
+        service().recordDeviceStage(deviceId, turnId, VoiceTurnStage.MANUAL_INPUT_READY, 1000, null);
+        assertThat(turn.getStatus()).isEqualTo(VoiceTurnStatus.COMPLETED);
+
+        VoiceTurnEntity failed = new VoiceTurnEntity(UUID.randomUUID(), deviceId, NOW);
+        failed.apply(VoiceTurnStage.FAILED, VoiceTurnFailureCode.NO_SPEECH, NOW);
+        failed.apply(VoiceTurnStage.MANUAL_INPUT_READY, null, NOW);
+        assertThat(failed.getStatus()).isEqualTo(VoiceTurnStatus.FAILED);
+        assertThat(failed.getFailureCode()).isEqualTo(VoiceTurnFailureCode.NO_SPEECH);
     }
 
     @Test

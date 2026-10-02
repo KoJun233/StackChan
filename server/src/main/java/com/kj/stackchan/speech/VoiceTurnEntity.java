@@ -56,6 +56,7 @@ public class VoiceTurnEntity {
                 status = VoiceTurnStatus.CANCELLED;
                 failureCode = null;
             } else if (stage == VoiceTurnStage.LISTENING_RESUMED
+                    || stage == VoiceTurnStage.MANUAL_INPUT_READY
                     || stage == VoiceTurnStage.FOLLOW_UP_TIMEOUT
                     || stage == VoiceTurnStage.CONVERSATION_ENDED) {
                 status = VoiceTurnStatus.COMPLETED;

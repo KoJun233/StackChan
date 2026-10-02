@@ -233,6 +233,7 @@ public class ReminderEntity {
         this.proactiveSourceUrl = null;
         this.proactiveSourcePublishedAt = null;
         this.proactiveSourceRetrievedAt = null;
+        this.expiresAt = null;
         this.lastOutcome = null;
         this.lastCompletedAt = null;
         this.commandId = null;
@@ -376,7 +377,14 @@ public class ReminderEntity {
 
     public void markExpired(Instant now) {
         completeOccurrence(ReminderStatus.EXPIRED, null, now);
-        this.failureCode = "notification_expired";
+        this.failureCode = source == ReminderSource.FOLLOW_UP ? "follow_up_expired" : "notification_expired";
+    }
+
+    public void assignFollowUpExpiry(Instant expiresAt) {
+        if (source != ReminderSource.FOLLOW_UP || expiresAt == null || !expiresAt.isAfter(scheduledAt)) {
+            throw new IllegalArgumentException("Invalid follow-up expiry");
+        }
+        this.expiresAt = expiresAt;
     }
 
     public UUID getId() {

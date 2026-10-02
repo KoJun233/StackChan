@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import type { Device, VoiceTurn, VoiceTurnEvent, VoiceTurnStatus } from '@/api/modules/devices'
+import type { Device, VoiceTurn, VoiceTurnStatus } from '@/api/modules/devices'
 import type { MemoryUsageReference } from '@/api/modules/personaMemory'
 import { listDevices, listDeviceVoiceTurns, stopDeviceMotion } from '@/api/modules/devices'
 import { getMemoryUsage } from '@/api/modules/personaMemory'
+import { formatVoiceDuration, voiceResponseLatency, voiceStageTiming } from './voiceDiagnostics'
 
 defineOptions({ name: 'DeviceOverview' })
 const devices = ref<Device[]>([])
@@ -72,6 +73,7 @@ const stageLabels: Record<string, string> = {
   FOLLOW_UP_TIMEOUT: '跟进超时',
   CONVERSATION_ENDED: '会话结束',
   LISTENING_RESUMED: '恢复聆听',
+  MANUAL_INPUT_READY: '手动输入就绪',
   CANCELLED: '回合已取消',
   FAILED: '回合失败',
 }
@@ -81,10 +83,6 @@ const statusLabels: Record<VoiceTurnStatus, string> = {
   COMPLETED: '已完成',
   CANCELLED: '已取消',
   FAILED: '失败',
-}
-function stageElapsed(turn: VoiceTurn, event: VoiceTurnEvent) {
-  const elapsedMs = event.elapsedMs ?? Math.max(0, Date.parse(event.occurredAt) - Date.parse(turn.startedAt))
-  return `+${(elapsedMs / 1000).toFixed(elapsedMs < 10000 ? 2 : 1)} 秒`
 }
 async function showVoiceTurns(device: Device) {
   const request = ++voiceTurnsRequest
@@ -219,14 +217,18 @@ onMounted(load)
               {{ statusLabels[turn.status] }}<span v-if="turn.failureCode"> · {{ turn.failureCode }}</span>
             </div>
           </div>
+          <div class="text-sm text-muted-foreground mb-3">
+            采音结束至首声 {{ formatVoiceDuration(voiceResponseLatency(turn)) }}
+          </div>
           <ol class="gap-2 grid md:grid-cols-2 xl:grid-cols-3">
             <li v-for="event in turn.events" :key="`${event.source}-${event.stage}`" class="text-sm px-3 py-2 rounded-md bg-muted/50">
               <div class="flex gap-2 items-center justify-between">
                 <span>{{ stageLabels[event.stage] || event.stage }}</span>
-                <span class="text-xs text-muted-foreground">{{ stageElapsed(turn, event) }}</span>
+                <span class="text-xs text-muted-foreground">{{ voiceStageTiming(event) }}</span>
               </div>
               <div class="text-xs text-muted-foreground mt-1">
                 {{ event.source === 'DEVICE' ? '设备' : '服务端' }}<span v-if="event.failureCode"> · {{ event.failureCode }}</span>
+                <span v-if="event.diagnosticCode && event.diagnosticCode !== 'deterministic_action'" class="block break-all">{{ event.diagnosticCode }}</span>
               </div>
             </li>
           </ol>

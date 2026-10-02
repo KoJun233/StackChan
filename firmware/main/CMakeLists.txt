@@ -2,6 +2,7 @@ set(stackchan_sources
     "audio_wav.c"
     "app_main.c"
     "body_hardware.cpp"
+    "body_touch_policy.c"
     "companion_hardware.cpp"
     "continuous_conversation.c"
     "device_credentials.c"
@@ -20,6 +21,7 @@ set(stackchan_sources
     "screensaver_motion.c"
     "strict_json.c"
     "touch_interaction.c"
+    "voice_capture_policy.c"
     "voice_control.c"
     "voice_protocol.c"
     "voice_service.c"
@@ -49,6 +51,11 @@ idf_component_register(
     SRCS ${stackchan_sources}
     INCLUDE_DIRS "."
     REQUIRES app_update esp-sr esp_app_format esp_codec_dev esp_driver_usb_serial_jtag esp_event esp_http_client esp_hw_support esp_lv_eaf_player esp_netif esp_partition esp_timer esp_wifi esp_websocket_client freertos json lvgl m5stack_core_s3 mbedtls nvs_flash sensor_hub unity)
+
+option(STACKCHAN_STACK_USAGE "Generate stack reports for firmware budget verification" OFF)
+if(STACKCHAN_STACK_USAGE)
+    target_compile_options(${COMPONENT_LIB} PRIVATE -fstack-usage)
+endif()
 
 if(STACKCHAN_MEDIA003_BACKEND STREQUAL "eaf")
     target_compile_definitions(${COMPONENT_LIB} PRIVATE STACKCHAN_MEDIA003_EAF_PROBE=1)

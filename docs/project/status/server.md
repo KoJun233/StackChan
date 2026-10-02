@@ -1,72 +1,46 @@
 # 服务端工作流
 
-- 状态：BLOCKED
-- 最后更新：2026-10-01
-- 当前分支：`codex/body-motion-acceptance-20260929`
-- 基准提交：`0914e43`
-- 最后验证提交：`0914e43`
-- 最后验证范围：干净候选完整 Linux `mvn test` 611/611，零失败、错误和跳过；定向 52/52、真实 Spring/PostgreSQL 双伙伴设备安静/角色暂停范围与恢复断言通过；候选 JAR 保留其他条目、隔离 V53 恢复及发布后健康/API 通过
-
-## BODY-002 当前进度
-
-2026-10-01 等待实际使用证据：用户最新答复为“尚未自然使用”。连续三轮复核都只有相同的健康快照，现行服务器无重启、无错误日志，设备新鲜 `1b46c28 / ARMED / NONE`、故障计数 0、低频自动开关开启；发布后语音回合和动作命令均为 0。实现、完整回归、部署及已通过的实体路径已交付，没有新的产品失败可独立修复。整体目标 BLOCKED，等待正常使用后的实际反馈；真实运动中本地语音抢占仍未验，按用户要求暂不继续音频工作。下一条精确操作：用户按平常需求使用后提供一次有帮助、打扰或不自然的具体感受，Agent 再核对对应链路并决定修复；用户也可在明确愿意补验时提供现场条件。软件测试和重复空闲轮询不能代替这项证据。
-
-以下为已完成的发布阶段与历史验收快照；当前等待结论以上段为准。
-
-2026-10-01 当前交付：语音“今天安静点”统一为设备级范围，“恢复设备陪伴”只解除设备今日安静，原角色暂停和舵机许可保留；普通提醒继续。修复前 Linux 606/606，干净修复候选 `3a5980c` 完整 611/611 及定向 52/52 通过，新增真实 Spring/PostgreSQL 集成断言补足注入、双伙伴、另一设备和本地日边界。以线上实际 JAR 为基线，只替换 3 个协调器类及增加来源元数据，其他条目内容一致；ASR 调查工作树未覆盖、暂存或清理。`device-quiet-voice-20261001` 已经停写备份、隔离 V53 恢复并部署原 8080，健康正常；新鲜设备 `ARMED / NONE`、自动开关开启，未发转动测试。完整来源见[今日安静修复](../../runbooks/device-quiet-voice-20261001.md)。本任务已按唯一中文任务提交推送；下一条精确操作为用户创建 PR、审核和合并，并在自然使用时记录新控制指令听感和陪伴价值。发布后超过 25 分钟服务仍健康、重启及错误日志计数为零，尚无新增语音或动作事件。实际语音识别、运动中真正语音抢占未验，按用户要求不调整音频服务。
-
-以下固件发布、自然使用及旧环境失败为历史阶段；当前服务端版本和完整测试以上方记录为准。
-
-2026-10-01 只读复核及固件发布：健康 `ok`，9 月 30 日主动开场一条 `DELIVERED`，用户未注意到观感。服务端源码和镜像未更改；空闲语音撤销动作许可的固件修复已以 `1b46c28` 部署，普通回复结束后仍 `ARMED`，点头设备结果和用户观察均通过，低频自动开关恢复。语音模型、计费及 ASR/TTS 配置按用户要求不调整；本轮随后一个续聊回合 `ASR_UNAVAILABLE`，不推定全语音路径稳定。详细证据见[固件修复记录](../../runbooks/body-motion-audio-permit-20261001.md)。以下 9 月 29 日禁用状态为历史快照。
-
-2026-09-29 自然使用启动：用户选择现在开始；主动开场经管理 API 设为 10:00–18:00、每天最多一次，下一候选约为次日 10:27（设备时区 Asia/Shanghai）；个性化主动及无声表情仍关闭。独立自动身体动作开关已开启，舵机启动时 `ARMED`，工作日 `OFF`，不改变语音配置。隔离虚构网页文字对话用“蓝色纸飞机代号星星”验证两轮近期承接，第二轮答“星星”，两条助手消息均 `COMPLETED`；临时会话物理删除、管理员和新记忆建议为零。该样例不能证明真实对话自然度或主动开场质量；完整边界见[自然使用启动记录](../../runbooks/companion-natural-use-20260929-start.md)。
-
-同晚设备一次语音唤醒以 `NO_SPEECH` 结束后，舵机从启动时的 `ARMED` 回到 `DISABLED`；服务端自动动作开关仍开，但 `BodyMotionAutoService.reserve` 要求设备处于 `motion_armed`，因此不会再下发自动动作。现状不能记作自然身体动作已启用且可用；详细只读证据见[启动记录](../../runbooks/companion-natural-use-20260929-start.md)。
-
-2026-09-29 续验：完成临时待办自动点头、结束工作自动困倦、临时网页文字回复自动思考分别取得命令 `2d98689e-8f86-4f81-a975-b1e3cf7522bd`、`764befaa-6b2a-4f90-8338-f29d52b13431`、`abccefdc-3756-4c72-b9a8-2fd22c5d9a02` 的 `COMPLETED / NONE`，用户看到三次均转动回正、无异常；清理后临时待办、对话消息、测试管理员均为零，工作 `OFF`、自动动作与舵机禁用。“开始休息”点头作为同模板可选业务分支未单测。当前线上服务镜像为 `body-motion-readiness-20260929`，沿用前一 `asr-http-protocol-20260929` 的 JAR；其语音协议源码在独立调查工作树中，未纳入本 BODY-002 分支；用户已自行完成语音连接配置，本轮不继续语音修复。以下较早的“下一步”仅为历史阶段。
-
-心跳在场转发、返场时间与自动动作申请的定向测试均通过。本轮设备到服务端真实短时状态变化先后为 `present=true`、`present=false`；工作日返场自动 `LOOK_USER` 命令 `ecca7407-54d3-4290-a29c-0a30437b04fa` 为 `COMPLETED / NONE`，用户看到头部回正。断线命令结果与用户中途停动观察通过；音频停止命令结果为 `STOPPED / VOICE_STOP`，用户未看清实物。动作与自动开关已恢复关闭。详见[现场验收](../../runbooks/body-motion-20260929-field-acceptance.md)。
-
-已新增五动作命令结果持久化、设备/命令/模板绑定、严格 `body_motion_result` 事件、管理端查询接口；`SENT/ACCEPTED` 不推定实体完成，手动结果查询超过 15 秒无结果为 `UNCONFIRMED`，自动命令由五秒定时巡检在超过 15 秒时标记，晚到结果可纠正，终态不可降级。自动动作独立开关默认关闭，只在在线且已 armed、设备能力与校准有效、非 DND/今日安静时接受确定性事件；持久事件键去重，完成后冷却 10 分钟、每设备本地日最多 8 次。丢失自动执行结果后由后台定时巡检关闭自动开关，避免静默重试。网页文字聊天请求可指定设备；回复持续超过两秒才申请一次 `THINK`，完成或取消后撤销定时任务。新候选已通过定向测试并部署到原 8080。设备级“今天安静点”覆盖后续主动语音、随机无声表情和自动动作，普通提醒继续。
-
-历史验证：BODY-002 当时定向通过，V52/V53 在 PostgreSQL 空库和真实数据隔离恢复中迁移通过。旧 Windows 全量 594 项中 31 项连接异常没有运行到断言；现已由 2026-10-01 隔离 Linux 完整 611/611 补足，不能沿用旧失败作为当前阻塞。当时实体结果路径未验，后续五模板和五项主要业务触发已有现场结果。
-
-下一条精确操作：单个中文任务提交已推送，由用户创建 PR、审核和合并；自然使用时记录陪伴价值与打扰频率。真正本地语音回合开始时的 `VOICE_STOP` 仍待以后验证，不能以 `stop_audio` 命令测试替代；用户本轮要求暂不继续音频工作。2026-09-29 `DeviceEventServicePresenceTest`、`WorkdayRuntimeServiceTest`、`WorkdayCompanionServiceTest`、`BodyMotionAutoServiceTest` 定向 22 项通过；本轮另外四类自动路径相关测试通过。Spring Boot/Testcontainers 的 `DeviceEventServiceTest` 曾在 Windows Unix domain socket loopback `Invalid argument: connect` 处失败，4 项未运行到断言，不记为产品失败或通过。以下为 V51 历史交接。
+- 状态：READY_FOR_REVIEW
+- 最后更新：2026-10-02
+- 当前分支：`codex/companion-interaction-delivery`
+- 基准提交：`69a98cd`
+- 最后验证提交：`69a98cd`
+- 最后验证范围：上述提交为主线锚点；本轮工作树语音定向 47/47、陪伴单元 61/61；最新关心时间解析/确认/投递定向 21/21、完整 Linux 回归 638/638、零失败/错误/跳过、退出 0
 
 ## 当前目标
 
-按评审深化或收缩功能，部署后交给用户测试。软件交付与部署已完成。
+完成 COMPANION-007 的 V05/V06、C03/C04 和 D01，依据[交付文档](../companion-interaction-delivery.md)；[ADR 0070](../decisions/0070-hybrid-voice-and-confirmed-companion-care.md)记录输入与确认边界。
 
 ## 已完成
 
-完成对话控制、单次拒绝、相关记忆召回、伙伴暂停与主题静默、可信资讯/简报、真实待办计数、统一播报视图、固定对象确认和跨来源简短回应。V50/V51 已迁移并发布。
+整合独立 ASR 工作树已调查的官方 HTTP 格式与额度安全码，同时保留旧返回结构兼容；已录 PCM 有序发送取消人为实时节奏。新增 ASR/模型/TTS 有界耗时，不记录认证载荷；手动就绪不冒充恢复唤醒监听。
+
+明确记住产生未生效候选，语音确认绑定固定快照、伙伴、设备及来源。后台修改/拒绝/确认/删除、换伙伴、过期、重复与并发确认有数据库回归；敏感建议拒绝不回滚失败状态。明确时间与主题的一次关心需确认，30 天安排上限、四小时有效期，服从安静、伙伴/DND/主题和可靠投递门控。V54/V55 空库迁移已在真实 PostgreSQL 回归中执行。
 
 ## 正在进行
 
-用户已于 2026-09-15 授权推送当前任务分支，等待其创建 PR、审核和合并。不自动启动新开发或使用观察。
+最新时间解析修复定向 21/21、完整 638/638、零失败/错误/跳过、退出 0、非 OOM。当前 companion007-d3459d2 / V55 为提醒页修复发布；server 源/JAR 与 1f4b185 完全相同，638 项 XML 复核，不冒充新增运行。真实控制台认证/只读 GET、注销后 401 通过，临时账号已清理。旧 MockMvc 偶发竞争及 fork JVM 退出等待警告保留，见[交付验证](../../runbooks/companion-interaction-20261001.md)。
 
 ## 下一步操作
 
-推送唯一中文任务提交后由用户创建 PR、审核和合并；用户也可按[验收表](../companion-experience-acceptance.md)测试两个独立伙伴、记忆、主动暂停和简短回应，记录实际识别与听感问题。
+当前发布健康/指纹及停写备份 stackchan-release-20261002111654 隔离 V55 恢复通过。2026-10-02 用户确认全部非动作清单含真实跨日均正常，功能验收收尾，并明确授权只推送当前任务分支；推送并核对远端 HEAD 后由用户创建 PR、审核/合并。没有待修的已报告问题，不重复已测路径或自主轮询；日后具体异常再按对应回合核对诊断，不用合成 UI 冒充现场。
 
 ## 阻塞项
 
-无发布阻塞。浏览器插件缺少运行文件，因此真实点击未验证；复杂口语、真实模型、使用价值和实体动作不以自动化替代。曾被自动审批拒绝读取隔离异常日志，已通过正常应用配置的隔离演练解决启动问题，没有读取该日志。
+当前没有实现、发布或用户功能验收阻塞；整体见[交付状态](overview.md)。既有完整 XML 638/638、退出 0、非 OOM 与候选代码等价性已核对。用户总体确认全部清单正常，未提供逐次计数/计时或门控明细；本次固定查询区间仍 0 回合、耗时未知，不把反馈转换为统计达标或候选发布后的新数据库证据。
 
 ## 关键文件
 
-server/src/main/java/com/kj/stackchan/、server/src/main/resources/db/migration/V50__voice_topic_boundary.sql、V51__role_proactive_pauses.sql。
+server/src/main/java/com/kj/stackchan/speech/、memory/LongTermMemoryService.java、voiceaction/、reminder/、V54/V55 迁移和 scripts/test-server-linux.ps1。
 
 ## 验证命令与最近结果
 
-服务端 554/554、V1..V51 空库和 V49→V51 升级、JAR 打包通过，日志 server/target/short-response-regression.log。八个既有 Windows loopback 类未纳入，不宣称全测试套件通过。实际发布 V51，健康正常。
-
-文档检查使用 `pnpm docs:check`、`pnpm docs:check:test` 和 `git diff --check`。前端回归使用 `pnpm --filter @stackchan/console test --maxWorkers=1`；构建使用 `docker build -f server/Dockerfile -t stackchan-foundation-server:companion-v51-20260914 .`。不重复宣称八个受限服务端测试类通过。
+脚本使用固定 Java 21 Maven 镜像、只读代码/依赖种子，测试在临时目录，不连接生产数据或设备。运行 ./scripts/test-server-linux.ps1，定向可加 -Tests 'CompanionConsentPersistenceTest,CompanionFollowUpParserTest,FollowUpDeliveryTest'。最新定向 21/21、完整 638/638，报告目录 7e96c158ed79439abccec1560eeb48cc。./scripts/test-companion-voice-evidence.ps1 通过，分开模型计时/固定动作，缺失阶段仍未知；docs:check、检查器 7/7 和差异检查通过，交接后复跑。
 
 ## 相关设计、计划和决策
 
-[完整实施清单](../companion-completion-plan.md)、[ADR 索引](../decisions/README.md)、[发布与回退](../../runbooks/companion-v51-release.md)、[备份与恢复](../../runbooks/personal-data-backup.md)。历史合并能力查[里程碑](../milestones.md)。
+[交付文档](../companion-interaction-delivery.md)、[ADR 0070](../decisions/0070-hybrid-voice-and-confirmed-companion-care.md)、[本轮发布记录](../../runbooks/companion-interaction-20261001.md)。上一任务 611/611、V53 发布与原 ASR JAR 来源保留在[历史发布](../../runbooks/device-quiet-voice-20261001.md)，不作为本轮通过成绩。
 
 ## 安全与兼容性约束
 
-保持 LAN 开发模式；生产必须 HTTPS。伙伴记忆独立，操作确认不跨角色、不替换失效目标。旧 API/深链接与普通、工作、外部通知语义保留。本次只授权推送当前任务分支；不创建或合并 PR、不推送 master，不刷写固件或开启动作。DPAPI 备份依赖原 Windows 用户/机器，本地卷不是跨机器灾备；旧镜像与 V51 的直接回退不作兼容承诺。
+用户已授权检查通过后的原 LAN 部署及保留 NVS OTA；最新决定后续实体动作免测，不再执行或请求确认，保持禁用；本次外部推送仅授权当前任务分支，不推送 master、不创建或合并 PR。伙伴/设备隔离、未经确认记忆不进入上下文、普通提醒不受陪伴暂停影响、单 WAV 和隐私删除保留。不改模型计费、凭据或部署模式，其他工作树不覆盖/暂存/清理。

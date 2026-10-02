@@ -86,3 +86,4 @@
 | [0067](0067-partner-delivery-timeline.md) | ACCEPTED | 今日概览按设备与伙伴统一展示待播及近期播报，保留真实数量和来源。 |
 | [0068](0068-confirmed-short-responses-and-quiet-decline.md) | ACCEPTED | 简短回应校验具体对象与休息状态，单次拒绝关闭话题但不改变全天主动开关。 |
 | [0069](0069-companion-first-console-consolidation.md) | ACCEPTED | 常用入口聚焦陪伴与个人事务，高级扩展折叠并保留旧链接和授权边界。 |
+| [0070](0070-hybrid-voice-and-confirmed-companion-care.md) | ACCEPTED | 本地混合输入、准确采音收尾、低优先级身体表现及固定候选/一次关心的明确许可。 |

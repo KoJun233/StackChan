@@ -37,14 +37,14 @@ class DashScopeHttpProtocolTest {
         assertThat(request.get("model")).isEqualTo("future-asr-model");
         assertThat(request.get("parameters")).isEqualTo(Map.of(
                 "format", "wav",
-                "sample_rate", 16000
+                "sample_rate", "16000"
         ));
         assertThat(request.get("input")).isEqualTo(Map.of(
                 "messages", List.of(Map.of(
                         "role", "user",
                         "content", List.of(Map.of(
                                 "type", "input_audio",
-                                "audio", "data:audio/wav;base64,AQID"
+                                "input_audio", Map.of("data", "data:audio/wav;base64,AQID")
                         ))
                 ))
         ));
@@ -61,6 +61,8 @@ class DashScopeHttpProtocolTest {
 
         assertThat(DashScopeAsrHttpClient.transcript(nested)).isEqualTo("嵌套结果");
         assertThat(DashScopeAsrHttpClient.transcript(flat)).isEqualTo("直接结果");
+        assertThat(DashScopeAsrHttpClient.transcript(objectMapper.readTree(
+                "{\"output\":{\"sentence\":{\"text\":\"句子结果\"}}}"))).isEqualTo("句子结果");
     }
 
     @Test
@@ -84,6 +86,11 @@ class DashScopeHttpProtocolTest {
 
         assertThat(DashScopeAsrHttpClient.isNoSpeechResponse(noSpeech)).isTrue();
         assertThat(DashScopeAsrHttpClient.isNoSpeechResponse(invalidParameter)).isFalse();
+        WebClientResponseException misleadingMessage = WebClientResponseException.create(
+                400, "Bad Request", HttpHeaders.EMPTY,
+                "{\"code\":\"InvalidParameter\",\"message\":\"silent audio format is invalid\"}"
+                        .getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+        assertThat(DashScopeAsrHttpClient.isNoSpeechResponse(misleadingMessage)).isFalse();
     }
 
     @Test

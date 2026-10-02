@@ -104,7 +104,8 @@ class VoiceTurnServiceTest {
                 eq(deviceId), any(UUID.class), eq(VoiceTurnStage.REQUEST_RECEIVED), eq(null)
         );
         verify(diagnosticsService).recordServerStage(
-                eq(deviceId), any(UUID.class), eq(VoiceTurnStage.TTS_COMPLETED), eq(null)
+                eq(deviceId), any(UUID.class), eq(VoiceTurnStage.TTS_COMPLETED), eq(null),
+                org.mockito.ArgumentMatchers.intThat(value -> value >= 0 && value <= 300000), eq(null)
         );
         verify(completedTurnMemoryCoordinator).complete(
                 any(UUID.class), any(UUID.class), eq(deviceId), eq(roleId), eq("提醒我拿外卖"),

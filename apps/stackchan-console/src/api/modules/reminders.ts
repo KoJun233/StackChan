@@ -1,8 +1,8 @@
 import { apiJson } from '../client'
 
-export type ReminderStatus = 'PENDING' | 'DISPATCHED' | 'DELIVERED' | 'FAILED' | 'CANCELLED' | 'SKIPPED'
+export type ReminderStatus = 'PENDING' | 'DISPATCHED' | 'DELIVERED' | 'FAILED' | 'CANCELLED' | 'SKIPPED' | 'EXPIRED'
 export type ReminderRecurrence = 'DAILY' | 'NONE' | 'WEEKLY'
-export type ReminderSource = 'EXTERNAL' | 'PROACTIVE' | 'USER'
+export type ReminderSource = 'EXTERNAL' | 'FOLLOW_UP' | 'PROACTIVE' | 'USER'
 export type ProactiveGenerationStatus = 'FALLBACK' | 'FIXED' | 'GENERATED'
 
 export interface Reminder {

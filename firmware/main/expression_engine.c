@@ -246,10 +246,10 @@ companion_expression_layer_t companion_expression_engine_active_layer(
     if (engine == NULL) return COMPANION_EXPRESSION_LAYER_IDLE;
     if (engine->updating) return COMPANION_EXPRESSION_LAYER_SYSTEM;
     if (system_is_high_priority(engine->system_state)) return COMPANION_EXPRESSION_LAYER_SYSTEM;
+    if (system_is_interaction(engine->system_state)) return COMPANION_EXPRESSION_LAYER_INTERACTION;
     if (engine->behavior != COMPANION_BEHAVIOR_NONE && now_ms < engine->behavior_expires_ms) {
         return COMPANION_EXPRESSION_LAYER_PHYSICAL;
     }
-    if (system_is_interaction(engine->system_state)) return COMPANION_EXPRESSION_LAYER_INTERACTION;
     if (engine->preview != COMPANION_EXPRESSION_PREVIEW_NONE && now_ms < engine->preview_expires_ms) {
         if (engine->preview == COMPANION_EXPRESSION_PREVIEW_BEHAVIOR) {
             return COMPANION_EXPRESSION_LAYER_PHYSICAL;
@@ -259,7 +259,8 @@ companion_expression_layer_t companion_expression_engine_active_layer(
         }
         return COMPANION_EXPRESSION_LAYER_INTERACTION;
     }
-    if (engine->emotion != COMPANION_EMOTION_NEUTRAL && now_ms < engine->emotion_expires_ms) {
+    if ((engine->body_emotion != COMPANION_EMOTION_NEUTRAL && now_ms < engine->body_emotion_expires_ms) ||
+        (engine->emotion != COMPANION_EMOTION_NEUTRAL && now_ms < engine->emotion_expires_ms)) {
         return COMPANION_EXPRESSION_LAYER_EMOTION;
     }
     return COMPANION_EXPRESSION_LAYER_IDLE;
@@ -281,7 +282,8 @@ static uint32_t effective_key(const companion_expression_engine_t *engine, uint3
     } else if (layer == COMPANION_EXPRESSION_LAYER_PHYSICAL) {
         value = (uint32_t)engine->behavior;
     } else if (layer == COMPANION_EXPRESSION_LAYER_EMOTION) {
-        value = (uint32_t)engine->emotion;
+        value = engine->body_emotion != COMPANION_EMOTION_NEUTRAL && now_ms < engine->body_emotion_expires_ms
+                    ? 0x20000U | (uint32_t)engine->body_emotion : (uint32_t)engine->emotion;
     }
     return ((uint32_t)layer << 24) | value;
 }
@@ -328,6 +330,9 @@ static companion_expression_pose_t effective_pose(const companion_expression_eng
     }
     if (layer == COMPANION_EXPRESSION_LAYER_PHYSICAL) return behavior_pose(engine->behavior);
     if (layer == COMPANION_EXPRESSION_LAYER_EMOTION) {
+        if (engine->body_emotion != COMPANION_EMOTION_NEUTRAL && now_ms < engine->body_emotion_expires_ms) {
+            return emotion_pose(engine->body_emotion, COMPANION_EMOTION_INTENSITY_WEAK);
+        }
         return emotion_pose(engine->emotion, engine->intensity);
     }
     return neutral_pose();
@@ -427,6 +432,14 @@ void companion_expression_engine_trigger(companion_expression_engine_t *engine,
     engine->behavior_expires_ms = now_ms + duration_ms;
 }
 
+void companion_expression_engine_set_body_emotion(companion_expression_engine_t *engine,
+                                                  companion_emotion_t emotion, uint32_t now_ms)
+{
+    if (engine == NULL || !engine->initialized || emotion >= COMPANION_EMOTION_COUNT) return;
+    engine->body_emotion = emotion;
+    engine->body_emotion_expires_ms = now_ms + 8000U;
+}
+
 void companion_expression_engine_set_updating(companion_expression_engine_t *engine,
                                               bool updating,
                                               uint32_t now_ms)
@@ -497,12 +510,15 @@ void companion_expression_engine_tick(companion_expression_engine_t *engine,
             ? (companion_expression_behavior_t)engine->preview_value : engine->behavior;
     companion_emotion_t animated_emotion =
         preview_active && engine->preview == COMPANION_EXPRESSION_PREVIEW_EMOTION
-            ? (companion_emotion_t)engine->preview_value : engine->emotion;
+            ? (companion_emotion_t)engine->preview_value
+            : engine->body_emotion != COMPANION_EMOTION_NEUTRAL && now_ms < engine->body_emotion_expires_ms
+                ? engine->body_emotion : engine->emotion;
     if (engine->updating || (preview_active &&
         engine->preview == COMPANION_EXPRESSION_PREVIEW_UPDATING)) {
         engine->current.gaze_x += sinf(seconds * 4.0f) * 0.18f;
     } else if (layer == COMPANION_EXPRESSION_LAYER_IDLE ||
-               animated_behavior == COMPANION_BEHAVIOR_IDLE_BREATHE) {
+               (layer == COMPANION_EXPRESSION_LAYER_PHYSICAL &&
+                animated_behavior == COMPANION_BEHAVIOR_IDLE_BREATHE)) {
         float breathe = sinf(seconds * 2.2f) * 0.018f;
         engine->current.scale_x += breathe;
         engine->current.scale_y -= breathe * 0.7f;
@@ -512,12 +528,15 @@ void companion_expression_engine_tick(companion_expression_engine_t *engine,
             float blink = fabsf(blink_phase - 4.06f) / 0.14f;
             engine->current.eye_open *= clampf(blink, 0.08f, 1.0f);
         }
-    } else if (animated_system == COMPANION_FACE_PROCESSING) {
+    } else if (layer == COMPANION_EXPRESSION_LAYER_INTERACTION &&
+               animated_system == COMPANION_FACE_PROCESSING) {
         engine->current.gaze_x += sinf(seconds * 5.4f) * 0.22f;
-    } else if (animated_system == COMPANION_FACE_SPEAKING) {
+    } else if (layer == COMPANION_EXPRESSION_LAYER_INTERACTION &&
+               animated_system == COMPANION_FACE_SPEAKING) {
         engine->current.scale_x += sinf(seconds * 8.0f) * 0.035f;
         engine->current.scale_y -= sinf(seconds * 8.0f) * 0.025f;
-    } else if (animated_behavior == COMPANION_BEHAVIOR_SHAKE_DIZZY &&
+    } else if (layer == COMPANION_EXPRESSION_LAYER_PHYSICAL &&
+               animated_behavior == COMPANION_BEHAVIOR_SHAKE_DIZZY &&
                (preview_active || now_ms < engine->behavior_expires_ms)) {
         engine->current.gaze_x += sinf(seconds * 13.0f) * 0.30f;
         engine->current.offset_x += sinf(seconds * 17.0f) * 0.035f;

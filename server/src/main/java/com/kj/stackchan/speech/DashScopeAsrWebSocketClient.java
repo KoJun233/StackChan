@@ -14,6 +14,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
@@ -24,7 +25,6 @@ class DashScopeAsrWebSocketClient {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(15);
     private static final Duration PROVIDER_TIMEOUT = Duration.ofSeconds(60);
     private static final int PCM_CHUNK_BYTES = 3200;
-    private static final long PCM_CHUNK_INTERVAL_MILLIS = 100;
 
     private final ObjectMapper objectMapper;
 
@@ -56,6 +56,7 @@ class DashScopeAsrWebSocketClient {
             try {
                 return listener.result().get(PROVIDER_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS).trim();
             } catch (ExecutionException exception) {
+                if (unwrap(exception.getCause()) instanceof VoiceInputException inputException) throw inputException;
                 throw providerFailure("dashscope_asr_result", exception.getCause());
             } catch (TimeoutException exception) {
                 throw new SpeechProviderUnavailableException("dashscope_asr_result_timeout", exception);
@@ -63,7 +64,7 @@ class DashScopeAsrWebSocketClient {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new SpeechProviderUnavailableException("dashscope_asr_interrupted", exception);
-        } catch (SpeechProviderUnavailableException exception) {
+        } catch (SpeechProviderUnavailableException | VoiceInputException exception) {
             throw exception;
         } catch (RuntimeException exception) {
             throw new SpeechProviderUnavailableException("dashscope_asr_transport", exception);
@@ -107,6 +108,16 @@ class DashScopeAsrWebSocketClient {
             current = current.getCause();
         }
         return current == null ? new IllegalStateException("Missing provider failure") : current;
+    }
+
+    static boolean sendRecordedAudio(WebSocket webSocket, byte[] pcmAudio, BooleanSupplier finished) {
+        // This input has already been captured. Await ordered sends, not another real-time replay.
+        for (int offset = 0; offset < pcmAudio.length; offset += PCM_CHUNK_BYTES) {
+            if (finished.getAsBoolean()) return false;
+            int end = Math.min(offset + PCM_CHUNK_BYTES, pcmAudio.length);
+            webSocket.sendBinary(ByteBuffer.wrap(Arrays.copyOfRange(pcmAudio, offset, end)), true).join();
+        }
+        return !finished.getAsBoolean();
     }
 
     private static final class Listener implements WebSocket.Listener {
@@ -184,9 +195,16 @@ class DashScopeAsrWebSocketClient {
                     result.complete(transcript.toString());
                     webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "complete");
                 }
-                case "task-failed" -> fail(
-                        new SpeechProviderUnavailableException("dashscope_asr_task_failed")
-                );
+                case "task-failed" -> {
+                    if ("SUCCESS_WITH_NO_VALID_FRAGMENT".equalsIgnoreCase(event.errorCode()) ||
+                            "ASR_RESPONSE_HAVE_NO_WORDS".equalsIgnoreCase(event.errorCode())) {
+                        fail(new VoiceInputException("没有识别到清晰语音"));
+                    } else if ("AllocationQuota.FreeTierOnly".equals(event.errorCode())) {
+                        fail(SpeechProviderUnavailableException.freeQuotaOnly());
+                    } else {
+                        fail(new SpeechProviderUnavailableException("dashscope_asr_task_failed"));
+                    }
+                }
                 default -> {
                     // Unknown informational events are ignored while the documented task continues.
                 }
@@ -199,21 +217,8 @@ class DashScopeAsrWebSocketClient {
             }
             Thread.startVirtualThread(() -> {
                 try {
-                    for (int offset = 0; offset < pcmAudio.length; offset += PCM_CHUNK_BYTES) {
-                        if (result.isDone()) {
-                            return;
-                        }
-                        int end = Math.min(offset + PCM_CHUNK_BYTES, pcmAudio.length);
-                        byte[] chunk = Arrays.copyOfRange(pcmAudio, offset, end);
-                        webSocket.sendBinary(ByteBuffer.wrap(chunk), true).join();
-                        if (end < pcmAudio.length) {
-                            Thread.sleep(PCM_CHUNK_INTERVAL_MILLIS);
-                        }
-                    }
+                    if (!sendRecordedAudio(webSocket, pcmAudio, result::isDone)) return;
                     webSocket.sendText(DashScopeAsrProtocol.finishTask(objectMapper, taskId), true).join();
-                } catch (InterruptedException exception) {
-                    Thread.currentThread().interrupt();
-                    fail(new SpeechProviderUnavailableException("dashscope_asr_audio_interrupted", exception));
                 } catch (RuntimeException exception) {
                     fail(new SpeechProviderUnavailableException("dashscope_asr_audio_send", exception));
                 }

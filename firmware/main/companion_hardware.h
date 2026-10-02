@@ -45,6 +45,8 @@ typedef enum {
 typedef struct {
     companion_touch_event_type_t type;
     int64_t occurred_us;
+    int16_t x;
+    int16_t y;
 } companion_touch_event_t;
 
 #ifdef __cplusplus
@@ -78,6 +80,17 @@ esp_err_t companion_hardware_set_ambient_brightness(int brightness_percent);
 
 /** Waits for a bounded touch edge emitted by the UI task. */
 bool companion_hardware_wait_touch_event(companion_touch_event_t *event, uint32_t timeout_ms);
+
+/** Shows the local recording-submit icon only for automatic listening. */
+void companion_hardware_show_capture_submit(bool visible);
+
+void companion_hardware_show_voice_input_mode(bool visible, bool automatic);
+
+/** Local affection never changes role color or starts speech/motion. */
+void companion_hardware_respond_to_top_touch(void);
+
+/** Bounded visual accompaniment; NEUTRAL clears only the body-owned layer. */
+void companion_hardware_set_body_emotion(companion_emotion_t emotion);
 
 /** Applies a server-validated role color and bounded emotion suggestion. */
 esp_err_t companion_hardware_configure_expression(uint32_t rgb,

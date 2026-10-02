@@ -72,6 +72,7 @@ typedef enum {
     DEVICE_VOICE_STAGE_LISTENING_RESUMED,
     DEVICE_VOICE_STAGE_CANCELLED,
     DEVICE_VOICE_STAGE_FAILED,
+    DEVICE_VOICE_STAGE_MANUAL_INPUT_READY,
 } device_voice_turn_stage_t;
 
 typedef enum {

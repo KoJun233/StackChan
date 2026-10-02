@@ -3,6 +3,7 @@ package com.kj.stackchan.speech;
 public class SpeechProviderUnavailableException extends RuntimeException {
 
     public static final String SAFE_MESSAGE = "语音服务暂时不可用，请检查语音配置。";
+    public static final String FREE_QUOTA_ONLY_CODE = "dashscope_free_quota_only";
     private static final String DEFAULT_DIAGNOSTIC_CODE = "speech_provider_unavailable";
 
     private final String diagnosticCode;
@@ -26,6 +27,10 @@ public class SpeechProviderUnavailableException extends RuntimeException {
 
     public String diagnosticCode() {
         return diagnosticCode;
+    }
+
+    public static SpeechProviderUnavailableException freeQuotaOnly() {
+        return new SpeechProviderUnavailableException(FREE_QUOTA_ONLY_CODE);
     }
 
     static String httpDiagnosticCode(String stage, int statusCode) {

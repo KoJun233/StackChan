@@ -57,10 +57,22 @@ public class VoiceTurnDiagnosticsService {
             VoiceTurnStage stage,
             VoiceTurnFailureCode failureCode
     ) {
+        recordServerStage(deviceId, turnId, stage, failureCode, null, null);
+    }
+
+    @Transactional
+    public void recordServerStage(UUID deviceId, UUID turnId, VoiceTurnStage stage,
+                                  VoiceTurnFailureCode failureCode, Integer durationMs,
+                                  String diagnosticCode) {
         if (stage.isDeviceStage() && stage != VoiceTurnStage.CANCELLED && stage != VoiceTurnStage.FAILED) {
             throw new IllegalArgumentException("Invalid server voice turn stage");
         }
-        record(deviceId, turnId, stage, VoiceTurnStageSource.SERVER, null, failureCode);
+        if (durationMs != null && (durationMs < 0 || durationMs > MAX_ELAPSED_MS) ||
+                diagnosticCode != null && !diagnosticCode.matches("[a-z0-9_]{1,80}")) {
+            throw new IllegalArgumentException("Invalid voice phase diagnostics");
+        }
+        record(deviceId, turnId, stage, VoiceTurnStageSource.SERVER, null, failureCode,
+                durationMs, diagnosticCode);
     }
 
     @Transactional
@@ -85,6 +97,12 @@ public class VoiceTurnDiagnosticsService {
             Integer elapsedMs,
             VoiceTurnFailureCode failureCode
     ) {
+        record(deviceId, turnId, stage, source, elapsedMs, failureCode, null, null);
+    }
+
+    private void record(UUID deviceId, UUID turnId, VoiceTurnStage stage, VoiceTurnStageSource source,
+                        Integer elapsedMs, VoiceTurnFailureCode failureCode, Integer durationMs,
+                        String diagnosticCode) {
         if ((stage == VoiceTurnStage.FAILED) != (failureCode != null)) {
             throw new IllegalArgumentException("Voice turn failure code does not match stage");
         }
@@ -106,7 +124,9 @@ public class VoiceTurnDiagnosticsService {
                 source,
                 now,
                 elapsedMs,
-                failureCode
+                failureCode,
+                durationMs,
+                diagnosticCode
         ));
     }
 
@@ -149,7 +169,9 @@ public class VoiceTurnDiagnosticsService {
                 event.getSource(),
                 event.getOccurredAt(),
                 event.getElapsedMs(),
-                event.getFailureCode()
+                event.getFailureCode(),
+                event.getDurationMs(),
+                event.getDiagnosticCode()
         );
     }
 
@@ -168,7 +190,13 @@ public class VoiceTurnDiagnosticsService {
             VoiceTurnStageSource source,
             Instant occurredAt,
             Integer elapsedMs,
-            VoiceTurnFailureCode failureCode
+            VoiceTurnFailureCode failureCode,
+            Integer durationMs,
+            String diagnosticCode
     ) {
+        public VoiceTurnEventSnapshot(VoiceTurnStage stage, VoiceTurnStageSource source,
+                                      Instant occurredAt, Integer elapsedMs, VoiceTurnFailureCode failureCode) {
+            this(stage, source, occurredAt, elapsedMs, failureCode, null, null);
+        }
     }
 }

@@ -106,7 +106,7 @@ public class ReminderDeliveryService {
     }
 
     private boolean cancelMutedProactive(ReminderEntity reminder, Instant now) {
-        if (reminder.getSource() != ReminderSource.PROACTIVE) return false;
+        if (reminder.getSource() != ReminderSource.PROACTIVE && reminder.getSource() != ReminderSource.FOLLOW_UP) return false;
         boolean quiet = quietService != null && quietService.isQuiet(reminder.getDeviceId(), now);
         // Workday brief/rest/pilot messages share the legacy PROACTIVE source but have their own controls.
         if (!quiet && reminder.getProactiveTopicKey() != null &&
@@ -136,11 +136,14 @@ public class ReminderDeliveryService {
                 reminderRepository.save(reminder);
                 continue;
             }
+            if (reminder.getSource() == ReminderSource.FOLLOW_UP && !isActivePartner(reminder)) {
+                defer(reminder, now.plusSeconds(60), now);
+                continue;
+            }
             var settings = interactionSettingsService == null
                     ? null : interactionSettingsService.resolve(reminder.getDeviceId());
             if (settings != null && interactionSettingsService.isDnd(settings, now)) {
-                reminder.deferUntil(interactionSettingsService.nextDndEnd(settings, now), now);
-                reminderRepository.save(reminder);
+                defer(reminder, interactionSettingsService.nextDndEnd(settings, now), now);
                 continue;
             }
             if (!deviceCommandGateway.isConnected(reminder.getDeviceId())) {
@@ -148,8 +151,7 @@ public class ReminderDeliveryService {
                 continue;
             }
             if (isBusy(reminder.getDeviceId())) {
-                reminder.deferUntil(now.plus(Duration.ofMinutes(1)), now);
-                reminderRepository.save(reminder);
+                defer(reminder, now.plus(Duration.ofMinutes(1)), now);
                 continue;
             }
             ReminderEntity deliveryLeader = reminder;
@@ -161,6 +163,7 @@ public class ReminderDeliveryService {
                 String deliveryText = digestText(deliveryItems);
                 byte[] audio = speechRuntimeClient.synthesize(deliveryText, selectedLeader.getRoleId());
                 if (cancelMutedProactive(selectedLeader, clock.instant())) continue;
+                if (selectedLeader.getSource() == ReminderSource.FOLLOW_UP && !followUpReady(selectedLeader)) continue;
                 String commandId = UUID.randomUUID().toString();
                 if (deliveryItems.size() == 1) {
                     selectedLeader.markDispatched(commandId, audio, now);
@@ -224,7 +227,9 @@ public class ReminderDeliveryService {
         );
         reminders.forEach(reminder -> {
             List<ReminderEntity> items = deliveryItems(reminder);
-            if (isExpired(reminder, now)) {
+            if (reminder.getSource() == ReminderSource.FOLLOW_UP) {
+                reminder.failGroupedOccurrence("unconfirmed_delivery", now);
+            } else if (isExpired(reminder, now)) {
                 items.forEach(item -> {
                     if (isExpired(item, now)) item.markExpired(now);
                     else item.returnToPending(now);
@@ -237,10 +242,18 @@ public class ReminderDeliveryService {
         return reminders.size();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(noRollbackFor = ReminderNotFoundException.class)
     public byte[] getAudio(UUID reminderId, UUID deviceId) {
         ReminderEntity reminder = reminderRepository.findByIdAndDeviceId(reminderId, deviceId)
                 .orElseThrow(ReminderNotFoundException::new);
+        if (reminder.getSource() == ReminderSource.FOLLOW_UP) {
+            Instant now = clock.instant();
+            if (cancelMutedProactive(reminder, now) || isExpired(reminder, now) || !isActivePartner(reminder)
+                    || (interactionSettingsService != null && interactionSettingsService.isDnd(
+                            interactionSettingsService.resolve(deviceId), now))) {
+                throw new ReminderNotFoundException();
+            }
+        }
         byte[] audio = reminder.getAudioPayload();
         if (reminder.getStatus() != ReminderStatus.DISPATCHED || audio == null || audio.length < 44) {
             throw new ReminderNotFoundException();
@@ -253,7 +266,7 @@ public class ReminderDeliveryService {
             InteractionSettingsService.InteractionSettingsSnapshot settings,
             Instant now
     ) {
-        if (reminder.getSource() == ReminderSource.EXTERNAL) {
+        if (reminder.getSource() == ReminderSource.EXTERNAL || reminder.getSource() == ReminderSource.FOLLOW_UP) {
             return;
         }
         if (settings == null || settings.missedReminderPolicy() == MissedReminderPolicy.PLAY_NOW) {
@@ -287,12 +300,49 @@ public class ReminderDeliveryService {
             reminder.markExpired(now);
             reminderRepository.save(reminder);
         });
+        reminderRepository.findTop100BySourceAndStatusAndExpiresAtLessThanEqualOrderByExpiresAtAscIdAsc(
+                ReminderSource.FOLLOW_UP, ReminderStatus.PENDING, now).forEach(reminder -> {
+            reminder.markExpired(now);
+            reminderRepository.save(reminder);
+        });
     }
 
     private boolean isExpired(ReminderEntity reminder, Instant now) {
-        return reminder.getSource() == ReminderSource.EXTERNAL
+        return (reminder.getSource() == ReminderSource.EXTERNAL || reminder.getSource() == ReminderSource.FOLLOW_UP)
                 && reminder.getExpiresAt() != null
                 && !reminder.getExpiresAt().isAfter(now);
+    }
+
+    private boolean isActivePartner(ReminderEntity reminder) {
+        return roleService == null || reminder.getRoleId().equals(roleService.getActive(reminder.getDeviceId()).id());
+    }
+
+    private void defer(ReminderEntity reminder, Instant until, Instant now) {
+        if (reminder.getSource() == ReminderSource.FOLLOW_UP && !until.isBefore(reminder.getExpiresAt())) {
+            reminder.markExpired(now);
+        } else reminder.deferUntil(until, now);
+        reminderRepository.save(reminder);
+    }
+
+    private boolean followUpReady(ReminderEntity reminder) {
+        Instant now = clock.instant();
+        if (isExpired(reminder, now)) {
+            reminder.markExpired(now);
+            reminderRepository.save(reminder);
+            return false;
+        }
+        if (!isActivePartner(reminder)) {
+            defer(reminder, now.plusSeconds(60), now);
+            return false;
+        }
+        if (interactionSettingsService != null) {
+            var settings = interactionSettingsService.resolve(reminder.getDeviceId());
+            if (interactionSettingsService.isDnd(settings, now)) {
+                defer(reminder, interactionSettingsService.nextDndEnd(settings, now), now);
+                return false;
+            }
+        }
+        return true;
     }
 
     private void completeFailure(ReminderEntity reminder, String failureCode, Instant now) {

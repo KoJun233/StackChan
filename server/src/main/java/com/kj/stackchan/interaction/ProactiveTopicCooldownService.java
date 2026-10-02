@@ -40,12 +40,17 @@ public class ProactiveTopicCooldownService {
                 now, org.springframework.data.domain.PageRequest.of(0, 2));
         if (delivered.isEmpty()) return false;
         var latest = delivered.getFirst();
-        if (latest.getSource() != com.kj.stackchan.reminder.ReminderSource.PROACTIVE) return false;
+        if (latest.getSource() != com.kj.stackchan.reminder.ReminderSource.PROACTIVE
+                && latest.getSource() != com.kj.stackchan.reminder.ReminderSource.FOLLOW_UP) return false;
         if (delivered.size() > 1 && latest.getLastCompletedAt().equals(delivered.get(1).getLastCompletedAt())) return false;
         if (topicBoundary != null && !latest.getLastCompletedAt().isAfter(topicBoundary)) return false;
         if (latest.getProactiveTopicKey() == null || latest.getProactiveTopicKey().isBlank()
                 || latest.getProactiveTopicKey().startsWith("workday:")) return false;
         var topic = repository.findLocked(deviceId, roleId, normalize(latest.getProactiveTopicKey())).orElse(null);
+        if (topic == null && latest.getSource() == com.kj.stackchan.reminder.ReminderSource.FOLLOW_UP) {
+            topic = repository.save(new ProactiveTopicCooldownEntity(deviceId, roleId,
+                    normalize(latest.getProactiveTopicKey()), now, now.plus(TOPIC_COOLDOWN)));
+        }
         if (topic == null) return false;
         topic.mute(now);
         return true;

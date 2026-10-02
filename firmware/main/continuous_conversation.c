@@ -23,6 +23,15 @@ bool continuous_conversation_should_offer_follow_up(
            conversation_elapsed_ms < CONTINUOUS_CONVERSATION_MAX_DURATION_MS;
 }
 
+bool continuous_conversation_should_offer_follow_up_for_input(
+    const continuous_conversation_settings_t *settings,
+    uint32_t completed_follow_up_turns, uint32_t conversation_elapsed_ms,
+    bool explicit_end, bool online, bool press_to_talk)
+{
+    return !press_to_talk && continuous_conversation_should_offer_follow_up(
+        settings, completed_follow_up_turns, conversation_elapsed_ms, explicit_end, online);
+}
+
 uint32_t continuous_conversation_capture_seconds(
     const continuous_conversation_settings_t *settings,
     uint32_t conversation_elapsed_ms)

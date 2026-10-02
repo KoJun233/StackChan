@@ -1464,6 +1464,14 @@ TEST_CASE("voice turn diagnostics expose only bounded stage metadata", "[device_
         "TOUCH_STARTED", cJSON_GetObjectItemCaseSensitive(root, "stage")->valuestring);
     cJSON_Delete(root);
 
+    TEST_ASSERT_EQUAL(ESP_OK, device_protocol_encode_voice_turn_stage(
+        payload, sizeof(payload), 12, turn_id, DEVICE_VOICE_STAGE_MANUAL_INPUT_READY,
+        1000, DEVICE_VOICE_FAILURE_NONE));
+    root = cJSON_Parse(payload);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_EQUAL_STRING("MANUAL_INPUT_READY", cJSON_GetObjectItemCaseSensitive(root, "stage")->valuestring);
+    cJSON_Delete(root);
+
     TEST_ASSERT_EQUAL(
         ESP_OK,
         device_protocol_encode_voice_turn_stage(

@@ -121,7 +121,7 @@ public class SpeechProviderSettingsEntity {
                 ttsModel,
                 ttsMode,
                 ttsVoice,
-                VoiceWakeSensitivity.SENSITIVE,
+                VoiceWakeSensitivity.NORMAL,
                 350,
                 200,
                 apiKeyCiphertext,

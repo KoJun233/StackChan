@@ -115,7 +115,6 @@ class LongTermMemoryServiceTest {
 
         assertThat(oldMemory.isEnabled()).isFalse();
         assertThat(oldMemory.getSupersededByMemoryId()).isEqualTo(pending.getId());
-        when(repository.findById(oldMemory.getId())).thenReturn(Optional.of(oldMemory));
         assertThatThrownBy(() -> service.setEnabled(oldMemory.getId(), true))
                 .isInstanceOf(InvalidMemoryException.class);
     }
@@ -175,7 +174,7 @@ class LongTermMemoryServiceTest {
                 MemoryConfirmationStatus.PENDING,
                 NOW
         );
-        when(repository.findById(pending.getId())).thenReturn(Optional.of(pending));
+        when(repository.findByIdForUpdate(pending.getId())).thenReturn(Optional.of(pending));
         assertThatThrownBy(() -> service().setEnabled(pending.getId(), true))
                 .isInstanceOf(InvalidMemoryException.class);
     }
