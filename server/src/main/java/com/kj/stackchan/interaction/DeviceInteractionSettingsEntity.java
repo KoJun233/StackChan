@@ -217,6 +217,11 @@ public class DeviceInteractionSettingsEntity {
         this.updatedAt = now;
     }
 
+    public void setNightMode(boolean nightMode, Instant now) {
+        this.nightMode = nightMode;
+        this.updatedAt = now;
+    }
+
     public void setTemporaryDndUntil(Instant until, Instant now) {
         this.temporaryDndUntil = until;
         this.updatedAt = now;

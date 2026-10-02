@@ -112,7 +112,7 @@ public class WorkdayCompanionService {
                 || device.getBodyDiagnostics().present();
         WorkdayRuntimeService.WorkdayRuntimeSnapshot runtime = runtimeService.start(deviceId, present);
         CompanionRoleService.RoleSnapshot role = roleService.getActive(deviceId);
-        commandGateway.configureExpression(deviceId, role.expressionThemeColor(), "JOY", "WEAK", 5);
+        commandGateway.configureExpression(deviceId, role.expressionThemeColor(), "HAPPY", "WEAK", 5);
         processActiveDevice(deviceId);
         return runtimeService.get(deviceId);
     }
@@ -166,7 +166,7 @@ public class WorkdayCompanionService {
         if (update.rearrival()) {
             DeviceEntity device = deviceRepository.findById(deviceId).orElse(null);
             CompanionRoleService.RoleSnapshot role = roleService.getActive(deviceId);
-            commandGateway.configureExpression(deviceId, role.expressionThemeColor(), "JOY", "WEAK", 4);
+            commandGateway.configureExpression(deviceId, role.expressionThemeColor(), "HAPPY", "WEAK", 5);
             if (device != null && DeviceEventService.MOTION_ARMED.equals(device.getSafetyState()) &&
                     device.getBodyDiagnostics() != null &&
                     device.getBodyDiagnostics().proximitySupported()) {

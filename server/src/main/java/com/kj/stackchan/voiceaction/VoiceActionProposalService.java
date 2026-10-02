@@ -43,6 +43,10 @@ public class VoiceActionProposalService {
     private final WorkdayCompanionService workdayCompanionService;
     private final PersonalTaskService personalTaskService;
     private com.kj.stackchan.conversation.DeviceVoiceConversationService deviceConversations;
+    private com.kj.stackchan.device.DeviceRepository devices;
+
+    @Autowired
+    public void setDevices(com.kj.stackchan.device.DeviceRepository devices) { this.devices = devices; }
 
     @Autowired
     public void setDeviceConversations(com.kj.stackchan.conversation.DeviceVoiceConversationService service) {
@@ -145,6 +149,27 @@ public class VoiceActionProposalService {
             throw new VoiceActionException("Voice action proposal is invalid");
         }
         validateDraft(draft);
+        if (draft.actionType() == VoiceActionType.COMPLETE_PERSONAL_TASK) {
+            if (personalTaskService == null) throw new VoiceActionException("Personal tasks are unavailable");
+            var task = personalTaskService.get(draft.targetReference());
+            if (!deviceId.equals(task.deviceId()) || !resolveRoleId(conversationId).equals(task.roleId())
+                    || task.status() != com.kj.stackchan.task.PersonalTaskStatus.OPEN
+                    || !java.util.Objects.equals(draft.content(), task.title())) {
+                throw new VoiceActionException("Personal task snapshot changed");
+            }
+            draft = new VoiceActionDraft(draft.actionType(), true, task.title(), null, task.dueAt(), task.zoneId(),
+                    null, null, null, task.updatedAt(), null, null, task.id());
+        }
+        if (draft.actionType() == VoiceActionType.SWITCH_ROLE) {
+            if (roleService == null) throw new VoiceActionException("Roles are unavailable");
+            var role = roleService.resolveUniqueName(draft.content());
+            draft = new VoiceActionDraft(draft.actionType(), true, role.name(), null, null, null,
+                    null, null, null, null, null, null, role.id());
+        }
+        if (draft.actionType() == VoiceActionType.SET_TEMPORARY_DND) {
+            draft = new VoiceActionDraft(draft.actionType(), true, null, null, null,
+                    settingsService.resolve(deviceId).zoneId(), null, null, null, draft.targetAt(), null, null, null);
+        }
         if (draft.actionType() == VoiceActionType.CREATE_REMINDER && draft.targetReference() != null) {
             if (draft.durationMinutes() == null || draft.durationMinutes() < 1 || draft.durationMinutes() > 1440) {
                 throw new VoiceActionException("Recent reminder delay is invalid");
@@ -189,9 +214,14 @@ public class VoiceActionProposalService {
                     null, null, null, target.id());
         }
         Instant now = clock.instant();
-        VoiceActionProposalEntity proposal = proposalRepository.save(
-                new VoiceActionProposalEntity(SINGLE_ADMIN, deviceId, resolveRoleId(conversationId),
-                        conversationId, turnId, draft, now, now.plus(TTL)));
+        UUID sourceRoleId = resolveRoleId(conversationId);
+        VoiceActionProposalEntity proposal = new VoiceActionProposalEntity(SINGLE_ADMIN, deviceId, sourceRoleId,
+                conversationId, turnId, draft, now, now.plus(TTL));
+        if (roleService != null) {
+            proposal.setSourceRoleName(roleService.get(sourceRoleId).name());
+            proposal.setSourceConsentEpoch(roleService.activeConsentEpoch(deviceId));
+        }
+        proposal = proposalRepository.save(proposal);
         auditRepository.save(new VoiceActionAuditEntity(proposal, VoiceActionAuditEvent.PROPOSED, null, now));
         return proposal;
     }
@@ -204,6 +234,12 @@ public class VoiceActionProposalService {
         if (latest == null) return null;
         var locked = findScopedForUpdate(latest.getId(), deviceId, conversationId);
         if (locked.getStatus() != VoiceActionStatus.PENDING) return null;
+        try { requireCompanionScope(locked); }
+        catch (VoiceActionException exception) {
+            locked.markExpired(clock.instant());
+            auditRepository.save(new VoiceActionAuditEntity(locked, VoiceActionAuditEvent.EXPIRED, null, clock.instant()));
+            return null;
+        }
         if (!locked.getExpiresAt().isAfter(clock.instant())) {
             locked.markExpired(clock.instant());
             auditRepository.save(new VoiceActionAuditEntity(locked, VoiceActionAuditEvent.EXPIRED, null, clock.instant()));
@@ -239,6 +275,11 @@ public class VoiceActionProposalService {
 
     @Transactional
     public ProposalSnapshot confirm(UUID proposalId, UUID deviceId, UUID conversationId) {
+        return confirm(proposalId, deviceId, conversationId, null);
+    }
+
+    @Transactional
+    public ProposalSnapshot confirm(UUID proposalId, UUID deviceId, UUID conversationId, UUID confirmingTurnId) {
         VoiceActionProposalEntity proposal = findScopedForUpdate(proposalId, deviceId, conversationId);
         Instant now = clock.instant();
         if (proposal.getStatus() == VoiceActionStatus.EXECUTED || proposal.getStatus() == VoiceActionStatus.FAILED
@@ -255,7 +296,7 @@ public class VoiceActionProposalService {
         }
         proposal.markExecuting(now);
         auditRepository.save(new VoiceActionAuditEntity(proposal, VoiceActionAuditEvent.CONFIRMED, null, now));
-        return executeLocked(proposal, now);
+        return executeLocked(proposal, now, confirmingTurnId == null ? proposal.getSourceTurnId() : confirmingTurnId);
     }
 
     @Transactional
@@ -263,8 +304,13 @@ public class VoiceActionProposalService {
         VoiceActionProposalEntity proposal = findScopedForUpdate(proposalId, deviceId, conversationId);
         if (proposal.getStatus() == VoiceActionStatus.PENDING) {
             Instant now = clock.instant();
-            proposal.markCancelled(now);
-            auditRepository.save(new VoiceActionAuditEntity(proposal, VoiceActionAuditEvent.CANCELLED, null, now));
+            if (!proposal.getExpiresAt().isAfter(now)) {
+                proposal.markExpired(now);
+                auditRepository.save(new VoiceActionAuditEntity(proposal, VoiceActionAuditEvent.EXPIRED, null, now));
+            } else {
+                proposal.markCancelled(now);
+                auditRepository.save(new VoiceActionAuditEntity(proposal, VoiceActionAuditEvent.CANCELLED, null, now));
+            }
         }
         return snapshot(proposal);
     }
@@ -313,12 +359,17 @@ public class VoiceActionProposalService {
     }
 
     private ProposalSnapshot executeLocked(VoiceActionProposalEntity proposal, Instant now) {
+        return executeLocked(proposal, now, proposal.getSourceTurnId());
+    }
+
+    private ProposalSnapshot executeLocked(VoiceActionProposalEntity proposal, Instant now, UUID confirmingTurnId) {
         if (proposal.getStatus() == VoiceActionStatus.PENDING) {
             proposal.markExecuting(now);
         }
         try {
-            if (proposal.getActionType() == VoiceActionType.CONFIRM_MEMORY
-                    || proposal.getActionType() == VoiceActionType.CREATE_FOLLOW_UP) requireCompanionScope(proposal);
+            if (devices != null && devices.findByIdForUpdate(proposal.getDeviceId()).isEmpty())
+                throw new VoiceActionException("Proposal device no longer exists");
+            requireCompanionScope(proposal);
             if (proposal.getActionType() == VoiceActionType.CREATE_REMINDER && proposal.getTargetReference() != null) {
                 reminderService.requireHeardUserReminder(proposal.getTargetReference(), proposal.getDeviceId(),
                         proposal.getRoleId(), proposal.getTargetAt(), proposal.getContent());
@@ -331,8 +382,8 @@ public class VoiceActionProposalService {
                         : reminderService.create(proposal.getRoleId(), new ReminderService.ReminderCommand(
                         proposal.getDeviceId(), proposal.getContent(), proposal.getScheduledAt(), proposal.getZoneId(),
                         ReminderRecurrence.valueOf(proposal.getRecurrenceType()), proposal.getRecurrenceInterval())).id();
-                case SWITCH_ROLE -> roleService.switchActiveFromVoice(
-                        proposal.getDeviceId(), proposal.getContent()).id();
+                case SWITCH_ROLE -> roleService.switchActiveConfirmed(
+                        proposal.getDeviceId(), proposal.getTargetReference(), proposal.getContent(), confirmingTurnId).id();
                 case SNOOZE_NEXT_REMINDER -> reminderService.applyConfirmedVoiceChange(proposal.getTargetReference(),
                         proposal.getDeviceId(), proposal.getRoleId(), proposal.getScheduledAt(), proposal.getContent(),
                         proposal.getDurationMinutes()).id();
@@ -373,8 +424,9 @@ public class VoiceActionProposalService {
                 }
                 case COMPLETE_PERSONAL_TASK -> {
                     if (personalTaskService == null) throw new VoiceActionException("Personal tasks are unavailable");
-                    yield personalTaskService.complete(
-                            proposal.getTargetReference(), proposal.getDeviceId(), proposal.getRoleId()).id();
+                    yield personalTaskService.completeConfirmed(proposal.getTargetReference(), proposal.getDeviceId(),
+                            proposal.getRoleId(), proposal.getContent(), proposal.getTargetAt(),
+                            proposal.getScheduledAt(), proposal.getZoneId()).id();
                 }
             };
             Instant completed = clock.instant();
@@ -441,7 +493,7 @@ public class VoiceActionProposalService {
             throw new VoiceActionException("Voice memory suggestion is invalid");
         }
         if (draft.actionType() == VoiceActionType.CREATE_REMINDER
-                && (draft.content() == null || draft.content().isBlank() || draft.scheduledAt() == null
+                && (draft.content() == null || draft.content().isBlank() || draft.content().length() > 1000 || draft.scheduledAt() == null
                 || draft.zoneId() == null || draft.recurrenceType() == null || draft.recurrenceInterval() == null)) {
             throw new VoiceActionException("Voice reminder proposal is invalid");
         }
@@ -479,11 +531,40 @@ public class VoiceActionProposalService {
     private void requireCompanionScope(VoiceActionProposalEntity proposal) {
         if (!proposal.getRoleId().equals(resolveRoleId(proposal.getConversationId()))
                 || (roleService != null && !proposal.getRoleId().equals(roleService.getActive(proposal.getDeviceId()).id()))
+                || (roleService != null && !java.util.Objects.equals(proposal.getSourceConsentEpoch(),
+                        roleService.activeConsentEpoch(proposal.getDeviceId())))
                 || (deviceConversations != null && !deviceConversations.findDeviceIdByConversationId(
                         proposal.getConversationId()).filter(proposal.getDeviceId()::equals).isPresent())) {
             throw new VoiceActionException("Companion consent belongs to another partner or device");
         }
     }
+
+    /** Device UI never accepts a device, role, conversation or turn supplied by a click. */
+    @Transactional
+    public ScreenProposal screen(UUID proposalId, UUID deviceId) {
+        var proposal = proposalRepository.findByIdForUpdate(proposalId)
+                .orElseThrow(() -> new VoiceActionException("Voice action proposal not found"));
+        if (!SINGLE_ADMIN.equals(proposal.getActorId()) || !deviceId.equals(proposal.getDeviceId())
+                || !proposal.isConfirmationRequired()) throw new VoiceActionException("Proposal is unauthorized");
+        // A completed switch may be retried against its fixed target, but another later switch retires the card.
+        boolean completedSwitch = proposal.getActionType() == VoiceActionType.SWITCH_ROLE
+                && proposal.getStatus() == VoiceActionStatus.EXECUTED && roleService != null
+                && java.util.Objects.equals(proposal.getResultReference(), roleService.getActive(deviceId).id());
+        if (!completedSwitch) requireCompanionScope(proposal);
+        if (deviceConversations != null && !deviceConversations.isCurrentConversation(
+                deviceId, proposal.getRoleId(), proposal.getConversationId()))
+            throw new VoiceActionException("Proposal conversation is no longer current");
+        Instant now = clock.instant();
+        if (proposal.getStatus() == VoiceActionStatus.PENDING && !proposal.getExpiresAt().isAfter(now)) {
+            proposal.markExpired(now);
+            auditRepository.save(new VoiceActionAuditEntity(proposal, VoiceActionAuditEvent.EXPIRED, null, now));
+        }
+        return new ScreenProposal(snapshot(proposal), proposal.getConversationId(), proposal.getRoleId(),
+                proposal.getSourceTurnId(), proposal.getZoneId(), proposal.getSourceRoleName());
+    }
+
+    public record ScreenProposal(ProposalSnapshot proposal, UUID conversationId, UUID roleId, UUID sourceTurnId,
+                                 String zoneId, String roleName) {}
 
     private UUID executeNotificationResponse(
             VoiceActionProposalEntity proposal,

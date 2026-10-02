@@ -12,6 +12,7 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "lwip/sockets.h"
 
 #include "audio_wav.h"
 #include "device_endpoint.h"
@@ -44,6 +45,8 @@ typedef struct {
     size_t frame_payload_size;
     size_t frame_payload_received;
     bool streamed;
+    size_t received_bytes;
+    esp_err_t receive_error;
     bool terminal;
     bool failed;
     voice_service_stream_frame_handler_t frame_handler;
@@ -186,7 +189,8 @@ static esp_err_t append_legacy(response_accumulator_t *response,
     return ESP_OK;
 }
 
-static esp_err_t consume_streaming_data(streaming_response_t *response,
+/* Retain this call boundary for reproducible release stack budgeting. */
+static __attribute__((noinline)) esp_err_t consume_streaming_data(streaming_response_t *response,
                                         const uint8_t *data,
                                         size_t data_size)
 {
@@ -266,10 +270,35 @@ static esp_err_t streaming_response_event_handler(esp_http_client_event_t *event
     streaming_response_t *response = event == NULL ? NULL : event->user_data;
     if (response == NULL || response->failed) return ESP_FAIL;
     if (event->event_id != HTTP_EVENT_ON_DATA || event->data_len <= 0) return ESP_OK;
+    if (response->received_bytes == 0)
+        ESP_LOGI(TAG, "Voice stream response: first_data_bytes=%d internal_free=%u internal_largest=%u",
+                 event->data_len, (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    response->received_bytes += (size_t)event->data_len;
     esp_err_t err = consume_streaming_data(
         response, (const uint8_t *)event->data, (size_t)event->data_len);
-    if (err != ESP_OK) response->failed = true;
+    if (err != ESP_OK) {
+        response->failed = true;
+        response->receive_error = err;
+        ESP_LOGW(TAG, "Voice stream response failed: error=%s received=%u prefix=%u header=%u frame=%u",
+                 esp_err_to_name(err), (unsigned)response->received_bytes,
+                 (unsigned)response->prefix_size, (unsigned)response->frame_header_size,
+                 (unsigned)response->frame_payload_received);
+        // IDF's body parser dispatches ON_DATA but ignores its return code.
+        // Close the transport explicitly so a decoder/allocation failure cannot
+        // leave the owner waiting for the full 90-second network timeout.
+        clear_active_turn_client(event->client);
+        (void)esp_http_client_close(event->client);
+    }
     return err;
+}
+
+static void configure_upload_socket(esp_http_client_handle_t client)
+{
+    int socket = esp_http_client_get_socket(client);
+    int no_delay = 1;
+    if (socket >= 0 && setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, &no_delay, sizeof(no_delay)) != 0)
+        ESP_LOGW(TAG, "Voice upload socket could not disable delayed small writes");
 }
 
 static void log_upload_state(const char *stage,
@@ -413,6 +442,7 @@ static esp_err_t perform_streaming_post(esp_http_client_handle_t client,
     if (err == ESP_OK) {
         err = esp_http_client_open(client, (int)request_size);
         if (err == ESP_OK) {
+            configure_upload_socket(client);
             log_upload_state("opened", sent, request_size, started_us);
         }
     }
@@ -611,6 +641,7 @@ esp_err_t voice_service_live_upload_begin(const device_identity_t *identity,
     if (err == ESP_OK) {
         err = esp_http_client_open(upload->client, -1);
     }
+    if (err == ESP_OK) configure_upload_socket(upload->client);
     uint8_t header[AUDIO_WAV_HEADER_SIZE] = {0};
     if (err == ESP_OK) {
         err = audio_wav_build_pcm16_mono_stream_header(header, sizeof(header), sample_rate);
@@ -703,6 +734,7 @@ esp_err_t voice_service_live_upload_finish(voice_service_live_upload_t *upload,
     bool complete_legacy = !upload->response.streamed && upload->response.legacy.size > 0;
     if (err != ESP_OK || upload->response.failed || status != 200 ||
         (!complete_stream && !complete_legacy)) {
+        if (upload->response.receive_error != ESP_OK) err = upload->response.receive_error;
         destroy_live_upload(upload, false);
         return err == ESP_OK ? ESP_FAIL : err;
     }
@@ -807,6 +839,7 @@ esp_err_t voice_service_send_turn_streaming(const device_identity_t *identity,
     bool complete_legacy = !response.streamed && response.legacy.size > 0;
     if (response.frame_payload != NULL) heap_caps_free(response.frame_payload);
     if (err != ESP_OK || response.failed || status != 200 || (!complete_stream && !complete_legacy)) {
+        if (response.receive_error != ESP_OK) err = response.receive_error;
         heap_caps_free(response.legacy.data);
         return err == ESP_OK ? ESP_FAIL : err;
     }

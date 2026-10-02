@@ -23,9 +23,20 @@ if (-not $taskStackMatch.Success) {
 $taskStackBytes = [int]$taskStackMatch.Groups[1].Value
 
 $frameBytes = @{}
-foreach ($line in Get-Content -LiteralPath $usagePath) {
-    if ($line -match 'device_provisioning\.c:\d+:\d+:(?<name>[A-Za-z0-9_]+)\s+(?<bytes>\d+)\s+') {
-        $frameBytes[$Matches.name] = [int]$Matches.bytes
+$usagePaths = @($usagePath)
+if ($source.Contains('relocate_server(const')) {
+    $credentialUsage = Join-Path $FirmwareDirectory "$BuildDirectory\esp-idf\main\CMakeFiles\__idf_main.dir\device_credentials.c.su"
+    if (-not (Test-Path -LiteralPath $credentialUsage)) { throw "Credential stack-usage report was not found: $credentialUsage" }
+    $usagePaths += $credentialUsage
+}
+foreach ($line in Get-Content -LiteralPath $usagePaths) {
+    if ($line -match '(?:device_provisioning|device_credentials)\.c:\d+:\d+:(?<name>[A-Za-z0-9_.$]+)\s+(?<bytes>\d+)\s+') {
+        # -Os emits .constprop/$part clones. Use their largest frame.
+        $frameName = [regex]::Replace($Matches.name, '[.$].*$', '')
+        $bytes = [int]$Matches.bytes
+        if (-not $frameBytes.ContainsKey($frameName) -or $bytes -gt $frameBytes[$frameName]) {
+            $frameBytes[$frameName] = $bytes
+        }
     }
 }
 
@@ -37,6 +48,15 @@ foreach ($frame in $requiredFrames) {
 }
 
 $knownLocalPathBytes = ($requiredFrames | ForEach-Object { $frameBytes[$_] } | Measure-Object -Sum).Sum
+if ($usagePaths.Count -gt 1) {
+    $relocationFrames = @('provisioning_task', 'relocate_server', 'device_credentials_refresh', 'device_credentials_parse_refresh_response')
+    foreach ($frame in $relocationFrames) {
+        if (-not $frameBytes.ContainsKey($frame)) { throw "Stack-usage report is missing required frame: $frame" }
+    }
+    $relocationBytes = ($relocationFrames | ForEach-Object { $frameBytes[$_] } | Measure-Object -Sum).Sum
+    $knownLocalPathBytes = [math]::Max($knownLocalPathBytes, $relocationBytes)
+}
+
 
 # The .su report proves the local provisioning frames. Calls into cJSON,
 # esp_http_client, NVS, TLS/TCP, and their callbacks are outside that local

@@ -24,6 +24,12 @@ bool body_hardware_play_motion(safety_motion_template_t motion,
                                const safety_motion_guard_t *guard,
                                const char *command_id);
 
+/** Firmware-only bounded tracking goals; never exposed to remote command angles. */
+bool body_hardware_follow_local(float yaw_offset, float pitch_offset, bool recenter);
+bool body_hardware_nod_local(void);
+/** Invalidates only queued/active local tracking, retaining independent remote templates. */
+void body_hardware_stop_local_follow(void);
+
 typedef enum {
     BODY_MOTION_COMPLETED = 0,
     BODY_MOTION_STOPPED,

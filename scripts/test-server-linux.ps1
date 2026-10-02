@@ -13,8 +13,17 @@ mkdir -p /work /maven-repository
 cp -a /dependency-seed/. /maven-repository/
 cp -a /source/pom.xml /source/src /source/wakenet-models /work/
 cd /work
+# The read-only seed includes artifacts acquired under both central and aliyun.
+# Declare the seed provenance IDs for Maven's enhanced local repository; -o forbids network resolution.
+cat > seed-settings.xml <<'SETTINGS'
+<settings><profiles><profile><id>seed</id><repositories>
+<repository><id>aliyun</id><url>https://maven.aliyun.com/repository/public</url></repository>
+</repositories><pluginRepositories>
+<pluginRepository><id>aliyun</id><url>https://maven.aliyun.com/repository/public</url></pluginRepository>
+</pluginRepositories></profile></profiles><activeProfiles><activeProfile>seed</activeProfile></activeProfiles></settings>
+SETTINGS
 set +e
-mvn -B -ntp -Dmaven.repo.local=/maven-repository '-DargLine=-Xmx768m -XX:ActiveProcessorCount=2' $testOption test
+mvn -o -s seed-settings.xml -B -ntp -Dmaven.repo.local=/maven-repository '-DargLine=-Xmx768m -XX:ActiveProcessorCount=2' $testOption test
 result=`$?
 exit `$result
 "@

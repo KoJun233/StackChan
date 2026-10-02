@@ -114,6 +114,13 @@ class OfflineDeviceCommandGateway implements DeviceCommandGateway {
     }
 
     @Override
+    public boolean configureExpression(UUID deviceId, UUID turnId, String themeColor, String emotion,
+                                       String intensity, int durationSeconds) {
+        return connectionRegistry.sendExpressionConfiguration(
+                deviceId, turnId, themeColor, emotion, intensity, durationSeconds);
+    }
+
+    @Override
     public boolean previewExpression(UUID deviceId, String category, String value, int durationSeconds) {
         return connectionRegistry.sendExpressionPreview(deviceId, category, value, durationSeconds);
     }

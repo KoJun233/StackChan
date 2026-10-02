@@ -1,4 +1,4 @@
-param([string]$ImagePrefix = 'stackchan-foundation-server:companion007')
+param([string]$ImagePrefix = 'stackchan-foundation-server:device008')
 
 $ErrorActionPreference = 'Stop'
 if ($ImagePrefix -notmatch '^[a-z0-9./:_-]+$') { throw 'Invalid local image prefix' }
@@ -13,7 +13,7 @@ try {
     if ($LASTEXITCODE -ne 0 -or ($untracked | Where-Object { $_ -match '\.(java|sql|vue|ts|json|ya?ml|c|cpp|h|ps1|py|mjs)$|(?:CMakeLists\.txt|Dockerfile)$' })) {
         throw 'Candidate source contains untracked code or configuration'
     }
-    $directory = Join-Path $root ".tools\companion007-$($commit.Substring(0, 12))-$([Guid]::NewGuid().ToString('N'))"
+    $directory = Join-Path $root ".tools\device008-$($commit.Substring(0, 12))-$([Guid]::NewGuid().ToString('N'))"
     $source = Join-Path $directory 'source'
     New-Item -ItemType Directory -Path $source -Force | Out-Null
     $archive = Join-Path $directory 'source.tar'
@@ -35,6 +35,10 @@ try {
         & docker cp "${name}:/app/public" (Join-Path $directory 'public')
         if ($LASTEXITCODE -ne 0) { throw 'Cannot preserve candidate console' }
     } finally { & docker rm $name | Out-Null }
+    $schemaVersions = Get-ChildItem -LiteralPath (Join-Path $source 'server\src\main\resources\db\migration') -File |
+        ForEach-Object { if ($_.Name -match '^V(\d+)__.*\.sql$') { [int]$Matches[1] } }
+    $expectedSchema = ($schemaVersions | Measure-Object -Maximum).Maximum
+    if ($null -eq $expectedSchema) { throw 'Cannot resolve archived migration version' }
     $manifest = [ordered]@{
         sourceCommit = $commit
         sourceArchiveSha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
@@ -42,7 +46,7 @@ try {
         imageId = $imageId
         jarSha256 = (Get-FileHash -LiteralPath (Join-Path $directory 'app.jar') -Algorithm SHA256).Hash
         consoleIndexSha256 = (Get-FileHash -LiteralPath (Join-Path $directory 'public\index.html') -Algorithm SHA256).Hash
-        expectedSchema = 55
+        expectedSchema = [int]$expectedSchema
         createdAt = (Get-Date).ToUniversalTime().ToString('o')
     }
     $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $directory 'manifest.json')

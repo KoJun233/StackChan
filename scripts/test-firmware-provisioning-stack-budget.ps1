@@ -38,6 +38,13 @@ try {
         'device_provisioning.c:200:1:provision 512 static'
         'device_provisioning.c:300:1:claim_device 512 static'
         'device_provisioning.c:400:1:device_provisioning_parse_claim_response 512 static'
+        'device_provisioning.c:500:1:relocate_server 512 static'
+    ), [Text.UTF8Encoding]::new($false))
+
+    $fixtureCredentialPath = Join-Path $testRoot "$BuildDirectory\esp-idf\main\CMakeFiles\__idf_main.dir\device_credentials.c.su"
+    [IO.File]::WriteAllLines($fixtureCredentialPath, @(
+        'device_credentials.c:100:1:device_credentials_refresh 512 static'
+        'device_credentials.c:200:1:device_credentials_parse_refresh_response 512 static'
     ), [Text.UTF8Encoding]::new($false))
 
     Set-FixtureTaskStack 8192

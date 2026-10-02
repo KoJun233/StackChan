@@ -537,6 +537,41 @@ class VoiceTurnServiceTest {
         );
     }
 
+    @Test
+    void visiblePendingCardRejectsNewAudioBeforeAsrOrProposalResolution() {
+        var ui = mock(com.kj.stackchan.device.DeviceUiService.class);
+        UUID device = UUID.randomUUID();
+        when(ui.pendingVisible(device)).thenReturn(true);
+        var service = service(); service.setDeviceUiService(ui);
+        assertThatThrownBy(() -> service.handle(device, UUID.randomUUID(), new byte[64]))
+                .isInstanceOf(VoiceInputException.class);
+        verifyNoInteractions(speechRuntimeClient, deviceVoiceConversationService, voiceActionCoordinator, agentOrchestrator);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
+    void confirmationSpeechUsesShortPromptOnlyAfterTheRenderedReceiptAndBindsEmotionToItsTurn(boolean visible) {
+        var ui = mock(com.kj.stackchan.device.DeviceUiService.class);
+        var expression = mock(com.kj.stackchan.expression.DeviceExpressionService.class);
+        UUID device = UUID.randomUUID(); UUID conversation = UUID.randomUUID(); UUID turn = UUID.randomUUID();
+        UUID assistant = UUID.randomUUID(); byte[] input = new byte[64]; byte[] audio = new byte[44];
+        String full = "要新增待办“写报告”。确认执行吗？";
+        String spoken = visible ? "请确认屏幕上的内容。" : full;
+        when(speechRuntimeClient.transcribe(input)).thenReturn("新增待办写报告");
+        when(deviceVoiceConversationService.getOrCreateConversationId(device)).thenReturn(conversation);
+        when(conversationService.startGeneration(eq(conversation), any(UUID.class), eq("新增待办写报告")))
+                .thenReturn(new GenerationStart(conversation, UUID.randomUUID(), assistant, false, GenerationStatus.STREAMING, ""));
+        when(voiceActionCoordinator.handle(device, conversation, turn, "新增待办写报告"))
+                .thenReturn(new VoiceActionCoordinator.ActionResult(full, true));
+        when(ui.presentAndAwait(device, conversation)).thenReturn(visible);
+        when(speechRuntimeClient.synthesize(spoken, CompanionRoleEntity.DEFAULT_ROLE_ID)).thenReturn(audio);
+        var service = service(); service.setDeviceUiService(ui); service.setDeviceExpressionService(expression);
+        assertThat(service.handle(device, turn, input).reply()).isEqualTo(spoken);
+        verify(conversationService).completeGeneration(assistant, spoken);
+        verify(expression).apply(eq(device), eq(CompanionRoleEntity.DEFAULT_ROLE_ID), eq(turn), any());
+        verifyNoInteractions(agentOrchestrator);
+    }
+
     private ConversationMessageSnapshot message(
             String content,
             MessageRole role,

@@ -11,13 +11,33 @@
 extern const uint8_t lan_test_server_pem_start[] asm("_binary_lan_test_server_pem_start");
 #endif
 
+static bool is_canonical_uuid(const char *value);
+
+static bool is_supported_ui_path(const char *path)
+{
+    if (path == NULL) return false;
+    if (strcmp(path, "/api/v1/device/ui/state") == 0 ||
+        strcmp(path, "/api/v1/device/ui/settings") == 0) return true;
+    static const char prefix[] = "/api/v1/device/ui/confirmations/";
+    size_t prefix_length = sizeof(prefix) - 1;
+    if (strncmp(path, prefix, prefix_length) != 0) return false;
+    size_t length = strlen(path + prefix_length);
+    if (length != 36 && (length != 42 || strcmp(path + prefix_length + 36, "/shown") != 0))
+        return false;
+    char id[37];
+    memcpy(id, path + prefix_length, 36);
+    id[36] = '\0';
+    return is_canonical_uuid(id);
+}
+
 static bool is_supported_http_path(const char *path)
 {
     return path != NULL &&
            (strcmp(path, DEVICE_ENDPOINT_PAIRING_CLAIM_PATH) == 0 ||
             strcmp(path, DEVICE_ENDPOINT_TOKEN_REFRESH_PATH) == 0 ||
             strcmp(path, DEVICE_ENDPOINT_VOICE_TURN_PATH) == 0 ||
-            strcmp(path, DEVICE_ENDPOINT_LIVE_VOICE_TURN_PATH) == 0);
+            strcmp(path, DEVICE_ENDPOINT_LIVE_VOICE_TURN_PATH) == 0 ||
+            is_supported_ui_path(path));
 }
 
 static bool is_canonical_uuid(const char *value)

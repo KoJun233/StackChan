@@ -29,7 +29,7 @@ def main():
     inputs = [
         "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-Imain", "-Itest/host/stubs",
         "-Imanaged_components/espressif__cjson/cJSON",
-        "main/touch_interaction.c", "main/voice_capture_policy.c",
+        "main/touch_interaction.c", "main/voice_capture_policy.c", "main/display_frame_policy.c",
         "main/continuous_conversation.c", "test/host/voice_interaction_test.c",
         "main/body_touch_policy.c", "main/expression_engine.c", "main/interaction_state.c", "-lm",
         "main/voice_protocol.c", "main/audio_wav.c", "main/strict_json.c",

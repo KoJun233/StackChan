@@ -17,6 +17,7 @@
 #include "freertos/task.h"
 
 #include "device_identity.h"
+#include "device_credentials.h"
 #include "body_hardware.h"
 #include "companion_hardware.h"
 #include "device_endpoint.h"
@@ -26,7 +27,8 @@
 #include "voice_control.h"
 #include "wake_model_ota.h"
 
-#define PROVISIONING_TASK_STACK_SIZE 16384
+/* -Os local path plus an independent 8 KiB NVS/TLS reserve. */
+#define PROVISIONING_TASK_STACK_SIZE 20480
 #define PROVISIONING_TASK_PRIORITY 4
 #define PROVISIONING_LINE_MAX_LEN 512
 #define PROVISIONING_READ_BUFFER_LEN 64
@@ -109,6 +111,15 @@ bool device_provisioning_parse_request(const char *payload,
         return true;
     }
     const cJSON *server_base_url = required_string(root, "serverBaseUrl");
+    if (valid && strcmp(type->valuestring, "relocate_server") == 0 && cJSON_GetArraySize(root) == 2) {
+        valid = copy_string(request->server_base_url, sizeof(request->server_base_url),
+                            server_base_url == NULL ? NULL : server_base_url->valuestring, false) &&
+                device_identity_is_valid_server_base_url(request->server_base_url);
+        if (valid) request->kind = DEVICE_PROVISIONING_REQUEST_RELOCATE_SERVER;
+        cJSON_Delete(root);
+        if (!valid) memset(request, 0, sizeof(*request));
+        return valid;
+    }
     const cJSON *pairing_code = required_string(root, "pairingCode");
     valid = valid &&
                  copy_string(request->server_base_url, sizeof(request->server_base_url),
@@ -294,7 +305,8 @@ static void report_result(const char *type, const char *status)
     memset(result, 0, sizeof(result));
 }
 
-static void provision(const device_provisioning_request_t *request)
+/* Retain this call boundary for reproducible release stack budgeting. */
+static __attribute__((noinline)) void provision(const device_provisioning_request_t *request)
 {
     /* A physical re-provisioning request must never race an old device token. */
     if (device_identity_clear() != ESP_OK) {
@@ -342,6 +354,43 @@ static void update_server(const device_provisioning_request_t *request)
     report_result("provisioning", "complete");
     vTaskDelay(pdMS_TO_TICKS(250));
     esp_restart();
+}
+
+/* Keep authenticated renewal and NVS on this reserved internal stack. */
+__attribute__((noinline)) static void relocate_server(const device_provisioning_request_t *request)
+{
+    device_identity_t identity = {0};
+    safety_state_stop_motion();
+    voice_control_cancel_active_turn();
+    if (!device_transport_pause_for_server_update()) {
+        report_result("provisioning", "transport_busy");
+        goto cleanup;
+    }
+    if (device_identity_load(&identity) != ESP_OK) {
+        report_result("provisioning", "identity_unavailable");
+        goto cleanup;
+    }
+    if (!copy_string(identity.server_base_url, sizeof(identity.server_base_url), request->server_base_url, false)) {
+        report_result("provisioning", "invalid_request");
+        goto cleanup;
+    }
+    /* Renewal proves this is the existing server/database before changing NVS.
+     * It replaces only the short-lived access token, never the refresh credential. */
+    if (!wait_for_wifi_connection() || device_credentials_refresh(&identity) != DEVICE_CREDENTIAL_REFRESHED) {
+        report_result("provisioning", "server_verification_failed");
+        goto cleanup;
+    }
+    if (device_identity_save(&identity) != ESP_OK) {
+        report_result("provisioning", "identity_save_failed");
+        goto cleanup;
+    }
+    memset(&identity, 0, sizeof(identity));
+    report_result("provisioning", "complete");
+    vTaskDelay(pdMS_TO_TICKS(250));
+    esp_restart();
+cleanup:
+    memset(&identity, 0, sizeof(identity));
+    device_transport_resume_after_server_update();
 }
 
 static void calibrate_body_center(void)
@@ -399,6 +448,9 @@ static void provisioning_task(void *argument)
                     } else {
                         if (request.kind == DEVICE_PROVISIONING_REQUEST_BODY_CALIBRATION) {
                             calibrate_body_center();
+                        } else if (request.kind == DEVICE_PROVISIONING_REQUEST_RELOCATE_SERVER) {
+                            report_result("provisioning", "started");
+                            relocate_server(&request);
                         } else if (request.kind == DEVICE_PROVISIONING_REQUEST_SERVER_ONLY) {
                             report_result("provisioning", "started");
                             update_server(&request);

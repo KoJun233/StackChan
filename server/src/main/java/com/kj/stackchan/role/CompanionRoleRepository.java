@@ -13,6 +13,7 @@ public interface CompanionRoleRepository extends JpaRepository<CompanionRoleEnti
     List<CompanionRoleEntity> findAllByOrderByDefaultRoleDescArchivedAtAscUpdatedAtDescIdAsc();
     Optional<CompanionRoleEntity> findByDefaultRoleTrue();
     Optional<CompanionRoleEntity> findFirstByNameIgnoreCaseAndArchivedAtIsNull(String name);
+    List<CompanionRoleEntity> findAllByNameIgnoreCaseAndArchivedAtIsNull(String name);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select role from CompanionRoleEntity role where role.id = :id")
     Optional<CompanionRoleEntity> findByIdForUpdate(@Param("id") UUID id);

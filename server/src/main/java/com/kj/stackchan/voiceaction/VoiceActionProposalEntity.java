@@ -19,6 +19,8 @@ public class VoiceActionProposalEntity {
     @Column(name = "role_id", nullable = false) private UUID roleId;
     @Column(name = "conversation_id", nullable = false) private UUID conversationId;
     @Column(name = "source_turn_id", nullable = false) private UUID sourceTurnId;
+    @Column(name = "source_role_name", nullable = false, length = 80) private String sourceRoleName = "";
+    @Column(name = "source_consent_epoch") private UUID sourceConsentEpoch;
     @Enumerated(EnumType.STRING) @Column(name = "action_type", nullable = false, length = 40) private VoiceActionType actionType;
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 24) private VoiceActionStatus status;
     @Column(name = "confirmation_required", nullable = false) private boolean confirmationRequired;
@@ -86,6 +88,10 @@ public class VoiceActionProposalEntity {
     public UUID getRoleId() { return roleId; }
     public UUID getConversationId() { return conversationId; }
     public UUID getSourceTurnId() { return sourceTurnId; }
+    public String getSourceRoleName() { return sourceRoleName; }
+    public void setSourceRoleName(String name) { sourceRoleName = name == null ? "" : name; }
+    public UUID getSourceConsentEpoch() { return sourceConsentEpoch; }
+    public void setSourceConsentEpoch(UUID epoch) { sourceConsentEpoch = epoch; }
     public VoiceActionType getActionType() { return actionType; }
     public VoiceActionStatus getStatus() { return status; }
     public boolean isConfirmationRequired() { return confirmationRequired; }

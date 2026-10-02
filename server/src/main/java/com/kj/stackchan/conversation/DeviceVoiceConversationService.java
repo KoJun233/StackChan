@@ -54,4 +54,10 @@ public class DeviceVoiceConversationService {
         return repository.findByConversationId(conversationId)
                 .map(DeviceVoiceConversationEntity::getDeviceId);
     }
+
+    @Transactional(readOnly = true)
+    public boolean isCurrentConversation(UUID deviceId, UUID roleId, UUID conversationId) {
+        return repository.findByDeviceIdAndRoleId(deviceId, roleId)
+                .map(DeviceVoiceConversationEntity::getConversationId).filter(conversationId::equals).isPresent();
+    }
 }

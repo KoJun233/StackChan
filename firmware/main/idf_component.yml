@@ -4,4 +4,7 @@ dependencies:
   espressif/esp_lv_eaf_player: "==0.3.0"
   espressif/esp_websocket_client: "^1.4.0"
   espressif/m5stack_core_s3: "==4.0.0"
+  espressif/esp_lcd_ili9341: "==2.0.2"
+  espressif/human_face_detect: "==0.5.0"
+  espressif/esp-dl: "==3.3.13"
   lvgl/lvgl: "==9.4.0"

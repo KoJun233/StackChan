@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CompletableFuture;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -63,6 +64,8 @@ public class DeviceConnectionRegistry {
                     deviceSession.session = session;
                     deviceSession.credentialVersion = credentialVersion;
                     deviceSession.expiresAt = expiresAt;
+                    deviceSession.uiVersion = 0;
+                    clearConfirmation(deviceSession);
                     registered = true;
                 }
             }
@@ -290,6 +293,100 @@ public class DeviceConnectionRegistry {
         } catch (JsonProcessingException exception) {
             return false;
         }
+    }
+
+    public boolean sendExpressionConfiguration(UUID deviceId, UUID turnId, String themeColor, String emotion,
+                                               String intensity, int durationSeconds) {
+        DeviceSession state = sessions.get(deviceId);
+        if (state == null) return false;
+        synchronized (state.lock) {
+            if (state.uiVersion != 1 || turnId == null) {
+                return sendExpressionConfiguration(deviceId, themeColor, emotion, intensity, durationSeconds);
+            }
+            try {
+                return sendPayload(deviceId, objectMapper.writeValueAsString(new TurnExpressionCommand(
+                        "configure_expression", UUID.randomUUID().toString(), themeColor, emotion,
+                        intensity, durationSeconds, turnId.toString())));
+            } catch (JsonProcessingException exception) { return false; }
+        }
+    }
+
+    public void enableDeviceUi(UUID deviceId, WebSocketSession session) {
+        processIfActive(deviceId, session, () -> sessions.get(deviceId).uiVersion = 1);
+    }
+
+    public boolean supportsDeviceUi(UUID deviceId) {
+        DeviceSession state = sessions.get(deviceId);
+        if (state == null) return false;
+        synchronized (state.lock) {
+            return state.uiVersion == 1 && state.session != null
+                    && authorizationFailureStatus(state, state.session) == null;
+        }
+    }
+
+    /** Only one bounded offer is retained per authenticated connection. Reconnect retires its receipt. */
+    public CompletableFuture<Boolean> offerConfirmation(UUID deviceId, UUID proposalId) {
+        DeviceSession state = sessions.get(deviceId);
+        if (state == null) return CompletableFuture.completedFuture(false);
+        synchronized (state.lock) {
+            if (!supportsDeviceUi(deviceId)) return CompletableFuture.completedFuture(false);
+            if (!proposalId.equals(state.confirmationId)) {
+                clearConfirmation(state);
+                state.confirmationId = proposalId;
+                state.confirmationShown = new CompletableFuture<>();
+            }
+            try {
+                if (!sendPayload(deviceId, objectMapper.writeValueAsString(
+                        new ConfirmationAvailable("device_confirmation_available", proposalId.toString())))) {
+                    clearConfirmation(state);
+                    return CompletableFuture.completedFuture(false);
+                }
+                return state.confirmationShown;
+            } catch (JsonProcessingException exception) {
+                clearConfirmation(state);
+                return CompletableFuture.completedFuture(false);
+            }
+        }
+    }
+
+    public boolean sendDeviceUiStateChanged(UUID deviceId) {
+        DeviceSession state = sessions.get(deviceId);
+        if (state == null) return false;
+        synchronized (state.lock) {
+            return sessions.get(deviceId) == state && supportsDeviceUi(deviceId)
+                    && sendPayload(deviceId, "{\"type\":\"device_ui_state_changed\"}");
+        }
+    }
+
+    public UUID confirmationId(UUID deviceId) {
+        DeviceSession state = sessions.get(deviceId);
+        if (state == null) return null;
+        synchronized (state.lock) { return supportsDeviceUi(deviceId) ? state.confirmationId : null; }
+    }
+
+    public boolean acknowledgeConfirmationShown(UUID deviceId, UUID proposalId) {
+        DeviceSession state = sessions.get(deviceId);
+        if (state == null) return false;
+        synchronized (state.lock) {
+            if (!supportsDeviceUi(deviceId) || !proposalId.equals(state.confirmationId)) return false;
+            state.confirmationShown.complete(true);
+            return true;
+        }
+    }
+
+    public boolean confirmationShown(UUID deviceId) {
+        DeviceSession state = sessions.get(deviceId);
+        if (state == null) return false;
+        synchronized (state.lock) {
+            return supportsDeviceUi(deviceId) && state.confirmationShown != null
+                    && state.confirmationShown.getNow(false);
+        }
+    }
+
+    private void clearConfirmation(DeviceSession state) {
+        if (state.confirmationShown != null) state.confirmationShown.complete(false);
+        state.confirmationId = null;
+        state.confirmationShown = null;
     }
 
     public boolean sendExpressionFrameRateConfiguration(UUID deviceId, String mode,
@@ -591,6 +688,8 @@ public class DeviceConnectionRegistry {
             deviceSession.session = null;
             deviceSession.credentialVersion = 0;
             deviceSession.expiresAt = null;
+            deviceSession.uiVersion = 0;
+            clearConfirmation(deviceSession);
             removeIfUncommitted(deviceId, deviceSession);
         }
     }
@@ -641,6 +740,9 @@ public class DeviceConnectionRegistry {
         private long credentialVersion;
         private Long committedCredentialVersion;
         private Instant expiresAt;
+        private int uiVersion;
+        private UUID confirmationId;
+        private CompletableFuture<Boolean> confirmationShown;
     }
 
     private record StopMotionCommand(String type, String command_id) {
@@ -723,6 +825,10 @@ public class DeviceConnectionRegistry {
 
     private record ConfigureExpressionFrameRateCommand(
             String type, String command_id, String mode, int min_fps, int max_fps) {}
+
+    private record TurnExpressionCommand(String type, String command_id, String theme_color, String emotion,
+                                         String intensity, int duration_seconds, String turn_id) {}
+    private record ConfirmationAvailable(String type, String proposal_id) {}
 
     private record PreviewExpressionCommand(
             String type, String command_id, String category, String value,

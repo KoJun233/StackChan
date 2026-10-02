@@ -3,6 +3,8 @@
 
 #include "continuous_conversation.h"
 #include "touch_interaction.h"
+#include "display_frame_policy.h"
+#include "companion_hardware.h"
 #include "voice_capture_policy.h"
 #include "body_touch_policy.h"
 #include "expression_engine.h"
@@ -12,27 +14,28 @@
 
 static void touch_controls(void)
 {
-    assert(touch_interaction_in_submit_area(256, 184));
-    assert(touch_interaction_in_submit_area(303, 231));
-    assert(!touch_interaction_in_submit_area(304, 231));
-    assert(!touch_interaction_in_submit_area(255, 184));
-    assert(touch_interaction_should_toggle_input_mode(TOUCH_INTERACTION_IDLE, true, 100, 280, 200));
-    assert(!touch_interaction_should_toggle_input_mode(TOUCH_INTERACTION_LISTENING, true, 100, 280, 200));
-    assert(!touch_interaction_should_toggle_input_mode(TOUCH_INTERACTION_IDLE, true, 600, 280, 200));
-    assert(!touch_interaction_should_toggle_input_mode(TOUCH_INTERACTION_IDLE, true, 100, 80, 100));
-    assert(!touch_interaction_should_toggle_input_mode(TOUCH_INTERACTION_IDLE, false, 100, 280, 200));
-    assert(touch_interaction_capture_press_action(TOUCH_INTERACTION_LISTENING, false, 280, 200) ==
-           TOUCH_INTERACTION_ACTION_NONE);
-    assert(touch_interaction_capture_release_action(TOUCH_INTERACTION_LISTENING, false, true, 280, 200) ==
-           TOUCH_INTERACTION_ACTION_SUBMIT);
-    assert(touch_interaction_capture_release_action(TOUCH_INTERACTION_LISTENING, false, true, 80, 100) ==
-           TOUCH_INTERACTION_ACTION_CANCEL);
-    assert(touch_interaction_capture_release_action(TOUCH_INTERACTION_LISTENING, true, true, 280, 200) ==
-           TOUCH_INTERACTION_ACTION_NONE);
-    assert(touch_interaction_capture_release_action(TOUCH_INTERACTION_PROCESSING, false, true, 280, 200) ==
-           TOUCH_INTERACTION_ACTION_NONE);
-    assert(touch_interaction_capture_press_action(TOUCH_INTERACTION_LISTENING, false, 80, 100) ==
-           TOUCH_INTERACTION_ACTION_CANCEL);
+    assert(touch_interaction_face_gesture(TOUCH_INTERACTION_IDLE, 200, 180, 100, 100, 105) == TOUCH_FACE_GESTURE_PTT);
+    assert(touch_interaction_face_gesture(TOUCH_INTERACTION_IDLE, 200, 100, 100, 180, 105) == TOUCH_FACE_GESTURE_WAKE);
+    assert(touch_interaction_face_gesture(TOUCH_INTERACTION_IDLE, 200, 120, 180, 124, 80) == TOUCH_FACE_GESTURE_MENU);
+    assert(touch_interaction_face_gesture(TOUCH_INTERACTION_IDLE, 600, 180, 100, 100, 105) == TOUCH_FACE_GESTURE_NONE);
+    assert(touch_interaction_face_gesture(TOUCH_INTERACTION_IDLE, 49, 180, 100, 100, 105) == TOUCH_FACE_GESTURE_NONE);
+    assert(touch_interaction_face_gesture(TOUCH_INTERACTION_IDLE, 200, 180, 100, 140, 60) == TOUCH_FACE_GESTURE_NONE);
+    assert(touch_interaction_face_gesture(TOUCH_INTERACTION_PLAYING, 200, 180, 100, 100, 105) == TOUCH_FACE_GESTURE_NONE);
+    assert(!touch_interaction_face_moved(180, 100, 192, 112));
+    assert(touch_interaction_face_moved(180, 100, 193, 112));
+    assert(touch_interaction_capture_press_action(TOUCH_INTERACTION_LISTENING, false) == TOUCH_INTERACTION_ACTION_NONE);
+    assert(touch_interaction_capture_press_action(TOUCH_INTERACTION_LISTENING, true) == TOUCH_INTERACTION_ACTION_CANCEL);
+    assert(touch_interaction_wake_record_release_action(TOUCH_INTERACTION_LISTENING, 100, false, 80, 100, 80, 100) == TOUCH_INTERACTION_ACTION_SUBMIT);
+    /* The former button corner follows the same policy as every other point. */
+    assert(touch_interaction_wake_record_release_action(TOUCH_INTERACTION_LISTENING, 100, false, 280, 200, 280, 200) == TOUCH_INTERACTION_ACTION_SUBMIT);
+    assert(touch_interaction_wake_record_release_action(TOUCH_INTERACTION_LISTENING, 29, false, 80, 100, 80, 100) == TOUCH_INTERACTION_ACTION_NONE);
+    assert(touch_interaction_wake_record_release_action(TOUCH_INTERACTION_LISTENING, 600, false, 80, 100, 80, 100) == TOUCH_INTERACTION_ACTION_NONE);
+    assert(touch_interaction_wake_record_release_action(TOUCH_INTERACTION_LISTENING, 200, true, 80, 100, 100, 140) == TOUCH_INTERACTION_ACTION_CANCEL);
+    assert(touch_interaction_wake_record_release_action(TOUCH_INTERACTION_LISTENING, 200, true, 80, 100, 101, 140) == TOUCH_INTERACTION_ACTION_NONE);
+    assert(touch_interaction_wake_record_release_action(TOUCH_INTERACTION_LISTENING, 200, true, 80, 100, 80, 139) == TOUCH_INTERACTION_ACTION_NONE);
+    assert(touch_interaction_wake_record_release_action(TOUCH_INTERACTION_LISTENING, 100, true, 80, 100, 80, 100) == TOUCH_INTERACTION_ACTION_NONE);
+    assert(touch_interaction_wake_record_release_action(TOUCH_INTERACTION_PROCESSING, 100, false, 80, 100, 80, 100) == TOUCH_INTERACTION_ACTION_NONE);
+    assert(touch_interaction_wake_record_release_action(TOUCH_INTERACTION_PLAYING, 200, true, 80, 100, 80, 160) == TOUCH_INTERACTION_ACTION_NONE);
     assert(touch_interaction_press_action(TOUCH_INTERACTION_PLAYING) == TOUCH_INTERACTION_ACTION_CANCEL);
     assert(touch_interaction_release_action(TOUCH_INTERACTION_FEEDBACK, 100) == TOUCH_INTERACTION_ACTION_DISMISS);
     assert(touch_interaction_should_start_press_to_talk(TOUCH_INTERACTION_IDLE, 600, true, false));
@@ -88,6 +91,29 @@ static void ptt_and_follow_up(void)
 
 int main(void)
 {
+    uint32_t skipped=0;
+    assert(display_frame_next_deadline(1000000,1012000,60,&skipped)==1016666 && skipped==0);
+    assert(display_frame_next_deadline(1000000,1042000,60,&skipped)==1049998 && skipped==2);
+    assert(display_frame_next_deadline(1000000,1016666,60,&skipped)==1033332 && skipped==1);
+    display_frame_policy_t frame_policy={0}; uint8_t reason=0;
+    /* Sustained healthy speech uses the same 60 target, rather than a busy cap. */
+    for(unsigned now=1000;now<14000;now+=16)
+        assert(display_frame_adapt(&frame_policy,now,60,30,60,false,true,6000,200,0,&reason)==60);
+    for(unsigned n=0;n<3;n++)assert(display_frame_adapt(&frame_policy,15000+n,60,30,60,false,true,20000,200,0,&reason)==60);
+    assert(display_frame_adapt(&frame_policy,15004,60,30,60,false,true,20000,200,0,&reason)==55);
+    assert(reason==COMPANION_EXPRESSION_DEGRADE_DRAW_BUDGET);
+    assert(display_frame_adapt(&frame_policy,25003,55,30,60,false,true,6000,200,0,&reason)==55);
+    assert(display_frame_adapt(&frame_policy,25004,55,30,60,false,true,6000,200,0,&reason)==60);
+    assert(display_frame_adapt(&frame_policy,26000,60,30,60,false,true,6000,200,1,&reason)==30);
+    assert(reason==COMPANION_EXPRESSION_DEGRADE_AUDIO_UNDERRUN);
+    assert(display_frame_adapt(&frame_policy,35000,30,30,60,true,true,6000,200,1,&reason)==30);
+    assert(display_frame_adapt(&frame_policy,36000,30,30,60,false,true,6000,200,1,&reason)==35);
+    frame_policy=(display_frame_policy_t){0};reason=0;
+    assert(display_frame_adapt(&frame_policy,40000,60,60,60,true,true,6000,200,1,&reason)==30);
+    reason=COMPANION_EXPRESSION_DEGRADE_NONE; /* Mode/screen transitions cannot erase the audio guard. */
+    assert(display_frame_adapt(&frame_policy,49999,60,60,60,true,true,6000,200,1,&reason)==30);
+    assert(display_frame_adapt(&frame_policy,50000,30,60,60,true,true,6000,200,1,&reason)==60);
+    puts("PASS absolute frame cadence skips late slots; healthy audio stays at 60; budget/audio recovery is bounded");
     uint8_t frame[50] = {0};
     int16_t sample = 100;
     size_t size = 0;

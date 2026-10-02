@@ -14,6 +14,10 @@ public interface DeviceRepository extends JpaRepository<DeviceEntity, UUID> {
     Optional<DeviceEntity> findByHardwareId(String hardwareId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select device from DeviceEntity device where device.id = :id")
+    Optional<DeviceEntity> findByIdForUpdate(@Param("id") UUID id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select device from DeviceEntity device where device.hardwareId = :hardwareId")
     Optional<DeviceEntity> findByHardwareIdForUpdate(@Param("hardwareId") String hardwareId);
 }

@@ -53,6 +53,11 @@ public interface DeviceCommandGateway {
         return false;
     }
 
+    default boolean configureExpression(UUID deviceId, UUID turnId, String themeColor, String emotion,
+                                        String intensity, int durationSeconds) {
+        return configureExpression(deviceId, themeColor, emotion, intensity, durationSeconds);
+    }
+
     default boolean configureExpressionFrameRate(UUID deviceId, String mode, int minFps, int maxFps) {
         return false;
     }

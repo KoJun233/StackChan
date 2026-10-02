@@ -72,6 +72,15 @@ typedef struct {
     float offset_x;
     float offset_y;
     float eye_open;
+    /* Independent opening and normalized upper/lower eyelids for each eye. */
+    float left_eye_open;
+    float right_eye_open;
+    float left_upper_lid;
+    float right_upper_lid;
+    float left_lower_lid;
+    float right_lower_lid;
+    float left_lower_curve;
+    float right_lower_curve;
     float eye_spacing;
     float left_eye_length;
     float right_eye_length;
@@ -88,6 +97,8 @@ typedef struct {
     bool sleeping;
 } companion_expression_pose_t;
 
+#define COMPANION_EXPRESSION_TURN_ID_SIZE 65U
+
 typedef struct {
     companion_face_state_t system_state;
     companion_emotion_t emotion;
@@ -98,6 +109,7 @@ typedef struct {
     companion_expression_layer_t active_layer;
     uint32_t emotion_expires_ms;
     uint32_t behavior_expires_ms;
+    uint32_t behavior_started_ms;
     uint32_t transition_started_ms;
     uint32_t transition_duration_ms;
     uint32_t last_tick_ms;
@@ -107,6 +119,23 @@ typedef struct {
     uint32_t preview_expires_ms;
     companion_expression_pose_t transition_from;
     companion_expression_pose_t current;
+    char turn_id[COMPANION_EXPRESSION_TURN_ID_SIZE];
+    uint32_t turn_playback_started_ms;
+    uint32_t turn_emotion_duration_ms;
+    uint32_t random_state;
+    uint32_t next_blink_ms;
+    uint32_t blink_started_ms;
+    uint32_t next_gaze_ms;
+    uint32_t gaze_started_ms;
+    float idle_gaze_from_x;
+    float idle_gaze_from_y;
+    float idle_gaze_target_x;
+    float idle_gaze_target_y;
+    bool turn_active;
+    bool turn_playback_started;
+    bool turn_emotion_received;
+    bool turn_emotion_pending;
+    bool blinking;
     bool initialized;
     bool updating;
 } companion_expression_engine_t;
@@ -120,6 +149,25 @@ void companion_expression_engine_suggest_emotion(companion_expression_engine_t *
                                                   companion_emotion_intensity_t intensity,
                                                   uint32_t duration_ms,
                                                   uint32_t now_ms);
+/* Canonical turn IDs must come from the authenticated voice lifecycle. All
+ * calls reject mismatches; duplicate events never renew an emotion's lifetime.
+ * Pending emotion consumes no lifetime before first playback. End without
+ * playback discards pending emotion, normal playback end preserves its expiry.
+ * Cancel/clear/new turn discard the previous turn and all bound emotion. */
+bool companion_expression_engine_turn_begin(companion_expression_engine_t *engine,
+                                             const char *turn_id, uint32_t now_ms);
+bool companion_expression_engine_turn_emotion(companion_expression_engine_t *engine,
+                                               const char *turn_id,
+                                               companion_emotion_t emotion,
+                                               companion_emotion_intensity_t intensity,
+                                               uint32_t duration_ms, uint32_t now_ms);
+bool companion_expression_engine_turn_playback_started(companion_expression_engine_t *engine,
+                                                        const char *turn_id, uint32_t now_ms);
+bool companion_expression_engine_turn_end(companion_expression_engine_t *engine,
+                                           const char *turn_id, uint32_t now_ms);
+bool companion_expression_engine_turn_cancel(companion_expression_engine_t *engine,
+                                              const char *turn_id, uint32_t now_ms);
+void companion_expression_engine_clear_turn(companion_expression_engine_t *engine, uint32_t now_ms);
 void companion_expression_engine_trigger(companion_expression_engine_t *engine,
                                          companion_expression_behavior_t behavior,
                                          uint32_t duration_ms,

@@ -1,40 +1,42 @@
 #include "touch_interaction.h"
+#include <stdlib.h>
 
-bool touch_interaction_in_submit_area(int16_t x, int16_t y)
+bool touch_interaction_face_moved(int16_t sx, int16_t sy, int16_t x, int16_t y)
 {
-    return x >= TOUCH_INTERACTION_SUBMIT_X &&
-           x < TOUCH_INTERACTION_SUBMIT_X + TOUCH_INTERACTION_SUBMIT_SIZE &&
-           y >= TOUCH_INTERACTION_SUBMIT_Y &&
-           y < TOUCH_INTERACTION_SUBMIT_Y + TOUCH_INTERACTION_SUBMIT_SIZE;
+    return abs(x - sx) > 12 || abs(y - sy) > 12;
+}
+
+touch_face_gesture_t touch_interaction_face_gesture(touch_interaction_phase_t phase,
+    uint32_t held_ms, int16_t sx, int16_t sy, int16_t x, int16_t y)
+{
+    if (phase != TOUCH_INTERACTION_IDLE || held_ms < 50 || held_ms >= TOUCH_INTERACTION_LONG_PRESS_MS)
+        return TOUCH_FACE_GESTURE_NONE;
+    int dx = x - sx, dy = y - sy;
+    if (abs(dx) >= 40 && abs(dx) >= 2 * abs(dy))
+        return dx < 0 ? TOUCH_FACE_GESTURE_PTT : TOUCH_FACE_GESTURE_WAKE;
+    if (dy <= -40 && -dy >= 2 * abs(dx)) return TOUCH_FACE_GESTURE_MENU;
+    return TOUCH_FACE_GESTURE_NONE;
 }
 
 touch_interaction_action_t touch_interaction_capture_press_action(
-    touch_interaction_phase_t phase, bool press_to_talk, int16_t x, int16_t y)
+    touch_interaction_phase_t phase, bool press_to_talk)
 {
-    if (phase == TOUCH_INTERACTION_LISTENING && !press_to_talk &&
-        touch_interaction_in_submit_area(x, y)) {
+    if (phase == TOUCH_INTERACTION_LISTENING && !press_to_talk) {
         return TOUCH_INTERACTION_ACTION_NONE;
     }
     return touch_interaction_press_action(phase);
 }
 
-bool touch_interaction_should_toggle_input_mode(touch_interaction_phase_t phase,
-                                                bool began_in_mode_area, uint32_t held_ms,
-                                                int16_t x, int16_t y)
+touch_interaction_action_t touch_interaction_wake_record_release_action(
+    touch_interaction_phase_t phase, uint32_t held_ms, bool moved,
+    int16_t sx, int16_t sy, int16_t x, int16_t y)
 {
-    return phase == TOUCH_INTERACTION_IDLE && began_in_mode_area && held_ms >= 50U &&
-           held_ms < TOUCH_INTERACTION_LONG_PRESS_MS && touch_interaction_in_submit_area(x, y);
-}
-
-touch_interaction_action_t touch_interaction_capture_release_action(
-    touch_interaction_phase_t phase, bool press_to_talk, bool began_in_submit_area,
-    int16_t x, int16_t y)
-{
-    if (phase != TOUCH_INTERACTION_LISTENING || press_to_talk || !began_in_submit_area) {
-        return TOUCH_INTERACTION_ACTION_NONE;
-    }
-    return touch_interaction_in_submit_area(x, y)
-               ? TOUCH_INTERACTION_ACTION_SUBMIT : TOUCH_INTERACTION_ACTION_CANCEL;
+    if (phase != TOUCH_INTERACTION_LISTENING || held_ms < 30 ||
+        held_ms >= TOUCH_INTERACTION_LONG_PRESS_MS) return TOUCH_INTERACTION_ACTION_NONE;
+    int dx = x-sx, dy = y-sy;
+    if (dy >= 40 && dy >= 2*abs(dx)) return TOUCH_INTERACTION_ACTION_CANCEL;
+    if (!moved && !touch_interaction_face_moved(sx,sy,x,y)) return TOUCH_INTERACTION_ACTION_SUBMIT;
+    return TOUCH_INTERACTION_ACTION_NONE;
 }
 
 bool touch_interaction_should_start_press_to_talk(touch_interaction_phase_t phase,

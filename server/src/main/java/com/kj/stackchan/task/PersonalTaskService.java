@@ -246,6 +246,25 @@ public class PersonalTaskService {
         return snapshot(task);
     }
 
+    @Transactional(noRollbackFor = {InvalidPersonalTaskException.class, PersonalTaskNotFoundException.class})
+    public TaskSnapshot completeConfirmed(UUID id, UUID deviceId, UUID roleId, String title,
+                                           Instant updatedAt, Instant dueAt, String zoneId) {
+        PersonalTaskEntity task = taskRepository.findByIdForUpdate(id)
+                .orElseThrow(PersonalTaskNotFoundException::new);
+        requireScope(task, deviceId, roleId);
+        if (task.getStatus() != PersonalTaskStatus.OPEN || updatedAt == null
+                || !java.util.Objects.equals(title, task.getTitle())
+                || !java.util.Objects.equals(updatedAt, task.getUpdatedAt())
+                || !java.util.Objects.equals(dueAt, task.getDueAt())
+                || !java.util.Objects.equals(zoneId, task.getZoneId())) {
+            throw new InvalidPersonalTaskException("Task confirmation snapshot changed");
+        }
+        Instant now = clock.instant();
+        cancelLinkedReminder(task, now);
+        task.complete(now);
+        return snapshot(task);
+    }
+
     @Transactional
     public TaskSnapshot reopen(UUID id) {
         PersonalTaskEntity task = taskRepository.findByIdForUpdate(id)

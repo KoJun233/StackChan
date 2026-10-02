@@ -25,6 +25,7 @@ public class InteractionSettingsService {
     private final Clock clock;
     private final ProactiveSchedulePlanner proactiveSchedulePlanner;
     private final SilentPresenceSchedulePlanner silentPresenceSchedulePlanner;
+    @Autowired private com.kj.stackchan.device.DeviceUiStateNotifier uiStateNotifier;
 
     @Autowired
     public InteractionSettingsService(
@@ -52,9 +53,9 @@ public class InteractionSettingsService {
 
     @Transactional
     public InteractionSettingsSnapshot get(UUID deviceId) {
-        validateDevice(deviceId);
+        lockDevice(deviceId);
         Instant now = clock.instant();
-        DeviceInteractionSettingsEntity settings = repository.findById(deviceId)
+        DeviceInteractionSettingsEntity settings = repository.findLockedByDeviceId(deviceId)
                 .orElseGet(() -> repository.save(new DeviceInteractionSettingsEntity(deviceId, now)));
         if (settings.isProactiveEnabled() && settings.getProactiveNextAt() == null) {
             settings.scheduleProactive(proactiveSchedulePlanner.next(snapshot(settings), now));
@@ -67,10 +68,10 @@ public class InteractionSettingsService {
 
     @Transactional
     public InteractionSettingsSnapshot save(UUID deviceId, UpdateInteractionSettingsCommand command) {
-        validateDevice(deviceId);
+        lockDevice(deviceId);
         ZoneId zoneId = parseZone(command.zoneId());
         validateCommand(command);
-        DeviceInteractionSettingsEntity settings = repository.findById(deviceId)
+        DeviceInteractionSettingsEntity settings = repository.findLockedByDeviceId(deviceId)
                 .orElseGet(() -> new DeviceInteractionSettingsEntity(deviceId, clock.instant()));
         Instant now = clock.instant();
         settings.update(
@@ -92,7 +93,9 @@ public class InteractionSettingsService {
         } else {
             settings.clearSilentPresenceSchedule();
         }
-        return snapshot(repository.save(settings));
+        var saved = snapshot(repository.save(settings));
+        if (uiStateNotifier != null) uiStateNotifier.changed(deviceId);
+        return saved;
     }
 
     @Transactional(readOnly = true)
@@ -104,27 +107,47 @@ public class InteractionSettingsService {
 
     @Transactional
     public InteractionSettingsSnapshot setVolume(UUID deviceId, int volumePercent) {
-        validateDevice(deviceId);
+        lockDevice(deviceId);
         if (volumePercent < 0 || volumePercent > 100) {
             throw new InvalidInteractionSettingsException("Interaction volume is invalid");
         }
-        DeviceInteractionSettingsEntity settings = repository.findById(deviceId)
+        DeviceInteractionSettingsEntity settings = repository.findLockedByDeviceId(deviceId)
                 .orElseGet(() -> new DeviceInteractionSettingsEntity(deviceId, clock.instant()));
+        boolean changed = settings.getVolumePercent() != volumePercent;
         settings.setVolume(volumePercent, clock.instant());
-        return snapshot(repository.save(settings));
+        var saved = snapshot(repository.save(settings));
+        if (changed && uiStateNotifier != null) uiStateNotifier.changed(deviceId);
+        return saved;
     }
 
     @Transactional
     public InteractionSettingsSnapshot setTemporaryDndUntil(UUID deviceId, Instant until) {
-        validateDevice(deviceId);
+        lockDevice(deviceId);
         Instant now = clock.instant();
         if (until == null || !until.isAfter(now) || until.isAfter(now.plus(Duration.ofHours(24)))) {
             throw new InvalidInteractionSettingsException("Temporary DND duration is invalid");
         }
-        DeviceInteractionSettingsEntity settings = repository.findById(deviceId)
+        DeviceInteractionSettingsEntity settings = repository.findLockedByDeviceId(deviceId)
                 .orElseGet(() -> new DeviceInteractionSettingsEntity(deviceId, now));
         settings.setTemporaryDndUntil(until, now);
         return snapshot(repository.save(settings));
+    }
+
+    @Transactional
+    public InteractionSettingsSnapshot setNightMode(UUID deviceId, boolean nightMode) {
+        lockDevice(deviceId);
+        DeviceInteractionSettingsEntity settings = repository.findLockedByDeviceId(deviceId)
+                .orElseGet(() -> new DeviceInteractionSettingsEntity(deviceId, clock.instant()));
+        boolean changed = settings.isNightMode() != nightMode;
+        settings.setNightMode(nightMode, clock.instant());
+        var saved = snapshot(repository.save(settings));
+        if (changed && uiStateNotifier != null) uiStateNotifier.changed(deviceId);
+        return saved;
+    }
+
+    private void lockDevice(UUID deviceId) {
+        if (deviceId == null || deviceRepository.findByIdForUpdate(deviceId).isEmpty())
+            throw new InvalidInteractionSettingsException("Interaction device is invalid");
     }
 
     @Transactional

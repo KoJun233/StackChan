@@ -340,6 +340,10 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     }
 
     private void processEvent(UUID deviceId, WebSocketSession session, DeviceInboundEvent event) {
+        if (event instanceof DeviceUiCapabilitiesEvent) {
+            connectionRegistry.enableDeviceUi(deviceId, session);
+            return;
+        }
         if (event instanceof HeartbeatEvent heartbeat) {
             deviceEventService.recordHeartbeat(
                     deviceId, heartbeat.sequence(), heartbeat.safetyState(), heartbeat.firmwareVersion(),
@@ -447,7 +451,9 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
 
     private DeviceInboundEvent parseEvent(String payload) {
         try {
-            JsonNode root = objectMapper.readTree(payload);
+            JsonNode root = objectMapper.reader().with(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+                    .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .readTree(payload);
             if (root == null || !root.isObject()) {
                 throw new InvalidDeviceEventException();
             }
@@ -460,6 +466,11 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
                 case "firmware_update_status" -> parseFirmwareUpdateStatus(root);
                 case "voice_turn_stage" -> parseVoiceTurnStage(root);
                 case "workday_toggle" -> parseWorkdayToggle(root);
+                case "device_ui_capabilities" -> {
+                    requireOnlyFields(root, Set.of("type", "sequence", "version"));
+                    if (requiredInteger(root, "version") != 1) throw new InvalidDeviceEventException();
+                    yield new DeviceUiCapabilitiesEvent(requiredPositiveSequence(root));
+                }
                 default -> throw new InvalidDeviceEventException();
             };
         } catch (IOException exception) {
@@ -786,7 +797,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         return deviceId instanceof UUID authenticatedDeviceId ? authenticatedDeviceId : null;
     }
 
-    private sealed interface DeviceInboundEvent permits HeartbeatEvent, CommandAcknowledgementEvent,
+    private sealed interface DeviceInboundEvent permits HeartbeatEvent, CommandAcknowledgementEvent, DeviceUiCapabilitiesEvent,
             WakeModelStatusEvent, FirmwareUpdateStatusEvent, VoiceTurnStageEvent, WorkdayToggleEvent,
             BodyMotionResultEvent {
 
@@ -794,6 +805,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     }
 
     private record WorkdayToggleEvent(long sequence) implements DeviceInboundEvent { }
+    private record DeviceUiCapabilitiesEvent(long sequence) implements DeviceInboundEvent { }
 
     private record BodyMotionResultEvent(long sequence, String commandId, String motion,
                                          String status, String failureCode) implements DeviceInboundEvent { }

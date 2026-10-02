@@ -258,7 +258,8 @@ static void digest_to_hex(const unsigned char digest[32], char output[FIRMWARE_O
     output[64] = '\0';
 }
 
-static esp_err_t download_image(const device_identity_t *identity,
+/* Retain this call boundary for reproducible release stack budgeting. */
+static __attribute__((noinline)) esp_err_t download_image(const device_identity_t *identity,
                                 const firmware_ota_request_t *request,
                                 const esp_partition_t *target)
 {
