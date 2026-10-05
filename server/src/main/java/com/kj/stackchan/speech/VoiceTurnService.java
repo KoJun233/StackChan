@@ -68,6 +68,12 @@ public class VoiceTurnService {
     private final VoiceConversationContextPolicy conversationContextPolicy;
     private final RecentProactiveContextService recentProactiveContextService;
     private DeviceExpressionService deviceExpressionService;
+    private com.kj.stackchan.device.DeviceUiService deviceUiService;
+
+    @Autowired
+    public void setDeviceUiService(com.kj.stackchan.device.DeviceUiService deviceUiService) {
+        this.deviceUiService = deviceUiService;
+    }
 
     @Autowired(required = false)
     public void setDeviceExpressionService(DeviceExpressionService deviceExpressionService) {
@@ -175,6 +181,8 @@ public class VoiceTurnService {
             byte[] wavAudio,
             VoiceTurnSegmentSink segmentSink
     ) {
+        if (deviceUiService != null && deviceUiService.pendingVisible(deviceId))
+            throw new VoiceInputException("请先在屏幕上确认或取消当前操作");
         long requestStartedNanos = System.nanoTime();
         try (VoiceTurnCancellationService.CancellationHandle cancellation =
                      cancellationService.register(deviceId, turnId)) {
@@ -303,13 +311,17 @@ public class VoiceTurnService {
                 if (reply == null || reply.isBlank()) {
                     throw new LlmProviderUnavailableException();
                 }
+                if (deviceUiService != null && actionResult != null && actionResult.handled()
+                        && deviceUiService.presentAndAwait(deviceId, conversationId)) {
+                    reply = "请确认屏幕上的内容。";
+                }
                 ExpressionSuggestionParser.Suggestion expression = ExpressionSuggestionParser.parse(reply);
                 reply = boundSingleSpokenReply(expression.reply());
                 if (reply.isBlank()) {
                     throw new LlmProviderUnavailableException();
                 }
                 if (deviceExpressionService != null) {
-                    deviceExpressionService.apply(deviceId, roleId, expression);
+                    deviceExpressionService.apply(deviceId, roleId, turnId, expression);
                 }
                 recordTimedStage(deviceId, turnId, VoiceTurnStage.LLM_COMPLETED, null,
                         modelDurationMs, actionResult != null && actionResult.handled() ? "deterministic_action" : null);

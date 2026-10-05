@@ -29,8 +29,8 @@ class InteractionSettingsServiceTest {
     @Test
     void appliesCrossMidnightDndAndFindsItsEnd() {
         UUID deviceId = UUID.randomUUID();
-        when(deviceRepository.existsById(deviceId)).thenReturn(true);
-        when(repository.findById(deviceId)).thenReturn(Optional.empty());
+        when(deviceRepository.findByIdForUpdate(deviceId)).thenReturn(Optional.of(org.mockito.Mockito.mock(com.kj.stackchan.device.DeviceEntity.class)));
+        when(repository.findLockedByDeviceId(deviceId)).thenReturn(Optional.empty());
         when(repository.save(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> invocation.getArgument(0));
         InteractionSettingsService service = service();
 
@@ -78,8 +78,8 @@ class InteractionSettingsServiceTest {
     @Test
     void enablingProactiveConversationCreatesAPersistedRandomCandidate() {
         UUID deviceId = UUID.randomUUID();
-        when(deviceRepository.existsById(deviceId)).thenReturn(true);
-        when(repository.findById(deviceId)).thenReturn(Optional.empty());
+        when(deviceRepository.findByIdForUpdate(deviceId)).thenReturn(Optional.of(org.mockito.Mockito.mock(com.kj.stackchan.device.DeviceEntity.class)));
+        when(repository.findLockedByDeviceId(deviceId)).thenReturn(Optional.empty());
         when(repository.save(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         var settings = service().save(deviceId, new InteractionSettingsService.UpdateInteractionSettingsCommand(
@@ -96,8 +96,8 @@ class InteractionSettingsServiceTest {
     @Test
     void enablingSilentPresenceCreatesAnIndependentPersistedCandidate() {
         UUID deviceId = UUID.randomUUID();
-        when(deviceRepository.existsById(deviceId)).thenReturn(true);
-        when(repository.findById(deviceId)).thenReturn(Optional.empty());
+        when(deviceRepository.findByIdForUpdate(deviceId)).thenReturn(Optional.of(org.mockito.Mockito.mock(com.kj.stackchan.device.DeviceEntity.class)));
+        when(repository.findLockedByDeviceId(deviceId)).thenReturn(Optional.empty());
         when(repository.save(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         var settings = service().save(deviceId, new InteractionSettingsService.UpdateInteractionSettingsCommand(

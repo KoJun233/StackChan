@@ -53,7 +53,7 @@ public class InteractiveNotificationService {
         return latest.getId();
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = NotificationApiException.class)
     public ResponseSnapshot respond(
             UUID notificationId,
             UUID deviceId,

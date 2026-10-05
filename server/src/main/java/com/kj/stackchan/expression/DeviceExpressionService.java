@@ -38,10 +38,18 @@ public class DeviceExpressionService {
 
     @Transactional(readOnly = true)
     public boolean apply(UUID deviceId, UUID roleId, ExpressionSuggestionParser.Suggestion suggestion) {
+        return apply(deviceId, roleId, null, suggestion);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean apply(UUID deviceId, UUID roleId, UUID turnId, ExpressionSuggestionParser.Suggestion suggestion) {
         if (deviceId == null || roleId == null || suggestion == null) return false;
         DeviceEntity device = deviceRepository.findById(deviceId).orElse(null);
         if (device == null || !device.isDynamicExpressionSupported()) return false;
         CompanionRoleService.RoleSnapshot role = roleService.get(roleId);
+        if (turnId != null) return commandGateway.configureExpression(
+                deviceId, turnId, role.expressionThemeColor(), suggestion.emotion().name(),
+                suggestion.intensity().name(), suggestion.durationSeconds());
         return commandGateway.configureExpression(
                 deviceId, role.expressionThemeColor(), suggestion.emotion().name(),
                 suggestion.intensity().name(), suggestion.durationSeconds());

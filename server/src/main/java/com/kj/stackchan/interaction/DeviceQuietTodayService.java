@@ -17,6 +17,8 @@ public class DeviceQuietTodayService {
     private final Clock clock;
     private final InteractionSettingsService settings;
     private final DeviceRepository devices;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.kj.stackchan.device.DeviceUiStateNotifier uiStateNotifier;
 
     public DeviceQuietTodayService(JdbcTemplate jdbc, Clock clock,
                                    InteractionSettingsService settings, DeviceRepository devices) {
@@ -49,18 +51,21 @@ public class DeviceQuietTodayService {
         Instant now = clock.instant();
         ZoneId zone = ZoneId.of(settings.resolve(deviceId).zoneId());
         Instant until = now.atZone(zone).toLocalDate().plusDays(1).atStartOfDay(zone).toInstant();
+        boolean wasQuiet = isQuiet(deviceId, now);
         jdbc.update("""
                 insert into device_quiet_today(device_id, paused_until, updated_at) values (?, ?, ?)
                 on conflict (device_id) do update
                 set paused_until = excluded.paused_until, updated_at = excluded.updated_at
                 """, deviceId, Timestamp.from(until), Timestamp.from(now));
+        if (!wasQuiet && uiStateNotifier != null) uiStateNotifier.changed(deviceId);
         return new Snapshot(deviceId, until, true);
     }
 
     @Transactional
     public Snapshot resume(UUID deviceId) {
         validate(deviceId);
-        jdbc.update("delete from device_quiet_today where device_id = ?", deviceId);
+        int deleted = jdbc.update("delete from device_quiet_today where device_id = ?", deviceId);
+        if (deleted > 0 && uiStateNotifier != null) uiStateNotifier.changed(deviceId);
         return new Snapshot(deviceId, null, false);
     }
 

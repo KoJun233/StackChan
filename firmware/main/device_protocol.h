@@ -131,6 +131,7 @@ typedef struct {
     companion_emotion_t expression_emotion;
     companion_emotion_intensity_t expression_intensity;
     int expression_duration_seconds;
+    char expression_turn_id[DEVICE_PROTOCOL_TURN_ID_LEN];
     device_expression_fps_mode_t expression_fps_mode;
     int expression_min_fps;
     int expression_max_fps;

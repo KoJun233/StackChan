@@ -27,6 +27,8 @@
 #include "device_credentials.h"
 #include "device_endpoint.h"
 #include "device_protocol.h"
+#include "device_ui.h"
+#include "device_ui_protocol.h"
 #include "expression_pack.h"
 #include "firmware_ota.h"
 #include "safety_state.h"
@@ -94,6 +96,7 @@ typedef struct {
     volatile bool failed;
     volatile bool command_queues_ready;
     bool heartbeat_sent;
+    bool ui_capability_sent;
     bool wake_model_report_sent;
     bool firmware_report_sent;
 } websocket_connection_t;
@@ -102,6 +105,7 @@ static const char *TAG = "device_transport";
 static EventGroupHandle_t s_transport_events;
 static QueueHandle_t s_voice_turn_event_queue;
 static TaskHandle_t s_transport_task_handle;
+static bool s_server_update_requested, s_server_update_paused;
 static esp_netif_t *s_wifi_sta_netif;
 static bool s_netif_initialized_by_transport;
 static bool s_event_loop_created_by_transport;
@@ -302,7 +306,8 @@ static void service_wifi_reconnect(void)
 static void wait_for_websocket_retry(uint32_t retry_seconds)
 {
     int64_t deadline_us = esp_timer_get_time() + (int64_t)retry_seconds * 1000LL * 1000LL;
-    while ((xEventGroupGetBits(s_transport_events) & WIFI_CONNECTED_BIT) != 0 &&
+    while (!__atomic_load_n(&s_server_update_requested, __ATOMIC_ACQUIRE) &&
+           (xEventGroupGetBits(s_transport_events) & WIFI_CONNECTED_BIT) != 0 &&
            esp_timer_get_time() < deadline_us) {
         int64_t remaining_us = deadline_us - esp_timer_get_time();
         uint32_t remaining_ms = (uint32_t)((remaining_us + 999) / 1000);
@@ -353,6 +358,7 @@ static void websocket_event_handler(void *handler_args,
         connection->connected = true;
         set_server_connected(true);
         companion_hardware_set_connected(true);
+        device_ui_connection_changed(true);
         ESP_LOGI(TAG, "Device WebSocket connected: stack_free=%u",
                  (unsigned)uxTaskGetStackHighWaterMark(NULL));
         return;
@@ -363,6 +369,7 @@ static void websocket_event_handler(void *handler_args,
         set_server_connected(false);
         safety_state_stop_motion();
         companion_hardware_set_connected(false);
+        device_ui_connection_changed(false);
         ESP_LOGW(TAG, "Device WebSocket unavailable: event=%ld", (long)event_id);
         return;
     }
@@ -377,6 +384,15 @@ static void websocket_event_handler(void *handler_args,
         return;
     }
 
+    char confirmation_id[37];
+    if (device_ui_parse_state_notice(event->data_ptr, (size_t)event->data_len)) {
+        device_ui_server_state_changed();
+        return;
+    }
+    if (device_ui_parse_confirmation_notice(event->data_ptr, (size_t)event->data_len, confirmation_id)) {
+        device_ui_notify_confirmation(confirmation_id);
+        return;
+    }
     device_command_t command = {0};
     if (!device_protocol_parse_command(event->data_ptr, (size_t)event->data_len, &command)) {
         return;
@@ -460,7 +476,11 @@ static void websocket_event_handler(void *handler_args,
         return;
     }
     if (command.type == DEVICE_COMMAND_CONFIGURE_EXPRESSION) {
-        bool accepted = companion_hardware_configure_expression(
+        bool accepted = command.expression_turn_id[0] != '\0' ? companion_hardware_configure_turn_expression(
+                            command.expression_theme_rgb, command.expression_emotion,
+                            command.expression_intensity,
+                            (uint32_t)command.expression_duration_seconds * 1000U,
+                            command.expression_turn_id) == ESP_OK : companion_hardware_configure_expression(
                             command.expression_theme_rgb,
                             command.expression_emotion,
                             command.expression_intensity,
@@ -666,7 +686,8 @@ static esp_err_t initialize_wifi_monitor(void)
     return ESP_OK;
 }
 
-static bool run_websocket_connection(const device_identity_t *identity)
+/* Retain this call boundary for reproducible release stack budgeting. */
+static __attribute__((noinline)) bool run_websocket_connection(const device_identity_t *identity)
 {
     char uri[DEVICE_IDENTITY_SERVER_BASE_URL_MAX_LEN + 32] = {0};
     char authorization_header[DEVICE_IDENTITY_ACCESS_TOKEN_MAX_LEN + 32] = {0};
@@ -739,10 +760,18 @@ static bool run_websocket_connection(const device_identity_t *identity)
     int64_t last_heartbeat_us = 0;
     bool last_reported_present = false;
     bool last_reported_proximity_supported = false;
-    while (err == ESP_OK && !connection.failed &&
+    while (!__atomic_load_n(&s_server_update_requested, __ATOMIC_ACQUIRE) && err == ESP_OK && !connection.failed &&
            (xEventGroupGetBits(s_transport_events) & WIFI_CONNECTED_BIT) != 0) {
         int64_t now_us = esp_timer_get_time();
         if (connection.connected) {
+            if (!connection.ui_capability_sent && device_ui_ready()) {
+                char capability[100];
+                uint32_t capability_sequence = connection_next_sequence(&connection);
+                int written = snprintf(capability, sizeof(capability), "{\"type\":\"device_ui_capabilities\",\"sequence\":%lu,\"version\":1}", (unsigned long)capability_sequence);
+                if (capability_sequence == 0 || written <= 0 || (size_t)written >= sizeof(capability) ||
+                    !connection_send_text(&connection, capability)) { connection.failed = true; continue; }
+                connection.ui_capability_sent = true;
+            }
             device_body_diagnostics_t body = {0};
             body_hardware_get_diagnostics(&body);
             bool presence_changed = connection.heartbeat_sent &&
@@ -968,6 +997,16 @@ static void transport_task(void *argument)
     bool logged_waiting_for_identity = false;
     bool logged_waiting_for_wifi = false;
     for (;;) {
+        if (__atomic_load_n(&s_server_update_requested, __ATOMIC_ACQUIRE)) {
+            /* Quiesce every credential save and WebSocket before the physical
+             * USB origin update; a stale in-flight renewal must not restore it. */
+            __atomic_store_n(&s_server_update_paused, true, __ATOMIC_RELEASE);
+            while (__atomic_load_n(&s_server_update_requested, __ATOMIC_ACQUIRE))
+                vTaskDelay(pdMS_TO_TICKS(25));
+            __atomic_store_n(&s_server_update_paused, false, __ATOMIC_RELEASE);
+            retry_seconds = 1;
+            continue;
+        }
         service_wifi_reconnect();
         device_identity_t identity = {0};
         esp_err_t identity_err = device_identity_load(&identity);
@@ -998,6 +1037,10 @@ static void transport_task(void *argument)
         logged_waiting_for_wifi = false;
 
         device_credential_refresh_result_t refresh = device_credentials_refresh(&identity);
+        if (__atomic_load_n(&s_server_update_requested, __ATOMIC_ACQUIRE)) {
+            memset(&identity, 0, sizeof(identity));
+            continue;
+        }
         if (refresh == DEVICE_CREDENTIAL_REFRESHED) {
             if (device_identity_save(&identity) != ESP_OK) {
                 safety_state_stop_motion();
@@ -1023,6 +1066,24 @@ static void transport_task(void *argument)
             retry_seconds = WIFI_RECONNECT_INITIAL_SECONDS;
         }
     }
+}
+
+bool device_transport_pause_for_server_update(void)
+{
+    if (s_transport_task_handle == NULL) return false;
+    __atomic_store_n(&s_server_update_requested, true, __ATOMIC_RELEASE);
+    int64_t deadline = esp_timer_get_time() + 20000000LL;
+    while (esp_timer_get_time() < deadline) {
+        if (__atomic_load_n(&s_server_update_paused, __ATOMIC_ACQUIRE)) return true;
+        vTaskDelay(pdMS_TO_TICKS(25));
+    }
+    __atomic_store_n(&s_server_update_requested, false, __ATOMIC_RELEASE);
+    return false;
+}
+
+void device_transport_resume_after_server_update(void)
+{
+    __atomic_store_n(&s_server_update_requested, false, __ATOMIC_RELEASE);
 }
 
 esp_err_t device_transport_reserve(void)

@@ -25,8 +25,13 @@ $taskStackBytes = [int]$taskStackMatch.Groups[1].Value
 $frameBytes = @{}
 foreach ($usagePath in @($transportUsagePath, $firmwareOtaUsagePath)) {
     foreach ($line in Get-Content -LiteralPath $usagePath) {
-        if ($line -match '(?:device_transport|firmware_ota)\.c:\d+:\d+:(?<name>[A-Za-z0-9_]+)\s+(?<bytes>\d+)\s+') {
-            $frameBytes[$Matches.name] = [int]$Matches.bytes
+        if ($line -match '(?:device_transport|firmware_ota)\.c:\d+:\d+:(?<name>[A-Za-z0-9_.$]+)\s+(?<bytes>\d+)\s+') {
+            # -Os emits .constprop/$part clones. Use their largest frame.
+            $frameName = [regex]::Replace($Matches.name, '[.$].*$', '')
+            $bytes = [int]$Matches.bytes
+            if (-not $frameBytes.ContainsKey($frameName) -or $bytes -gt $frameBytes[$frameName]) {
+                $frameBytes[$frameName] = $bytes
+            }
         }
     }
 }

@@ -10,6 +10,8 @@
 #include "device_identity.h"
 #include "device_provisioning.h"
 #include "device_transport.h"
+#include "device_ui.h"
+#include "face_tracking.h"
 #include "expression_pack.h"
 #include "firmware_ota.h"
 #include "safety_state.h"
@@ -92,13 +94,23 @@ void app_main(void)
         ESP_LOGE(TAG, "Wake model OTA state initialization failed: %s", esp_err_to_name(wake_model_err));
     }
 
+    esp_err_t voice_err = ESP_ERR_INVALID_STATE;
+    esp_err_t ui_err = ESP_ERR_INVALID_STATE;
     if (hardware_err == ESP_OK) {
-        esp_err_t voice_err = voice_control_start();
+        voice_err = voice_control_start();
         if (voice_err != ESP_OK) {
             ESP_LOGE(TAG, "Voice control task did not start: %s", esp_err_to_name(voice_err));
         }
     }
     log_startup_headroom("voice");
+    /* Reserve the mandatory internal Flash stack before Wi-Fi fragments RAM.
+     * Network/gate workers use PSRAM; disabled vision allocates no worker. */
+    if (hardware_err == ESP_OK) {
+        esp_err_t tracking_err = face_tracking_init();
+        if (tracking_err != ESP_OK) ESP_LOGW(TAG, "Local tracking worker unavailable: %s", esp_err_to_name(tracking_err));
+        ui_err = device_ui_init();
+        if (ui_err != ESP_OK) ESP_LOGW(TAG, "Device UI worker unavailable: %s", esp_err_to_name(ui_err));
+    }
     esp_err_t transport_err = device_transport_reserve();
     if (transport_err != ESP_OK) {
         ESP_LOGE(TAG, "Transport task reservation failed: %s", esp_err_to_name(transport_err));
@@ -117,8 +129,16 @@ void app_main(void)
     } else if (provisioning_err == ESP_OK) {
         device_provisioning_activate();
     }
+    if (ui_err == ESP_OK) {
+        device_ui_connection_changed(device_transport_is_server_connected());
+    }
+    if (transport_err == ESP_OK && voice_err == ESP_OK && ui_err == ESP_OK) {
+        voice_control_activate();
+    }
+    log_startup_headroom("network_ui");
     if (firmware_ota_err == ESP_OK && firmware_ota_is_pending() && hardware_err == ESP_OK &&
-        wake_model_err == ESP_OK && transport_err == ESP_OK && provisioning_err == ESP_OK) {
+        wake_model_err == ESP_OK && transport_err == ESP_OK && provisioning_err == ESP_OK &&
+        voice_err == ESP_OK && ui_err == ESP_OK) {
         esp_err_t confirm_err = firmware_ota_confirm_active();
         if (confirm_err != ESP_OK) {
             ESP_LOGE(TAG, "Firmware OTA health confirmation failed: %s", esp_err_to_name(confirm_err));

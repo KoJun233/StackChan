@@ -1,1 +1,10 @@
 CONFIG_STACKCHAN_PROTOCOL_TESTS=y
+# Protocol profile compiles the local tracking stub and embeds no camera model.
+CONFIG_CAMERA_GC0308=n
+CONFIG_FLASH_HUMAN_FACE_DETECT_MSRMNP_S8_V1=n
+CONFIG_FLASH_ESPDET_PICO_224_224_FACE=n
+CONFIG_FLASH_ESPDET_PICO_416_416_FACE=n
+# The upstream component packs even an empty FLASH model list. Choose its external
+# location in the stub-only profile to suppress packing; the stub never opens SD.
+CONFIG_HUMAN_FACE_DETECT_MODEL_IN_FLASH_RODATA=n
+CONFIG_HUMAN_FACE_DETECT_MODEL_IN_SDCARD=y

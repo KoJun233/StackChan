@@ -57,9 +57,11 @@ class VoiceActionProposalServiceTest {
         UUID reminder = UUID.randomUUID();
         var conversations = mock(ConversationService.class);
         when(conversations.roleId(conversation)).thenReturn(role);
+        var roles = mock(CompanionRoleService.class);
+        activeRole(roles, device, role);
         var scopedService = new VoiceActionProposalService(proposalRepository, auditRepository, reminderService,
                 settingsService, memoryService, settingsCoordinator, Clock.fixed(NOW, ZoneOffset.UTC),
-                conversations, mock(CompanionRoleService.class));
+                conversations, roles);
         var target = new ReminderService.ReminderSnapshot(reminder, device, "喝水", NOW.plusSeconds(600),
                 "Asia/Shanghai", ReminderStatus.PENDING, 0, null, NOW, NOW);
         when(reminderService.nextPendingUserReminder(device, role)).thenReturn(target);
@@ -202,6 +204,7 @@ class VoiceActionProposalServiceTest {
         UUID roleId = UUID.randomUUID();
         UUID notificationId = UUID.randomUUID();
         when(conversationService.roleId(conversationId)).thenReturn(roleId);
+        activeRole(roleService, deviceId, roleId);
         when(notificationService.descriptionForVoice(notificationId, deviceId, roleId, NotificationResponseAction.SNOOZE))
                 .thenReturn("构建已经完成");
 
@@ -232,7 +235,9 @@ class VoiceActionProposalServiceTest {
                 notificationService, workdayService);
         UUID deviceId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
-        when(conversationService.roleId(conversationId)).thenReturn(UUID.randomUUID());
+        UUID roleId = UUID.randomUUID();
+        when(conversationService.roleId(conversationId)).thenReturn(roleId);
+        activeRole(roleService, deviceId, roleId);
 
         var proposal = workdayActions.propose(deviceId, conversationId, UUID.randomUUID(),
                 workdayDraft(VoiceActionType.START_WORKDAY));
@@ -258,7 +263,9 @@ class VoiceActionProposalServiceTest {
                 notificationService, workdayService);
         UUID deviceId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
-        when(conversationService.roleId(conversationId)).thenReturn(UUID.randomUUID());
+        UUID roleId = UUID.randomUUID();
+        when(conversationService.roleId(conversationId)).thenReturn(roleId);
+        activeRole(roleService, deviceId, roleId);
         when(workdayService.pendingRestPromptAt(deviceId)).thenReturn(NOW.minusSeconds(30));
 
         var proposal = workdayActions.propose(deviceId, conversationId, UUID.randomUUID(),
@@ -285,6 +292,7 @@ class VoiceActionProposalServiceTest {
         UUID roleId = UUID.randomUUID();
         UUID taskId = UUID.randomUUID();
         when(conversationService.roleId(conversationId)).thenReturn(roleId);
+        activeRole(roleService, deviceId, roleId);
         when(taskService.create(eq(roleId), any())).thenReturn(new PersonalTaskService.TaskSnapshot(
                 taskId, deviceId, roleId, "整理会议材料", null, PersonalTaskPriority.NORMAL,
                 PersonalTaskStatus.OPEN, null, "Asia/Shanghai", null, null, NOW, NOW));
@@ -302,6 +310,14 @@ class VoiceActionProposalServiceTest {
 
     private VoiceActionDraft reminderDraft() {
         return VoiceActionDraft.reminder("喝水", NOW.plusSeconds(600), "Asia/Shanghai", "NONE", 1);
+    }
+
+    private void activeRole(CompanionRoleService service, UUID deviceId, UUID roleId) {
+        var role = mock(CompanionRoleService.RoleSnapshot.class);
+        when(role.id()).thenReturn(roleId);
+        when(role.name()).thenReturn("测试伙伴");
+        when(service.getActive(deviceId)).thenReturn(role);
+        when(service.get(roleId)).thenReturn(role);
     }
 
     private VoiceActionDraft workdayDraft(VoiceActionType actionType) {

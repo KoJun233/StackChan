@@ -222,7 +222,7 @@ public class ReminderService {
         return toSnapshot(recent.getFirst());
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = {InvalidReminderException.class, ReminderNotFoundException.class})
     public ReminderSnapshot requireHeardUserReminder(UUID id, UUID deviceId, UUID roleId, Instant playedAt, String content) {
         var reminder = reminderRepository.findByIdAndSourceForUpdate(id, ReminderSource.USER)
                 .orElseThrow(ReminderNotFoundException::new);
@@ -243,7 +243,7 @@ public class ReminderService {
                 deviceId, roleId, ReminderSource.USER, ReminderStatus.PENDING).map(this::toSnapshot).orElse(null);
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = {InvalidReminderException.class, ReminderNotFoundException.class})
     public ReminderSnapshot applyConfirmedVoiceChange(UUID id, UUID deviceId, UUID roleId,
             Instant expectedSchedule, String expectedContent, Integer minutes) {
         if (id == null) throw new InvalidReminderException("Reminder confirmation has no target");

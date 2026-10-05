@@ -16,8 +16,13 @@ typedef enum {
     VOICE_WAKE_SENSITIVITY_SENSITIVE,
 } voice_wake_sensitivity_t;
 
-/** Starts the local WakeNet listener and bounded voice-turn task. */
+/** Reserves voice tasks before Wi-Fi without loading WakeNet or recording. */
 esp_err_t voice_control_start(void);
+/** Opens the reserved voice worker after network and critical UI startup. */
+void voice_control_activate(void);
+/** Local face/menu selection, persisted before reporting success. */
+esp_err_t voice_control_set_input_mode(bool automatic_wake);
+bool voice_control_is_automatic_wake(void);
 
 /** Applies bounded wake and local speech-detection settings without restarting the device. */
 esp_err_t voice_control_configure(voice_wake_sensitivity_t wake_sensitivity,

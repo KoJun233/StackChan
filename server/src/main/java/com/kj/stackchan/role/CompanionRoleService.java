@@ -32,6 +32,8 @@ public class CompanionRoleService {
     private final ReminderRepository reminderRepository;
     private final Clock clock;
     private final NotificationIntegrationRepository notificationIntegrationRepository;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.kj.stackchan.device.DeviceUiStateNotifier uiStateNotifier;
 
     public CompanionRoleService(CompanionRoleRepository roleRepository,
                                 DeviceActiveRoleRepository activeRoleRepository,
@@ -68,6 +70,12 @@ public class CompanionRoleService {
         return get(roleId);
     }
 
+    @Transactional(readOnly = true)
+    public UUID activeConsentEpoch(UUID deviceId) {
+        return activeRoleRepository.findByDeviceId(deviceId)
+                .map(DeviceActiveRoleEntity::getConsentEpoch).orElse(DeviceActiveRoleEntity.IMPLICIT_DEFAULT_CONSENT_EPOCH);
+    }
+
     @Transactional
     public RoleSnapshot create(RoleCommand command) {
         ValidatedRole role = validate(command);
@@ -90,40 +98,74 @@ public class CompanionRoleService {
 
     @Transactional
     public RoleSnapshot switchActive(UUID deviceId, UUID roleId) {
-        requireDevice(deviceId);
-        CompanionRoleEntity role = find(roleId);
+        return switchActiveChecked(deviceId, roleId, null, null);
+    }
+
+    @Transactional(readOnly = true)
+    public RoleSnapshot resolveUniqueName(String roleName) {
+        var matches = roleRepository.findAllByNameIgnoreCaseAndArchivedAtIsNull(normalize(roleName, 80, false));
+        if (matches.isEmpty()) throw new RoleNotFoundException();
+        if (matches.size() != 1) throw new RoleConflictException("Role name is ambiguous");
+        return toSnapshot(matches.getFirst());
+    }
+
+    @Transactional(noRollbackFor = {RoleConflictException.class, RoleNotFoundException.class, InvalidRoleException.class})
+    public RoleSnapshot switchActiveConfirmed(UUID deviceId, UUID roleId, String expectedName, UUID consentTurnId) {
+        return switchActiveChecked(deviceId, roleId, expectedName, consentTurnId);
+    }
+
+    private RoleSnapshot switchActiveChecked(UUID deviceId, UUID roleId, String expectedName, UUID consentTurnId) {
+        if (deviceId == null || deviceRepository.findByIdForUpdate(deviceId).isEmpty())
+            throw new InvalidRoleException("Role device is invalid");
+        CompanionRoleEntity role = roleRepository.findByIdForUpdate(roleId).orElseThrow(RoleNotFoundException::new);
+        if (expectedName != null && !expectedName.equals(role.getName()))
+            throw new RoleConflictException("Role confirmation snapshot changed");
         if (role.getArchivedAt() != null) throw new RoleConflictException("Archived role cannot become active");
-        if (voiceTurnRepository.existsByDeviceIdAndStatusIn(deviceId, ACTIVE_TURNS)) {
+        boolean busy = consentTurnId == null
+                ? voiceTurnRepository.existsByDeviceIdAndStatusIn(deviceId, ACTIVE_TURNS)
+                : voiceTurnRepository.findByDeviceIdAndStatusIn(deviceId, ACTIVE_TURNS).stream()
+                    .anyMatch(turn -> !consentTurnId.equals(turn.getId()));
+        if (busy) {
             throw new RoleConflictException("Device has an active voice turn");
         }
         if (reminderRepository.existsByDeviceIdAndStatus(deviceId, ReminderStatus.DISPATCHED)) {
             throw new RoleConflictException("Device has a dispatched reminder");
         }
         Instant now = clock.instant();
-        DeviceActiveRoleEntity mapping = activeRoleRepository.findByDeviceId(deviceId)
+        var current = activeRoleRepository.findByDeviceId(deviceId);
+        boolean changed = !roleId.equals(current.map(DeviceActiveRoleEntity::getRoleId)
+                .orElse(CompanionRoleEntity.DEFAULT_ROLE_ID));
+        DeviceActiveRoleEntity mapping = current
                 .orElseGet(() -> new DeviceActiveRoleEntity(deviceId, roleId, now));
         mapping.switchTo(roleId, now);
         activeRoleRepository.save(mapping);
+        if (uiStateNotifier != null && changed)
+            uiStateNotifier.changed(deviceId);
         return toSnapshot(role);
     }
 
     @Transactional
     public RoleSnapshot switchActiveFromVoice(UUID deviceId, String roleName) {
-        String normalized = normalize(roleName, 80, false);
-        CompanionRoleEntity role = roleRepository.findFirstByNameIgnoreCaseAndArchivedAtIsNull(normalized)
-                .orElseThrow(RoleNotFoundException::new);
-        return switchActive(deviceId, role.getId());
+        return switchActive(deviceId, resolveUniqueName(roleName).id());
     }
 
     @Transactional
     public RoleSnapshot archive(UUID id) {
+        activeRoleRepository.findAllByRoleId(id).stream()
+                .map(DeviceActiveRoleEntity::getDeviceId).sorted().forEach(deviceId -> {
+                    if (deviceRepository.findByIdForUpdate(deviceId).isEmpty())
+                        throw new InvalidRoleException("Role device is invalid");
+                });
         CompanionRoleEntity role = roleRepository.findByIdForUpdate(id).orElseThrow(RoleNotFoundException::new);
         if (role.isDefaultRole()) throw new RoleConflictException("Default role cannot be archived");
         if (role.getArchivedAt() != null) return toSnapshot(role);
         Instant now = clock.instant();
         role.archive(now);
         UUID defaultId = getDefault().id();
-        activeRoleRepository.findAllByRoleId(id).forEach(mapping -> mapping.switchTo(defaultId, now));
+        activeRoleRepository.findAllByRoleId(id).forEach(mapping -> {
+            mapping.switchTo(defaultId, now);
+            if (uiStateNotifier != null) uiStateNotifier.changed(mapping.getDeviceId());
+        });
         reminderRepository.cancelFutureByRoleId(id, now);
         notificationIntegrationRepository.disableAllByRoleId(id, now);
         return toSnapshot(role);

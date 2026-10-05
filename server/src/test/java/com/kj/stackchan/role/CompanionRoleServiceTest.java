@@ -55,8 +55,8 @@ class CompanionRoleServiceTest {
         var integrations = mock(NotificationIntegrationRepository.class);
         CompanionRoleEntity role = role("助理");
         UUID deviceId = UUID.randomUUID();
-        when(devices.existsById(deviceId)).thenReturn(true);
-        when(roles.findById(role.getId())).thenReturn(Optional.of(role));
+        when(devices.findByIdForUpdate(deviceId)).thenReturn(Optional.of(mock(com.kj.stackchan.device.DeviceEntity.class)));
+        when(roles.findByIdForUpdate(role.getId())).thenReturn(Optional.of(role));
         when(turns.existsByDeviceIdAndStatusIn(eq(deviceId), any())).thenReturn(true);
         CompanionRoleService service = new CompanionRoleService(roles, active, devices, turns, reminders,
                 Clock.fixed(NOW, ZoneOffset.UTC), integrations);
@@ -81,6 +81,7 @@ class CompanionRoleServiceTest {
         when(roles.findByDefaultRoleTrue()).thenReturn(Optional.of(defaultRole));
         DeviceActiveRoleEntity mapping = new DeviceActiveRoleEntity(UUID.randomUUID(), role.getId(), NOW.minusSeconds(1));
         when(active.findAllByRoleId(role.getId())).thenReturn(List.of(mapping));
+        when(devices.findByIdForUpdate(mapping.getDeviceId())).thenReturn(Optional.of(mock(com.kj.stackchan.device.DeviceEntity.class)));
         CompanionRoleService service = new CompanionRoleService(roles, active, devices, turns, reminders,
                 Clock.fixed(NOW, ZoneOffset.UTC), integrations);
 

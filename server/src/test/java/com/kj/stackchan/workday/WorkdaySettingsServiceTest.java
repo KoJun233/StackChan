@@ -73,4 +73,16 @@ class WorkdaySettingsServiceTest {
     private WorkdaySettingsService service() {
         return new WorkdaySettingsService(repository, deviceRepository, Clock.fixed(NOW, ZoneOffset.UTC));
     }
+
+    @Test
+    void rejectsRearrivalBelowTheDatabaseMinimumBeforeSaving() {
+        UUID deviceId = UUID.randomUUID();
+        when(deviceRepository.existsById(deviceId)).thenReturn(true);
+        var command = new WorkdaySettingsService.UpdateWorkdaySettingsCommand(
+                true, 127, LocalTime.of(9, 0), LocalTime.of(18, 0), 50, 10,
+                1, 4, "", null, null, "UTC");
+        assertThatThrownBy(() -> service().save(deviceId, command))
+                .isInstanceOf(InvalidWorkdaySettingsException.class);
+        org.mockito.Mockito.verifyNoInteractions(repository);
+    }
 }

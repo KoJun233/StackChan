@@ -4,6 +4,10 @@
 
 #include "esp_err.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define DEVICE_IDENTITY_SERVER_BASE_URL_MAX_LEN 192
 #define DEVICE_IDENTITY_DEVICE_ID_MAX_LEN 37
 #define DEVICE_IDENTITY_ACCESS_TOKEN_MAX_LEN 1536
@@ -44,3 +48,7 @@ esp_err_t device_identity_save(const device_identity_t *identity);
  * Removes the identity namespace contents without touching other NVS namespaces.
  */
 esp_err_t device_identity_clear(void);
+
+#ifdef __cplusplus
+}
+#endif

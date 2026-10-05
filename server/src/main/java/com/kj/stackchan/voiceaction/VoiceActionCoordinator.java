@@ -181,7 +181,7 @@ public class VoiceActionCoordinator {
                     || (text.startsWith("确认安排") && pending.actionType() != VoiceActionType.CREATE_FOLLOW_UP)) {
                 return new ActionResult(proposalService.restatement(pending), true);
             }
-            VoiceActionProposalService.ProposalSnapshot executed = proposalService.confirm(pending.id(), deviceId, conversationId);
+            VoiceActionProposalService.ProposalSnapshot executed = proposalService.confirm(pending.id(), deviceId, conversationId, turnId);
             return new ActionResult(executed.status() == VoiceActionStatus.EXECUTED
                     ? switch (executed.actionType()) {
                         case CONFIRM_MEMORY -> "已为当前伙伴记住。";
@@ -214,11 +214,17 @@ public class VoiceActionCoordinator {
         }
         Matcher switchRole = SWITCH_ROLE.matcher(text);
         if (switchRole.find()) {
-            VoiceActionProposalService.ProposalSnapshot proposal = proposalService.propose(
-                    deviceId, conversationId, turnId,
-                    new VoiceActionDraft(VoiceActionType.SWITCH_ROLE, true, switchRole.group(1).trim(), null,
-                            null, null, null, null, null, null, null, null, null));
-            return new ActionResult(proposalService.restatement(proposal), true);
+            try {
+                VoiceActionProposalService.ProposalSnapshot proposal = proposalService.propose(
+                        deviceId, conversationId, turnId,
+                        new VoiceActionDraft(VoiceActionType.SWITCH_ROLE, true, switchRole.group(1).trim(), null,
+                                null, null, null, null, null, null, null, null, null));
+                return new ActionResult(proposalService.restatement(proposal), true);
+            } catch (com.kj.stackchan.role.RoleConflictException exception) {
+                return new ActionResult("有多个同名伙伴，请在控制中心选择具体伙伴。这次没有切换。", true);
+            } catch (com.kj.stackchan.role.RoleNotFoundException exception) {
+                return new ActionResult("没有找到这个伙伴，请检查名称。这次没有切换。", true);
+            }
         }
         Matcher snooze = SNOOZE_MINUTES.matcher(text);
         if (snooze.find() && text.contains("提醒")) {

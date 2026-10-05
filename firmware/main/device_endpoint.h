@@ -8,6 +8,10 @@
 
 #include "device_identity.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define DEVICE_ENDPOINT_PAIRING_CLAIM_PATH "/api/v1/pairing/claim"
 #define DEVICE_ENDPOINT_TOKEN_REFRESH_PATH "/api/v1/devices/token:refresh"
 #define DEVICE_ENDPOINT_WEBSOCKET_PATH "/api/v1/ws/device"
@@ -39,3 +43,7 @@ bool device_endpoint_build_firmware_update_url(const char *server_base_url,
                                                size_t size);
 void device_endpoint_configure_http_client(esp_http_client_config_t *config);
 void device_endpoint_configure_websocket_client(esp_websocket_client_config_t *config);
+
+#ifdef __cplusplus
+}
+#endif

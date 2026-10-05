@@ -485,4 +485,35 @@ class DeviceWebSocketHandlerTest {
         when(session.isOpen()).thenReturn(true);
         return session;
     }
+
+    @Test
+    void uiCapabilitiesAreStrictConnectionScopedAndEnableOnlyTurnBoundExpressions() throws Exception {
+        var session = authenticatedSession();
+        handler.afterConnectionEstablished(session);
+        assertThat(connectionRegistry.supportsDeviceUi(DEVICE_ID)).isFalse();
+        handler.handleTextMessage(session, new TextMessage("{\"type\":\"device_ui_capabilities\",\"sequence\":1,\"version\":2}"));
+        handler.handleTextMessage(session, new TextMessage("{\"type\":\"device_ui_capabilities\",\"sequence\":2,\"version\":1,\"device_id\":\"ignored\"}"));
+        assertThat(connectionRegistry.supportsDeviceUi(DEVICE_ID)).isFalse();
+        handler.handleTextMessage(session, new TextMessage("{\"type\":\"device_ui_capabilities\",\"sequence\":3,\"version\":1}"));
+        assertThat(connectionRegistry.supportsDeviceUi(DEVICE_ID)).isTrue();
+        var turn = UUID.randomUUID();
+        connectionRegistry.sendExpressionConfiguration(DEVICE_ID, turn, "#123456", "HAPPY", "MEDIUM", 10);
+        var messages = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session, org.mockito.Mockito.atLeastOnce()).sendMessage(messages.capture());
+        var payload = new ObjectMapper().readTree(messages.getAllValues().getLast().getPayload());
+        assertThat(payload.size()).isEqualTo(7);
+        assertThat(payload.path("turn_id").asText()).isEqualTo(turn.toString());
+
+        var replacement = authenticatedSession();
+        handler.afterConnectionEstablished(replacement);
+        assertThat(connectionRegistry.supportsDeviceUi(DEVICE_ID)).isFalse();
+        connectionRegistry.sendExpressionConfiguration(DEVICE_ID, turn, "#123456", "HAPPY", "MEDIUM", 10);
+        var legacy = ArgumentCaptor.forClass(TextMessage.class);
+        verify(replacement, org.mockito.Mockito.atLeastOnce()).sendMessage(legacy.capture());
+        var legacyPayload = new ObjectMapper().readTree(legacy.getAllValues().getLast().getPayload());
+        assertThat(legacyPayload.size()).isEqualTo(6);
+        assertThat(legacyPayload.has("turn_id")).isFalse();
+        handler.handleTextMessage(session, new TextMessage("{\"type\":\"device_ui_capabilities\",\"sequence\":4,\"version\":1}"));
+        assertThat(connectionRegistry.supportsDeviceUi(DEVICE_ID)).isFalse();
+    }
 }

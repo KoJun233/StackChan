@@ -98,6 +98,7 @@ public class WorkdaySettingsService {
                 || command.focusMinutes() < 15 || command.focusMinutes() > 180
                 || command.restMinutes() < 5 || command.restMinutes() > 60
                 || command.absenceSuspendMinutes() < 1 || command.absenceSuspendMinutes() > 60
+                || command.rearrivalMinutes() < 5
                 || command.rearrivalMinutes() < command.absenceSuspendMinutes()
                 || command.rearrivalMinutes() > 240
                 || command.locationName() == null || command.locationName().trim().length() > 120

@@ -34,7 +34,7 @@ dependencies:
       type: service
     version: 0.5.3
   espressif/dl_fft:
-    component_hash: a955ca29581de2177ddf25759273bd83f082b3c805e735fe6ee105858643989b
+    component_hash: 965be7152132b365061abf5fc5fc7b85e525f73b94a204cdda61cfe9572c0d77
     dependencies:
     - name: idf
       require: private
@@ -42,7 +42,35 @@ dependencies:
     source:
       registry_url: https://components.espressif.com
       type: service
-    version: 0.6.0
+    version: 0.8.0
+  espressif/esp-dl:
+    component_hash: 3148b2692a2943d7e35401dc10a181b6ba83515ec70ef51499ac5d2593eef3e2
+    dependencies:
+    - name: espressif/dl_fft
+      registry_url: https://components.espressif.com
+      require: private
+      version: '>=0.8.0'
+    - name: espressif/esp_new_jpeg
+      registry_url: https://components.espressif.com
+      require: private
+      version: ^1
+    - name: idf
+      require: private
+      version: '*'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    targets:
+    - esp32
+    - esp32c2
+    - esp32c3
+    - esp32c5
+    - esp32c6
+    - esp32p4
+    - esp32s2
+    - esp32s3
+    - esp32s31
+    version: 3.3.13
   espressif/esp-dsp:
     component_hash: 12e44db246517a627bc0fe2b255b8335410c0215c98bfba2df5a8e3edea839ef
     dependencies:
@@ -145,7 +173,7 @@ dependencies:
       require: private
       version: '>=4.4'
     source:
-      registry_url: https://components.espressif.com
+      registry_url: https://components.espressif.com/
       type: service
     version: 2.0.2
   espressif/esp_lcd_touch:
@@ -290,6 +318,17 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 1.8.0
+  espressif/human_face_detect:
+    component_hash: a413ff0571a9823e82cc391e633bedae5f43cb950611e5ed3439a77ab754808b
+    dependencies:
+    - name: espressif/esp-dl
+      registry_url: https://components.espressif.com
+      require: private
+      version: ~3.3.0
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 0.5.0
   espressif/i2c_bus:
     component_hash: 483112c1619c54c38d0b734fb25f1678733267858a77b7af2f48cc7db6dbbd84
     dependencies:
@@ -418,12 +457,15 @@ dependencies:
       type: service
     version: 9.4.0
 direct_dependencies:
+- espressif/esp-dl
 - espressif/esp-sr
+- espressif/esp_lcd_ili9341
 - espressif/esp_lv_eaf_player
 - espressif/esp_websocket_client
+- espressif/human_face_detect
 - espressif/m5stack_core_s3
 - idf
 - lvgl/lvgl
-manifest_hash: 6552c8b959d6263b8d97f10e2e10928334d8a0ac37b13087e36cad38ca0fdf6a
+manifest_hash: 1f810417f0d73ac59aa51d952537a03964e1cd8337272d630369feab3968aac4
 target: esp32s3
 version: 2.0.0

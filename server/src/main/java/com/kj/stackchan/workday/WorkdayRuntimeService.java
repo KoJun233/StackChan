@@ -25,6 +25,8 @@ public class WorkdayRuntimeService {
     private final WorkdaySettingsService settingsService;
     private final DeviceRepository deviceRepository;
     private final Clock clock;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.kj.stackchan.device.DeviceUiStateNotifier uiStateNotifier;
 
     public WorkdayRuntimeService(
             DeviceWorkdayRuntimeRepository runtimeRepository,
@@ -76,6 +78,7 @@ public class WorkdayRuntimeService {
         runtime.start(workDate, present, now);
         metric(deviceId, workDate, now).sessionStarted(now);
         runtimeRepository.save(runtime);
+        notifyStateChanged(deviceId);
         return snapshot(runtime, settings);
     }
 
@@ -102,12 +105,14 @@ public class WorkdayRuntimeService {
                 && !now.isBefore(runtime.getAbsenceStartedAt().plus(
                 Duration.ofMinutes(settings.rearrivalMinutes())));
         accrueFocus(runtime, now);
+        WorkdayRuntimeState before = runtime.getState();
         runtime.markPresent(present, now);
         if (present && (runtime.getState() == WorkdayRuntimeState.STARTING
                 || runtime.getState() == WorkdayRuntimeState.ACTIVE_ABSENT)) {
             runtime.transition(WorkdayRuntimeState.ACTIVE_PRESENT, now);
         }
         runtimeRepository.save(runtime);
+        if (before != runtime.getState()) notifyStateChanged(deviceId);
         return new PresenceUpdateSnapshot(snapshot(runtime, settings), rearrival);
     }
 
@@ -134,7 +139,7 @@ public class WorkdayRuntimeService {
         return respondToRest(deviceId, action, null);
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = InvalidWorkdayStateException.class)
     public WorkdayRuntimeSnapshot respondToRest(UUID deviceId, WorkdayRestAction action, Instant expectedPromptAt) {
         validateDevice(deviceId);
         if (action == null) {
@@ -166,6 +171,7 @@ public class WorkdayRuntimeService {
             }
         }
         runtimeRepository.save(runtime);
+        notifyStateChanged(deviceId);
         return snapshot(runtime, settings);
     }
 
@@ -182,6 +188,7 @@ public class WorkdayRuntimeService {
             metric(deviceId, runtime.getWorkDate(), now).sessionEnded(now);
             runtime.stop(now);
             runtimeRepository.save(runtime);
+            notifyStateChanged(deviceId);
         }
         return snapshot(runtime, settings);
     }
@@ -240,6 +247,7 @@ public class WorkdayRuntimeService {
             WorkdaySettingsService.WorkdaySettingsSnapshot settings,
             Instant now
     ) {
+        WorkdayRuntimeState before = runtime.getState();
         if (runtime.getState() == WorkdayRuntimeState.OFF) {
             return;
         }
@@ -250,6 +258,7 @@ public class WorkdayRuntimeService {
             metric(runtime.getDeviceId(), runtime.getWorkDate(), now).sessionEnded(now);
             runtime.stop(now);
             runtimeRepository.save(runtime);
+            notifyStateChanged(runtime.getDeviceId());
             return;
         }
         if (runtime.getState() == WorkdayRuntimeState.RESTING
@@ -268,6 +277,11 @@ public class WorkdayRuntimeService {
             runtime.transition(WorkdayRuntimeState.REST_PROMPTED, now);
         }
         runtimeRepository.save(runtime);
+        if (before != runtime.getState()) notifyStateChanged(runtime.getDeviceId());
+    }
+
+    private void notifyStateChanged(UUID deviceId) {
+        if (uiStateNotifier != null) uiStateNotifier.changed(deviceId);
     }
 
     private void accrueFocus(DeviceWorkdayRuntimeEntity runtime, Instant now) {

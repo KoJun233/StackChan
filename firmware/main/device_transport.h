@@ -9,6 +9,10 @@
 #include "device_identity.h"
 #include "device_protocol.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /** Reserves the transport task and its queues before Wi-Fi fragments internal SRAM. */
 esp_err_t device_transport_reserve(void);
 
@@ -20,6 +24,10 @@ esp_err_t device_transport_start(void);
  * Credentials are handled only by the ESP-IDF Wi-Fi stack and never logged.
  */
 esp_err_t device_transport_configure_wifi(const char *ssid, const char *password);
+
+/** Physical USB maintenance: wait up to 20s for transport/renewal quiescence. */
+bool device_transport_pause_for_server_update(void);
+void device_transport_resume_after_server_update(void);
 
 /** Returns whether the station currently has an IP address. */
 bool device_transport_is_wifi_connected(void);
@@ -38,3 +46,7 @@ bool device_transport_report_voice_turn(device_voice_turn_stage_t stage,
                                         const char *turn_id,
                                         uint32_t elapsed_ms,
                                         device_voice_turn_failure_t failure);
+
+#ifdef __cplusplus
+}
+#endif

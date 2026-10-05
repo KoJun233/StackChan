@@ -85,6 +85,7 @@ class WorkdayCompanionServiceTest {
         lenient().when(roleService.getActive(DEVICE_ID)).thenReturn(role);
         lenient().when(role.id()).thenReturn(ROLE_ID);
         lenient().when(role.name()).thenReturn("小峰");
+        lenient().when(role.expressionThemeColor()).thenReturn("#FF4FA3");
         lenient().when(settingsService.resolve(DEVICE_ID)).thenReturn(settings());
     }
 
@@ -161,6 +162,7 @@ class WorkdayCompanionServiceTest {
         service.presenceChanged(DEVICE_ID, true);
 
         verify(bodyMotionAutoService, never()).request(any(), any(), any());
+        verify(commandGateway).configureExpression(DEVICE_ID, "#FF4FA3", "HAPPY", "WEAK", 5);
     }
 
     @Test
@@ -340,6 +342,17 @@ class WorkdayCompanionServiceTest {
                 DEVICE_ID, state, date, true, 0, 3000, startedAt, NOW,
                 null, null, null, briefStatus, NOW
         );
+    }
+
+    @Test
+    void workdayStartUsesTheFirmwareHappyEnumAndItsSupportedDuration() {
+        var running = runtime(WorkdayRuntimeState.ACTIVE_PRESENT, LocalDate.of(2026, 8, 29), WorkdayBriefStatus.SUCCESS, NOW);
+        when(deviceRepository.findById(DEVICE_ID)).thenReturn(Optional.of(new DeviceEntity("test", "test")));
+        when(runtimeService.start(DEVICE_ID, true)).thenReturn(running);
+        when(runtimeService.tick(DEVICE_ID)).thenReturn(running);
+        when(runtimeService.get(DEVICE_ID)).thenReturn(running);
+        service.start(DEVICE_ID);
+        verify(commandGateway).configureExpression(DEVICE_ID, "#FF4FA3", "HAPPY", "WEAK", 5);
     }
 
     private WorkdaySettingsService.WorkdaySettingsSnapshot settings() {

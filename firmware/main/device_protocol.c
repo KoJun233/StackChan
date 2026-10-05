@@ -504,7 +504,7 @@ bool device_protocol_parse_command(const char *payload,
             command->night_mode = cJSON_IsTrue(night_mode);
         }
     } else if (valid && strcmp(type->valuestring, "configure_expression") == 0 &&
-               cJSON_GetArraySize(root) == 6) {
+               (cJSON_GetArraySize(root) == 6 || cJSON_GetArraySize(root) == 7)) {
         cJSON *theme_color = cJSON_GetObjectItemCaseSensitive(root, "theme_color");
         cJSON *emotion = cJSON_GetObjectItemCaseSensitive(root, "emotion");
         cJSON *intensity = cJSON_GetObjectItemCaseSensitive(root, "intensity");
@@ -519,6 +519,11 @@ bool device_protocol_parse_command(const char *payload,
                 companion_emotion_parse(emotion->valuestring, &command->expression_emotion) &&
                 companion_emotion_intensity_parse(intensity->valuestring,
                                                    &command->expression_intensity);
+        if (valid && cJSON_GetArraySize(root) == 7) {
+            const cJSON *turn = cJSON_GetObjectItemCaseSensitive(root, "turn_id");
+            valid = cJSON_IsString(turn) && is_valid_uuid(turn->valuestring);
+            if (valid) memcpy(command->expression_turn_id, turn->valuestring, sizeof(command->expression_turn_id));
+        }
         if (valid) {
             command->type = DEVICE_COMMAND_CONFIGURE_EXPRESSION;
             command->expression_theme_rgb = rgb;

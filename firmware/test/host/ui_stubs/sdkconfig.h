@@ -1,0 +1,2 @@
+#pragma once
+#define CONFIG_STACKCHAN_PROTOCOL_TESTS 0

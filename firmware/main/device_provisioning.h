@@ -16,6 +16,7 @@ typedef enum {
     DEVICE_PROVISIONING_REQUEST_FULL = 0,
     DEVICE_PROVISIONING_REQUEST_SERVER_ONLY,
     DEVICE_PROVISIONING_REQUEST_BODY_CALIBRATION,
+    DEVICE_PROVISIONING_REQUEST_RELOCATE_SERVER,
 } device_provisioning_request_kind_t;
 
 typedef struct {
@@ -31,6 +32,8 @@ typedef struct {
  * buffer. Full provisioning includes Wi-Fi, server, and pairing fields; a
  * server-only update includes only the server and pairing fields. The physical
  * body calibration diagnostic accepts no fields beyond its exact request type.
+ * Physical relocate_server accepts only a canonical server origin and preserves
+ * the device ID and refresh credential; it requires authenticated renewal before save.
  */
 bool device_provisioning_parse_request(const char *payload,
                                        size_t payload_length,

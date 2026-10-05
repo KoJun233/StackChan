@@ -40,6 +40,7 @@ typedef enum {
 typedef enum {
     COMPANION_TOUCH_PRESSED = 0,
     COMPANION_TOUCH_RELEASED,
+    COMPANION_TOUCH_MOVED,
 } companion_touch_event_type_t;
 
 typedef struct {
@@ -78,10 +79,21 @@ esp_err_t companion_hardware_configure_interaction(int volume_percent, bool nigh
 /** Applies a bounded ambient-light brightness target without changing workday state. */
 esp_err_t companion_hardware_set_ambient_brightness(int brightness_percent);
 
+/** A local slider overrides ambient brightness until explicitly restored. */
+esp_err_t companion_hardware_set_local_brightness(int brightness_percent);
+esp_err_t companion_hardware_clear_local_brightness(void);
+/** Returns the manual percent, or -1 while ambient brightness owns the target. */
+int companion_hardware_get_local_brightness(void);
+
+/** Face-idle excludes active speech/playback, updates, modal UI and screensaver;
+ * passive WakeNet sampling remains compatible with local camera capture. */
+bool companion_hardware_is_idle(void);
+void companion_hardware_set_local_gaze(float x, float y, bool visible);
+
 /** Waits for a bounded touch edge emitted by the UI task. */
 bool companion_hardware_wait_touch_event(companion_touch_event_t *event, uint32_t timeout_ms);
 
-/** Shows the local recording-submit icon only for automatic listening. */
+/** Shows the recording gesture hint only for automatic listening. */
 void companion_hardware_show_capture_submit(bool visible);
 
 void companion_hardware_show_voice_input_mode(bool visible, bool automatic);
@@ -97,6 +109,16 @@ esp_err_t companion_hardware_configure_expression(uint32_t rgb,
                                                   companion_emotion_t emotion,
                                                   companion_emotion_intensity_t intensity,
                                                   uint32_t duration_ms);
+
+/** Authenticated canonical turn lifecycle; mismatches/duplicates are ignored. */
+void companion_hardware_expression_turn_begin(const char *turn_id);
+esp_err_t companion_hardware_configure_turn_expression(uint32_t rgb,
+    companion_emotion_t emotion, companion_emotion_intensity_t intensity,
+    uint32_t duration_ms, const char *turn_id);
+void companion_hardware_expression_turn_playback_started(const char *turn_id);
+void companion_hardware_expression_turn_end(const char *turn_id);
+void companion_hardware_expression_turn_cancel(const char *turn_id);
+void companion_hardware_expression_clear_turn(void);
 
 /** Applies a server-persisted fixed target or bounded adaptive frame-rate policy. */
 esp_err_t companion_hardware_configure_expression_frame_rate(

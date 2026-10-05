@@ -4,12 +4,19 @@
  * Register addresses and physical wiring are derived from the MIT-licensed
  * M5Stack StackChan firmware. LTR-553 operation follows the Lite-On datasheet.
  * This implementation intentionally exposes no raw samples and accepts no
- * caller-provided angles, speeds, loops, or URLs.
+ * remote caller-provided angles, speeds, loops, or URLs. Local tracking uses
+ * firmware-owned bounded offsets and the same calibrated safety checks.
  */
 #include "body_hardware.h"
 #include "companion_hardware.h"
 #include "voice_control.h"
 #include "body_touch_policy.h"
+#include "motion_planner.h"
+#include "body_local_policy.h"
+#include "device_ui.h"
+extern "C" {
+#include "device_transport.h"
+}
 
 #include <algorithm>
 #include <array>
@@ -63,14 +70,11 @@ constexpr int SERVO_FEEDBACK_TOLERANCE_RAW = 8;
 // the motion watchdog.
 constexpr int SERVO_NEAR_TARGET_SETTLE_MS = 250;
 constexpr int SERVO_NEAR_TARGET_POLL_MS = 50;
-constexpr int SERVO_IDLE_RECOVERY_WAIT_MS = 200;
 constexpr int SERVO_IDLE_RECOVERY_ATTEMPTS = 2;
-// M5Stack's K151 uses a 20 ms SCSCL goal for its own motion scheduler. Our
-// fixed expression frames use a 50 ms command cadence. Give each servo goal
-// 60 ms so consecutive small moves overlap instead of stopping between goals.
-// Multi-hundred-ms goals previously undershot on this device.
-constexpr uint16_t SERVO_GOAL_TIME_MS = 60;
-constexpr int SERVO_FRAME_STEP_MS = 50;
+// Match the internal goal duration to the remaining absolute boundary rather
+// than repeatedly restarting a 60 ms move every 50 ms. No servo EEPROM/PID
+// parameters or calibrated limits are changed.
+constexpr uint16_t SERVO_GOAL_TIME_MS = MOTION_PLAN_PERIOD_MS;
 
 constexpr uint8_t PY32_ADDRESS = 0x6F;
 constexpr uint8_t PY32_VERSION_REGISTER = 0x02;
@@ -169,6 +173,11 @@ struct MotionRequest {
     uint32_t stop_generation;
     uint32_t failure_count;
     char command_id[DEVICE_PROTOCOL_COMMAND_ID_MAX_LEN];
+    bool local;
+    bool local_follow;
+    uint32_t local_generation;
+    MotionFrame local_frames[2];
+    size_t local_frame_count;
 };
 
 constexpr MotionFrame WAKE_FRAMES[] = {{-8, 45, 300}, {0, 63, 700}, {0, 45, 500}};
@@ -231,6 +240,20 @@ uint8_t s_top_touch_confirm_count;
 bool s_workday_toggle_pending;
 int64_t s_top_touch_started_us;
 uint32_t s_stop_generation;
+uint32_t s_local_follow_generation;
+uint32_t s_active_local_generation;
+bool s_executing_local;
+bool s_executing_local_follow;
+int64_t s_last_local_follow_us;
+int64_t s_last_local_nod_us;
+struct MotionTiming {
+    uint32_t commands;
+    uint32_t skipped_boundaries;
+    uint32_t max_late_us;
+    uint32_t max_feedback_gap_us;
+    uint32_t recovery_attempts;
+};
+MotionTiming s_motion_timing;
 device_ambient_light_t s_ambient_light = DEVICE_AMBIENT_LIGHT_UNAVAILABLE;
 device_ambient_light_t s_ambient_light_candidate = DEVICE_AMBIENT_LIGHT_UNAVAILABLE;
 int s_yaw_center_raw;
@@ -563,14 +586,14 @@ bool read_servo_centers_locked(int *yaw, int *pitch)
     return false;
 }
 
-bool servo_move(uint8_t id, int raw_position)
+bool servo_move(uint8_t id, int raw_position, uint16_t goal_time_ms = SERVO_GOAL_TIME_MS)
 {
     if (raw_position < SERVO_RAW_MIN || raw_position > SERVO_RAW_MAX) return false;
     uint8_t data[6] = {
         static_cast<uint8_t>((raw_position >> 8) & 0xFF),
         static_cast<uint8_t>(raw_position & 0xFF),
-        static_cast<uint8_t>((SERVO_GOAL_TIME_MS >> 8) & 0xFF),
-        static_cast<uint8_t>(SERVO_GOAL_TIME_MS & 0xFF),
+        static_cast<uint8_t>((goal_time_ms >> 8) & 0xFF),
+        static_cast<uint8_t>(goal_time_ms & 0xFF),
         0,
         0,
     };
@@ -617,15 +640,65 @@ const MotionDefinition *motion_definition(safety_motion_template_t motion)
     return motion >= 0 && motion < SAFETY_MOTION_TEMPLATE_COUNT ? &definitions[motion] : nullptr;
 }
 
+uint32_t motion_frame_budget_ms(safety_motion_template_t motion)
+{
+    // Match the existing safety-state watchdog, excluding its cold start and grace.
+    switch (motion) {
+    case SAFETY_MOTION_WAKE: return 1800;
+    case SAFETY_MOTION_LOOK_USER: return 1600;
+    case SAFETY_MOTION_NOD_SMALL: return 3000;
+    case SAFETY_MOTION_THINK: return 2400;
+    case SAFETY_MOTION_DROWSY: return 2600;
+    default: return 0;
+    }
+}
+
+bool prepare_paced_frames(const MotionDefinition &definition, int initial_yaw,
+                          int initial_pitch, uint32_t budget_ms, MotionFrame *frames)
+{
+    // Keep room for feedback transactions. The unchanged watchdog still bounds
+    // all settling/recovery work, so stretching a frame never extends a session.
+    body_local_raw_frame_t raw_frames[3] = {};
+    if (definition.frame_count > std::size(raw_frames)) return false;
+    for (size_t i = 0; i < definition.frame_count; ++i) {
+        frames[i] = definition.frames[i];
+        raw_frames[i] = {yaw_raw(frames[i].yaw_degrees), pitch_raw(frames[i].pitch_degrees),
+                         frames[i].duration_ms};
+    }
+    if (!body_local_prepare_paced_frames(initial_yaw, initial_pitch, raw_frames,
+            definition.frame_count, budget_ms > 100 ? budget_ms - 100 : 0,
+            SERVO_FEEDBACK_TOLERANCE_RAW)) return false;
+    for (size_t i = 0; i < definition.frame_count; ++i)
+        frames[i].duration_ms = raw_frames[i].duration_ms;
+    return true;
+}
+
 void request_stop_callback(void *context)
 {
     (void)context;
     (void)__atomic_add_fetch(&s_stop_generation, 1, __ATOMIC_SEQ_CST);
 }
 
+bool local_interaction_guard(safety_motion_guard_t *guard, bool allow_passive_capture = false)
+{
+    guard->connected = device_transport_is_server_connected();
+    companion_hardware_get_motion_guard(&guard->audio_busy, &guard->updating, &guard->device_error);
+    // The first admission check may see the idle WakeNet microphone. The
+    // actual safety lease and every running-motion check require it paused.
+    return guard->connected && (allow_passive_capture || !guard->audio_busy) &&
+           !guard->updating && !guard->device_error &&
+           device_ui_local_interaction_allowed() && !voice_control_motion_blocked() &&
+           companion_hardware_is_idle();
+}
+
 bool motion_stopped(uint32_t stop_generation)
 {
-    return __atomic_load_n(&s_stop_generation, __ATOMIC_SEQ_CST) != stop_generation;
+    if (__atomic_load_n(&s_stop_generation, __ATOMIC_SEQ_CST) != stop_generation) return true;
+    if (!s_executing_local) return false;
+    if (s_executing_local_follow && __atomic_load_n(&s_local_follow_generation, __ATOMIC_SEQ_CST) != s_active_local_generation)
+        return true;
+    safety_motion_guard_t guard = {};
+    return !local_interaction_guard(&guard);
 }
 
 void classify_stop(const MotionRequest &request, body_motion_result_t *result)
@@ -981,9 +1054,8 @@ void update_top_touch_locked()
     s_top_touch_pressed = pressed;
 }
 
-bool wait_frame_locked(uint16_t duration_ms, uint32_t stop_generation)
+bool wait_until_locked(int64_t deadline, uint32_t stop_generation)
 {
-    int64_t deadline = esp_timer_get_time() + static_cast<int64_t>(duration_ms) * 1000LL;
     while (esp_timer_get_time() < deadline) {
         update_top_touch_locked();
         safety_state_tick(esp_timer_get_time());
@@ -997,25 +1069,61 @@ bool wait_frame_locked(uint16_t duration_ms, uint32_t stop_generation)
     return !motion_stopped(stop_generation);
 }
 
+bool wait_frame_locked(uint16_t duration_ms, uint32_t stop_generation)
+{
+    return wait_until_locked(esp_timer_get_time() + static_cast<int64_t>(duration_ms) * 1000LL,
+                             stop_generation);
+}
+
 const char *write_paced_frame_locked(const MotionFrame &frame, int start_yaw,
                                      int start_pitch, uint32_t stop_generation)
 {
-    const int steps = std::max(1, (frame.duration_ms + SERVO_FRAME_STEP_MS - 1) /
-                                    SERVO_FRAME_STEP_MS);
-    const int yaw_target = yaw_raw(frame.yaw_degrees);
-    const int pitch_target = pitch_raw(frame.pitch_degrees);
-    for (int step = 1; step <= steps; step++) {
+    motion_plan_t plan = {};
+    if (!motion_plan_init(&plan, start_yaw, start_pitch, yaw_raw(frame.yaw_degrees),
+                           pitch_raw(frame.pitch_degrees), frame.duration_ms))
+        return "motion_plan_invalid";
+    const int64_t started_us = esp_timer_get_time();
+    uint32_t previous_boundary = 0;
+    int commanded_yaw = start_yaw;
+    int commanded_pitch = start_pitch;
+    bool first = true;
+    for (;;) {
         if (motion_stopped(stop_generation)) return "stopped";
-        const int yaw_goal = start_yaw + (yaw_target - start_yaw) * step / steps;
-        const int pitch_goal = start_pitch + (pitch_target - start_pitch) * step / steps;
-        if (!servo_move(YAW_SERVO_ID, yaw_goal)) return "yaw_goal_write";
-        if (!servo_move(PITCH_SERVO_ID, pitch_goal)) return "pitch_goal_write";
-        const int elapsed_before = frame.duration_ms * (step - 1) / steps;
-        const int elapsed_after = frame.duration_ms * step / steps;
-        if (!wait_frame_locked(elapsed_after - elapsed_before, stop_generation))
-            return "stopped";
+        const int64_t now_us = esp_timer_get_time();
+        const uint32_t elapsed_ms = static_cast<uint32_t>((now_us - started_us) / 1000LL);
+        if (previous_boundary != 0 && elapsed_ms > previous_boundary) {
+            const uint32_t late_us = static_cast<uint32_t>(
+                now_us - started_us - static_cast<int64_t>(previous_boundary) * 1000LL);
+            s_motion_timing.max_late_us = std::max(s_motion_timing.max_late_us, late_us);
+        }
+        motion_plan_sample_t sample = {};
+        (void)motion_plan_sample(&plan, elapsed_ms, &sample);
+        if (sample.deadline_ms > previous_boundary + MOTION_PLAN_PERIOD_MS)
+            s_motion_timing.skipped_boundaries +=
+                (sample.deadline_ms - previous_boundary - 1U) / MOTION_PLAN_PERIOD_MS;
+        const uint16_t goal_ms = motion_plan_goal_time(&sample, commanded_yaw, commanded_pitch);
+        if (first || sample.final || sample.yaw != commanded_yaw) {
+            if (!servo_move(YAW_SERVO_ID, sample.yaw, goal_ms)) return "yaw_goal_write";
+            s_motion_timing.commands++;
+        }
+        if (motion_stopped(stop_generation)) return "stopped";
+        if (first || sample.final || sample.pitch != commanded_pitch) {
+            if (!servo_move(PITCH_SERVO_ID, sample.pitch, goal_ms)) return "pitch_goal_write";
+            s_motion_timing.commands++;
+        }
+        commanded_yaw = sample.yaw;
+        commanded_pitch = sample.pitch;
+        first = false;
+        previous_boundary = sample.deadline_ms;
+        int64_t deadline = started_us + static_cast<int64_t>(sample.deadline_ms) * 1000LL;
+        // A final goal stretched to honor the slew bound needs time to finish
+        // before feedback verification. Earlier boundaries remain absolute.
+        if (sample.final)
+            deadline = std::max(deadline, esp_timer_get_time() +
+                                static_cast<int64_t>(goal_ms) * 1000LL);
+        if (!wait_until_locked(deadline, stop_generation)) return "stopped";
+        if (sample.final) return nullptr;
     }
-    return nullptr;
 }
 
 const char *verify_frame_locked(const MotionFrame &frame, int *observed_yaw,
@@ -1135,10 +1243,12 @@ const char *recover_idle_pitch_locked(const MotionFrame &frame,
     const int target = pitch_raw(frame.pitch_degrees);
     int previous_error = std::abs(*observed_pitch - target);
     for (int attempt = 1; attempt <= SERVO_IDLE_RECOVERY_ATTEMPTS; attempt++) {
+        s_motion_timing.recovery_attempts++;
         if (motion_stopped(stop_generation)) return "stopped";
         if (!pitch_recovery_safe_locked()) return "pitch_target_recovery_unsafe";
-        if (!servo_move(PITCH_SERVO_ID, target)) return "pitch_goal_write";
-        if (!wait_frame_locked(SERVO_IDLE_RECOVERY_WAIT_MS, stop_generation))
+        const uint16_t recovery_ms = body_local_recovery_duration(*observed_pitch, target);
+        if (!servo_move(PITCH_SERVO_ID, target, recovery_ms)) return "pitch_goal_write";
+        if (!wait_frame_locked(recovery_ms, stop_generation))
             return "stopped";
         const char *failure = verify_frame_locked(frame, observed_yaw, observed_pitch);
         if (failure == nullptr) {
@@ -1248,6 +1358,7 @@ bool probe_servo_feedback_locked()
 
 body_motion_result_t execute_motion_locked(const MotionRequest &request)
 {
+    s_motion_timing = {};
     safety_motion_template_t motion = request.motion;
     body_motion_result_t result = {};
     memcpy(result.command_id, request.command_id, sizeof(result.command_id));
@@ -1255,6 +1366,13 @@ body_motion_result_t execute_motion_locked(const MotionRequest &request)
     result.status = BODY_MOTION_FAILED;
     result.failure = SAFETY_FAILURE_NONE;
     const MotionDefinition *definition = motion_definition(motion);
+    MotionFrame local_frames[2] = {};
+    MotionDefinition local_definition = {};
+    if (request.local) {
+        memcpy(local_frames, request.local_frames, sizeof(local_frames));
+        local_definition = {local_frames, request.local_frame_count};
+        definition = &local_definition;
+    }
     if (definition == nullptr || !s_calibrated) {
         safety_state_fail_motion(SAFETY_FAILURE_NOT_CALIBRATED);
         result.failure = SAFETY_FAILURE_NOT_CALIBRATED;
@@ -1326,6 +1444,46 @@ body_motion_result_t execute_motion_locked(const MotionRequest &request)
     ESP_LOGI(TAG, "Servo start pose: yaw=%s pitch=%s",
              start_pose_category(std::abs(initial_yaw - s_yaw_center_raw)),
              start_pose_category(std::abs(initial_pitch - s_pitch_center_raw)));
+    if (request.local_follow && body_local_goal_is_near(initial_yaw, initial_pitch,
+            yaw_raw(local_frames[0].yaw_degrees), pitch_raw(local_frames[0].pitch_degrees))) {
+        if (!disable_servo_output_locked()) {
+            safety_state_fail_motion(SAFETY_FAILURE_HARDWARE_FAILURE);
+            result.failure = SAFETY_FAILURE_HARDWARE_FAILURE;
+        } else result.status = BODY_MOTION_COMPLETED;
+        return result;
+    }
+    if (request.local) {
+        int from_yaw = initial_yaw, from_pitch = initial_pitch;
+        for (size_t i = 0; i < definition->frame_count; ++i) {
+            auto &frame = local_frames[i];
+            frame.duration_ms = body_local_frame_duration(from_yaw, from_pitch, yaw_raw(frame.yaw_degrees), pitch_raw(frame.pitch_degrees));
+            if (frame.duration_ms == 0) {
+                if (!disable_servo_output_locked()) {
+                    safety_state_fail_motion(SAFETY_FAILURE_HARDWARE_FAILURE);
+                    result.failure = SAFETY_FAILURE_HARDWARE_FAILURE;
+                } else result.failure = SAFETY_FAILURE_SOFT_LIMIT;
+                return result;
+            }
+            from_yaw = yaw_raw(frame.yaw_degrees);
+            from_pitch = pitch_raw(frame.pitch_degrees);
+        }
+    }
+    MotionFrame paced_frames[3] = {};
+    MotionDefinition paced_definition = {};
+    if (definition->frame_count > std::size(paced_frames) ||
+        !prepare_paced_frames(*definition, initial_yaw, initial_pitch,
+                              motion_frame_budget_ms(motion), paced_frames)) {
+        // Valid passive/follow poses can require more time than a fixed template
+        // permits. No position goal has been sent: reject without a feedback fault.
+        ESP_LOGI(TAG, "Servo motion declined: stage=start_pose_budget");
+        if (!disable_servo_output_locked()) {
+            safety_state_fail_motion(SAFETY_FAILURE_HARDWARE_FAILURE);
+            result.failure = SAFETY_FAILURE_HARDWARE_FAILURE;
+        } else result.failure = SAFETY_FAILURE_SOFT_LIMIT;
+        return result;
+    }
+    paced_definition = {paced_frames, definition->frame_count};
+    definition = &paced_definition;
     bool feedback_failed = false;
     bool observed_travel = false;
     int previous_yaw = initial_yaw;
@@ -1339,6 +1497,7 @@ body_motion_result_t execute_motion_locked(const MotionRequest &request)
         int observed_pitch = 0;
         frame_failure_stage = write_paced_frame_locked(
             frame, previous_yaw, previous_pitch, request.stop_generation);
+        const int64_t feedback_started_us = esp_timer_get_time();
         if (frame_failure_stage == nullptr)
             frame_failure_stage = verify_frame_with_settle_locked(
                 frame, request.stop_generation, &observed_yaw, &observed_pitch);
@@ -1348,6 +1507,8 @@ body_motion_result_t execute_motion_locked(const MotionRequest &request)
             frame_failure_stage = recover_idle_pitch_locked(
                 frame, request.stop_generation, &observed_yaw, &observed_pitch);
         }
+        s_motion_timing.max_feedback_gap_us = std::max(s_motion_timing.max_feedback_gap_us,
+            static_cast<uint32_t>(esp_timer_get_time() - feedback_started_us));
         if (frame_failure_stage != nullptr) {
             if (!motion_stopped(request.stop_generation)) {
                 const char *progress = "unavailable";
@@ -1376,6 +1537,12 @@ body_motion_result_t execute_motion_locked(const MotionRequest &request)
         safety_state_fail_motion(SAFETY_FAILURE_FEEDBACK_FAULT);
         feedback_failed = true;
     }
+    ESP_LOGI(TAG, "Servo timing: commands=%u skipped=%u max_late_us=%u feedback_gap_us=%u recovery=%u",
+             static_cast<unsigned>(s_motion_timing.commands),
+             static_cast<unsigned>(s_motion_timing.skipped_boundaries),
+             static_cast<unsigned>(s_motion_timing.max_late_us),
+             static_cast<unsigned>(s_motion_timing.max_feedback_gap_us),
+             static_cast<unsigned>(s_motion_timing.recovery_attempts));
     bool shutdown_ok = disable_servo_output_locked();
     if (!shutdown_ok)
         safety_state_fail_motion(SAFETY_FAILURE_HARDWARE_FAILURE);
@@ -1398,20 +1565,31 @@ void body_task(void *argument)
     MotionRequest request = {};
     for (;;) {
         if (xQueueReceive(s_motion_queue, &request, pdMS_TO_TICKS(BODY_POLL_MS)) == pdTRUE) {
+            s_executing_local = request.local;
+            s_executing_local_follow = request.local_follow;
+            s_active_local_generation = request.local_generation;
             companion_emotion_t emotion = COMPANION_EMOTION_CONTENT;
             if (request.motion == SAFETY_MOTION_LOOK_USER) emotion = COMPANION_EMOTION_SURPRISED;
             else if (request.motion == SAFETY_MOTION_THINK) emotion = COMPANION_EMOTION_FOCUSED;
             else if (request.motion == SAFETY_MOTION_WAKE) emotion = COMPANION_EMOTION_HAPPY;
             else if (request.motion == SAFETY_MOTION_DROWSY) emotion = COMPANION_EMOTION_TIRED;
-            companion_hardware_set_body_emotion(emotion);
+            if (request.local && !request.local_follow) emotion = COMPANION_EMOTION_LOVING;
+            if (!request.local_follow) companion_hardware_set_body_emotion(emotion);
             if (take_mutex(portMAX_DELAY)) {
                 body_motion_result_t result = execute_motion_locked(request);
                 xSemaphoreGive(s_mutex);
-                companion_hardware_set_body_emotion(COMPANION_EMOTION_NEUTRAL);
+                if (!request.local_follow) companion_hardware_set_body_emotion(COMPANION_EMOTION_NEUTRAL);
                 // Keep the motion gate busy until its final result has a slot.
-                if (xQueueSend(s_motion_result_queue, &result, 0) != pdTRUE) {
+                if (request.local) {
+                    // Completion clears only the runtime; failures/stops never restore
+                    // an administrator permission revoked by the safety state machine.
+                    safety_state_complete_motion();
+                } else if (xQueueSend(s_motion_result_queue, &result, 0) != pdTRUE) {
                     safety_state_fail_motion(SAFETY_FAILURE_HARDWARE_FAILURE);
-                } else if (result.status == BODY_MOTION_COMPLETED) {
+                } else if (result.status == BODY_MOTION_COMPLETED ||
+                           (result.status == BODY_MOTION_FAILED &&
+                            result.failure == SAFETY_FAILURE_SOFT_LIMIT &&
+                            safety_state_current() == SAFETY_STATE_MOTION_ARMED)) {
                     safety_state_complete_motion();
                 }
                 voice_control_resume_wake_after_body_action();
@@ -1420,6 +1598,7 @@ void body_task(void *argument)
                 safety_state_fail_motion(SAFETY_FAILURE_HARDWARE_FAILURE);
                 voice_control_resume_wake_after_body_action();
             }
+            s_executing_local = s_executing_local_follow = false;
         } else if (take_mutex(pdMS_TO_TICKS(20))) {
             update_ltr553_locked();
             update_top_touch_locked();
@@ -1427,7 +1606,10 @@ void body_task(void *argument)
             bool affection = s_top_touch_affection_pending;
             s_top_touch_affection_pending = false;
             xSemaphoreGive(s_mutex);
-            if (affection && !voice_control_motion_blocked()) companion_hardware_respond_to_top_touch();
+            if (affection && !voice_control_motion_blocked() && !device_ui_is_modal()) {
+                companion_hardware_respond_to_top_touch();
+                (void)body_hardware_nod_local();
+            }
         }
     }
 }
@@ -1560,16 +1742,78 @@ extern "C" bool body_hardware_play_motion(safety_motion_template_t motion,
     }
     safety_diagnostics_t safety = {};
     safety_state_get_diagnostics(&safety);
-    MotionRequest request = {motion,
-                             __atomic_load_n(&s_stop_generation, __ATOMIC_SEQ_CST),
-                             safety.failure_count,
-                             {0}};
+    MotionRequest request = {};
+    request.motion = motion;
+    request.stop_generation = __atomic_load_n(&s_stop_generation, __ATOMIC_SEQ_CST);
+    request.failure_count = safety.failure_count;
     strncpy(request.command_id, command_id, sizeof(request.command_id) - 1);
     if (xQueueSend(s_motion_queue, &request, 0) != pdTRUE) {
         safety_state_fail_motion(SAFETY_FAILURE_BUSY);
         return false;
     }
     return true;
+}
+
+static bool queue_local_motion(bool follow, const body_local_goal_t *goal)
+{
+    safety_diagnostics_t safety = {};
+    safety_state_get_diagnostics(&safety);
+    safety_motion_guard_t guard = {};
+    if (!s_initialized || safety.state != SAFETY_STATE_MOTION_ARMED ||
+        safety.motion_runtime != SAFETY_MOTION_IDLE || !local_interaction_guard(&guard, true)) return false;
+    if (!voice_control_pause_wake_for_body_action()) return false;
+    if (!local_interaction_guard(&guard) || !take_mutex(pdMS_TO_TICKS(50))) {
+        voice_control_resume_wake_after_body_action();
+        return false;
+    }
+    const int64_t now = esp_timer_get_time();
+    int64_t &previous = follow ? s_last_local_follow_us : s_last_local_nod_us;
+    const int64_t cooldown = follow ? 6000000LL : 5000000LL;
+    bool admitted = s_calibrated && s_body_motion_supported && s_servo_feedback_supported &&
+        !s_top_touch_pressed && (previous == 0 || now - previous >= cooldown) &&
+        uxQueueSpacesAvailable(s_motion_result_queue) > 0 &&
+        safety_state_begin_motion(follow ? SAFETY_MOTION_LOOK_USER : SAFETY_MOTION_NOD_SMALL, &guard, now);
+    bool accepted = false;
+    if (admitted) {
+        MotionRequest request = {};
+        request.motion = follow ? SAFETY_MOTION_LOOK_USER : SAFETY_MOTION_NOD_SMALL;
+        request.stop_generation = __atomic_load_n(&s_stop_generation, __ATOMIC_SEQ_CST);
+        request.local_generation = __atomic_load_n(&s_local_follow_generation, __ATOMIC_SEQ_CST);
+        safety_state_get_diagnostics(&safety);
+        request.failure_count = safety.failure_count;
+        request.local = true;
+        request.local_follow = follow;
+        if (follow) {
+            request.local_frame_count = 1;
+            request.local_frames[0] = {goal->yaw_degrees, goal->pitch_degrees, goal->duration_ms};
+        } else {
+            request.local_frame_count = 2;
+            request.local_frames[0] = {0, 51, 600};
+            request.local_frames[1] = {0, 45, 600};
+        }
+        accepted = xQueueSend(s_motion_queue, &request, 0) == pdTRUE;
+        if (accepted) previous = now;
+        else safety_state_fail_motion(SAFETY_FAILURE_BUSY);
+    }
+    xSemaphoreGive(s_mutex);
+    if (!accepted) voice_control_resume_wake_after_body_action();
+    return accepted;
+}
+
+extern "C" bool body_hardware_follow_local(float yaw_offset, float pitch_offset, bool recenter)
+{
+    body_local_goal_t goal = {};
+    return body_local_follow_goal(yaw_offset, pitch_offset, recenter, &goal) && queue_local_motion(true, &goal);
+}
+
+extern "C" bool body_hardware_nod_local(void)
+{
+    return queue_local_motion(false, nullptr);
+}
+
+extern "C" void body_hardware_stop_local_follow(void)
+{
+    (void)__atomic_add_fetch(&s_local_follow_generation, 1, __ATOMIC_SEQ_CST);
 }
 
 extern "C" bool body_hardware_take_motion_result(body_motion_result_t *result)
