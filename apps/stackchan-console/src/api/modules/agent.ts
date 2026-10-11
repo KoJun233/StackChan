@@ -1,7 +1,7 @@
 import { apiJson, csrfHeaders, notifySessionExpired, responseError } from '../client'
 
 export type AgentCapabilityType = 'BUILTIN_TOOL' | 'SKILL' | 'MCP_SERVER' | 'MCP_TOOL'
-export type AgentChannel = 'WEB' | 'VOICE'
+export type AgentChannel = 'WEB' | 'VOICE' | 'DELEGATION'
 export type AgentToolSource = 'BUILTIN' | 'SKILL' | 'MCP'
 export type AgentToolOutcome = 'SUCCESS' | 'TOOL_FAILED' | 'RESULT_TRUNCATED' | 'RESULT_BUDGET_EXCEEDED'
 
@@ -99,6 +99,8 @@ export interface AgentCapabilitySetting {
 
 export interface AgentToolInvocation {
   channel: AgentChannel
+  delegationAttempt?: number | null
+  delegationRunId?: string | null
   conversationId: string | null
   createdAt: string
   deviceId: string | null

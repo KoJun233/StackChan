@@ -63,7 +63,9 @@ public class AgentToolAuditService {
                         entity.getDurationMs(),
                         entity.getResultBytes(),
                         entity.isTruncated(),
-                        entity.getCreatedAt()
+                        entity.getCreatedAt(),
+                        entity.getDelegationRunId(),
+                        entity.getDelegationAttempt()
                 ))
                 .toList();
     }
@@ -82,7 +84,9 @@ public class AgentToolAuditService {
             long durationMs,
             int resultBytes,
             boolean truncated,
-            java.time.Instant createdAt
+            java.time.Instant createdAt,
+            java.util.UUID delegationRunId,
+            Integer delegationAttempt
     ) {
     }
 }

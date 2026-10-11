@@ -1,10 +1,6 @@
 # 架构决策记录
 
-当前新增：[ADR 0065：普通提醒确认固定对象与伙伴范围](0065-scoped-reminder-confirmation.md)。
-
-当前新增：[ADR 0066：通知语音反馈先确认最近播报对象](0066-recent-cross-source-notification-response.md)。
-
-当前新增：[ADR 0067：伙伴播报视图与统一近期来源](0067-partner-delivery-timeline.md)。
+当前新增：[ADR 0073：持续委托的周期研究与 Bark 交付](0073-recurring-research-and-bark-delivery.md)。
 
 本目录保存会跨会话持续生效、且不应在没有明确决策的情况下被改变的架构选择。
 
@@ -89,3 +85,6 @@
 | [0070](0070-hybrid-voice-and-confirmed-companion-care.md) | ACCEPTED | 本地混合输入、准确采音收尾、低优先级身体表现及固定候选/一次关心的明确许可。 |
 
 | [0071](0071-device-eyes-cards-and-local-tracking.md) | ACCEPTED | 简洁双眼与显式手势、固定内容卡片/伙伴同意周期、日常菜单和默认关闭的本地有限跟随；原分区和安全边界保持。 |
+| [0073](0073-recurring-research-and-bark-delivery.md) | ACCEPTED | 持续委托按可调周期研究公开来源，保存成果并用 Bark 交付到 iPhone，主题不写死且未知投递不重发。 |
+| [0074](0074-natural-language-delegation-tasks.md) | ACCEPTED | 持续任务以自然语言描述为入口，AI 理解安排并调用已有授权工具，结果按真实步骤和证据保存，资料来源不再必填。 |
+| [0075](0075-bark-agent-notification-tool.md) | ACCEPTED | Bark 封装为通用手机通知工具，复用加密设置，按真实回执与持久标记防止重复外发。 |

@@ -27,6 +27,7 @@ mvn -o -s seed-settings.xml -B -ntp -Dmaven.repo.local=/maven-repository '-DargL
 result=`$?
 exit `$result
 "@
+$command = $command -replace "\r\n", "`n"
 $image = 'maven@sha256:2b4496088e7b80ae10a8c9f74e574ea21380325a006ec684532ad6bad5bc7273'
 & docker run --detach --name $name --cpus 2 --memory 2g `
     --mount "type=bind,source=$root\server,target=/source,readonly" `

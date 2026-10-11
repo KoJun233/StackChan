@@ -25,6 +25,8 @@ class GenerationContentBufferTest {
         ExecutorService executor = Executors.newFixedThreadPool(writerCount + 1);
         CountDownLatch start = new CountDownLatch(1);
         CountDownLatch snapshotReady = new CountDownLatch(1);
+        CountDownLatch firstAppendReady = new CountDownLatch(1);
+        CountDownLatch firstSnapshotDone = new CountDownLatch(1);
         CountDownLatch writersDone = new CountDownLatch(writerCount);
         List<Future<?>> writers = new ArrayList<>();
         Set<String> expectedTokens = new HashSet<>();
@@ -39,6 +41,10 @@ class GenerationContentBufferTest {
                 try {
                     for (int append = 0; append < appendsPerWriter; append++) {
                         buffer.append("%02d%04d".formatted(writerIndex, append));
+                        if (append == 0) {
+                            firstAppendReady.countDown();
+                            assertThat(firstSnapshotDone.await(10, TimeUnit.SECONDS)).isTrue();
+                        }
                     }
                 } finally {
                     writersDone.countDown();
@@ -49,7 +55,12 @@ class GenerationContentBufferTest {
         Future<Integer> snapshots = executor.submit(() -> {
             start.await();
             snapshotReady.countDown();
-            int count = 0;
+            assertThat(firstAppendReady.await(10, TimeUnit.SECONDS)).isTrue();
+            String firstSnapshot = buffer.snapshot();
+            assertThat(firstSnapshot.length()).isGreaterThanOrEqualTo(tokenLength);
+            assertThat(firstSnapshot.length() % tokenLength).isZero();
+            firstSnapshotDone.countDown();
+            int count = 1;
             while (writersDone.getCount() > 0) {
                 assertThat(buffer.snapshot().length() % tokenLength).isZero();
                 count++;

@@ -34,6 +34,8 @@ public class CompanionRoleService {
     private final NotificationIntegrationRepository notificationIntegrationRepository;
     @org.springframework.beans.factory.annotation.Autowired
     private com.kj.stackchan.device.DeviceUiStateNotifier uiStateNotifier;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.jdbc.core.JdbcTemplate delegationJdbc;
 
     public CompanionRoleService(CompanionRoleRepository roleRepository,
                                 DeviceActiveRoleRepository activeRoleRepository,
@@ -161,6 +163,18 @@ public class CompanionRoleService {
         if (role.getArchivedAt() != null) return toSnapshot(role);
         Instant now = clock.instant();
         role.archive(now);
+        if (delegationJdbc != null) {
+            delegationJdbc.update("""
+                    update delegations set enabled=false,next_run_at=null,revision=revision+1,updated_at=? where role_id=?
+                    """,java.sql.Timestamp.from(now),id);
+            delegationJdbc.update("""
+                    update delegation_runs set status=case when status='RUNNING' then 'CANCELLED' else status end,
+                        error_code=case when status='RUNNING' then 'DELEGATION_ROLE_ARCHIVED' else error_code end,
+                        completed_at=case when status='RUNNING' then ? else completed_at end,
+                        delivery_status=case when delivery_status in ('PENDING','FAILED','SENDING') then 'SKIPPED' else delivery_status end,
+                        delivery_next_at=null where task_id in (select id from delegations where role_id=?)
+                    """,java.sql.Timestamp.from(now),id);
+        }
         UUID defaultId = getDefault().id();
         activeRoleRepository.findAllByRoleId(id).forEach(mapping -> {
             mapping.switchTo(defaultId, now);

@@ -30,6 +30,12 @@ public class AgentToolInvocationEntity {
     @Column(nullable = false, length = 16)
     private AgentChannel channel;
 
+    @Column(name = "delegation_run_id")
+    private UUID delegationRunId;
+
+    @Column(name = "delegation_attempt")
+    private Integer delegationAttempt;
+
     @Column(name = "skill_id", length = 64)
     private String skillId;
 
@@ -79,6 +85,8 @@ public class AgentToolInvocationEntity {
         this.conversationId = context.conversationId();
         this.deviceId = context.deviceId();
         this.channel = context.channel();
+        this.delegationRunId = context.delegationRunId();
+        this.delegationAttempt = context.delegationAttempt();
         this.skillId = skillId;
         this.toolName = toolName;
         this.sourceType = sourceType;
@@ -95,6 +103,8 @@ public class AgentToolInvocationEntity {
     public UUID getConversationId() { return conversationId; }
     public UUID getDeviceId() { return deviceId; }
     public AgentChannel getChannel() { return channel; }
+    public UUID getDelegationRunId() { return delegationRunId; }
+    public Integer getDelegationAttempt() { return delegationAttempt; }
     public String getSkillId() { return skillId; }
     public String getToolName() { return toolName; }
     public AgentToolSource getSourceType() { return sourceType; }

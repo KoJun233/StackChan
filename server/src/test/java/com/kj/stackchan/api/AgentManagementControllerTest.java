@@ -86,6 +86,14 @@ class AgentManagementControllerTest {
         mockMvc.perform(get("/api/v1/agent/capabilities"))
                 .andExpect(status().isUnauthorized());
     }
+    @Test void phoneNotificationToolCanBeRevokedThroughTheExistingAuthenticatedSwitch() throws Exception {
+        when(settingsService.updateCapability(AgentCapabilityType.BUILTIN_TOOL,"send_phone_notification",false,null,null))
+                .thenReturn(new AgentSettingsService.CapabilitySetting(AgentCapabilityType.BUILTIN_TOOL,"send_phone_notification",false,null,null,Instant.now()));
+        mockMvc.perform(put("/api/v1/agent/capabilities").with(user("admin").roles("ADMIN")).with(csrf())
+                        .contentType(APPLICATION_JSON).content("{\"type\":\"BUILTIN_TOOL\",\"capabilityId\":\"send_phone_notification\",\"enabled\":false}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(false));
+        verify(settingsService).updateCapability(AgentCapabilityType.BUILTIN_TOOL,"send_phone_notification",false,null,null);
+    }
 
     @Test
     void returnsFrameworkLimitsAndSafeCapabilityMetadata() throws Exception {
@@ -95,7 +103,9 @@ class AgentManagementControllerTest {
                 .andExpect(jsonPath("$.framework").value("spring-ai-alibaba-react-agent"))
                 .andExpect(jsonPath("$.frameworkVersion").value("1.1.2.2"))
                 .andExpect(jsonPath("$.limits.maxToolCalls").value(4))
-                .andExpect(jsonPath("$.builtInTools", hasSize(4)))
+                .andExpect(jsonPath("$.builtInTools", hasSize(6)))
+                .andExpect(jsonPath("$.builtInTools[?(@.id == 'send_phone_notification')]", hasSize(1)))
+                .andExpect(jsonPath("$.builtInTools[?(@.id == 'current_delegation_results')]", hasSize(1)))
                 .andExpect(jsonPath("$.builtInTools[?(@.id == 'upcoming_device_calendar_events')]", hasSize(1)))
                 .andExpect(jsonPath("$.builtInTools[?(@.id == 'current_device_weather')]", hasSize(1)))
                 .andExpect(jsonPath("$.skills[0].name").value("daily-routine"))

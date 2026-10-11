@@ -137,6 +137,8 @@ public class SecurityConfiguration {
                         .requestMatchers("/api/v1/device/**").permitAll()
                         .requestMatchers("/api/v1/external/**", "/mcp/notifications/**")
                         .hasAuthority(NotificationBearerAuthenticationFilter.AUTHORITY)
+                        .requestMatchers("/api/v1/delegations/**", "/api/v1/delegation-runs/**", "/api/v1/delegation-push/**")
+                        .hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(notificationBearerAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)

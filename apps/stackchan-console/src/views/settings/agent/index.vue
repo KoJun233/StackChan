@@ -114,7 +114,7 @@ const outcomeLabels: Record<AgentToolInvocation['outcome'], string> = {
 const invocationRows = computed(() => invocations.value.map(invocation => ({
   ...invocation,
   createdAtLabel: new Date(invocation.createdAt).toLocaleString('zh-CN'),
-  channelLabel: invocation.channel === 'VOICE' ? '设备语音' : '网页文字',
+  channelLabel: invocation.channel === 'DELEGATION' ? '持续任务' : invocation.channel === 'VOICE' ? '设备语音' : '网页文字',
   sourceLabel: sourceLabel(invocation),
   outcomeLabel: outcomeLabels[invocation.outcome],
   metricsLabel: `${invocation.durationMs} ms / ${formatBytes(invocation.resultBytes)}${invocation.truncated ? ' · 已截断' : ''}`,
@@ -361,7 +361,7 @@ onMounted(() => load())
           <div class="space-y-4">
             <FaAlert
               title="受控执行边界"
-              description="当前仅开放只读能力。审计只保存 Tool 名、来源、结果类别、耗时和返回量，不保存参数、结果正文、对话正文、端点或认证信息。"
+              description="内置查询工具按授权读取，手机通知工具按你的明确要求调用 Bark。审计只保存 Tool 名、来源、结果类别、耗时和返回量，不保存参数、结果正文、对话正文、端点或认证信息。"
             />
 
             <div class="gap-4 grid xl:grid-cols-3">

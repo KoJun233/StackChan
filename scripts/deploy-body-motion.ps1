@@ -4,7 +4,9 @@ param(
     [string]$CandidateImage = 'stackchan-foundation-server:body002-think-7d8c55a',
     [ValidatePattern('^[A-Za-z0-9._-]{1,80}$')][string]$BuildVersion = 'body002-think-7d8c55a',
     [ValidateRange(1, 999)][int]$ExpectedSchema = 53,
-    [switch]$PreserveConsole
+    [switch]$PreserveConsole,
+    [switch]$EnableResearchPublicDnsOverHttps,
+    [switch]$PreflightOnly
 )
 $ErrorActionPreference = 'Stop'
 $repository = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -33,6 +35,12 @@ try {
     }
     $oldImage = $source.Config.Image
     $oldVersion = $values.COMPANION_BUILD_VERSION
+    $publicDns = 'false'
+    if ($values.ContainsKey('STACKCHAN_RESEARCH_PUBLIC_DNS_OVER_HTTPS')) {
+        $publicDns = $values.STACKCHAN_RESEARCH_PUBLIC_DNS_OVER_HTTPS
+        if ($publicDns -cnotin @('false', 'true')) { throw 'Existing public DNS setting is invalid.' }
+    }
+    if ($EnableResearchPublicDnsOverHttps) { $publicDns = 'true' }
     if ($PreserveConsole) {
         $sourcePublic = & docker.exe exec $sourceName sha256sum /app/public/index.html
         $candidatePublic = & docker.exe run --rm --network none --entrypoint sha256sum $candidate /app/public/index.html
@@ -47,6 +55,8 @@ try {
         COMPANION_ADMIN_INITIAL_PASSWORD = $values.COMPANION_ADMIN_INITIAL_PASSWORD
         SPRING_PROFILES_ACTIVE = $values.SPRING_PROFILES_ACTIVE
         SERVER_FORWARD_HEADERS_STRATEGY = $values.SERVER_FORWARD_HEADERS_STRATEGY
+        STACKCHAN_RESEARCH_PUBLIC_DNS_OVER_HTTPS = $publicDns
+        COMPOSE_DISABLE_ENV_FILE = 'true'
     }
     $deploymentValues.STACKCHAN_CONSOLE_RELEASE_IMAGE = $candidate
     $deploymentValues.STACKCHAN_CONSOLE_RELEASE_VERSION = $BuildVersion
@@ -71,6 +81,10 @@ try {
         $expected[$key] = [string]$configuration.services.server.environment[$key]
     }
     foreach ($key in @($values.Keys) + @($expected.Keys) | Select-Object -Unique) {
+        if ($key -eq 'STACKCHAN_RESEARCH_PUBLIC_DNS_OVER_HTTPS') {
+            if ($expected[$key] -cne $publicDns) { throw 'Planned public DNS setting does not match the explicit release setting.' }
+            continue
+        }
         if ($key -ne 'COMPANION_BUILD_VERSION' -and $values[$key] -cne $expected[$key]) {
             throw "Unexpected environment change: $key. Deployment stopped."
         }
@@ -86,6 +100,7 @@ try {
     $sourceSchema = [int]$schemaResult
     if ($sourceSchema -gt $ExpectedSchema) { throw 'Candidate schema is older than source.' }
     Write-Output 'Preflight passed: existing LAN configuration and volumes preserved.'
+    if ($PreflightOnly) { return }
 
     & docker.exe stop $sourceName > $null
     if ($LASTEXITCODE -ne 0) { throw 'Unable to stop the old server for backup.' }
@@ -94,6 +109,9 @@ try {
     if ($backupResult.schema -ne $ExpectedSchema -or !$backupResult.databaseCountsMatch -or !$backupResult.syntheticAdminLogin) {
         throw 'Stopped-source restore verification failed.'
     }
+    $receiptDirectory = Join-Path $repository '.tools'
+    New-Item -ItemType Directory -Path $receiptDirectory -Force | Out-Null
+    $backupResult | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $receiptDirectory 'last-deployment-restore-verification.json')
     Write-Output "Stopped-source backup and isolated V$ExpectedSchema restore passed: $($backupResult.backupVolume)"
 
     $replacementStarted = $true
@@ -115,7 +133,7 @@ try {
     if ($running.Image -ne $candidateImageInfo.Id -or $running.Config.Env -notcontains "COMPANION_BUILD_VERSION=$BuildVersion") {
         throw 'Replacement image or build version does not match the candidate.'
     }
-    Write-Output 'BODY-002 server health and version: ok'
+    Write-Output 'Released server health and version: ok'
 }
 catch {
     if ($stopped -and $replacementStarted -and $PreserveConsole -and $sourceSchema -eq $ExpectedSchema) {
