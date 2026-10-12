@@ -2,10 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick } from 'vue'
 import MemoryList from './list.vue'
 
-const api = vi.hoisted(() => ({ listMemories: vi.fn(), listRoles: vi.fn(), listDevices: vi.fn() }))
+const api = vi.hoisted(() => ({ listMemories: vi.fn(), listRoles: vi.fn(), listDevices: vi.fn(), changeContinuation: vi.fn() }))
 vi.mock('@/api/modules/personaMemory', async original => ({
   ...await original<typeof import('@/api/modules/personaMemory')>(),
   listMemories: api.listMemories,
+  changeContinuation: api.changeContinuation,
 }))
 vi.mock('@/api/modules/roles', async original => ({
   ...await original<typeof import('@/api/modules/roles')>(),
@@ -30,7 +31,10 @@ vi.mock('@fantastic-admin/components', () => {
     FaLabel: box,
     FaAlert: box,
     FaButton: box,
-    FaDropdown: box,
+    FaDropdown: defineComponent({
+      props: { items: Array },
+      setup: (props, { slots }) => () => h('div', [slots.default?.(), ...(props.items as Array<Array<{ label: string, handle?: () => void }>> ?? []).flat().map(item => h('button', { onClick: item.handle }, item.label))]),
+    }),
     FaIcon: box,
     FaInput: box,
     FaSearchBar: box,
@@ -49,8 +53,10 @@ vi.mock('@fantastic-admin/components', () => {
     }),
     FaTable: defineComponent({
       props: { data: Array, emptyText: String },
-      setup: props => () => h('div', { 'data-list': '' }, props.data?.length
-        ? (props.data as Array<{ title: string }>).map(row => h('p', row.title))
+      setup: (props, { slots }) => () => h('div', { 'data-list': '' }, props.data?.length
+        ? (props.data as Array<{ title: string, id?: string }>).map(row => row.id
+            ? h('div', [slots['cell-title']?.({ row: { original: row } }), slots['cell-operation']?.({ row: { original: row } })])
+            : h('p', row.title))
         : props.emptyText),
     }),
     FaPagination: defineComponent({
@@ -108,5 +114,29 @@ describe('memory filter request ownership', () => {
     const container = await mountList()
     await vi.waitFor(() => expect(container.textContent).toContain('记忆服务暂不可用'))
     expect(container.querySelector('[data-list]')?.textContent).toBe('列表未获取')
+  })
+
+  it('shows facts and allows stopping then explicitly resuming a confirmed topic', async () => {
+    const memory = { id: 'topic-a', roleId: 'a', title: '木工', content: '正在做书架', sourceDetail: '用户分享', topicKey: '木工', possibleDuplicateIds: [], confirmationStatus: 'CONFIRMED', enabled: true, continuation: { state: 'ACTIVE', progress: '底座已经做好了' } }
+    api.listMemories.mockResolvedValue({ list: [memory], total: 1 })
+    api.changeContinuation.mockResolvedValue({})
+    const container = await mountList()
+    expect(container.textContent).toContain('最近你说：底座已经做好了')
+    const stop = Array.from(container.querySelectorAll('button')).find(button => button.textContent === '别再提这件事')!
+    api.listMemories.mockResolvedValue({ list: [{ ...memory, continuation: { ...memory.continuation, state: 'STOPPED' } }], total: 1 })
+    stop.click()
+    await vi.waitFor(() => expect(api.changeContinuation).toHaveBeenCalledWith('topic-a', 'STOP'))
+    await vi.waitFor(() => expect(container.textContent).toContain('已停止接续'))
+    expect(container.textContent).not.toContain('今天先不聊')
+    Array.from(container.querySelectorAll('button')).find(button => button.textContent === '恢复接续')!.click()
+    await vi.waitFor(() => expect(api.changeContinuation).toHaveBeenLastCalledWith('topic-a', 'RESUME'))
+  })
+
+  it('explains progress consent and hides continuation controls before approval', async () => {
+    api.listMemories.mockResolvedValue({ list: [{ id: 'pending', title: '木工', content: '正在做书架', sourceDetail: '用户分享', topicKey: '木工', possibleDuplicateIds: [], confirmationStatus: 'PENDING', continuation: { state: 'PENDING', progress: '' } }], total: 1 })
+    const container = await mountList()
+    expect(container.textContent).toContain('确认也会允许保存这件事的后续进展')
+    expect(container.textContent).not.toContain('今天先不聊')
+    expect(container.textContent).not.toContain('恢复接续')
   })
 })

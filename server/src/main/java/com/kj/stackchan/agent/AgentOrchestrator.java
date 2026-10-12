@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
+import java.util.function.Consumer;
 
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.agent.hook.Hook;
@@ -108,11 +109,21 @@ public class AgentOrchestrator {
                     + "|(?:send|push|notify).{0,40}(?:phone|iphone|bark)|(?:push notification|notify me)");
     private static final Pattern PHONE_PUSH_NEGATION = Pattern.compile("(?i)(?:不要|不用|别|无需).{0,18}(?:推送|发送|通知|发|送)|(?:如果|假如|比如|例如|可以吗|怎么|如何).{0,20}(?:推送|发|通知)"
             + "|(?:don't|do not|never|how to|for example).{0,20}(?:send|push|notify)");
+    private static final Pattern PHONE_PUSH_MENTION = Pattern.compile(
+            "^(?:他说|她说|他们说|原话|提到|引用|讨论|假设)|(?:这句话.{0,10}(?:意思|含义)|是什么意思|的意思)"
+                    + "|[“‘\"'].{0,80}(?:手机|iphone|bark).{0,80}[”’\"']",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern PHONE_ABILITY_QUESTION = Pattern.compile(
             "(?i)(?:你|伙伴|机器人).{0,8}(?:能不能|可不可以|能否|是否能|会不会|能|可以|支持)"
                     + ".{0,30}(?:手机|iphone|bark|通知).{0,8}(?:吗|么|[？?])"
                     + "|(?:怎么|如何).{0,30}(?:手机|iphone|bark|通知)"
                     + "|(?:手机|iphone|bark|通知).{0,20}(?:怎么|如何)");
+    private static final Pattern BARE_PHONE_ABILITY_QUESTION = Pattern.compile(
+            "(?i)^(?:能不能|可不可以|能否|是否能|能|可以|支持).{0,30}(?:手机|iphone|bark|通知)"
+                    + ".{0,12}(?:吗|么|[？?])[\\s。！!？?]*$");
+    private static final Pattern EXPLICIT_DETAIL_REQUEST = Pattern.compile(
+            "(?:解释|分析|步骤|具体|详细|展开|比较|对比|完整|介绍|为什么|如何|怎么办|该做什么|怎么做|列出|推荐|回答|告诉我|设计|计划|攻略)"
+                    + "|(?i:explain|analy[sz]e|steps|details|compare|describe|why|how)");
     private static final Pattern PHONE_ACTION_DETAIL = Pattern.compile(
             "(?:帮我|给我|请|一条|一下|(?:通知|消息|内容|正文)[：:])");
     private static final Pattern PHONE_LITERAL_CONTENT = Pattern.compile("(?:通知|消息|内容|正文)[：:]");
@@ -125,6 +136,8 @@ public class AgentOrchestrator {
         var literal = PHONE_LITERAL_CONTENT.matcher(message);
         if (literal.find()) message = message.substring(0, literal.end());
         return CAPABILITY_QUESTION.matcher(message).find()
+                || (BARE_PHONE_ABILITY_QUESTION.matcher(message).matches()
+                    && !PHONE_LITERAL_CONTENT.matcher(message).find())
                 || (PHONE_ABILITY_QUESTION.matcher(message).find()
                     && !PHONE_ACTION_DETAIL.matcher(message).find());
     }
@@ -133,6 +146,7 @@ public class AgentOrchestrator {
         var literal = PHONE_LITERAL_CONTENT.matcher(message);
         if (literal.find()) message = message.substring(0, literal.end());
         return PHONE_PUSH_REQUEST.matcher(message).find() && !PHONE_PUSH_NEGATION.matcher(message).find()
+                && !PHONE_PUSH_MENTION.matcher(message).find()
                 && !isCapabilityQuestion(message);
     }
 
@@ -187,6 +201,7 @@ public class AgentOrchestrator {
 
     public Flux<String> stream(AgentRequest request) {
         if (delegationIntake != null && delegationIntake.supports(request.context(),request.userMessage())) {
+            request.observeRoute(ExecutionRoute.MODEL);
             if (!settingsService.runtimeSettings().enabled()) return Flux.just("任务尚未保存。请先启用伙伴的工具能力，再把任务交给我。");
             return Mono.fromCallable(() -> delegationIntake.accept(request.context(),request.userMessage()))
                     .subscribeOn(Schedulers.boundedElastic()).timeout(appProperties.getAgent().getTimeout())
@@ -195,8 +210,13 @@ public class AgentOrchestrator {
         }
         String requiredToolName = requiredToolName(request);
         if (usesLowLatencyVoiceConversation(request, requiredToolName)) {
+            request.observeRoute(VoiceDialogueControl.parse(request.userMessage()).kind() == VoiceDialogueControl.Kind.NONE
+                    && !EXPLICIT_DETAIL_REQUEST.matcher(request.userMessage()).find()
+                    && !PHONE_PUSH_REQUEST.matcher(request.userMessage()).find()
+                    ? ExecutionRoute.VOICE_CASUAL : ExecutionRoute.MODEL);
             return lowLatencyConversation(request);
         }
+        request.observeRoute(requiredToolName != null ? ExecutionRoute.REQUIRED_TOOL : ExecutionRoute.MODEL);
         if (usesDeterministicVoiceTime(request, requiredToolName)
                 && settingsService.runtimeSettings().enabled()) {
             return deterministicVoiceTime(request);
@@ -587,14 +607,34 @@ public class AgentOrchestrator {
         return false;
     }
 
+    public enum ExecutionRoute {
+        VOICE_CASUAL("voice_casual"), REQUIRED_TOOL("voice_required_tool"), MODEL("voice_model");
+
+        private final String diagnosticCode;
+
+        ExecutionRoute(String diagnosticCode) { this.diagnosticCode = diagnosticCode; }
+        public String diagnosticCode() { return diagnosticCode; }
+    }
+
     public record AgentRequest(
             AgentInvocationContext context,
             String systemPrompt,
             List<Message> history,
-            String userMessage
+            String userMessage,
+            Consumer<ExecutionRoute> routeObserver
     ) {
+        public AgentRequest(AgentInvocationContext context, String systemPrompt, List<Message> history, String userMessage) {
+            this(context, systemPrompt, history, userMessage, ignored -> { });
+        }
+
         public AgentRequest {
             history = List.copyOf(history);
+            if (routeObserver == null) routeObserver = ignored -> { };
+        }
+
+        private void observeRoute(ExecutionRoute route) {
+            // Optional diagnostics must not change invocation or write authorization behavior.
+            try { routeObserver.accept(route); } catch (RuntimeException ignored) { }
         }
     }
 

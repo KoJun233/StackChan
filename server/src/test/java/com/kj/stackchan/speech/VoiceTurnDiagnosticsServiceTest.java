@@ -6,6 +6,8 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import com.kj.stackchan.conversation.DeviceVoiceConversationRepository;
+import com.kj.stackchan.conversation.ConversationRepository;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,10 +26,26 @@ class VoiceTurnDiagnosticsServiceTest {
 
     private static final Instant NOW = Instant.parse("2026-07-26T00:00:00Z");
 
+    @Test
+    void legacyDeviceElapsedDoesNotCertifyNewMeasurementMetadata() {
+        var event = new VoiceTurnDiagnosticsService.VoiceTurnEventSnapshot(
+                VoiceTurnStage.SPEECH_CAPTURED, VoiceTurnStageSource.DEVICE, NOW, 500, null);
+        assertThat(event.measurementSource()).isNull();
+        assertThat(event.captureLimitReached()).isNull();
+        assertThat(event.endpointToLocalFeedbackMs()).isNull();
+        var playback = new VoiceTurnDiagnosticsService.VoiceTurnEventSnapshot(
+                VoiceTurnStage.PLAYBACK_STARTED, VoiceTurnStageSource.DEVICE, NOW, 700, null);
+        assertThat(playback.measurementSource()).isNull();
+    }
+
     @Mock
     private VoiceTurnRepository turnRepository;
     @Mock
     private VoiceTurnEventRepository eventRepository;
+    @Mock
+    private DeviceVoiceConversationRepository conversationBindings;
+    @Mock
+    private ConversationRepository conversations;
 
     @Test
     void persistsBoundedPhaseDurationAndSafeCodeWithoutDeviceClockValues() {
@@ -162,13 +180,61 @@ class VoiceTurnDiagnosticsServiceTest {
         service().deleteExpired();
 
         verify(turnRepository).deleteByStartedAtBefore(NOW.minus(VoiceTurnDiagnosticsService.RETENTION));
+        verify(turnRepository).deleteExpiredPrivacyTombstones(NOW);
+    }
+
+    @Test
+    void deviceMetadataIsOptionalBoundedAndStoredWithoutPrivateContent() {
+        UUID device = UUID.randomUUID(), turn = UUID.randomUUID();
+        when(turnRepository.findById(turn)).thenReturn(Optional.empty());
+        service().recordDeviceStage(device, turn, VoiceTurnStage.SPEECH_CAPTURED, 8000, null,
+                "DEVICE_MONOTONIC", 35, true);
+        ArgumentCaptor<VoiceTurnEventEntity> event = ArgumentCaptor.forClass(VoiceTurnEventEntity.class);
+        verify(eventRepository).save(event.capture());
+        assertThat(event.getValue().getDiagnosticCode()).isEqualTo("capture_limit");
+        assertThat(event.getValue().getDurationMs()).isEqualTo(35);
+        assertThat(event.getValue().getElapsedMs()).isEqualTo(8000);
+    }
+
+    @Test
+    void rejectsFalseSourcesAndMetadataOnTheWrongStage() {
+        assertThatThrownBy(() -> service().recordDeviceStage(UUID.randomUUID(),UUID.randomUUID(),
+                VoiceTurnStage.SPEECH_CAPTURED,20,null,"SERVER_DURATION",20,false))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service().recordDeviceStage(UUID.randomUUID(),UUID.randomUUID(),
+                VoiceTurnStage.PLAYBACK_STARTED,20,null,"DEVICE_MONOTONIC",20,false))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service().recordDeviceStage(UUID.randomUUID(),UUID.randomUUID(),
+                VoiceTurnStage.SPEECH_CAPTURED,20,null,"DEVICE_MONOTONIC",300001,false))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void erasedTurnsCannotBeRecreatedByLateDeviceOrServerStages() {
+        UUID device = UUID.randomUUID(), turn = UUID.randomUUID();
+        when(turnRepository.isPrivacyErased(turn,NOW)).thenReturn(true);
+        service().recordDeviceStage(device,turn,VoiceTurnStage.PLAYBACK_STARTED,200,null);
+        service().recordServerStage(device,turn,VoiceTurnStage.LLM_COMPLETED,null);
+        verify(turnRepository,org.mockito.Mockito.times(2)).lockDiagnosticTurn(turn);
+        verify(turnRepository,org.mockito.Mockito.never()).findById(turn);
+        org.mockito.Mockito.verifyNoInteractions(eventRepository);
+    }
+
+    @Test
+    void captureReasonNeverComesFromAnotherDeviceOrFromTextGuesses() {
+        UUID owner = UUID.randomUUID(), turnId = UUID.randomUUID();
+        when(turnRepository.findById(turnId)).thenReturn(Optional.of(new VoiceTurnEntity(turnId,owner,NOW)));
+        assertThat(service().captureLimitReached(UUID.randomUUID(),turnId)).isNull();
+        org.mockito.Mockito.verifyNoInteractions(eventRepository);
     }
 
     private VoiceTurnDiagnosticsService service() {
         return new VoiceTurnDiagnosticsService(
                 turnRepository,
                 eventRepository,
-                Clock.fixed(NOW, ZoneOffset.UTC)
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                conversationBindings,
+                conversations
         );
     }
 }

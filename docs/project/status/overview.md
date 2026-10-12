@@ -1,38 +1,37 @@
 # 全局工作流总览
 
 - 状态：READY_FOR_REVIEW
-- 最后更新：2026-10-11
-- 当前分支：`codex/bark-voice-routing`
-- 实现基准：`ec53bfe`
-- 最后验证提交：`ec53bfe`
+- 最后更新：2026-10-15
+- 当前分支：`codex/companion-r01-natural-voice-20261013`
+- 实现基准：`989b3d9`
+- 最后验证提交：`989b3d9`
 
-## 当前任务
+## 当前交付
 
-[COMPANION-010 Bark Agent Tool](../bark-agent-tool.md) 的现场语音缺陷已修正并安装为 `bark-voice-a37d220` / V60。用户原话「嗯，给我的手机发一条消息」目标在动词之前，旧规则漏判并进入无工具低延迟聊天；「你没有那个 Send for notation 那个功能吗」也漏判。发现后先标记 STALE，现依据代码、回归与实际部署恢复完成状态。
+用户要求 R01 开发，R00/R01 合成相对最新 master@989b3d9 一个中文任务提交；2026-10-15 明确授权只推当前任务分支。软件 READY_FOR_REVIEW，实体/安装待后续指令；没有自动开展 R02–R11。
 
-明确手机发送请求进入 Agent；功能咨询读取当前配置授权目录，不开放写工具。角色、工具边界和能力目录说明作为模型 system prompt，以实际能力覆盖历史否认。缺正文且未实际操作时追问内容，紧接的正文回答延续此次授权；取消、咨询、换话题、续讲和已发送历史不会继承写权限。字面正文中的否定、能力词和带伞措辞不会误当指令或无关查询。真实失败及 UNKNOWN 仍不能声称发送成功。
+R00 保留原 V57 与主线委托/Bark，网页设备范围仅服务端绑定。R01 完成限时澄清、当前表达优先、有界上下文、确定性拒绝、实际短聊路由、安全端点/codec 计时、质量汇总和 V61 隐私删除。原用户分支与未提交文件未覆盖或清理。
 
-新任务从新鲜 origin/master@ec53bfe 创建，包含未合入的持续任务/Bark 依赖，最终保留一个中文任务提交。实际安装冻结 `a37d220e7a2a0189b28412ffd420b2173fbbfc13` 从旧 dc2ba2f 集成增加此次修复，保留 V57–V60。原 `codex/companion-topic-continuity@8ad9822` 工作树及用户文件保持。最后验证提交字段为分支已存在基线；本轮源码与成绩以下列冻结来源和收据为准。
-
-| 工作流 | 状态 | 交接 |
+| 工作流 | 状态 | 新鲜结果 |
 | --- | --- | --- |
-| [服务端](server.md) | READY_FOR_REVIEW | 口语请求、能力咨询、内容追问与模型系统提示修复 |
-| [前端](frontend.md) | STABLE | 页面源码未改，生产类型、构建和全部资源指纹通过 |
-| [固件](firmware.md) | READY_FOR_REVIEW | 保持原 r3 与既有实体验收范围 |
-| [部署](deployment.md) | READY_FOR_REVIEW | V60 修复安装、恢复与完整产物/数据核验通过 |
+| [服务端](server.md) | READY_FOR_REVIEW | 完整 1009/1009；PG 15/15；新增 V61、旧六十迁移不变 |
+| [前端](frontend.md) | READY_FOR_REVIEW | 完整 46 文件 181/181；定向 20/20、类型/lint/生产构建 |
+| [固件](firmware.md) | READY_FOR_REVIEW | 双 profile/五栈 gate/宿主通过；LAN 余量 4432 B，未刷写 |
+| [部署](deployment.md) | READY_FOR_REVIEW | 同提交 image/JAR/61 SQL/全部控制台/双固件收据，未安装 |
+| [产品](product.md) | READY_FOR_REVIEW | 30 受控场景通过；匿名分析 23/23，现场样本 0、UNKNOWN |
 
-## 验证结果
+## 验证与剩余边界
 
-修复前最小基线 32/32。最终冻结集成相关 5 文件、103/103，失败/错误/跳过均零；包括文字/语音、实际 ReactAgent 调用、用户原话、能力目录优先于旧否认、正文补全、取消与旧发送不复用、运行时关闭、未配置、失败与 UNKNOWN。先前 Bark 完整集成的 840/840 为旧版本成绩，本轮不冒充新完整套件。中间新增测试断言误把 instruction 当作首消息，已修正为 system prompt 检查并重新通过。最终报告 `.tools/stackchan-companion-tests-f35b33f2c84c4f1683ab971ae3e91bcc` 位于 `D:\stackchan\.worktrees\bark-voice-integration`。
+最终完整 SHA、测试源码指纹、61 SQL/Flyway、生产 image/JAR/全部控制台资源及双固件六制品见本工作树 `.tools/r01/candidate-receipt.json`。989b3d9 为当前祖先元数据，新增代码成绩以工作树回归和最终候选收据为准。实现、状态、交接与 R00 合成一个中文任务提交；用户已于 2026-10-15 明确授权推送本任务分支；推送与远端 SHA 核对结果见 `.tools/r01/push-receipt.json`。PR、人工审核与合并由用户执行。
 
-候选重新执行完整 vue-tsc/Vite 与服务端打包；任务分支相对 master 的全部 TS/Vue 执行等同提交钩子的 ESLint/stylelint，`git diff --check`、`pnpm docs:check` 通过。生产大 chunk 和既有弃用提示保留，最终退出 0。
+完整服务端失败/错误/跳过 0，控制台失败 0。保留旧 Surefire/Vite/Vitest 退出及大 chunk 警告。固件总静态增量 248 B，3 MiB 槽余量 4432 B 高于 4384 门槛仅 48 B，后续改动必须重新验证容量。诊断的 codec 写入开始与逻辑状态接受是设备参考证据，不能冒充声学首声或 LCD 帧完成；旧设备缺字段仍未知。
 
-用户授权推送后，在当前任务分支重跑相同 5 个相关测试类：99/99，失败/错误/跳过均零，报告 `.tools/stackchan-companion-tests-7a9100f3ea5c4dc89e53e0f4d658c7cb`。与安装集成的 103 项相差原 V57 的 4 项语音测试；本轮代码与已验证安装源码一致，测试后仅更新验收及交接文档。实现、验收与交接压缩在同一中文任务提交后仅推送该分支。
+FIELD_PENDING：用户 F01 记忆与 F02 五六秒反馈尚无逐回合实体记录；第三真实失败未取得。空模板与手册已交付，三十真实短聊/十次触摸、背景/低音量/短答自然性待验；R06 跨天记忆未实施。DEPLOYMENT_PENDING/PUSH_AUTHORIZED：用户已授权分支推送，结果见外置推送收据；没有本轮安装、刷写、真实模型/Bark 或十四天观察。
 
-停服备份及内部隔离 V60 恢复先于替换，保留 `stackchan-release-20261011152920`，旧恢复点保持。五项加密设置、管理员、Skill、DPAPI、个人数量与全部旧 checksum 验证通过；原 1 个任务、3 条历史、Bark 设置及通知回执指纹不变。真实镜像、JAR 与全部 288 个资源匹配；健康 ok、控制台 200、匿名委托 API 401，原 r3 固件保持。自动化模拟模型/Bark，不发送真实测试通知。用户现场复测后确认「基本没问题」，并明确授权推送当前任务分支。
+## 当前运行与回退
 
-## 下一步与边界
+本轮未再读取线上环境；最后只读事实为 2026-10-12 的 a37d220/V60/r3/motion_disabled，不能当当前新鲜状态。原恢复点与匹配镜像保留。后续授权安装须先停写备份、内部隔离恢复；V61 回退使用匹配数据库/镜像，不能直接换旧应用或修改 migration history。
 
-用户自行在 GitHub 为 `codex/bark-voice-routing` 创建 PR、审核并完成最终合并。实际安装仍使用保留 V57–V60 的冻结集成；当前任务分支不包含尚未合入的 V57，禁止直接替换已安装来源。通知用法及真实回执边界见 runbook。
+## 下一条精确操作
 
-无实现或安装阻塞。LAN、身份、卷、凭据、DoH true 和固件保持。用户本轮明确授权外部推送，范围仅当前任务分支；PR 创建、审核和最终合并由用户执行。详见[使用说明](../runbooks/recurring-research-and-bark.md)。
+核对[本轮交付](../baselines/companion-r01-natural-voice.md)、候选收据和推送收据后，由用户在 GitHub 创建 PR、审核并合并；Agent 不创建或合并 PR。安装/实体采集按[测量手册](../../runbooks/natural-voice-quality.md)另行授权后执行。后续 R02/R06 需独立任务指令。

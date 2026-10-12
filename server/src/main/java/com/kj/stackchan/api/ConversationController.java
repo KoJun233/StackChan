@@ -12,6 +12,7 @@ import com.kj.stackchan.agent.AgentOrchestrator;
 import com.kj.stackchan.conversation.ConversationMessageSnapshot;
 import com.kj.stackchan.conversation.ConversationSnapshot;
 import com.kj.stackchan.conversation.ConversationService;
+import com.kj.stackchan.conversation.DeviceVoiceConversationService;
 import com.kj.stackchan.conversation.GenerationStart;
 import com.kj.stackchan.conversation.MessageRole;
 import com.kj.stackchan.device.BodyMotionAutoService;
@@ -57,6 +58,7 @@ public class ConversationController {
     private final AgentOrchestrator agentOrchestrator;
     private final LlmSettingsService llmSettingsService;
     private final CompanionPromptService companionPromptService;
+    private final DeviceVoiceConversationService deviceVoiceConversationService;
 
     @Autowired(required = false)
     private CompletedTurnMemoryCoordinator completedTurnMemoryCoordinator;
@@ -68,12 +70,14 @@ public class ConversationController {
             ConversationService conversationService,
             AgentOrchestrator agentOrchestrator,
             LlmSettingsService llmSettingsService,
-            CompanionPromptService companionPromptService
+            CompanionPromptService companionPromptService,
+            DeviceVoiceConversationService deviceVoiceConversationService
     ) {
         this.conversationService = conversationService;
         this.agentOrchestrator = agentOrchestrator;
         this.llmSettingsService = llmSettingsService;
         this.companionPromptService = companionPromptService;
+        this.deviceVoiceConversationService = deviceVoiceConversationService;
     }
 
     @PostMapping
@@ -117,19 +121,19 @@ public class ConversationController {
         GenerationContentBuffer generatedContent = new GenerationContentBuffer();
         return Flux.defer(() -> {
             AtomicBoolean generationActive = new AtomicBoolean(true);
+            // A client-supplied device field cannot grant device actions or external delivery.
+            UUID deviceId = deviceVoiceConversationService.findDeviceIdByConversationId(conversationId).orElse(null);
             List<Message> modelHistory = history.stream().map(this::toModelMessage).toList();
-            CompanionPromptService.PromptAssembly promptAssembly = companionPromptService.assembleWithMemoryContext(
+            String baseSystemPrompt = llmSettingsService.resolveForInvocation().systemPrompt();
+            CompanionPromptService.PromptAssembly promptAssembly = companionPromptService.assembleWebWithMemoryContext(
                     conversationId,
-                    llmSettingsService.resolveForInvocation().systemPrompt(),
+                    baseSystemPrompt,
                     "",
                     request.content()
             );
             if (promptAssembly == null) {
                 promptAssembly = new CompanionPromptService.PromptAssembly(
-                        companionPromptService.assemble(
-                                conversationId,
-                                llmSettingsService.resolveForInvocation().systemPrompt()
-                        ),
+                        baseSystemPrompt,
                         List.of()
                 );
             }
@@ -139,7 +143,7 @@ public class ConversationController {
                             new AgentInvocationContext(
                                     start.assistantMessageId(),
                                     conversationId,
-                                    request.deviceId(),
+                                    deviceId,
                                     conversationService.roleId(conversationId),
                                     AgentChannel.WEB
                             ),
@@ -167,12 +171,12 @@ public class ConversationController {
                 }
                 return event("completed", new CompletedEvent(start.assistantMessageId(), content));
             });
-            Disposable thinkTask = request.deviceId() == null || bodyMotionAutoService == null
+            Disposable thinkTask = deviceId == null || bodyMotionAutoService == null
                     ? () -> { }
                     : Schedulers.boundedElastic().schedule(() -> {
                         if (generationActive.get()) {
                             try {
-                                bodyMotionAutoService.request(request.deviceId(), "THINK",
+                                bodyMotionAutoService.request(deviceId, "THINK",
                                         "web-think:" + start.assistantMessageId());
                             } catch (RuntimeException error) {
                                 LOGGER.warn("Automatic THINK request failed");

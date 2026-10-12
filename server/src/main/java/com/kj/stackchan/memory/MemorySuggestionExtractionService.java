@@ -23,6 +23,11 @@ public class MemorySuggestionExtractionService {
             有建议时只返回一个 JSON 对象：
             {"suggest":true,"category":"USER_PROFILE|EVENT","title":"不超过120字","content":"不超过2000字的可核对事实","topicKey":"不超过120字的稳定主题键","importance":1到5,"reason":"不超过500字的建议原因","allowProactiveMention":true或false}
             只有用户明确表达的兴趣、爱好或内容偏好才把 allowProactiveMention 设为 true；称呼、身份、位置、计划、经历、关系、健康、财务和其他个人事实必须为 false。
+            若用户明确分享了正在进行的日常近况、兴趣活动、项目或生活计划，且未来确有进展可聊，
+            可额外返回 continueLater:true；此时 category 必须是 EVENT、标题不超过40字且直接摘自用户原文、内容不超过80字，
+            topicKey 是这件具体事情的稳定名称，allowProactiveMention 必须为 false。
+            情绪倾诉、烦恼、人际和医疗财务经历不属于待续范围；已经结束的事情、普通问题、机器人说出的内容不建议待续。
+            continueLater 只提出候选，不代表用户已同意；其他记忆省略此字段或返回 false。
             不要返回 Markdown、解释、第二条建议或其他字段。
             """;
 
@@ -30,6 +35,10 @@ public class MemorySuggestionExtractionService {
     private final LlmRuntimeClientFactory llmRuntimeClientFactory;
     private final LongTermMemoryService memoryService;
     private final ObjectMapper objectMapper;
+    private TopicContinuationService continuationService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setContinuationService(TopicContinuationService service) { this.continuationService = service; }
 
     public MemorySuggestionExtractionService(
             @Qualifier("memorySuggestionExecutor") Executor executor,
@@ -81,6 +90,10 @@ public class MemorySuggestionExtractionService {
                     draft.reason(),
                     turn.sourceTurnId()
             );
+            if (draft.continueLater() && continuationService != null && turn.deviceId() != null) {
+                continuationService.suggest(turn.roleId(), turn.deviceId(), turn.userText(), command);
+                return;
+            }
             if (com.kj.stackchan.role.CompanionRoleEntity.DEFAULT_ROLE_ID.equals(turn.roleId())) {
                 memoryService.suggest(command);
             } else {
@@ -101,9 +114,10 @@ public class MemorySuggestionExtractionService {
             if (!root.isObject() || !root.path("suggest").asBoolean(false)) {
                 return null;
             }
-            if (root.size() > 8) {
+            if (root.size() > 9) {
                 return null;
             }
+            if (root.has("continueLater") && !root.get("continueLater").isBoolean()) return null;
             return new SuggestionDraft(
                     MemoryCategory.valueOf(requiredText(root, "category")),
                     requiredText(root, "title"),
@@ -111,7 +125,8 @@ public class MemorySuggestionExtractionService {
                     requiredText(root, "topicKey"),
                     root.path("importance").intValue(),
                     requiredText(root, "reason"),
-                    root.path("allowProactiveMention").asBoolean(false)
+                    root.path("allowProactiveMention").asBoolean(false),
+                    root.path("continueLater").asBoolean(false)
             );
         } catch (RuntimeException | java.io.IOException exception) {
             return null;
@@ -151,7 +166,8 @@ public class MemorySuggestionExtractionService {
             String topicKey,
             int importance,
             String reason,
-            boolean allowProactiveMention
+            boolean allowProactiveMention,
+            boolean continueLater
     ) {
     }
 }

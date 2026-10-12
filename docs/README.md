@@ -12,6 +12,8 @@
 | [`project/architecture.md`](project/architecture.md) | 架构说明 |
 | [`project/development.md`](project/development.md) | 开发环境与验证命令 |
 | [`project/roadmap.md`](project/roadmap.md) | 产品路线图 |
+| [`project/companion-product-iteration-plan-2026-10-12.md`](project/companion-product-iteration-plan-2026-10-12.md) | Muse/Dots 与 AI 伙伴对标、四类体验缺口、十二周任务与验收（DRAFT） |
+| [`requirements/companion-v1/README.md`](requirements/companion-v1/README.md) | 成人桌面伙伴 V1：十二项独立 AI 开发需求、共同契约、顺序和验收；R00软件基线已完成，R01–R11未实施 |
 | [`project/console-ux-audit-2026-09-19.md`](project/console-ux-audit-2026-09-19.md) | 控制台交互缺陷、布局、视觉、文案与分阶段改造建议（DRAFT） |
 | [`project/feature-review-2026-09-13.md`](project/feature-review-2026-09-13.md) | 陪伴优先的功能重合、用户价值、深度与迭代评审 |
 | [`project/workday-companion-v1.md`](project/workday-companion-v1.md) | 工作日桌面陪伴 V1 的范围、架构、任务拆分与验收 |
@@ -24,6 +26,7 @@
 | 工作流 | 状态文档 |
 | --- | --- |
 | 全局 | [`overview.md`](project/status/overview.md) |
+| 产品规划 | [`product.md`](project/status/product.md) |
 | 服务端 | [`server.md`](project/status/server.md) |
 | 前端 | [`frontend.md`](project/status/frontend.md) |
 | 固件 | [`firmware.md`](project/status/firmware.md) |
@@ -31,7 +34,7 @@
 
 ## 运行手册与协议
 
-本轮陪伴改造的交付入口：[V51 发布与回退](runbooks/companion-v51-release.md)。
+本轮产品规划见上方计划书；当前安装来源见[部署状态](project/status/deployment.md)。历史陪伴改造记录：[V51 发布与回退](runbooks/companion-v51-release.md)。
 
 | 文档 | 用途 |
 | --- | --- |

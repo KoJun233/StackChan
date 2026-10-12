@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  changeContinuation,
   clearMemories,
   confirmMemory,
   createMemory,
@@ -42,6 +43,13 @@ describe('persona and memory API', () => {
     await getMemoryUsage('turn/id')
 
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/memories/usage/turn%2Fid', expect.any(Object))
+  })
+
+  it('sends an explicit topic control for the selected memory only', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}))
+    vi.stubGlobal('fetch', fetchMock)
+    await changeContinuation('topic/id', 'PAUSE_TODAY')
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/memories/topic%2Fid/continuation', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ action: 'PAUSE_TODAY' }) }))
   })
 
   it('uses explicit mutation endpoints for persona and memory controls', async () => {

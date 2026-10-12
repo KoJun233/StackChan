@@ -76,6 +76,22 @@ class DeviceVoiceControllerTest {
     }
 
     @Test
+    void explicitAuthenticatedCaptureLimitUsesClarificationBeforeActions() throws Exception {
+        UUID deviceId=UUID.randomUUID(),turnId=UUID.randomUUID();
+        byte[] input=new byte[64];
+        when(authenticator.authenticate(org.mockito.ArgumentMatchers.any())).thenReturn(
+                new DeviceTokenService.DeviceToken(deviceId,1,Instant.parse("2026-07-20T00:00:00Z")));
+        when(diagnosticsService.captureLimitReached(deviceId,turnId)).thenReturn(true);
+        when(voiceTurnService.handle(deviceId,turnId,input,true)).thenReturn(
+                new VoiceTurnService.VoiceTurnResult("截断的合成请求","这一段可能没说完，请再说一小段。",new byte[44]));
+        mockMvc.perform(post("/api/v1/device/voice/turn").header("Authorization","Bearer token")
+                .header(DeviceVoiceController.VOICE_TURN_ID_HEADER,turnId).contentType("audio/wav").content(input))
+                .andExpect(status().isOk());
+        verify(voiceTurnService).handle(deviceId,turnId,input,true);
+        verify(voiceTurnService,org.mockito.Mockito.never()).handle(deviceId,turnId,input);
+    }
+
+    @Test
     void negotiatesAndStreamsTheScv2Envelope() throws Exception {
         UUID deviceId = UUID.randomUUID();
         UUID turnId = UUID.randomUUID();

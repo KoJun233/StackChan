@@ -271,7 +271,7 @@ static esp_err_t streaming_response_event_handler(esp_http_client_event_t *event
     if (response == NULL || response->failed) return ESP_FAIL;
     if (event->event_id != HTTP_EVENT_ON_DATA || event->data_len <= 0) return ESP_OK;
     if (response->received_bytes == 0)
-        ESP_LOGI(TAG, "Voice stream response: first_data_bytes=%d internal_free=%u internal_largest=%u",
+        ESP_LOGI(TAG, "Response: first_data_bytes=%d internal_free=%u internal_largest=%u",
                  event->data_len, (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     response->received_bytes += (size_t)event->data_len;
@@ -280,7 +280,7 @@ static esp_err_t streaming_response_event_handler(esp_http_client_event_t *event
     if (err != ESP_OK) {
         response->failed = true;
         response->receive_error = err;
-        ESP_LOGW(TAG, "Voice stream response failed: error=%s received=%u prefix=%u header=%u frame=%u",
+        ESP_LOGW(TAG, "Response failed: error=%s received=%u prefix=%u header=%u frame=%u",
                  esp_err_to_name(err), (unsigned)response->received_bytes,
                  (unsigned)response->prefix_size, (unsigned)response->frame_header_size,
                  (unsigned)response->frame_payload_received);
@@ -298,7 +298,7 @@ static void configure_upload_socket(esp_http_client_handle_t client)
     int socket = esp_http_client_get_socket(client);
     int no_delay = 1;
     if (socket >= 0 && setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, &no_delay, sizeof(no_delay)) != 0)
-        ESP_LOGW(TAG, "Voice upload socket could not disable delayed small writes");
+        ESP_LOGW(TAG, "Upload TCP_NODELAY failed");
 }
 
 static void log_upload_state(const char *stage,
@@ -307,7 +307,7 @@ static void log_upload_state(const char *stage,
                              int64_t started_us)
 {
     ESP_LOGI(TAG,
-             "Voice upload %s: sent=%u/%u elapsed_ms=%llu internal_free=%u "
+             "Upload %s: sent=%u/%u elapsed_ms=%llu internal_free=%u "
              "internal_largest=%u internal_minimum=%u psram_free=%u",
              stage,
              (unsigned)sent,
@@ -387,7 +387,7 @@ static void restore_live_upload_power_save(voice_service_live_upload_t *upload)
     }
     esp_err_t err = esp_wifi_set_ps(upload->previous_power_save);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Could not restore Wi-Fi power save after live voice upload: %s",
+        ESP_LOGW(TAG, "Wi-Fi power save restore failed: %s",
                  esp_err_to_name(err));
     }
     upload->restore_power_save = false;
@@ -431,7 +431,7 @@ static esp_err_t perform_streaming_post(esp_http_client_handle_t client,
     if (restore_power_save) {
         esp_err_t power_err = esp_wifi_set_ps(WIFI_PS_NONE);
         if (power_err != ESP_OK) {
-            ESP_LOGW(TAG, "Could not suspend Wi-Fi power save for voice upload: %s",
+            ESP_LOGW(TAG, "Wi-Fi power save suspend failed: %s",
                      esp_err_to_name(power_err));
             restore_power_save = false;
         }
@@ -472,7 +472,7 @@ static esp_err_t perform_streaming_post(esp_http_client_handle_t client,
     log_upload_state(err == ESP_OK && sent == request_size ? "completed" : "failed",
                      sent, request_size, started_us);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Voice upload stopped: error=%s sent=%u/%u",
+        ESP_LOGW(TAG, "Upload stopped: error=%s sent=%u/%u",
                  esp_err_to_name(err), (unsigned)sent, (unsigned)request_size);
     } else {
         err = read_http_response(client);
@@ -480,7 +480,7 @@ static esp_err_t perform_streaming_post(esp_http_client_handle_t client,
     if (restore_power_save) {
         esp_err_t power_err = esp_wifi_set_ps(previous_power_save);
         if (power_err != ESP_OK) {
-            ESP_LOGW(TAG, "Could not restore Wi-Fi power save after voice response: %s",
+            ESP_LOGW(TAG, "Wi-Fi power save restore failed: %s",
                      esp_err_to_name(power_err));
         }
     }
@@ -633,7 +633,7 @@ esp_err_t voice_service_live_upload_begin(const device_identity_t *identity,
     if (err == ESP_OK && upload->restore_power_save) {
         esp_err_t power_err = esp_wifi_set_ps(WIFI_PS_NONE);
         if (power_err != ESP_OK) {
-            ESP_LOGW(TAG, "Could not suspend Wi-Fi power save for live voice upload: %s",
+            ESP_LOGW(TAG, "Wi-Fi power save suspend failed: %s",
                      esp_err_to_name(power_err));
             upload->restore_power_save = false;
         }
@@ -656,7 +656,7 @@ esp_err_t voice_service_live_upload_begin(const device_identity_t *identity,
     }
 
     ESP_LOGI(TAG,
-             "Voice live upload opened: elapsed_ms=%llu internal_free=%u internal_largest=%u "
+             "Live upload opened: elapsed_ms=%llu internal_free=%u internal_largest=%u "
              "internal_minimum=%u psram_free=%u",
              (unsigned long long)((esp_timer_get_time() - upload->started_us) / 1000),
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
@@ -713,7 +713,7 @@ esp_err_t voice_service_live_upload_finish(voice_service_live_upload_t *upload,
         err = esp_http_client_set_timeout_ms(upload->client, VOICE_SERVICE_TIMEOUT_MS);
     }
     ESP_LOGI(TAG,
-             "Voice live upload %s: pcm_bytes=%u capture_tail_ms=%llu elapsed_ms=%llu "
+             "Live upload %s: pcm_bytes=%u capture_tail_ms=%llu elapsed_ms=%llu "
              "internal_free=%u internal_largest=%u internal_minimum=%u psram_free=%u",
              err == ESP_OK ? "completed" : "failed",
              (unsigned)upload->pcm_bytes_sent,

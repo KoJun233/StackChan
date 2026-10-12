@@ -6,6 +6,7 @@ import java.util.UUID;
 import com.kj.stackchan.device.DeviceHttpAuthenticator;
 import com.kj.stackchan.device.DeviceTokenService;
 import com.kj.stackchan.speech.VoiceInputException;
+import com.kj.stackchan.speech.VoiceCaptureLimitPolicy;
 import com.kj.stackchan.speech.VoiceTurnDiagnosticsService;
 import com.kj.stackchan.speech.VoiceTurnEnvelope;
 import com.kj.stackchan.speech.VoiceTurnCancelledException;
@@ -76,7 +77,11 @@ public class DeviceVoiceController {
         StreamingResponseBody body = output -> {
             VoiceTurnStreamEnvelope.Writer writer = streamEnvelope.writer(output);
             try {
-                voiceTurnService.handleStreaming(deviceToken.deviceId(), turnId, wavAudio, writer);
+                if (requiresCaptureClarification(deviceToken.deviceId(), turnId, wavAudio, false)) {
+                    voiceTurnService.handleStreaming(deviceToken.deviceId(), turnId, wavAudio, writer, true);
+                } else {
+                    voiceTurnService.handleStreaming(deviceToken.deviceId(), turnId, wavAudio, writer);
+                }
             } catch (VoiceTurnClientDisconnectedException ignored) {
                 return;
             } catch (RuntimeException exception) {
@@ -108,7 +113,11 @@ public class DeviceVoiceController {
         StreamingResponseBody body = output -> {
             VoiceTurnStreamEnvelope.Writer writer = streamEnvelope.writer(output);
             try {
-                voiceTurnService.handleLiveStreaming(deviceToken.deviceId(), turnId, wavAudio, writer);
+                if (requiresCaptureClarification(deviceToken.deviceId(), turnId, wavAudio, true)) {
+                    voiceTurnService.handleLiveStreaming(deviceToken.deviceId(), turnId, wavAudio, writer, true);
+                } else {
+                    voiceTurnService.handleLiveStreaming(deviceToken.deviceId(), turnId, wavAudio, writer);
+                }
             } catch (VoiceTurnClientDisconnectedException ignored) {
                 return;
             } catch (RuntimeException exception) {
@@ -138,12 +147,20 @@ public class DeviceVoiceController {
         DeviceTokenService.DeviceToken deviceToken = authenticator.authenticate(request);
         UUID turnId = requestedTurnId == null ? UUID.randomUUID() : requestedTurnId;
         validateAudio(deviceToken.deviceId(), turnId, wavAudio);
-        byte[] body = envelope.encode(voiceTurnService.handle(deviceToken.deviceId(), turnId, wavAudio));
+        byte[] body = envelope.encode(requiresCaptureClarification(deviceToken.deviceId(), turnId, wavAudio, false)
+                ? voiceTurnService.handle(deviceToken.deviceId(), turnId, wavAudio, true)
+                : voiceTurnService.handle(deviceToken.deviceId(), turnId, wavAudio));
         return ResponseEntity.ok()
                 .contentType(VOICE_TURN_MEDIA_TYPE)
                 .header(VOICE_TURN_ID_HEADER, turnId.toString())
                 .contentLength(body.length)
                 .body(body);
+    }
+
+    private boolean requiresCaptureClarification(UUID deviceId, UUID turnId, byte[] wavAudio, boolean live) {
+        // Resolve after the live upload is complete; early headers cannot know the endpoint reason.
+        return Boolean.TRUE.equals(diagnosticsService.captureLimitReached(deviceId, turnId))
+                || VoiceCaptureLimitPolicy.requiresClarification(wavAudio, live);
     }
 
     private void validateAudio(UUID deviceId, UUID turnId, byte[] wavAudio) {

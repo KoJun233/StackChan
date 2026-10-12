@@ -158,7 +158,9 @@ class BarkNotificationToolTest {
     private static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> phoneCapabilityQuestions() {
         return java.util.stream.Stream.of(AgentChannel.WEB, AgentChannel.VOICE).flatMap(channel ->
                 java.util.stream.Stream.of("你没有那个 Send for notation 那个功能吗。", "你有 send_phone_notification 这个工具吗？",
-                        "你能给手机发通知吗？", "你能不能通过 Bark 发通知？", "怎么推送到手机", "你有没有发通知的权限？")
+                        "你能给手机发通知吗？", "你能不能通过 Bark 发通知？", "怎么推送到手机", "你有没有发通知的权限？",
+                        "可以给我的手机发通知吗？", "能给我的手机发通知吗？", "能不能通过 Bark 发通知？",
+                        "可不可以给手机发消息？", "支持向我的手机推送吗？")
                         .map(message -> org.junit.jupiter.params.provider.Arguments.of(channel, message)));
     }
 
@@ -188,7 +190,8 @@ class BarkNotificationToolTest {
     }
 
     @ParameterizedTest @ValueSource(strings={"取消","不用了","算了","别发了","不要发送了","不用给我手机发消息",
-            "don't send it","比如给手机发消息","怎么发通知？","换个话题","继续"})
+            "don't send it","比如给手机发消息","怎么发通知？","换个话题","继续",
+            "他说给我的手机发消息", "引用“给我的手机发通知”这句话", "“给我的手机发消息”是什么意思"})
     void cancellationQuestionsAndTopicControlsDoNotContinuePendingPhoneAuthorization(String message) {
         var context=context(AgentChannel.WEB); var agent=orchestrator(context);
         when(model.call(any(Prompt.class))).thenAnswer(call->{

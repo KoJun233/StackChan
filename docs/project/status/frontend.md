@@ -1,47 +1,49 @@
 # 前端工作流
 
-- 状态：STABLE
-- 最后更新：2026-10-11
-- 当前分支：`codex/bark-voice-routing`
-- 基准提交：`ec53bfe`
-- 最后验证提交：`ec53bfe`
+- 状态：READY_FOR_REVIEW
+- 最后更新：2026-10-15
+- 当前分支：`codex/companion-r01-natural-voice-20261013`
+- 基准提交：`989b3d9`
+- 最后验证提交：`989b3d9`
 
 ## 当前目标
 
-[COMPANION-010](../bark-agent-tool.md) 语音修复不修改前端源码，保持原 Agent 设置、开关与审计入口。
+在现有设备详情展示质量汇总、来源、样本/失败/缺失和未知；保留 R00 记忆与委托/Bark控制台。
 
 ## 已完成
 
-工具目录由服务端动态提供，原通知条目、开关、审计及设置页说明保持。已安装 `bark-voice-a37d220`，与上一版本 index 保持，全部 288 个资源匹配候选。
+设备回合详情与质量汇总分别加载、分别显示错误；切设备的旧请求不覆盖新结果。实际 codec 开始与端点标记才计算参考耗时，旧 marker/缺阶段/倒序保持未知。显示实际短聊分组、排除数量、固定失败码和未结束数量；少于三十样本不给百分位。单调计时与实体首声分别说明，无正文、录音或认证值。
+
+没有新路由、表单或配置，既有设备选择/权限合同保持。
 
 ## 正在进行
 
-实现、类型和生产构建完成。真实聊天工具体验及 iPhone 新通知需用户试用。
+软件完成，等待审核；实体与安装待验。
+
+最终完整 SHA、测试源码指纹、61 SQL/Flyway、生产 image/JAR/全部控制台资源及双固件六制品见本工作树 `.tools/r01/candidate-receipt.json`。989b3d9 为当前祖先元数据，新增代码成绩以工作树回归和最终候选收据为准。实现、状态、交接与 R00 合成一个中文任务提交；用户已于 2026-10-15 明确授权推送本任务分支；推送与远端 SHA 核对结果见 `.tools/r01/push-receipt.json`。PR、人工审核与合并由用户执行。
 
 ## 下一步操作
 
-刷新 `http://192.168.1.5:8080`，在「设置 → Agent 能力」查看 `send_phone_notification`；聊天中明确要求手机推送后查看调用审计与 Bark 历史。
+读取交付/收据审核详情与汇总；安装授权及一致恢复后再验证真实设备数据、失败/缺失标签，不以模拟样本作达标。
 
 ## 阻塞项
 
-无软件或安装阻塞；本轮没有发送真实测试通知。
+无软件阻塞。本轮分支推送已授权，刷写或安装尚未授权；实体样本不足保持 UNKNOWN。缺 V57 的既有 V60 库仍默认拒绝升级，需另行兼容方案。
 
 ## 关键文件
 
-`apps/stackchan-console/src/views/settings/agent/index.vue`；动态目录来源 `AgentManagementController`。
+实现路径与 FR/AC 对照见下方交付记录，最终源码指纹见收据。
 
 ## 验证命令与最近结果
 
-本轮候选冻结 `a37d220e7a2a0189b28412ffd420b2173fbbfc13` 重新完成完整 vue-tsc/Vite 构建，日志 `D:\stackchan\.worktrees\bark-voice-integration\.tools\bark-voice-build.log`。最终任务分支相对 master 的全部 13 个 TS/Vue 执行等同提交钩子的 ESLint/stylelint 通过。下列组件测试与独立类型检查为前次 Bark 引入的成绩，页面源码此次未改。
+定向 20/20；完整 46 文件 181/181，零失败，`.tools/r01/frontend-full-tests.log`。vue-tsc -b、六文件 ESLint/Stylelint 通过，生产候选构建成功。已有 Vite/Vitest 退出与大 chunk 警告保留；三项自动生成 d.ts 在任务树恢复，未改用户原树。
 
-控制台 `pnpm exec vitest run src/views/settings/agent/index.test.ts --reporter=dot`：1/1。`pnpm exec vue-tsc --noEmit -p tsconfig.app.json --incremental false` 与 node 配置均通过；该 Vue 文件 ESLint/stylelint 及等同提交钩子的检查通过。候选完整 vue-tsc/生产 Vite 构建通过，日志位于集成工作树 `.tools/bark-release-build.log`，源 `dc2ba2fb5dd437774d5d4ea6fa23894eeb186ce9`。实际全部 288 个资源 SHA256 与候选一致。
-
-复用已验证的 Git 依赖树、锁文件和 Node/pnpm 缓存镜像，重新编译源码。旧测试 select stub/Vite 关闭与大 chunk 提示保留，退出 0。没有为单行说明另写实现镜像测试。`git diff --check`、`pnpm docs:check` 通过；原用户 components.d.ts 指纹保持。
+本机 Node24.19.0/pnpm11.25.0 只执行已装脚本；完整 Vitest 直接由 Node 启动以避开 junction 运行状态限制。生产缓存 Node24.15.0/pnpm11.13.1，锁文件/engine 保持。
 
 ## 相关设计、计划和决策
 
-[设计](../bark-agent-tool.md)、[ADR0075](../decisions/0075-bark-agent-notification-tool.md)、[使用说明](../runbooks/recurring-research-and-bark.md)。
+[R01 交付与 FR/AC](../baselines/companion-r01-natural-voice.md)、[R00 历史基线](../baselines/companion-v1-baseline.md)、[R01 规格](../../requirements/companion-v1/R01-natural-voice.md)、[公共契约](../../requirements/companion-v1/00-shared-contracts.md)、[ADR0077](../decisions/0077-measured-private-natural-voice.md)、[实体测量](../../runbooks/natural-voice-quality.md)、[备份恢复](../../runbooks/personal-data-backup.md)。
 
 ## 安全与兼容性约束
 
-原入口和生成文件保持，不在页面显示 Key 或消息审计正文。没有新路由、表单或权限体系。
+不运行真实模型/Bark、不刷写、安装、改部署模式、轮换凭据或创建 PR；仅按本次授权推送当前任务分支。原用户工作树保持；实体录音/谈话/认证载荷不提交，LAN HTTP 仅局域网开发。

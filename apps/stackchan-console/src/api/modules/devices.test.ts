@@ -3,6 +3,7 @@ import {
   calibrateDeviceBody,
   configureDeviceBodyMotion,
   createPairingCode,
+  getDeviceVoiceQuality,
   isPairingCodeExpired,
   playDeviceBodyMotion,
   stopDeviceMotion,
@@ -26,6 +27,27 @@ describe('device management API', () => {
       method: 'POST',
       body: JSON.stringify({ createdBy: 'admin' }),
     }))
+  })
+
+  it('reads only the selected device quality summary with encoded ISO time bounds', async () => {
+    const result = { totalAttempts: 0, failureCounts: {} }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(result), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(getDeviceVoiceQuality('device/id &other=1', {
+      from: '2026-10-12T00:00:00+08:00',
+      to: '2026-10-13T00:00:00+08:00',
+    })).resolves.toEqual(result)
+    const [path, options] = fetchMock.mock.calls[0]
+    const url = new URL(path, 'http://localhost')
+    expect(url.pathname).toBe('/api/v1/companion/voice-quality')
+    expect([...url.searchParams.keys()]).toEqual(['deviceId', 'from', 'to'])
+    expect(url.searchParams.get('deviceId')).toBe('device/id &other=1')
+    expect(url.searchParams.get('from')).toBe('2026-10-12T00:00:00+08:00')
+    expect(url.searchParams.get('to')).toBe('2026-10-13T00:00:00+08:00')
+    expect(options.credentials).toBe('same-origin')
   })
 
   it('treats a pairing code as expired at or after its expiry instant', () => {

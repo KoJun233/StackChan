@@ -18,6 +18,7 @@ const loading = ref(false)
 const devices = ref<Device[]>([])
 const roleOptions = ref<{ label: string, value: string }[]>([])
 const metadata = ref<{ confirmationStatus: string, sourceDetail: string } | null>(null)
+const continuation = ref(false)
 const model = ref<MemoryInput>({
   scopeType: 'GLOBAL',
   deviceId: null,
@@ -53,6 +54,12 @@ const validationSchema = toTypedSchema(z.object({
   importance: z.number().int().min(1).max(5),
   allowProactiveMention: z.boolean(),
 }).superRefine((value, context) => {
+  if (continuation.value && value.title.length > 40) {
+    context.addIssue({ code: 'custom', message: '待续标题不能超过 40 个字符', path: ['title'] })
+  }
+  if (continuation.value && value.content.length > 80) {
+    context.addIssue({ code: 'custom', message: '待续事实不能超过 80 个字符', path: ['content'] })
+  }
   if (value.scopeType === 'DEVICE' && !value.deviceId) {
     context.addIssue({ code: 'custom', message: '请选择目标设备', path: ['deviceId'] })
   }
@@ -77,6 +84,7 @@ async function loadMemory(id: string) {
   loading.value = true
   try {
     const memory = await getMemory(id)
+    continuation.value = Boolean(memory.continuation)
     model.value = {
       scopeType: memory.scopeType,
       deviceId: memory.deviceId,
@@ -103,6 +111,7 @@ async function loadMemory(id: string) {
 
 async function resetForRoute(id: string) {
   metadata.value = null
+  continuation.value = false
   if (id) {
     await loadMemory(id)
     return
@@ -185,16 +194,16 @@ defineExpose({ submit })
       scroll-to-error
     >
       <FaFormItem name="scopeType" label="作用范围" required>
-        <FaSelect v-model="model.scopeType" :options="scopeOptions" class="w-full" />
+        <FaSelect v-model="model.scopeType" :options="scopeOptions" :disabled="continuation" class="w-full" />
       </FaFormItem>
       <FaFormItem name="roleId" label="归属伙伴" required :description="props.id ? '记忆创建后不可改绑伙伴。' : undefined">
         <FaSelect v-model="model.roleId" :options="roleOptions" :disabled="Boolean(props.id)" class="w-full" />
       </FaFormItem>
       <FaFormItem v-if="model.scopeType === 'DEVICE'" name="deviceId" label="目标设备" required>
-        <FaSelect v-model="model.deviceId" :options="deviceOptions" class="w-full" />
+        <FaSelect v-model="model.deviceId" :options="deviceOptions" :disabled="continuation" class="w-full" />
       </FaFormItem>
       <FaFormItem name="category" label="记忆类型" required>
-        <FaSelect v-model="model.category" :options="categoryOptions" class="w-full" />
+        <FaSelect v-model="model.category" :options="categoryOptions" :disabled="continuation" class="w-full" />
       </FaFormItem>
       <FaFormItem name="title" label="记忆标题" required>
         <FaInput v-model="model.title" placeholder="例如：称呼偏好" />
@@ -209,7 +218,7 @@ defineExpose({ submit })
         <FaNumberField v-model="model.importance" :min="1" :max="5" class="w-full" />
       </FaFormItem>
       <FaFormItem name="allowProactiveMention" label="允许主动提及" description="默认关闭；仅供后续受限主动关心使用，不会让模型自行决定打扰时间。">
-        <FaSwitch v-model="model.allowProactiveMention" />
+        <FaSwitch v-model="model.allowProactiveMention" :disabled="continuation" />
       </FaFormItem>
     </FaForm>
   </div>

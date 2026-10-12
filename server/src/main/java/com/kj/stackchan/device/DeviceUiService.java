@@ -142,6 +142,10 @@ public class DeviceUiService {
         String title = text(proposal.title());
         if (title.isBlank()) title = label;
         String content = text(proposal.content());
+        if (proposals.isContinuationConfirmation(proposal)) {
+            label = "下次接着聊";
+            content += "\n确认后，仅在相关聊天时接续，并保存你明确说的新进展。可暂停或停止。";
+        }
         if (content.isBlank()) {
             content = switch (proposal.actionType()) {
                 case SET_VOLUME -> proposal.volumePercent() + "%";

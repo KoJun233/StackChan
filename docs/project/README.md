@@ -1,8 +1,8 @@
 # 项目文档约定
 
-当前任务：[COMPANION-010 Bark Agent Tool](bark-agent-tool.md) 语音修复。用户发现「给我的手机发一条消息」及具体功能咨询被误当普通聊天，本轮修复自然口语路由、能力目录读取与内容追问；已安装 `bark-voice-a37d220`，进展以[全局总览](status/overview.md)为准。
+当前任务：[成人桌面伙伴 V1 R01 自然语音](baselines/companion-r01-natural-voice.md)。R00/R01 软件与自动验收完成，合成一个中文任务提交；2026-10-15 用户已明确授权推送当前任务分支，PR、审核与合并由用户操作。实体样本与安装待验，当前进展见[总览](status/overview.md)，需求入口见[十二项需求](../requirements/companion-v1/README.md)。后续 R02–R11 未实施。
 
-新分支从最新 origin/master@ec53bfe 的独立工作树创建，包含未合入的持续任务依赖。旧任务 8ad9822/V57 未合入，原工作树及用户文件保持。Bark 工具已从保留原 V57 的冻结集成来源安装为 V60，当前版本见[部署状态](status/deployment.md)。服务地址 `http://192.168.1.5:8080`；任务、历史、Key 和设备 r3 固件保持，设置及聊天推送步骤见[持续任务与 iPhone 通知](runbooks/recurring-research-and-bark.md)。
+历史最近只读核查为 2026-10-12 的 a37d220/V60、原 r3/motion_disabled，本轮未再访问运行环境；R01 V61 与双固件候选尚未安装。候选未安装，本轮仅分支推送获授权，刷写、真实外发、安装与 PR 创建未获授权。LAN 入口仍 http://192.168.1.5:8080；历史恢复点与匹配旧镜像保留，发布必须先停写一致备份与内部隔离恢复。
 
 ## 稳定文档与状态文档
 

@@ -603,6 +603,18 @@ typedef struct {
     voice_turn_response_t response;
 } streaming_turn_context_t;
 
+static void report_playback_written(int64_t written_us, void *value)
+{
+    streaming_turn_context_t *context = (streaming_turn_context_t *)value;
+    if (context->playback_started || cancellation_requested()) return;
+    context->playback_started = true;
+    companion_hardware_defer_turn_playback_started(context->turn_id, written_us, cancellation_requested);
+    set_interaction_phase(TOUCH_INTERACTION_PLAYING);
+    (void)device_transport_report_voice_turn(DEVICE_VOICE_STAGE_PLAYBACK_STARTED,
+        context->turn_id, (uint32_t)((written_us - context->started_us) / 1000),
+        DEVICE_VOICE_FAILURE_NONE);
+}
+
 static void streaming_playback_worker(void *argument)
 {
     streaming_turn_context_t *context = (streaming_turn_context_t *)argument;
@@ -630,21 +642,13 @@ static void streaming_playback_worker(void *argument)
             heap_caps_free(item.payload);
             continue;
         }
-        if (!context->playback_started) {
-            companion_hardware_expression_turn_playback_started(context->turn_id);
-            set_interaction_phase(TOUCH_INTERACTION_PLAYING);
-            companion_hardware_set_state(COMPANION_FACE_SPEAKING);
-            report_turn_stage(
-                context->turn_id, context->started_us, DEVICE_VOICE_STAGE_PLAYBACK_STARTED);
-            context->playback_started = true;
-        }
-
         int64_t playback_started_us = esp_timer_get_time();
         bool cancelled = false;
-        esp_err_t err = companion_hardware_play_wav_interruptible(wav, wav_size, &cancelled);
+        esp_err_t err = companion_hardware_play_wav_observed(wav, wav_size, &cancelled,
+            cancellation_requested, report_playback_written, context);
         int64_t playback_completed_us = esp_timer_get_time();
         ESP_LOGI(TAG,
-                 "Voice stream playback: sequence=%lu bytes=%u buffered_ms=%llu gap_ms=%llu "
+                 "Playback: sequence=%lu bytes=%u buffered_ms=%llu gap_ms=%llu "
                  "playback_ms=%llu stack_free=%u psram_free=%u",
                  (unsigned long)item.sequence,
                  (unsigned)wav_size,
@@ -667,7 +671,7 @@ static void streaming_playback_worker(void *argument)
         }
     }
     ESP_LOGI(TAG,
-             "Voice playback worker stopped: segments=%lu stack_free=%u result=%s",
+             "Playback done: segments=%lu stack_free=%u result=%s",
              (unsigned long)context->expected_sequence,
              (unsigned)uxTaskGetStackHighWaterMark(NULL),
              esp_err_to_name(context->playback_error));
@@ -850,7 +854,7 @@ static void live_capture_upload_worker(void *argument)
                     live_upload->upload_stage_reported = true;
                 } else {
                     ESP_LOGW(TAG,
-                             "Live voice upload unavailable; retaining bounded WAV fallback: %s",
+                             "Upload fallback: %s",
                              esp_err_to_name(live_upload->error));
                 }
             }
@@ -863,7 +867,7 @@ static void live_capture_upload_worker(void *argument)
                     live_upload->uploaded_samples = committed_samples;
                 } else {
                     ESP_LOGW(TAG,
-                             "Live voice upload write failed; retaining bounded WAV fallback: %s",
+                             "Write fallback: %s",
                              esp_err_to_name(live_upload->error));
                     voice_service_live_upload_abort(live_upload->upload);
                     live_upload->upload = NULL;
@@ -892,7 +896,7 @@ static void live_capture_upload_worker(void *argument)
             live_upload->upload, capture_finished_us);
     }
     ESP_LOGI(TAG,
-             "Live upload worker stopped: uploaded_samples=%lu stack_free=%u result=%s",
+             "Upload done: uploaded_samples=%lu stack_free=%u result=%s",
              (unsigned long)live_upload->uploaded_samples,
              (unsigned)uxTaskGetStackHighWaterMark(NULL),
              esp_err_to_name(live_upload->error));
@@ -924,7 +928,7 @@ static __attribute__((noinline)) void start_live_capture_upload(live_capture_upl
         taskENTER_CRITICAL(&live_upload->state_lock);
         live_upload->worker_done = true;
         taskEXIT_CRITICAL(&live_upload->state_lock);
-        ESP_LOGW(TAG, "Live upload worker unavailable; retaining bounded WAV fallback");
+        ESP_LOGW(TAG, "Upload worker fallback");
     }
 }
 
@@ -1003,14 +1007,19 @@ static __attribute__((noinline)) esp_err_t capture_user_speech(int16_t *samples,
                                      bool require_server_connection,
                                      uint32_t wait_seconds,
                                      int64_t conversation_started_us,
-                                     live_capture_upload_t *live_upload)
+                                     live_capture_upload_t *live_upload,
+                                     int64_t *endpoint_us,
+                                     bool *capture_limit_reached)
 {
     if (samples == NULL || captured_samples == NULL || settings == NULL || peak_energy == NULL ||
-        capacity < VOICE_CAPTURE_WINDOW_SAMPLES || live_upload == NULL) {
+        capacity < VOICE_CAPTURE_WINDOW_SAMPLES || live_upload == NULL ||
+        endpoint_us == NULL || capture_limit_reached == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
     *captured_samples = 0;
     *peak_energy = 0;
+    *endpoint_us = 0;
+    *capture_limit_reached = false;
     voice_capture_policy_t policy = {0};
     int64_t waiting_started_us = esp_timer_get_time();
     while (*captured_samples + VOICE_CAPTURE_WINDOW_SAMPLES <= capacity) {
@@ -1021,7 +1030,7 @@ static __attribute__((noinline)) esp_err_t capture_user_speech(int16_t *samples,
         if (cancellation_requested()) {
             return ESP_ERR_NOT_FINISHED;
         }
-        if (require_server_connection && turn_elapsed_ms(conversation_started_us) >=
+        if (!policy.speech_started && require_server_connection && turn_elapsed_ms(conversation_started_us) >=
                                              CONTINUOUS_CONVERSATION_MAX_DURATION_MS) {
             return ESP_ERR_NOT_FOUND;
         }
@@ -1070,12 +1079,15 @@ static __attribute__((noinline)) esp_err_t capture_user_speech(int16_t *samples,
             publish_live_capture_upload(live_upload, *captured_samples, false);
         }
         if (decision == VOICE_CAPTURE_END) {
+            *endpoint_us = esp_timer_get_time();
             *captured_samples -= (policy.silent_windows - 1U) * VOICE_CAPTURE_WINDOW_SAMPLES;
             publish_live_capture_upload(live_upload, *captured_samples, true);
             break;
         }
     }
     if (policy.speech_started) {
+        if (*endpoint_us == 0) *endpoint_us = esp_timer_get_time();
+        *capture_limit_reached = *captured_samples + VOICE_CAPTURE_WINDOW_SAMPLES > capacity;
         publish_live_capture_upload(live_upload, *captured_samples, true);
     }
     return policy.speech_started ? ESP_OK : ESP_ERR_NOT_FOUND;
@@ -1147,19 +1159,29 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
         follow_up ? DEVICE_VOICE_STAGE_FOLLOW_UP_LISTENING : DEVICE_VOICE_STAGE_LISTENING);
     size_t captured_samples = 0;
     uint32_t peak_energy = 0;
+    int64_t endpoint_us = 0;
+    bool capture_limit_reached = false;
     esp_err_t err = capture_user_speech(samples, capture_capacity, &captured_samples,
                                         settings, &peak_energy, press_to_talk, follow_up,
-                                        capture_seconds, conversation_started_us, &live_upload);
-    if (err == ESP_OK) {
-        report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_SPEECH_CAPTURED);
-    }
+                                        capture_seconds, conversation_started_us, &live_upload,
+                                        &endpoint_us, &capture_limit_reached);
     set_interaction_phase(TOUCH_INTERACTION_PROCESSING);
-    if (err == ESP_OK) companion_hardware_set_state(COMPANION_FACE_PROCESSING);
+    if (err == ESP_OK) {
+        bool feedback_present = companion_hardware_try_set_state(COMPANION_FACE_PROCESSING);
+        device_voice_capture_measurement_t measurement = {
+            .present = true,
+            .feedback_present = feedback_present,
+            .endpoint_to_local_feedback_ms = turn_elapsed_ms(endpoint_us),
+            .capture_limit_reached = capture_limit_reached,
+        };
+        uint32_t endpoint_elapsed_ms = (uint32_t)((endpoint_us - started_us) / 1000);
+        (void)device_transport_report_voice_capture(turn_id, endpoint_elapsed_ms, &measurement);
+    }
     if (err != ESP_OK) {
         if (err == ESP_ERR_NOT_FOUND) {
             *failure_face = COMPANION_FACE_NO_SPEECH;
             ESP_LOGW(TAG,
-                     "Speech not detected; peak_mean_energy=%lu start_threshold=%lu silence_threshold=%lu",
+                     "No speech: peak_mean_energy=%lu start_threshold=%lu silence_threshold=%lu",
                      (unsigned long)peak_energy,
                      (unsigned long)settings->speech_start_threshold,
                      (unsigned long)settings->speech_silence_threshold);
@@ -1173,28 +1195,18 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
         if (err == ESP_ERR_NOT_FINISHED || cancellation_requested()) {
             return ESP_ERR_NOT_FINISHED;
         }
-        if (!(follow_up && err == ESP_ERR_NOT_FOUND)) {
-            report_turn_failure(
+        report_turn_failure(
                 turn_id,
                 started_us,
                 err == ESP_ERR_NOT_FOUND
                     ? DEVICE_VOICE_FAILURE_NO_SPEECH
                     : (follow_up && err == ESP_ERR_INVALID_STATE
                            ? DEVICE_VOICE_FAILURE_OFFLINE
-                           : DEVICE_VOICE_FAILURE_INTERNAL_ERROR));
-        }
+                           : DEVICE_VOICE_FAILURE_MICROPHONE_RECOVERY_FAILED));
         return err;
     }
     wait_live_capture_upload(&live_upload);
-    if (follow_up && turn_elapsed_ms(conversation_started_us) >=
-                         CONTINUOUS_CONVERSATION_MAX_DURATION_MS) {
-        abort_live_capture_upload(&live_upload);
-        heap_caps_free(samples);
-        heap_caps_free(stream_context);
-        memset(&identity, 0, sizeof(identity));
-        return ESP_ERR_NOT_FOUND;
-    }
-    ESP_LOGI(TAG, "Speech captured: samples=%lu peak_mean_energy=%lu",
+    ESP_LOGI(TAG, "Captured: samples=%lu peak_mean_energy=%lu",
              (unsigned long)captured_samples, (unsigned long)peak_energy);
 
     if (cancellation_requested()) {
@@ -1204,8 +1216,6 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
         memset(&identity, 0, sizeof(identity));
         return ESP_ERR_NOT_FINISHED;
     }
-    set_interaction_phase(TOUCH_INTERACTION_PROCESSING);
-    companion_hardware_set_state(COMPANION_FACE_PROCESSING);
     voice_service_buffer_t response_buffer = {0};
     bool streamed = false;
     if (live_upload.upload != NULL && live_upload.error == ESP_OK) {
@@ -1324,13 +1334,10 @@ static esp_err_t run_voice_turn(const voice_detection_settings_t *settings,
         heap_caps_free(stream_context);
         return ESP_ERR_NOT_FINISHED;
     }
-    companion_hardware_expression_turn_playback_started(turn_id);
-    set_interaction_phase(TOUCH_INTERACTION_PLAYING);
-    companion_hardware_set_state(COMPANION_FACE_SPEAKING);
-    report_turn_stage(turn_id, started_us, DEVICE_VOICE_STAGE_PLAYBACK_STARTED);
     bool playback_cancelled = false;
-    err = companion_hardware_play_wav_interruptible(
-        response->wav, response->wav_size, &playback_cancelled);
+    err = companion_hardware_play_wav_observed(
+        response->wav, response->wav_size, &playback_cancelled,
+        cancellation_requested, report_playback_written, stream_context);
     voice_service_release(&response_buffer);
     heap_caps_free(stream_context);
     if (playback_cancelled || cancellation_requested()) {
@@ -1359,12 +1366,12 @@ static model_iface_data_t *create_wakenet_model(esp_wn_iface_t *wakenet,
     }
     if (sensitivity == VOICE_WAKE_SENSITIVITY_SENSITIVE &&
         wakenet->set_det_threshold(model, VOICE_SENSITIVE_WAKE_THRESHOLD, 1) != 1) {
-        ESP_LOGE(TAG, "WakeNet sensitive threshold configuration failed");
+        ESP_LOGE(TAG, "WakeNet threshold failed");
         wakenet->destroy(model);
         return NULL;
     }
     float threshold = wakenet->get_det_threshold(model, 1);
-    ESP_LOGI(TAG, "WakeNet detection threshold configured: sensitivity=%s threshold_milli=%lu",
+    ESP_LOGI(TAG, "WakeNet: sensitivity=%s threshold_milli=%lu",
              sensitivity == VOICE_WAKE_SENSITIVITY_SENSITIVE ? "sensitive" : "normal",
              (unsigned long)(threshold * 1000.0f + 0.5f));
     return model;
@@ -1386,12 +1393,12 @@ static bool try_activate_wakenet(srmodel_list_t *models,
 {
     esp_wn_iface_t *wakenet = (esp_wn_iface_t *)esp_wn_handle_from_name(model_name);
     if (wakenet == NULL) {
-        ESP_LOGW(TAG, "WakeNet model interface is unavailable: model=%s", model_name);
+        ESP_LOGW(TAG, "WakeNet interface: model=%s", model_name);
         return false;
     }
     model_iface_data_t *model = create_wakenet_model(wakenet, model_name, sensitivity);
     if (model == NULL) {
-        ESP_LOGW(TAG, "WakeNet model could not be created: model=%s", model_name);
+        ESP_LOGW(TAG, "WakeNet creation: model=%s", model_name);
         return false;
     }
 
@@ -1400,14 +1407,14 @@ static bool try_activate_wakenet(srmodel_list_t *models,
     int channels = wakenet->get_channel_num(model);
     if (chunk_samples <= 0 || sample_rate != VOICE_SAMPLE_RATE || channels != 1) {
         ESP_LOGW(TAG,
-                 "WakeNet model audio format is unsupported: model=%s rate=%d channels=%d chunk=%d",
+                 "WakeNet format: model=%s rate=%d channels=%d chunk=%d",
                  model_name, sample_rate, channels, chunk_samples);
         wakenet->destroy(model);
         return false;
     }
 
     char *wake_words = esp_srmodel_get_wake_words(models, (char *)model_name);
-    ESP_LOGI(TAG, "WakeNet model selected: model=%s source=%s wake_words=%s",
+    ESP_LOGI(TAG, "WakeNet: model=%s source=%s wake_words=%s",
              model_name, used_fallback ? "fallback" : "configured",
              wake_words == NULL ? "unavailable" : wake_words);
     free(wake_words);
@@ -1435,11 +1442,11 @@ static bool activate_configured_wakenet(srmodel_list_t *models,
         configured_model_name,
         WAKE_WORD_DEFAULT_MODEL_NAME);
     if (selection.name == NULL) {
-        ESP_LOGE(TAG, "Neither the configured nor fallback WakeNet model is packaged");
+        ESP_LOGE(TAG, "WakeNet models missing");
         return false;
     }
     if (selection.used_fallback) {
-        ESP_LOGW(TAG, "Configured WakeNet model is unavailable; using fallback: configured=%s fallback=%s",
+        ESP_LOGW(TAG, "WakeNet missing: configured=%s fallback=%s",
                  configured_model_name, selection.name);
     }
     if (try_activate_wakenet(models, selection.name, selection.used_fallback, sensitivity, active)) {
@@ -1451,7 +1458,7 @@ static bool activate_configured_wakenet(srmodel_list_t *models,
     if (selection.used_fallback || fallback == NULL || strcmp(selection.name, fallback) == 0) {
         return false;
     }
-    ESP_LOGW(TAG, "Configured WakeNet model failed validation; using fallback: configured=%s fallback=%s",
+    ESP_LOGW(TAG, "WakeNet invalid: configured=%s fallback=%s",
              selection.name, fallback);
     return try_activate_wakenet(models, fallback, true, sensitivity, active);
 }
@@ -1512,7 +1519,7 @@ static void execute_voice_conversation(device_voice_turn_stage_t trigger_stage,
             companion_hardware_expression_turn_cancel(turn_id);
             defer_listening_resumed(turn_id, turn_started_us);
             finish_turn();
-            ESP_LOGI(TAG, "Voice conversation cancelled");
+            ESP_LOGI(TAG, "Cancelled");
             companion_hardware_set_state(COMPANION_FACE_IDLE);
             set_interaction_phase(TOUCH_INTERACTION_IDLE);
             break;
@@ -1530,7 +1537,7 @@ static void execute_voice_conversation(device_voice_turn_stage_t trigger_stage,
             companion_hardware_expression_turn_cancel(turn_id);
             defer_listening_resumed(turn_id, turn_started_us);
             finish_turn();
-            ESP_LOGW(TAG, "Voice turn failed safely: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, "Turn failed: %s", esp_err_to_name(err));
             show_feedback_then_idle(failure_face);
             break;
         }
@@ -1622,7 +1629,7 @@ static void voice_task(void *argument)
             if (models == NULL) models = esp_srmodel_init(partition_label);
             if (!activate_configured_wakenet(
                     models, configured_model_name, desired_settings.wake_sensitivity, &replacement)) {
-                ESP_LOGE(TAG, "WakeNet model activation failed; retrying");
+                ESP_LOGE(TAG, "WakeNet retry");
                 if (wake_model_ota_is_pending()) wake_model_ota_rollback_and_restart();
                 if (!wake_unavailable) {
                     char failure_turn_id[DEVICE_PROTOCOL_TURN_ID_LEN] = {0};
@@ -1640,7 +1647,7 @@ static void voice_task(void *argument)
                     required_capacity * sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
                 if (replacement_chunk == NULL) {
                     destroy_active_wakenet(&replacement);
-                    ESP_LOGE(TAG, "WakeNet capture buffer resize failed; retrying");
+                    ESP_LOGE(TAG, "Buffer retry");
                     if (wake_model_ota_is_pending()) wake_model_ota_rollback_and_restart();
                     companion_hardware_set_state(COMPANION_FACE_RECOVERABLE_ERROR);
                     vTaskDelay(pdMS_TO_TICKS(1000));
@@ -1656,7 +1663,7 @@ static void voice_task(void *argument)
                 (active.used_fallback || wake_model_ota_confirm_active() != ESP_OK)) {
                 wake_model_ota_rollback_and_restart();
             }
-            ESP_LOGI(TAG, "WakeNet listening resumed: model=%s sensitivity=%s",
+            ESP_LOGI(TAG, "WakeNet ready: model=%s sensitivity=%s",
                      active.name,
                      active_settings.wake_sensitivity == VOICE_WAKE_SENSITIVITY_SENSITIVE
                          ? "sensitive"
@@ -1665,7 +1672,7 @@ static void voice_task(void *argument)
         esp_err_t err = companion_hardware_record_pcm(
             chunk, (size_t)active.chunk_samples, VOICE_SAMPLE_RATE);
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "WakeNet microphone capture failed: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, "WakeNet capture failed: %s", esp_err_to_name(err));
             if (!wake_unavailable) {
                 char failure_turn_id[DEVICE_PROTOCOL_TURN_ID_LEN] = {0};
                 create_turn_id(failure_turn_id);
@@ -1768,7 +1775,7 @@ esp_err_t voice_control_configure(voice_wake_sensitivity_t wake_sensitivity,
     s_detection_settings.speech_start_threshold = speech_start_threshold;
     s_detection_settings.speech_silence_threshold = speech_silence_threshold;
     taskEXIT_CRITICAL(&s_settings_lock);
-    ESP_LOGI(TAG, "Voice detection configured: sensitivity=%s start_threshold=%lu silence_threshold=%lu",
+    ESP_LOGI(TAG, "Detection: sensitivity=%s start_threshold=%lu silence_threshold=%lu",
              wake_sensitivity == VOICE_WAKE_SENSITIVITY_SENSITIVE ? "sensitive" : "normal",
              (unsigned long)speech_start_threshold,
              (unsigned long)speech_silence_threshold);
@@ -1791,7 +1798,7 @@ esp_err_t voice_control_configure_continuous_conversation(bool enabled,
     s_detection_settings.follow_up_window_seconds = follow_up_window_seconds;
     taskEXIT_CRITICAL(&s_settings_lock);
     ESP_LOGI(TAG,
-             "Continuous conversation configured: enabled=%s follow_up_window_seconds=%lu",
+             "Continuous: enabled=%s follow_up_window_seconds=%lu",
              enabled ? "true" : "false",
              (unsigned long)follow_up_window_seconds);
     return ESP_OK;
@@ -1832,7 +1839,7 @@ esp_err_t voice_control_play_reminder(const device_identity_t *identity,
     } else if (err == ESP_OK) {
         show_feedback_then_idle(COMPANION_FACE_SUCCESS);
     } else {
-        ESP_LOGW(TAG, "Reminder playback failed safely: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, "Reminder failed: %s", esp_err_to_name(err));
         show_feedback_then_idle(COMPANION_FACE_RECOVERABLE_ERROR);
     }
     taskENTER_CRITICAL(&s_interaction_lock);

@@ -158,6 +158,12 @@ public class LongTermMemoryService {
     public MemorySnapshot update(UUID id, MemoryCommand command) {
         ValidatedMemory validated = validate(command);
         LongTermMemoryEntity memory = findForUpdate(id);
+        if (memory.getContinuationState() != ContinuationState.NONE
+                && (validated.category() != MemoryCategory.EVENT || validated.scopeType() != MemoryScopeType.DEVICE
+                    || !java.util.Objects.equals(validated.deviceId(), memory.getDeviceId())
+                    || validated.allowProactiveMention() || validated.title().length() > 40 || validated.content().length() > 80)) {
+            throw new InvalidMemoryException("Continuation topics retain their device scope and conversational permission");
+        }
         String sourceDetail = memory.getSource() == MemorySource.USER_ENTERED
                 ? USER_ENTERED_DETAIL
                 : memory.getSourceDetail();
@@ -523,7 +529,10 @@ public class LongTermMemoryService {
                 memory.getReplacesMemoryId(),
                 memory.getSupersededByMemoryId(),
                 memory.isAllowProactiveMention(),
-                duplicateIds
+                duplicateIds,
+                memory.getContinuationState() == ContinuationState.NONE ? null : new ContinuationSnapshot(
+                        memory.continuationStateAt(clock.instant()), memory.getContinuationProgress(),
+                        memory.getContinuationProgressAt(), memory.getContinuationPausedUntil())
         );
     }
 
@@ -576,8 +585,19 @@ public class LongTermMemoryService {
             UUID replacesMemoryId,
             UUID supersededByMemoryId,
             boolean allowProactiveMention,
-            List<UUID> possibleDuplicateIds
+            List<UUID> possibleDuplicateIds,
+            ContinuationSnapshot continuation
     ) {
+        public MemorySnapshot(UUID id, UUID roleId, MemoryScopeType scopeType, UUID deviceId, MemoryCategory category,
+                String title, String content, MemorySource source, String sourceDetail,
+                MemoryConfirmationStatus confirmationStatus, boolean enabled, Instant confirmedAt,
+                Instant createdAt, Instant updatedAt, String topicKey, int importance, Instant lastUsedAt,
+                UUID sourceTurnId, UUID replacesMemoryId, UUID supersededByMemoryId, boolean allowProactiveMention,
+                List<UUID> possibleDuplicateIds) {
+            this(id, roleId, scopeType, deviceId, category, title, content, source, sourceDetail, confirmationStatus,
+                    enabled, confirmedAt, createdAt, updatedAt, topicKey, importance, lastUsedAt, sourceTurnId,
+                    replacesMemoryId, supersededByMemoryId, allowProactiveMention, possibleDuplicateIds, null);
+        }
         public MemorySnapshot(
                 UUID id,
                 MemoryScopeType scopeType,
@@ -601,6 +621,8 @@ public class LongTermMemoryService {
 
     public record MemoryPage(List<MemorySnapshot> list, long total) {
     }
+
+    public record ContinuationSnapshot(ContinuationState state, String progress, Instant progressAt, Instant pausedUntil) {}
 
     public record MemoryUsageReference(
             UUID memoryId,

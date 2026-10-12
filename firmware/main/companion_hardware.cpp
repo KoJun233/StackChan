@@ -112,6 +112,13 @@ static bool s_night_mode;
 static bool s_dynamic_surface_active;
 static uint32_t s_frame_display_lock_wait_us;
 static companion_expression_engine_t s_expression_engine;
+typedef struct {
+    char turn_id[37];
+    int64_t written_us;
+    bool (*should_cancel)(void);
+    bool present;
+} pending_playback_notice_t;
+static pending_playback_notice_t s_pending_playback_notice;
 static companion_expression_diagnostics_t s_expression_diagnostics = {};
 static uint32_t s_role_color = DEFAULT_ROLE_COLOR;
 static int s_manual_brightness_percent = -1;
@@ -730,8 +737,13 @@ extern "C" void companion_hardware_mark_activity(void)
 
 extern "C" void companion_hardware_set_state(companion_face_state_t state)
 {
+    (void)companion_hardware_try_set_state(state);
+}
+
+extern "C" bool companion_hardware_try_set_state(companion_face_state_t state)
+{
     set_last_activity_now();
-    if (!s_initialized || !take_mutex(s_board_mutex, pdMS_TO_TICKS(500))) return;
+    if (!s_initialized || !take_mutex(s_board_mutex, pdMS_TO_TICKS(500))) return false;
     s_face_state = state;
     s_face_started_us = esp_timer_get_time();
     bool was_screensaver = s_screensaver;
@@ -743,6 +755,7 @@ extern "C" void companion_hardware_set_state(companion_face_state_t state)
     if (expression_pack_is_active()) draw_face_locked(visible_state_locked());
     else s_next_face_frame_us = s_face_started_us;
     xSemaphoreGive(s_board_mutex);
+    return true;
 }
 
 extern "C" void companion_hardware_refresh_face(void)
@@ -817,6 +830,21 @@ static bool sample_touch(bool *touched, lv_point_t *point, uint32_t *lock_wait_u
     return true;
 }
 
+static bool apply_pending_playback_locked(void)
+{
+    taskENTER_CRITICAL(&s_expression_lock);
+    pending_playback_notice_t notice = s_pending_playback_notice;
+    s_pending_playback_notice.present = false;
+    taskEXIT_CRITICAL(&s_expression_lock);
+    if (!notice.present || (notice.should_cancel != nullptr && notice.should_cancel()) ||
+        !companion_expression_engine_turn_playback_started(&s_expression_engine, notice.turn_id,
+            (uint32_t)(notice.written_us / 1000LL))) return false;
+    s_face_state = COMPANION_FACE_SPEAKING;
+    s_face_started_us = notice.written_us;
+    s_next_face_frame_us = notice.written_us;
+    return true;
+}
+
 static void ui_task(void *argument)
 {
     (void)argument;
@@ -858,6 +886,7 @@ static void ui_task(void *argument)
         bool rendered = false;
         lock_started_us = esp_timer_get_time();
         if (take_mutex(s_board_mutex, pdMS_TO_TICKS(100))) {
+            bool playback_started = apply_pending_playback_locked();
             lock_wait_us += elapsed_us(lock_started_us, esp_timer_get_time());
             companion_face_state_t visible = visible_state_locked();
             bool modal_active = device_ui_is_modal();
@@ -889,8 +918,8 @@ static void ui_task(void *argument)
                 }
                 s_screensaver_frame++;
                 s_next_screensaver_frame_us = now + 1000000LL / 20LL;
-            } else if (!modal_active && !s_screensaver && !expression_pack_is_active() &&
-                       now >= s_next_face_frame_us) {
+            } else if (!modal_active && !s_screensaver && (playback_started ||
+                       (!expression_pack_is_active() && now >= s_next_face_frame_us))) {
                 draw_face_locked(visible);
                 rendered = true;
             }
@@ -1057,10 +1086,22 @@ extern "C" esp_err_t companion_hardware_play_wav_interruptible(const uint8_t *wa
                                                                  size_t wav_size,
                                                                  bool *cancelled)
 {
+    return companion_hardware_play_wav_observed(wav, wav_size, cancelled, nullptr, nullptr, nullptr);
+}
+
+extern "C" esp_err_t companion_hardware_play_wav_observed(const uint8_t *wav, size_t wav_size,
+    bool *cancelled, bool (*should_cancel)(void),
+    void (*started)(int64_t written_us, void *context), void *context)
+{
     audio_wav_view_t view = {};
     if (!s_initialized || !audio_wav_parse(wav, wav_size, &view)) return ESP_ERR_INVALID_ARG;
     if (!take_mutex(s_audio_mutex, portMAX_DELAY)) return ESP_ERR_TIMEOUT;
     if (cancelled != nullptr) *cancelled = false;
+    if (should_cancel != nullptr && should_cancel()) {
+        if (cancelled != nullptr) *cancelled = true;
+        xSemaphoreGive(s_audio_mutex);
+        return ESP_OK;
+    }
     clear_playback_stop_request();
     set_audio_playback_active(true);
 
@@ -1076,13 +1117,17 @@ extern "C" esp_err_t companion_hardware_play_wav_interruptible(const uint8_t *wa
     bool stopped = false;
     size_t offset = 0;
     while (err == ESP_OK && offset < view.data_size) {
-        if (playback_stop_requested()) {
+        if (playback_stop_requested() || (should_cancel != nullptr && should_cancel())) {
             stopped = true;
             break;
         }
         size_t remaining = view.data_size - offset;
         size_t chunk = remaining < AUDIO_IO_CHUNK_SIZE ? remaining : AUDIO_IO_CHUNK_SIZE;
         err = esp_codec_dev_write(s_speaker_codec, (void *)(view.data + offset), chunk);
+        if (err == ESP_OK && offset == 0 && started != nullptr &&
+            (should_cancel == nullptr || !should_cancel())) {
+            started(esp_timer_get_time(), context);
+        }
         offset += chunk;
     }
     if (speaker_open) {
@@ -1335,6 +1380,18 @@ extern "C" void companion_hardware_expression_turn_playback_started(const char *
     companion_expression_engine_turn_playback_started(&s_expression_engine, turn_id,
         (uint32_t)(esp_timer_get_time() / 1000LL));
     release_expression_locks();
+}
+
+extern "C" void companion_hardware_defer_turn_playback_started(const char *turn_id,
+    int64_t written_us, bool (*should_cancel)(void))
+{
+    if (turn_id == nullptr || strlen(turn_id) != 36) return;
+    taskENTER_CRITICAL(&s_expression_lock);
+    memcpy(s_pending_playback_notice.turn_id, turn_id, sizeof(s_pending_playback_notice.turn_id));
+    s_pending_playback_notice.written_us = written_us;
+    s_pending_playback_notice.should_cancel = should_cancel;
+    s_pending_playback_notice.present = true;
+    taskEXIT_CRITICAL(&s_expression_lock);
 }
 
 extern "C" void companion_hardware_expression_turn_end(const char *turn_id)

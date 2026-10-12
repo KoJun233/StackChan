@@ -88,3 +88,6 @@
 | [0073](0073-recurring-research-and-bark-delivery.md) | ACCEPTED | 持续委托按可调周期研究公开来源，保存成果并用 Bark 交付到 iPhone，主题不写死且未知投递不重发。 |
 | [0074](0074-natural-language-delegation-tasks.md) | ACCEPTED | 持续任务以自然语言描述为入口，AI 理解安排并调用已有授权工具，结果按真实步骤和证据保存，资料来源不再必填。 |
 | [0075](0075-bark-agent-notification-tool.md) | ACCEPTED | Bark 封装为通用手机通知工具，复用加密设置，按真实回执与持久标记防止重复外发。 |
+| [0072](0072-confirmed-conversational-topic-continuity.md) | ACCEPTED | 已确认待续许可、日预算和删源锁；R00 整合保留原 V57。 |
+| [0076](0076-server-bound-web-device-scope.md) | ACCEPTED | 网页设备范围仅来自服务端会话绑定，普通请求不获动作/外发范围；WEB不取得待续上下文。 |
+| [0077](0077-measured-private-natural-voice.md) | ACCEPTED | 自然语音采用实际端点/codec 证据与独立实体测量，V61 关联删除及七日匿名墓碑防晚到。 |

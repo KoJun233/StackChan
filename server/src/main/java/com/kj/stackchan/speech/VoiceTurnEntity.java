@@ -20,6 +20,9 @@ public class VoiceTurnEntity {
     @Column(name = "device_id", nullable = false)
     private UUID deviceId;
 
+    @Column(name = "conversation_id")
+    private UUID conversationId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 24)
     private VoiceTurnStatus status;
@@ -75,6 +78,15 @@ public class VoiceTurnEntity {
     public UUID getDeviceId() {
         return deviceId;
     }
+
+    void bindConversation(UUID conversationId) {
+        if (this.conversationId != null && !this.conversationId.equals(conversationId)) {
+            throw new IllegalArgumentException("Voice turn belongs to another conversation");
+        }
+        this.conversationId = conversationId;
+    }
+
+    public UUID getConversationId() { return conversationId; }
 
     public VoiceTurnStatus getStatus() {
         return status;

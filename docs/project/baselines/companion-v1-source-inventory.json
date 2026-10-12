@@ -1,0 +1,722 @@
+{
+  "sourceMaster": "989b3d9f591a854d9ca26fe05b78fb4af53329b5",
+  "legacyTopicSource": "8ad9822f4c74c0440a52b73b23f8fe661017dc97",
+  "historicalInstalledSource": "a37d220e7a2a0189b28412ffd420b2173fbbfc13",
+  "summary": {
+    "candidateCount": 60,
+    "candidateMaxVersion": 60,
+    "masterCount": 59,
+    "masterMaxVersion": 60,
+    "historicalInstalledCount": 60,
+    "historicalInstalledMaxVersion": 60,
+    "allExistingMasterRawSqlUnchanged": true,
+    "allHistoricalInstalledRawSqlUnchanged": true,
+    "v57RawSqlUnchanged": true
+  },
+  "migrations": [
+    {
+      "version": 1,
+      "path": "server/src/main/resources/db/migration/V1__devices_and_pairing_codes.sql",
+      "sqlSha256": "dcdf2645f244b0311d87694f74a7321135d96eb0db0e431860a5356056ab5105",
+      "flywayChecksum": -598747453,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 2,
+      "path": "server/src/main/resources/db/migration/V2__llm_provider_settings.sql",
+      "sqlSha256": "1d81741cfa9a95e95d4554b3061e3c043885bda177d9e22cb9c0f56e59868b38",
+      "flywayChecksum": -115694705,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 3,
+      "path": "server/src/main/resources/db/migration/V3__admin_users.sql",
+      "sqlSha256": "32e85054a27e2bd4006d348d4cab52666abf5a432368c6ddf1acc1067902712a",
+      "flywayChecksum": 685070170,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 4,
+      "path": "server/src/main/resources/db/migration/V4__conversations.sql",
+      "sqlSha256": "34a08214ec798d50e58e4a1204c25462ae9f0e3044bff766c6349e218d6f66de",
+      "flywayChecksum": 1800631791,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 5,
+      "path": "server/src/main/resources/db/migration/V5__device_credentials.sql",
+      "sqlSha256": "c53cada54a6bf8cd9663660eb1f557f03b9586924e663f3a396e6b2f980577d4",
+      "flywayChecksum": -2107133834,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 6,
+      "path": "server/src/main/resources/db/migration/V6__expand_admin_password_hash.sql",
+      "sqlSha256": "d553662222303bd99bf2838e6374eb6b98957eba8e69deb13c8fbe0e0e8c36ab",
+      "flywayChecksum": -1372139034,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 7,
+      "path": "server/src/main/resources/db/migration/V7__speech_and_reminders.sql",
+      "sqlSha256": "981e10f907ed9ef16e0cb1a13561fe9d1ec33f5512e718810d2d81f39a49dd58",
+      "flywayChecksum": 917718034,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 8,
+      "path": "server/src/main/resources/db/migration/V8__speech_provider_adapters.sql",
+      "sqlSha256": "d229ac4e012f79d5b10034a287396cc6eb9c280f3fe77d4521a2d420a9645130",
+      "flywayChecksum": 829000729,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 9,
+      "path": "server/src/main/resources/db/migration/V9__speech_access_modes.sql",
+      "sqlSha256": "67204f899c7721164dca05314a5d7aa53ddc2fa97f999efc6bd2966a29cdcbd2",
+      "flywayChecksum": -236204935,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 10,
+      "path": "server/src/main/resources/db/migration/V10__device_voice_detection_settings.sql",
+      "sqlSha256": "49f96d8c5f637ee0e8bb27b8969c7c6d7ea4cd5b535bc424d97765f5ce8955de",
+      "flywayChecksum": -712766468,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 11,
+      "path": "server/src/main/resources/db/migration/V11__wake_word_model_ota.sql",
+      "sqlSha256": "83b8eec7b33c9762d6971722a54821a6895632d34d4fcc1bd799d03745c8477f",
+      "flywayChecksum": 1205494255,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 12,
+      "path": "server/src/main/resources/db/migration/V12__wake_word_model_job_sources.sql",
+      "sqlSha256": "1dc6821993ae382f65f301c763250938a44807432166227b417252541ddb9380",
+      "flywayChecksum": 1430446170,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 13,
+      "path": "server/src/main/resources/db/migration/V13__retire_generated_wake_models.sql",
+      "sqlSha256": "07b050bdbaee389cd97cf1ca6b53fa45a644b06ef1b8a1ea4b6d199d7d09fcd8",
+      "flywayChecksum": 1556556556,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 14,
+      "path": "server/src/main/resources/db/migration/V14__voice_turn_diagnostics.sql",
+      "sqlSha256": "e9934de1c6674eee63eba189f08fc92ee82aa0a2fa445204150c00a00cb186f3",
+      "flywayChecksum": 1470684362,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 15,
+      "path": "server/src/main/resources/db/migration/V15__voice_turn_cancellation.sql",
+      "sqlSha256": "e80eeb57c0d53b3dda57fb5e3c93488c523d26f02ac29d255718b61a4f818d70",
+      "flywayChecksum": -734993537,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 16,
+      "path": "server/src/main/resources/db/migration/V16__persona_and_long_term_memory.sql",
+      "sqlSha256": "f2b2b9871ab9b5617535fbdf4d06eb4e929dcaea5826dc00eecd88983dbfde9c",
+      "flywayChecksum": 369004316,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 17,
+      "path": "server/src/main/resources/db/migration/V17__proactive_interaction_and_recurring_reminders.sql",
+      "sqlSha256": "7e2c916b7e50b9b9ce30ddad1d35135ecb9729b1d9d81d293fa59607a5161e41",
+      "flywayChecksum": 1099379063,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 18,
+      "path": "server/src/main/resources/db/migration/V18__expression_resource_packs.sql",
+      "sqlSha256": "18999dd0cd463613e040c4a2ad28ec7f65b3fca7f20238b4fd2a43e4fc3ebe92",
+      "flywayChecksum": -374921154,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 19,
+      "path": "server/src/main/resources/db/migration/V19__controlled_agent_capabilities.sql",
+      "sqlSha256": "c7cbcb26d4b8bf550b2d8ea388dec6e5d3dd10e6a85174953bebe66e5fd789c2",
+      "flywayChecksum": -1369923712,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 20,
+      "path": "server/src/main/resources/db/migration/V20__managed_agent_skills.sql",
+      "sqlSha256": "9940d5e39ef72bce352f12a398eb7d8a774897c19cbba53fffa74836adfd02d3",
+      "flywayChecksum": 2094433187,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 21,
+      "path": "server/src/main/resources/db/migration/V21__managed_mcp_connections.sql",
+      "sqlSha256": "5c7f3b302cf730dd89f84dad5a37d23c341f72c8ff1e4e04c6b89aa6d34b85c5",
+      "flywayChecksum": -2107328966,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 22,
+      "path": "server/src/main/resources/db/migration/V22__personal_data_message_deletion.sql",
+      "sqlSha256": "8afabb602fce87aea11dff5331649ce72080708eeb51b8418586db6bf41168eb",
+      "flywayChecksum": 287719297,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 23,
+      "path": "server/src/main/resources/db/migration/V23__bounded_continuous_conversation.sql",
+      "sqlSha256": "13ad4cccd302ee5ad8d63000ca3a5cd4e2e826e9054c2280f7b535609d127932",
+      "flywayChecksum": 804959341,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 24,
+      "path": "server/src/main/resources/db/migration/V24__safe_voice_action_proposals.sql",
+      "sqlSha256": "f5ae294f89d3ddb5134844ecd0cb83c0a0e79b19872d11021f2764d8178cbee5",
+      "flywayChecksum": 1885185290,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 25,
+      "path": "server/src/main/resources/db/migration/V25__long_term_memory_2.sql",
+      "sqlSha256": "ae8c8c00b735dc05fe10bd05e57182e7b508afe59bc5504f4841b393867b73b8",
+      "flywayChecksum": 1194063760,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 26,
+      "path": "server/src/main/resources/db/migration/V26__bounded_personalized_proactive_care.sql",
+      "sqlSha256": "cb78b16105d8221c28ba3ab82673d29c572bb23c0d35983f053e2d8de2451289",
+      "flywayChecksum": -1554399424,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 27,
+      "path": "server/src/main/resources/db/migration/V27__firmware_application_ota.sql",
+      "sqlSha256": "45591a8b6c130dc6682575e4a1379150be6586162f7efa86c9f8180323e24552",
+      "flywayChecksum": 1973424649,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 28,
+      "path": "server/src/main/resources/db/migration/V28__external_notification_platform.sql",
+      "sqlSha256": "0d238220fc1c460c349e5ebd26cf0eafd7dc6727f2c669ad97a5d8bc8253b52b",
+      "flywayChecksum": 301949855,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 29,
+      "path": "server/src/main/resources/db/migration/V29__companion_role_containers.sql",
+      "sqlSha256": "08d45115118a22f4cf045be904d5fdd0029a1d7cc488b18252a433a4f223126c",
+      "flywayChecksum": -1120500351,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 30,
+      "path": "server/src/main/resources/db/migration/V30__role_tts_voice_override.sql",
+      "sqlSha256": "ca7674b2e34974c5d6524c443f56defd490185c02215123c12b5279a552b8f7a",
+      "flywayChecksum": 1558669563,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 31,
+      "path": "server/src/main/resources/db/migration/V31__interactive_notification_responses.sql",
+      "sqlSha256": "e0b76d7cacab4a69f1e55c1de4356beae1b72ff11973decdcd3e9b712202f949",
+      "flywayChecksum": 1417323148,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 32,
+      "path": "server/src/main/resources/db/migration/V32__deterministic_notification_digests.sql",
+      "sqlSha256": "90f00da93e21b2902a6580d24d7cb3520bcb9ac76292d3c8022c74e4d677995a",
+      "flywayChecksum": 2017177461,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 33,
+      "path": "server/src/main/resources/db/migration/V33__dynamic_expression_semantics.sql",
+      "sqlSha256": "0d4edc2253b36fba48be4d25995618925c03ea05a8a2e834e162481c25cf0add",
+      "flywayChecksum": -341891658,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 34,
+      "path": "server/src/main/resources/db/migration/V34__expression_frame_rate_policy.sql",
+      "sqlSha256": "3a0f519a069dcf88bdbe9669d22dcdf04cb99bd70e3113edf9f12ab34d2011e2",
+      "flywayChecksum": 842552896,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 35,
+      "path": "server/src/main/resources/db/migration/V35__continuous_expression_frame_rate.sql",
+      "sqlSha256": "3a870ec1972d6e0d91fe1bba1e8c923c4518efec361c38f7f6be45de872b7d3f",
+      "flywayChecksum": -443461860,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 36,
+      "path": "server/src/main/resources/db/migration/V36__eaf_lifecycle_expression_packs.sql",
+      "sqlSha256": "5aadf236de598186f98bbb7795ae821ed75635fdb4945ae90c8321989da0ec3e",
+      "flywayChecksum": 1639986771,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 37,
+      "path": "server/src/main/resources/db/migration/V37__workday_companion_settings.sql",
+      "sqlSha256": "63e57172cd48e00a05be7d6fd69abacb0bfa54368adbae6e0c19b0781cff46ed",
+      "flywayChecksum": 119812549,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 38,
+      "path": "server/src/main/resources/db/migration/V38__workday_runtime_and_metrics.sql",
+      "sqlSha256": "83b59c4220099161bb3e78d09ff33ec7aaf95b0e5fceb55f75a78294175725af",
+      "flywayChecksum": -282503406,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 39,
+      "path": "server/src/main/resources/db/migration/V39__icloud_calendar_read_only.sql",
+      "sqlSha256": "617abcb946d483f160fdf8a69e3d0f8634e1bbf3a60fa7a97c34477575e452d1",
+      "flywayChecksum": 530537232,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 40,
+      "path": "server/src/main/resources/db/migration/V40__workday_weather_cache.sql",
+      "sqlSha256": "9a4da09b3df2ace348dc91d1b312953515d3448fcc6fc973c6ef8558b3e8d738",
+      "flywayChecksum": 543871627,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 41,
+      "path": "server/src/main/resources/db/migration/V41__device_body_capabilities.sql",
+      "sqlSha256": "7744607dad67e3158a9759eb775b41674b66a148d38161c25ea5f8a214e306d7",
+      "flywayChecksum": 285288946,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 42,
+      "path": "server/src/main/resources/db/migration/V42__workday_voice_actions.sql",
+      "sqlSha256": "51eb02564fa74671894078272000f624ecee00de8ac264bde80b5ec3a2c95b31",
+      "flywayChecksum": -284027664,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 43,
+      "path": "server/src/main/resources/db/migration/V43__workday_pilot_observability.sql",
+      "sqlSha256": "3bf64a01e1a407cd6ef4cc63d5277267173ff5680bbb75acd3426a1257aa3970",
+      "flywayChecksum": 1318368523,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 44,
+      "path": "server/src/main/resources/db/migration/V44__workday_pilot_completion_notification.sql",
+      "sqlSha256": "ac921554c67b5a0c7abd339a7a475b9ae7faafda569dfc906c68f2584f865f6e",
+      "flywayChecksum": -1721578845,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 45,
+      "path": "server/src/main/resources/db/migration/V45__personal_tasks.sql",
+      "sqlSha256": "94b0984177ce0f123dff0cbf8afc2c96719ad4b1c61e76c5d3097405a1455d75",
+      "flywayChecksum": 1429037668,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 46,
+      "path": "server/src/main/resources/db/migration/V46__archived_role_permanent_deletion.sql",
+      "sqlSha256": "ef27d53c7209b8ee2b0f5cdf7a1b2e13ad387db5b24ca4909de227a5273ed5db",
+      "flywayChecksum": -747378426,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 47,
+      "path": "server/src/main/resources/db/migration/V47__randomized_proactive_schedule.sql",
+      "sqlSha256": "e07be29ae9ca9f1943e414b9717560b730788a74b5afacd8f91321b859dc81af",
+      "flywayChecksum": 1511223247,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 48,
+      "path": "server/src/main/resources/db/migration/V48__proactive_interest_sources.sql",
+      "sqlSha256": "468a4e56a9ceb2b2894c0a0cafaab1a00dda6e55a6e85af1856d78bda95c70d5",
+      "flywayChecksum": -160237281,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 49,
+      "path": "server/src/main/resources/db/migration/V49__silent_presence_expressions.sql",
+      "sqlSha256": "7e827bc851bb47f76b66b099785b20781548c8e7d6e8c5b2ee27fa2bbd09fb95",
+      "flywayChecksum": -1136846699,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 50,
+      "path": "server/src/main/resources/db/migration/V50__voice_topic_boundary.sql",
+      "sqlSha256": "a53e1fd65c4d54e94a6f80598ba695f35f562eb638a4949c95622cebcbe38138",
+      "flywayChecksum": 956401546,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 51,
+      "path": "server/src/main/resources/db/migration/V51__role_proactive_pauses.sql",
+      "sqlSha256": "03e461572a181460dcb9ab4d93a3dbda61d78ff9ca52aab42b73790ef92aacf8",
+      "flywayChecksum": 134777160,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 52,
+      "path": "server/src/main/resources/db/migration/V52__body_motion_results.sql",
+      "sqlSha256": "047642ce2062a749184be26e7926b3cc21f0c51ebd9ae0e571e2fba197881bfd",
+      "flywayChecksum": 1931603130,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 53,
+      "path": "server/src/main/resources/db/migration/V53__device_quiet_today.sql",
+      "sqlSha256": "0afecfdaee57b684e8605a1bbdb19a492a49f185dcf7da84852bf2aef004665c",
+      "flywayChecksum": -446853350,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 54,
+      "path": "server/src/main/resources/db/migration/V54__voice_phase_diagnostics.sql",
+      "sqlSha256": "039cdfe12386cdc582bbbd88daa256e6972c9ddacbee40d445bf91757905ddce",
+      "flywayChecksum": -998325969,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 55,
+      "path": "server/src/main/resources/db/migration/V55__confirmed_companion_consent.sql",
+      "sqlSha256": "91c898d310933b1dab73f4c542347497b4653483b8edce091a86fb451f83640b",
+      "flywayChecksum": -420880983,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 56,
+      "path": "server/src/main/resources/db/migration/V56__device_confirmation_snapshots.sql",
+      "sqlSha256": "24f64f035e1594e6cac454347b4ed42bab69cde72febdee70c49379c5645a31f",
+      "flywayChecksum": 587520680,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 57,
+      "path": "server/src/main/resources/db/migration/V57__confirmed_topic_continuity.sql",
+      "sqlSha256": "a3df080b1da72a0d427552ffb5e86505b336cedcb68cd10a05cf3b6cfc6462b4",
+      "flywayChecksum": 1538511973,
+      "masterPresent": false,
+      "historicalPresent": true
+    },
+    {
+      "version": 58,
+      "path": "server/src/main/resources/db/migration/V58__recurring_research_delegations.sql",
+      "sqlSha256": "0c717f662172dd354c69a398eade4fb79d6696a87827b4cc2dfb386b43a6cbaa",
+      "flywayChecksum": -609983824,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 59,
+      "path": "server/src/main/resources/db/migration/V59__generic_delegation_tasks.sql",
+      "sqlSha256": "7be2b39b600d4fbb251cb112087368d51f178e29fda2e381931fcff4e9664142",
+      "flywayChecksum": 1246888471,
+      "masterPresent": true,
+      "historicalPresent": true
+    },
+    {
+      "version": 60,
+      "path": "server/src/main/resources/db/migration/V60__bark_agent_notifications.sql",
+      "sqlSha256": "49f0fbb48a7ea8b0e006a30cce02e44f60fd3f0795e6137d8c83d2551005ea07",
+      "flywayChecksum": -405136852,
+      "masterPresent": true,
+      "historicalPresent": true
+    }
+  ],
+  "legacyIncrement": [
+    {
+      "change": "M",
+      "path": "apps/stackchan-console/src/api/modules/personaMemory.test.ts",
+      "category": "frontend",
+      "legacySqlOrSourceSha256": "e05213162d3ff0d9a6d8987ad825dcd3c4daf4759eb2f4d58e2649d47ccd60c7"
+    },
+    {
+      "change": "M",
+      "path": "apps/stackchan-console/src/api/modules/personaMemory.ts",
+      "category": "frontend",
+      "legacySqlOrSourceSha256": "d0aa3d6a5b4224d406bfb7fd706bc127d652a0d36dfc7f667aa2925f5a2e5411"
+    },
+    {
+      "change": "M",
+      "path": "apps/stackchan-console/src/views/companion/memories/components/DetailForm/index.vue",
+      "category": "frontend",
+      "legacySqlOrSourceSha256": "c653b5b81c9b50ccf3e031b49cc253ec31692cc8dccaab6d26609a04ceb6a0dc"
+    },
+    {
+      "change": "M",
+      "path": "apps/stackchan-console/src/views/companion/memories/list.test.ts",
+      "category": "frontend",
+      "legacySqlOrSourceSha256": "96a05cfcf2c5e20ea6b4145a10779fdd7ecfc657fb71d20389b629469df56b41"
+    },
+    {
+      "change": "M",
+      "path": "apps/stackchan-console/src/views/companion/memories/list.vue",
+      "category": "frontend",
+      "legacySqlOrSourceSha256": "aba3cce1065d6ab4718e9350e379e2be483bcdd9b8425637cff2628acb29fcbd"
+    },
+    {
+      "change": "M",
+      "path": "docs/project/README.md",
+      "category": "workflow-document",
+      "legacySqlOrSourceSha256": "84ab211facefc8934971a1b174a9d58419000f6f2d1c0eae2076282ee0482671"
+    },
+    {
+      "change": "A",
+      "path": "docs/project/decisions/0072-confirmed-conversational-topic-continuity.md",
+      "category": "adr",
+      "legacySqlOrSourceSha256": "64315657a3f20a2e0e993b042fd7fa5567373f5931c07ef407bfe5239888b626"
+    },
+    {
+      "change": "M",
+      "path": "docs/project/decisions/README.md",
+      "category": "adr",
+      "legacySqlOrSourceSha256": "b83edc9da66e810e63b2073e5e55749ba9d0f064e94c9653636327d459513e76"
+    },
+    {
+      "change": "M",
+      "path": "docs/project/status/deployment.md",
+      "category": "workflow-document",
+      "legacySqlOrSourceSha256": "5503a5fdf5a4276df00b720e74dea8411ca2c45817396fd33a8652101ef47a3e"
+    },
+    {
+      "change": "M",
+      "path": "docs/project/status/firmware.md",
+      "category": "workflow-document",
+      "legacySqlOrSourceSha256": "38a383e5c73f16faa074355e252b1dd437b0bfe9894b96b09a274e678e47f17f"
+    },
+    {
+      "change": "M",
+      "path": "docs/project/status/frontend.md",
+      "category": "workflow-document",
+      "legacySqlOrSourceSha256": "3bbad9925e955636448d643eaeac1878170455fb911dc60602ad2f23c102bf67"
+    },
+    {
+      "change": "M",
+      "path": "docs/project/status/overview.md",
+      "category": "workflow-document",
+      "legacySqlOrSourceSha256": "8b5107b540c95eaffae2aa125ec2156b9f0fcba4641dc82e767fe0a8224e1a4f"
+    },
+    {
+      "change": "M",
+      "path": "docs/project/status/server.md",
+      "category": "workflow-document",
+      "legacySqlOrSourceSha256": "8f9251e6a3b3a0ffe8511574020e193f8a9993156f1721943c97406ce2281113"
+    },
+    {
+      "change": "A",
+      "path": "docs/project/topic-continuity.md",
+      "category": "workflow-document",
+      "legacySqlOrSourceSha256": "b3247a0f45090e1b1317cfdd68ab0e45b4eea48d6c1929d04a8c4ec486659b04"
+    },
+    {
+      "change": "A",
+      "path": "docs/runbooks/device-offline-20261008.md",
+      "category": "runbook",
+      "legacySqlOrSourceSha256": "c428f7199276c8186540ac3cf86c6d80539b8db8138d966cdf4d2173cf1d4337"
+    },
+    {
+      "change": "A",
+      "path": "docs/runbooks/topic-continuity-20261005.md",
+      "category": "runbook",
+      "legacySqlOrSourceSha256": "7accedd8a02f2c1485c5c0b1f63789097959de1f5262ec5be07084a50f96a013"
+    },
+    {
+      "change": "M",
+      "path": "server/src/main/java/com/kj/stackchan/api/LongTermMemoryController.java",
+      "category": "source",
+      "legacySqlOrSourceSha256": "e148dc2e58e9392b223261ae759d658cf5ec4d20b14174497216173d96da4f73"
+    },
+    {
+      "change": "M",
+      "path": "server/src/main/java/com/kj/stackchan/conversation/PersonalDataService.java",
+      "category": "source",
+      "legacySqlOrSourceSha256": "d856b5eb388edaef5b6c1894cee9e48dc4d3ea17af3a39a3c6d05b284b49cfc7"
+    },
+    {
+      "change": "M",
+      "path": "server/src/main/java/com/kj/stackchan/device/DeviceUiService.java",
+      "category": "source",
+      "legacySqlOrSourceSha256": "e334ac38ec764be531967948d7b02c4705358a00ad858b1c5623ef3be42ea74b"
+    },
+    {
+      "change": "M",
+      "path": "server/src/main/java/com/kj/stackchan/memory/CompanionPromptService.java",
+      "category": "source",
+      "legacySqlOrSourceSha256": "da0e3ca3b2f5166becf7f60f3a3a40f1419fdfd08f1942483dc80b1310e73183"
+    },
+    {
+      "change": "A",
+      "path": "server/src/main/java/com/kj/stackchan/memory/ContinuationState.java",
+      "category": "source",
+      "legacySqlOrSourceSha256": "4a7a4d1c5acbcb992191135d6fdd9bd9799e557767b84cf1e3f6559b1a2545bf"
+    },
+    {
+      "change": "M",
+      "path": "server/src/main/java/com/kj/stackchan/memory/LongTermMemoryEntity.java",
+      "category": "source",
+      "legacySqlOrSourceSha256": "a8ef26358cc7ed829cbf0c9e4cea277ff282edc67af64a9889355971dfdc4387"
+    },
+    {
+      "change": "M",
+      "path": "server/src/main/java/com/kj/stackchan/memory/LongTermMemoryRepository.java",
+      "category": "source",
+      "legacySqlOrSourceSha256": "21cd626f5b74eecca94a2f7de3578315e147f441f0dca87385ce0be42f392c79"
+    },
+    {
+      "change": "M",
+      "path": "server/src/main/java/com/kj/stackchan/memory/LongTermMemoryService.java",
+      "category": "source",
+      "legacySqlOrSourceSha256": "a6bceceb368046673129f92ea17437016a3636ebdc2bf4b5739028342a1895bd"
+    },
+    {
+      "change": "M",
+      "path": "server/src/main/java/com/kj/stackchan/memory/MemorySuggestionExtractionService.java",
+      "category": "source",
+      "legacySqlOrSourceSha256": "94c2d8e77bdf22e9ca7430afdd960e5c41718c1b43adc36a2d933cffb9e46bef"
+    },
+    {
+      "change": "A",
+      "path": "server/src/main/java/com/kj/stackchan/memory/TopicContinuationService.java",
+      "category": "source",
+      "legacySqlOrSourceSha256": "70f0b84485feccf67ffaa6085149e5140e52495dad0339aee428de4f092c190d"
+    },
+    {
+      "change": "M",
+      "path": "server/src/main/java/com/kj/stackchan/speech/VoiceTurnService.java",
+      "category": "source",
+      "legacySqlOrSourceSha256": "95cb61d32ee13c609b2928718180648d0f23c6bc90e7a69a6c9a96877c9cf255"
+    },
+    {
+      "change": "M",
+      "path": "server/src/main/java/com/kj/stackchan/voiceaction/VoiceActionCoordinator.java",
+      "category": "source",
+      "legacySqlOrSourceSha256": "b6e6f4658a64f8d69192a3413fc3c7b056067c9b4fc5cd84bd9e2d0c584fc5bf"
+    },
+    {
+      "change": "M",
+      "path": "server/src/main/java/com/kj/stackchan/voiceaction/VoiceActionProposalService.java",
+      "category": "source",
+      "legacySqlOrSourceSha256": "74907fffda8ca02d5b0f52140ff4ffb3ef33ae5e7e1f5da8fb82ef462536ed9f"
+    },
+    {
+      "change": "A",
+      "path": "server/src/main/resources/db/migration/V57__confirmed_topic_continuity.sql",
+      "category": "migration",
+      "legacySqlOrSourceSha256": "a3df080b1da72a0d427552ffb5e86505b336cedcb68cd10a05cf3b6cfc6462b4"
+    },
+    {
+      "change": "M",
+      "path": "server/src/test/java/com/kj/stackchan/api/PersonaMemoryControllerTest.java",
+      "category": "test",
+      "legacySqlOrSourceSha256": "b723c81722964baf43834908933b6df7b88eabc42135285a0385bb1542ac0b2c"
+    },
+    {
+      "change": "M",
+      "path": "server/src/test/java/com/kj/stackchan/device/DeviceUiPersistenceTest.java",
+      "category": "test",
+      "legacySqlOrSourceSha256": "8fcf60eef82d492127aeddf8f914184c870d22ee8b554230dacf90cbd585c632"
+    },
+    {
+      "change": "M",
+      "path": "server/src/test/java/com/kj/stackchan/memory/CompanionPromptServiceTest.java",
+      "category": "test",
+      "legacySqlOrSourceSha256": "5911ff09a50331e9def17f0e9bf201f538af699901c7f316f8e31e861a2ae247"
+    },
+    {
+      "change": "M",
+      "path": "server/src/test/java/com/kj/stackchan/memory/MemorySuggestionExtractionServiceTest.java",
+      "category": "test",
+      "legacySqlOrSourceSha256": "1cd53d6c28d5e40d7ea82eb8dcf13653e8da6a3224fcdc6ca8d4fe9cbfbff2d8"
+    },
+    {
+      "change": "A",
+      "path": "server/src/test/java/com/kj/stackchan/memory/TopicContinuationPersistenceTest.java",
+      "category": "test",
+      "legacySqlOrSourceSha256": "b45ef61dcf9dcf16d0b2b199ad3471da01beec9984e0e559004d22c4d16ab23e"
+    },
+    {
+      "change": "A",
+      "path": "server/src/test/java/com/kj/stackchan/memory/TopicContinuationUpgradeTest.java",
+      "category": "test",
+      "legacySqlOrSourceSha256": "6909d2670fd4f07c6b521e4a3bc7bb2473006a06763b21e0e4c67d84c0a97262"
+    },
+    {
+      "change": "M",
+      "path": "server/src/test/java/com/kj/stackchan/speech/VoiceTurnServiceTest.java",
+      "category": "test",
+      "legacySqlOrSourceSha256": "29b8873a26898af978888969f4399c525b5d2ce4b86226d5f9cf1267cfd65ee2"
+    }
+  ]
+}
