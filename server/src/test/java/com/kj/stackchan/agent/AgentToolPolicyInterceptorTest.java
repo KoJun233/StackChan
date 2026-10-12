@@ -13,8 +13,32 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 class AgentToolPolicyInterceptorTest {
+    @Test void aPausedDelegationCannotExecuteTheToolAndDoesNotRecordSuccess() {
+        var handler=mock(com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallHandler.class);
+        var ctx=new AgentInvocationContext(UUID.randomUUID(),null,UUID.randomUUID(),UUID.randomUUID(),AgentChannel.DELEGATION,UUID.randomUUID(),1);
+        var policy=new AgentToolPolicyInterceptor(ctx,Map.of("computer_start",new AgentToolPolicyInterceptor.ToolAuditMetadata(
+                AgentToolSource.MCP,"connection",null)),auditService,new ObjectMapper(),8192,24576)
+                .withExecutionGuard(operation->{throw new IllegalStateException("paused");});
+        assertThat(policy.interceptToolCall(request("computer_start","{}"),handler).isError()).isTrue();
+        verifyNoInteractions(handler);
+        assertThat(policy.wasSuccessful("computer_start")).isFalse();
+        assertThat(policy.steps()).extracting(AgentToolPolicyInterceptor.ToolStep::status).containsExactly("FAILED");
+    }
+    @Test void delegationCitationsAreAssignedOnlyAfterAnActualAuthorizedSourceRead() {
+        var ctx=new AgentInvocationContext(UUID.randomUUID(),null,UUID.randomUUID(),UUID.randomUUID(),AgentChannel.DELEGATION,UUID.randomUUID(),1);
+        var policy=new AgentToolPolicyInterceptor(ctx,Map.of(PublicSourceReadTool.ID,new AgentToolPolicyInterceptor.ToolAuditMetadata(
+                AgentToolSource.BUILTIN,null,null)),auditService,new ObjectMapper(),8192,24576);
+        var response=policy.interceptToolCall(request(PublicSourceReadTool.ID,"{}"),ignored->ToolCallResponse.of("call",PublicSourceReadTool.ID,
+                "{\"evidence\":[{\"title\":\"实际来源\",\"url\":\"https://example.com/post\",\"detail\":\"正文\"}]}"));
+        assertThat(response.getResult()).contains("E1");
+        assertThat(policy.evidence()).extracting(AgentToolPolicyInterceptor.ToolEvidence::url).containsExactly("https://example.com/post");
+        var handler=mock(com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallHandler.class);
+        assertThat(policy.interceptToolCall(request("not_authorized","{}"),handler).isError()).isTrue();
+        verifyNoInteractions(handler);
+    }
 
     private final AgentToolAuditService auditService = mock(AgentToolAuditService.class);
     private final AgentInvocationContext context = new AgentInvocationContext(

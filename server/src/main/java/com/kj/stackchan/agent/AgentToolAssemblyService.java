@@ -15,6 +15,7 @@ import com.alibaba.cloud.ai.graph.skills.registry.filesystem.FileSystemSkillRegi
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kj.stackchan.calendar.ICloudCalendarService;
 import com.kj.stackchan.config.AppProperties;
+import com.kj.stackchan.delegation.DelegationService;
 import com.kj.stackchan.memory.LongTermMemoryService;
 import com.kj.stackchan.reminder.ReminderService;
 import com.kj.stackchan.task.PersonalTaskService;
@@ -23,6 +24,7 @@ import com.kj.stackchan.weather.WorkdayWeatherService;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class AgentToolAssemblyService {
@@ -34,7 +36,10 @@ public class AgentToolAssemblyService {
             PendingMemoryCountTool.ID,
             PersonalTasksTool.ID,
             UpcomingCalendarEventsTool.ID,
-            CurrentDeviceWeatherTool.ID
+            CurrentDeviceWeatherTool.ID,
+            DelegationResultsTool.ID,
+            PublicSourceReadTool.ID,
+            BarkNotificationTool.ID
     );
 
     private final AgentSettingsService settingsService;
@@ -50,6 +55,18 @@ public class AgentToolAssemblyService {
     private final WorkdaySettingsService workdaySettingsService;
     private final WorkdayWeatherService weatherService;
     private final PersonalTaskService personalTaskService;
+    private DelegationService delegationService;
+
+    @Autowired(required = false)
+    private com.kj.stackchan.delegation.BarkNotificationService barkNotifications;
+
+    @Autowired(required = false)
+    private com.kj.stackchan.delegation.PublicSourceReader publicSourceReader;
+
+    @Autowired(required = false)
+    void setDelegationService(@org.springframework.context.annotation.Lazy DelegationService delegationService) {
+        this.delegationService = delegationService;
+    }
 
     public AgentToolAssemblyService(
             AgentSettingsService settingsService,
@@ -133,6 +150,30 @@ public class AgentToolAssemblyService {
             ToolCallback callback = callback(new CurrentDeviceWeatherTool(
                     context.deviceId(), weatherService, objectMapper
             ));
+            directTools.add(callback);
+            auditMetadata.put(callback.getToolDefinition().name(), new AgentToolPolicyInterceptor.ToolAuditMetadata(
+                    AgentToolSource.BUILTIN, null, null));
+        }
+
+        if (barkNotifications != null && context.deviceId() != null && context.roleId() != null
+                && settingsService.isEnabled(AgentCapabilityType.BUILTIN_TOOL, BarkNotificationTool.ID)) {
+            ToolCallback callback = callback(new BarkNotificationTool(context, barkNotifications, objectMapper));
+            directTools.add(callback);
+            auditMetadata.put(callback.getToolDefinition().name(), new AgentToolPolicyInterceptor.ToolAuditMetadata(
+                    AgentToolSource.BUILTIN, null, null));
+        }
+
+        if (publicSourceReader != null && settingsService.isEnabled(AgentCapabilityType.BUILTIN_TOOL, PublicSourceReadTool.ID)) {
+            ToolCallback callback = callback(new PublicSourceReadTool(publicSourceReader, objectMapper));
+            directTools.add(callback);
+            auditMetadata.put(callback.getToolDefinition().name(), new AgentToolPolicyInterceptor.ToolAuditMetadata(
+                    AgentToolSource.BUILTIN, null, null));
+        }
+
+        if (context.channel() != AgentChannel.DELEGATION && delegationService != null && context.deviceId() != null && context.roleId() != null
+                && settingsService.isEnabled(AgentCapabilityType.BUILTIN_TOOL, DelegationResultsTool.ID)) {
+            ToolCallback callback = callback(new DelegationResultsTool(
+                    context.deviceId(), context.roleId(), delegationService, objectMapper));
             directTools.add(callback);
             auditMetadata.put(callback.getToolDefinition().name(), new AgentToolPolicyInterceptor.ToolAuditMetadata(
                     AgentToolSource.BUILTIN, null, null));

@@ -27,6 +27,39 @@ function RestoreSql([string]$Query) {
     Docker @('exec', '-i', "$restore-pg", 'psql', '-XAt', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', 'stackchan') $Query
 }
 
+function SourceSql([string]$Query) {
+    # The backup container's existing PG environment supplies authentication; never copy it into arguments or output.
+    Docker @('exec', '-i', '--user', 'postgres', $SourceBackup, 'psql', '-XAt', '-v', 'ON_ERROR_STOP=1') $Query
+}
+
+$historyQuery = "select coalesce(json_agg(json_build_object('version',version,'checksum',checksum) order by installed_rank),'[]'::json) from flyway_schema_history where success and version is not null;"
+function Read-PersonalCounts([scriptblock]$ExecuteSql) {
+    $tableQuery = "select coalesce(json_agg(table_name order by table_name),'[]'::json) from information_schema.tables where table_schema='public' and table_type='BASE TABLE' and (table_name in ('devices','companion_persona_settings','companion_roles','long_term_memories','personal_tasks','reminders','agent_skills','agent_mcp_connections','notification_integrations','notification_integration_tokens','notification_responses','external_notifications','delegations','delegation_runs','delegation_push_settings','bark_notification_attempts') or table_name='conversations' or table_name like 'conversation_%' or table_name like '%continuity%' or table_name like '%followup%');"
+    $tables = @((& $ExecuteSql $tableQuery) | ConvertFrom-Json)
+    $result = @{}
+    foreach ($table in $tables) {
+        if ($table -notmatch '^[a-z][a-z0-9_]*$') { throw 'Unexpected personal table identifier.' }
+        $count = & $ExecuteSql "select count(*) from public.$table;"
+        $result[$table] = [long]$count.Trim()
+    }
+    return $result
+}
+function Assert-PersonalCounts($Before, $After) {
+    foreach ($table in $Before.Keys) {
+        if (!$After.ContainsKey($table) -or $Before[$table] -ne $After[$table]) {
+            throw 'Original personal record counts changed during restore or migration.'
+        }
+    }
+}
+function Assert-OriginalHistory($Before, $After) {
+    foreach ($migration in $Before) {
+        $matching = @($After | Where-Object { $_.version -ceq $migration.version })
+        if ($matching.Count -ne 1 -or $matching[0].checksum -ne $migration.checksum) {
+            throw 'Original Flyway versions or checksums changed during restore or migration.'
+        }
+    }
+}
+
 try {
     $source = (Docker @('inspect', $SourceServer) | ConvertFrom-Json)[0]
     $backupSource = (Docker @('inspect', $SourceBackup) | ConvertFrom-Json)[0]
@@ -36,6 +69,8 @@ try {
         throw 'Expected named Skill and backup volumes were not found.'
     }
     $null = Docker @('image', 'inspect', $CandidateImage)
+    $sourceHistory = @(SourceSql $historyQuery | ConvertFrom-Json)
+    $sourcePersonalCounts = Read-PersonalCounts { param($query) SourceSql $query }
     $null = Docker @('exec', '--user', 'postgres', $SourceBackup, '/usr/local/bin/backup-runner.sh', 'backup')
     $null = Docker @('volume', 'create', '--label', 'stackchan.purpose=release-backup', $bundle)
     $null = Docker @('run', '--rm', '--network', 'none', '--mount', "type=volume,src=$($backupMount[0].Name),dst=/source,readonly", '--mount', "type=volume,src=$($skillMount[0].Name),dst=/skills,readonly", '--mount', "type=volume,src=$bundle,dst=/bundle", $pgImage, 'sh', '-ec', 'umask 077; latest=$(find /source/daily -name "daily-*.manifest.json" | sort | tail -n 1); test -n "$latest"; cp "$latest" /bundle/database.manifest.json; cp "${latest%.manifest.json}.dump" /bundle/database.dump; tar -C /skills -cf /bundle/skills.tar .; sha256sum /bundle/database.dump /bundle/skills.tar > /bundle/files.sha256')
@@ -70,11 +105,21 @@ try {
     }
     if (!$ready) { throw 'Isolated PostgreSQL did not become ready.' }
     $null = Docker @('exec', "$restore-pg", 'pg_restore', '-U', 'postgres', '-d', 'stackchan', '--no-owner', '--no-privileges', '--exit-on-error', '/bundle/database.dump')
+    $restoredHistory = @(RestoreSql $historyQuery | ConvertFrom-Json)
+    if ($restoredHistory.Count -ne $sourceHistory.Count) { throw 'Restored Flyway version count differs from source.' }
+    Assert-OriginalHistory $sourceHistory $restoredHistory
+    Assert-PersonalCounts $sourcePersonalCounts (Read-PersonalCounts { param($query) RestoreSql $query })
     $counts = RestoreSql "select json_build_object('persona',(select count(*) from companion_persona_settings),'confirmedMemories',(select count(*) from long_term_memories where confirmation_status='CONFIRMED'),'reminders',(select count(*) from reminders),'expressionPacks',(select count(*) from expression_packs));" | ConvertFrom-Json
     foreach ($property in $manifest.recordCounts.PSObject.Properties) {
         if ($counts.($property.Name) -ne $property.Value) { throw 'Restored record counts differ from backup manifest.' }
     }
     $secretRows = RestoreSql "select api_key_ciphertext || '|' || api_key_iv from llm_provider_settings union all select api_key_ciphertext || '|' || api_key_iv from speech_provider_settings union all select password_ciphertext || '|' || password_iv from icloud_calendar_connections union all select bearer_token_ciphertext || '|' || bearer_token_iv from agent_mcp_connections where bearer_token_ciphertext is not null;"
+    $hasPushSettings = RestoreSql "select to_regclass('public.delegation_push_settings') is not null;"
+    if ($hasPushSettings.Trim() -eq 't') {
+        $pushSecretRows = RestoreSql "select key_ciphertext || '|' || key_iv from delegation_push_settings where key_ciphertext is not null;"
+        if (![string]::IsNullOrWhiteSpace($pushSecretRows)) { $secretRows += "`n" + $pushSecretRows }
+        $pushSecretRows = $null
+    }
     $cipher = [System.Security.Cryptography.AesGcm]::new([Convert]::FromBase64String($environment.COMPANION_SECRETS_ENCRYPTION_KEY), 16)
     $decrypted = 0
     try {
@@ -102,6 +147,7 @@ try {
     # of published ports prevent both real devices and external services connecting.
     $environment.COMPANION_BUILD_VERSION = "schema-v$ExpectedSchema-restore-check"
     $environment.JAVA_TOOL_OPTIONS = '-Xmx384m'
+    $environment.STACKCHAN_DELEGATION_SCHEDULER_ENABLED = 'false'
     $runArguments = @('run', '-d', '--name', "$restore-app", '--network', $restore, '--mount', "type=volume,src=$restore-skills,dst=/app/data/agent-skills")
     foreach ($key in $environment.Keys) { $runArguments += @('-e', "$key=$($environment[$key])") }
     $runArguments += $CandidateImage
@@ -116,6 +162,17 @@ try {
     if (!$healthy) { throw 'Isolated application health failed; private logs remain in its container until cleanup.' }
     $version = RestoreSql 'select max(version::int) from flyway_schema_history where success;'
     if ($version.Trim() -ne "$ExpectedSchema") { throw "Restored application did not migrate to V$ExpectedSchema." }
+    Assert-OriginalHistory $sourceHistory @(RestoreSql $historyQuery | ConvertFrom-Json)
+    Assert-PersonalCounts $sourcePersonalCounts (Read-PersonalCounts { param($query) RestoreSql $query })
+    if ($ExpectedSchema -ge 58) {
+        $tableCount = RestoreSql "select count(*) from information_schema.tables where table_schema='public' and table_name in ('delegations','delegation_runs','delegation_push_settings');"
+        $settingsCount = RestoreSql 'select count(*) from delegation_push_settings where id=1;'
+        if ($tableCount.Trim() -ne '3' -or $settingsCount.Trim() -ne '1') { throw 'V58 recurring research tables or settings are incomplete.' }
+    }
+    if ($ExpectedSchema -ge 60) {
+        $phoneTable = RestoreSql "select to_regclass('public.bark_notification_attempts') is not null;"
+        if ($phoneTable.Trim() -ne 't') { throw 'V60 Bark tool receipt table is missing.' }
+    }
     $csrf = Docker @('exec', "$restore-app", 'curl', '-fsS', '-c', '/tmp/restore-cookies', "$url/api/v1/auth/csrf") | ConvertFrom-Json
     $loginStatus = Docker @('exec', '-i', "$restore-app", 'curl', '-fsS', '-b', '/tmp/restore-cookies', '-c', '/tmp/restore-cookies', '-H', "$($csrf.headerName): $($csrf.token)", '-H', 'Content-Type: application/json', '--data-binary', '@-', '-o', '/dev/null', '-w', '%{http_code}', "$url/api/v1/auth/login") (@{ username = $testUser; password = $testPassword } | ConvertTo-Json -Compress)
     if ($loginStatus.Trim() -ne '204') { throw 'Restored synthetic administrator login failed.' }
@@ -129,6 +186,8 @@ try {
         oldImage = $source.Image; candidateImage = $CandidateImage; schema = $ExpectedSchema
         databaseCountsMatch = $true; skillArchiveRestored = $true; configurationDpapiRoundTrip = $true
         encryptedSettingsVerified = $decrypted; originalAdminRecordsPreserved = $true
+        originalFlywayChecksumsPreserved = $true; originalPersonalRecordCountsPreserved = $true
+        recurringResearchSchemaVerified = ($ExpectedSchema -ge 58)
         syntheticAdminLogin = $true; consoleShell = $true; outboundNetwork = 'isolated-internal'
     } | ConvertTo-Json
 }
@@ -139,4 +198,5 @@ finally {
     # Keep the release backup bundle, including on failure; never clean a source volume.
     $configuration = $null; $restoredConfiguration = $null; $environment = $null
     $secretRows = $null; $testPassword = $null
+    $sourceHistory = $null; $restoredHistory = $null; $sourcePersonalCounts = $null
 }

@@ -54,6 +54,28 @@ const companionRoute: RouteRecordRaw = {
       },
     },
     {
+      path: 'delegations',
+      name: 'companionDelegationList',
+      component: () => import('@/views/companion/delegations/list.vue'),
+      meta: {
+        title: '持续委托',
+        icon: 'i-ri:calendar-check-line',
+        keepAlive: 'companionDelegationDetail',
+      },
+    },
+    {
+      path: 'delegations/detail/:id?',
+      name: 'companionDelegationDetail',
+      component: () => import('@/views/companion/delegations/detail.vue'),
+      meta: {
+        title: '委托详情',
+        menu: false,
+        activeMenu: '/companion/delegations',
+        keepAlive: true,
+        noKeepAlive: 'companionDelegationList',
+      },
+    },
+    {
       path: 'expressions',
       name: 'companionExpressionPacks',
       component: () => import('@/views/companion/expressions/index.vue'),

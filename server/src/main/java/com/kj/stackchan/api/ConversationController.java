@@ -139,7 +139,7 @@ public class ConversationController {
                             new AgentInvocationContext(
                                     start.assistantMessageId(),
                                     conversationId,
-                                    null,
+                                    request.deviceId(),
                                     conversationService.roleId(conversationId),
                                     AgentChannel.WEB
                             ),

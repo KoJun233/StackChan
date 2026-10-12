@@ -1,8 +1,8 @@
 # 项目文档约定
 
-当前任务：[设备交互与本地人脸跟随迭代](device-interaction-upgrade.md)。用户已确认r2功能可用，本轮查阅开源资料后完成[小屏菜单与动作修订](device-visual-polish.md)，`device008-ui-r3-b872f2f` 已按持续许可应用OTA安装，新版心跳/校准/DISABLED及服务健康通过。真实菜单和动画回归完成，300秒采集活跃待机完成率60.544FPS；录音/讲话无新实测窗口；用户已反馈当前版基本没问题并授权推送当前任务分支。实际指标与限制以[全局总览](status/overview.md)为准。旧r2及原恢复点保持，不用旧帧率代表新二进制。
+当前任务：[COMPANION-010 Bark Agent Tool](bark-agent-tool.md) 语音修复。用户发现「给我的手机发一条消息」及具体功能咨询被误当普通聊天，本轮修复自然口语路由、能力目录读取与内容追问；已安装 `bark-voice-a37d220`，进展以[全局总览](status/overview.md)为准。
 
-上一任务COMPANION-007已合入 `origin/master@effa511`；历史见[记录](../runbooks/companion-interaction-20261001.md)。现行服务器/控制台a840d0d/V56，设备device008-ui-r3-b872f2f。用户已明确允许本次候选，并表示“后面你都可以直接安装，不用问我”，对本项目后续固件安装给予持续许可。后续软件及来源检查通过后可直接安装，不重复询问；仍保持现有数据保留、安全及外部推送边界。Agent没有相机/实体动作开启许可；本次已获仅推送当前任务分支的明确许可，PR创建/审核/合并仍由用户执行。
+新分支从最新 origin/master@ec53bfe 的独立工作树创建，包含未合入的持续任务依赖。旧任务 8ad9822/V57 未合入，原工作树及用户文件保持。Bark 工具已从保留原 V57 的冻结集成来源安装为 V60，当前版本见[部署状态](status/deployment.md)。服务地址 `http://192.168.1.5:8080`；任务、历史、Key 和设备 r3 固件保持，设置及聊天推送步骤见[持续任务与 iPhone 通知](runbooks/recurring-research-and-bark.md)。
 
 ## 稳定文档与状态文档
 

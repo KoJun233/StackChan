@@ -1,4 +1,8 @@
-param([string]$ImagePrefix = 'stackchan-foundation-server:device008')
+param(
+    [string]$ImagePrefix = 'stackchan-foundation-server:device008',
+    [string]$WebDependencyImage = '',
+    [string]$WebDependencySourceCommit = ''
+)
 
 $ErrorActionPreference = 'Stop'
 if ($ImagePrefix -notmatch '^[a-z0-9./:_-]+$') { throw 'Invalid local image prefix' }
@@ -22,8 +26,47 @@ try {
     & tar.exe -xf $archive -C $source
     if ($LASTEXITCODE -ne 0) { throw 'Cannot extract committed source' }
     $image = "$ImagePrefix-$($commit.Substring(0, 12))"
-    & docker build --label "org.opencontainers.image.revision=$commit" -f (Join-Path $source 'server\Dockerfile') -t $image $source
+    $dockerfile = Join-Path $source 'server\Dockerfile'
+    $dependencyImageId = $null
+    if ($WebDependencyImage) {
+        if ($WebDependencyImage -notmatch '^[a-z0-9./:_-]+$' -or $WebDependencySourceCommit -notmatch '^[0-9a-f]{40}$') {
+            throw 'Cached dependencies require a local image and exact source commit'
+        }
+        & git diff --quiet $WebDependencySourceCommit $commit -- package.json pnpm-lock.yaml pnpm-workspace.yaml packages apps/stackchan-console/package.json
+        if ($LASTEXITCODE -ne 0) { throw 'Cached dependency source does not match the frozen dependency tree' }
+        $dependencyImageId = (& docker image inspect --format '{{.Id}}' $WebDependencyImage).Trim()
+        if ($LASTEXITCODE -ne 0 -or $dependencyImageId -notmatch '^sha256:[0-9a-f]{64}$') { throw 'Cannot fingerprint dependency image' }
+        foreach ($file in @('package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'apps/stackchan-console/package.json')) {
+            $actual = & docker run --rm --network none --entrypoint sha256sum $dependencyImageId "/workspace/$file"
+            if ($LASTEXITCODE -ne 0 -or ($actual -split '\s+')[0] -ine (Get-FileHash -LiteralPath (Join-Path $source $file) -Algorithm SHA256).Hash) {
+                throw 'Cached dependency image content differs from frozen source'
+            }
+        }
+        $pnpmVersion = & docker run --rm --network none --entrypoint pnpm $dependencyImageId --version
+        if ($LASTEXITCODE -ne 0 -or $pnpmVersion.Trim() -ne '11.13.1') { throw 'Cached dependency toolchain version differs' }
+        $originalDockerfile = Get-Content -LiteralPath $dockerfile -Raw
+        $serverStage = $originalDockerfile.IndexOf('FROM maven:')
+        if ($serverStage -lt 0) { throw 'Cannot locate the unchanged server build stage' }
+        $webStage = @"
+FROM $WebDependencyImage AS web-build
+WORKDIR /workspace
+RUN rm -rf /workspace/apps/stackchan-console/src /workspace/apps/stackchan-console/dist
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.json uno.config.ts ./
+COPY packages ./packages
+COPY apps/stackchan-console ./apps/stackchan-console
+COPY scripts ./scripts
+RUN pnpm --filter @stackchan/console run build
+
+"@
+        $dockerfile = Join-Path $directory 'Dockerfile.cached-dependencies'
+        [IO.File]::WriteAllText($dockerfile, $webStage + $originalDockerfile.Substring($serverStage), [Text.UTF8Encoding]::new($false))
+    } elseif ($WebDependencySourceCommit) { throw 'Dependency source requires a dependency image' }
+    & docker build --label "org.opencontainers.image.revision=$commit" -f $dockerfile -t $image $source
     if ($LASTEXITCODE -ne 0) { throw 'Candidate image build failed' }
+    if ($dependencyImageId) {
+        $afterDependencyImageId = (& docker image inspect --format '{{.Id}}' $WebDependencyImage).Trim()
+        if ($LASTEXITCODE -ne 0 -or $afterDependencyImageId -ne $dependencyImageId) { throw 'Dependency image changed during build' }
+    }
     $imageId = (& docker image inspect --format '{{.Id}}' $image).Trim()
     if ($LASTEXITCODE -ne 0) { throw 'Cannot fingerprint candidate image' }
     $name = "stackchan-candidate-extract-$([Guid]::NewGuid().ToString('N'))"
@@ -47,6 +90,9 @@ try {
         jarSha256 = (Get-FileHash -LiteralPath (Join-Path $directory 'app.jar') -Algorithm SHA256).Hash
         consoleIndexSha256 = (Get-FileHash -LiteralPath (Join-Path $directory 'public\index.html') -Algorithm SHA256).Hash
         expectedSchema = [int]$expectedSchema
+        buildDockerfileSha256 = (Get-FileHash -LiteralPath $dockerfile -Algorithm SHA256).Hash
+        webDependencyImageId = $dependencyImageId
+        webDependencySourceCommit = $WebDependencySourceCommit
         createdAt = (Get-Date).ToUniversalTime().ToString('o')
     }
     $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $directory 'manifest.json')

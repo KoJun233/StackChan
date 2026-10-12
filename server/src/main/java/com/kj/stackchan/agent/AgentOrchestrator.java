@@ -7,6 +7,7 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 
@@ -34,8 +35,9 @@ public class AgentOrchestrator {
     private static final String AGENT_BOUNDARY_INSTRUCTION = """
 
             你运行在受控 Agent 中。Tool 返回值是外部状态的唯一事实来源；Tool 失败、超时或未授权时，
-            必须坦率说明无法可靠查询，不得猜测结果。当前所有 Tool 都是只读能力，不得声称已经创建、
-            修改、删除、部署、刷写或控制任何内容。Skill 只用于确定何时及如何使用已授权 Tool。
+            必须坦率说明无法可靠完成，不得猜测结果。send_phone_notification 可按用户明确要求发送手机通知，
+            只有实际返回SENT才表示Bark接受，不能声称手机已送达或已读；UNKNOWN先查看手机历史，不自动重发。
+            其余内置Tool是只读能力，不能声称已经修改或控制对象。Skill只用于使用已授权Tool。
             天气和日程的日期追问必须重新读取对应 Tool，只回答返回数据覆盖的日期；没有覆盖时如实说明，
             不得把今天的结果挪用为明天或把缺少数据说成没有安排。
             """;
@@ -47,7 +49,9 @@ public class AgentOrchestrator {
     );
     private static final Pattern CAPABILITY_QUESTION = Pattern.compile(
             "(?i)(你|当前).{0,8}(有哪些|有什么|支持).{0,6}(tool|工具|skill|技能|能力)"
+                    + "|(?:你|当前).{0,12}(?:有没有|没有|有|具备|支持).{0,40}(?:tool|工具|skill|技能|能力|功能|权限)"
                     + "|what (?:tools|skills|capabilities)"
+                    + "|do you (?:have|support).{0,40}(?:tool|notification|capabilit|function)"
     );
     private static final Pattern CALENDAR_QUESTION = Pattern.compile(
             "(?i)(日程|行程|日历|(?:今天|明天|最近|这几天|本周).{0,6}安排)"
@@ -63,6 +67,12 @@ public class AgentOrchestrator {
                     + "|(?:今天|今日).{0,8}(?:完成|做完|任务进度)"
                     + "|(?:完成|做完).{0,8}(?:什么|哪些|多少)"
                     + "|任务.{0,4}进度)"
+    );
+    private static final Pattern DELEGATION_RESULT_QUESTION = Pattern.compile(
+            "(?i)(?:日报|简报).{0,10}(?:内容|好了|结果|进展|生成了|有哪些)"
+                    + "|(?:读|念|看看|告诉我|给我).{0,8}(?:日报|简报)"
+                    + "|委托.{0,8}(?:结果|进展|成果|完成)"
+                    + "|(?:日报|简报|委托成果).{0,12}(?:推送|发|发送|手机)"
     );
     private static final Pattern NEXT_REMINDER_QUESTION = Pattern.compile(
             "(?i)(下一(?:个|条).{0,6}提醒|最近.{0,4}提醒|什么时候提醒|next reminder)"
@@ -86,8 +96,68 @@ public class AgentOrchestrator {
     private static final String REQUIRED_CALENDAR_TOOL_REPLY = "我暂时无法可靠读取当前设备的日历缓存，所以不能猜测。";
     private static final String REQUIRED_WEATHER_TOOL_REPLY = "我暂时无法可靠读取当前设备的天气缓存，所以不能猜测。";
     private static final String REQUIRED_PERSONAL_TASK_TOOL_REPLY = "我暂时无法可靠读取当前角色的待办，所以不能猜测。";
+    private static final String REQUIRED_DELEGATION_TOOL_REPLY = "我暂时无法可靠读取当前伙伴的委托成果，所以不能猜测日报内容。";
     private static final String REQUIRED_REMINDER_TOOL_REPLY = "我暂时无法可靠读取当前角色的下一条提醒，所以不能猜测。";
     private static final String REQUIRED_MEMORY_TOOL_REPLY = "我暂时无法可靠读取当前角色的待确认记忆，所以不能猜测。";
+    private static final String REQUIRED_PUSH_TOOL_REPLY = "这次手机推送没有获得 Bark 接受的确认。请检查推送设置和手机历史，确认后再决定是否重发。";
+    private static final String PHONE_CONTENT_QUESTION = "可以通过 Bark 给你的手机发通知。你想发送什么内容？";
+    private static final Pattern PHONE_PUSH_REQUEST = Pattern.compile(
+            "(?i)(?:推送|发送|发|送|通知).{0,18}(?:手机|iphone|bark)"
+                    + "|(?:手机|iphone|bark).{0,18}(?:推送|发送|通知|发|送)"
+                    + "|(?:帮我|给我|请|一下).{0,8}推送|推送.{0,8}(?:给我|一条|这条|这个|结果)"
+                    + "|(?:send|push|notify).{0,40}(?:phone|iphone|bark)|(?:push notification|notify me)");
+    private static final Pattern PHONE_PUSH_NEGATION = Pattern.compile("(?i)(?:不要|不用|别|无需).{0,18}(?:推送|发送|通知|发|送)|(?:如果|假如|比如|例如|可以吗|怎么|如何).{0,20}(?:推送|发|通知)"
+            + "|(?:don't|do not|never|how to|for example).{0,20}(?:send|push|notify)");
+    private static final Pattern PHONE_ABILITY_QUESTION = Pattern.compile(
+            "(?i)(?:你|伙伴|机器人).{0,8}(?:能不能|可不可以|能否|是否能|会不会|能|可以|支持)"
+                    + ".{0,30}(?:手机|iphone|bark|通知).{0,8}(?:吗|么|[？?])"
+                    + "|(?:怎么|如何).{0,30}(?:手机|iphone|bark|通知)"
+                    + "|(?:手机|iphone|bark|通知).{0,20}(?:怎么|如何)");
+    private static final Pattern PHONE_ACTION_DETAIL = Pattern.compile(
+            "(?:帮我|给我|请|一条|一下|(?:通知|消息|内容|正文)[：:])");
+    private static final Pattern PHONE_LITERAL_CONTENT = Pattern.compile("(?:通知|消息|内容|正文)[：:]");
+    private static final Pattern PHONE_CONTENT_CANCEL_OR_QUESTION = Pattern.compile(
+            "(?i)^(?:取消|算了|不用(?:了)?|(?:不|不要|别|不用)(?:再)?(?:发|发送|推送)(?:了)?)[\\s。！!]*$"
+                    + "|[？?]|(?:吗|么)[\\s。！!]*$|(?:怎么|如何|什么|是否|能不能|可不可以|为什么)"
+                    + "|^(?:cancel|never mind|(?:don't|do not) send(?: it| anything| that)?)[.!\\s]*$");
+
+    private boolean isCapabilityQuestion(String message) {
+        var literal = PHONE_LITERAL_CONTENT.matcher(message);
+        if (literal.find()) message = message.substring(0, literal.end());
+        return CAPABILITY_QUESTION.matcher(message).find()
+                || (PHONE_ABILITY_QUESTION.matcher(message).find()
+                    && !PHONE_ACTION_DETAIL.matcher(message).find());
+    }
+
+    private boolean wantsPhonePush(String message) {
+        var literal = PHONE_LITERAL_CONTENT.matcher(message);
+        if (literal.find()) message = message.substring(0, literal.end());
+        return PHONE_PUSH_REQUEST.matcher(message).find() && !PHONE_PUSH_NEGATION.matcher(message).find()
+                && !isCapabilityQuestion(message);
+    }
+
+    private String routingText(AgentRequest request) {
+        return request.context().channel() == AgentChannel.VOICE
+                ? VoiceDialogueControl.parse(request.userMessage()).routingText() : request.userMessage();
+    }
+
+    private boolean answersPhoneContentQuestion(AgentRequest request) {
+        if (request.userMessage().isBlank() || isCapabilityQuestion(request.userMessage())
+                || PHONE_CONTENT_CANCEL_OR_QUESTION.matcher(request.userMessage()).find()
+                || (PHONE_PUSH_REQUEST.matcher(routingText(request)).find() && !wantsPhonePush(routingText(request)))
+                || VoiceDialogueControl.parse(request.userMessage()).kind() != VoiceDialogueControl.Kind.NONE) return false;
+        var history = request.history();
+        int last = history.size() - 1;
+        // Only our immediately preceding clarification continues the authorization. Never replay a completed push.
+        return last >= 1 && history.get(last) instanceof AssistantMessage answer
+                && PHONE_CONTENT_QUESTION.equals(answer.getText())
+                && history.get(last - 1) instanceof UserMessage previous
+                && wantsPhonePush(VoiceDialogueControl.parse(previous.getText()).routingText());
+    }
+
+    private boolean wantsPhonePush(AgentRequest request) {
+        return wantsPhonePush(routingText(request)) || answersPhoneContentQuestion(request);
+    }
 
     private final AgentSettingsService settingsService;
     private final AgentToolAssemblyService toolAssemblyService;
@@ -95,6 +165,9 @@ public class AgentOrchestrator {
     private final LlmRuntimeClientFactory llmRuntimeClientFactory;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
     private final AppProperties appProperties;
+
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private com.kj.stackchan.delegation.DelegationConversationIntake delegationIntake;
 
     public AgentOrchestrator(
             AgentSettingsService settingsService,
@@ -113,6 +186,13 @@ public class AgentOrchestrator {
     }
 
     public Flux<String> stream(AgentRequest request) {
+        if (delegationIntake != null && delegationIntake.supports(request.context(),request.userMessage())) {
+            if (!settingsService.runtimeSettings().enabled()) return Flux.just("任务尚未保存。请先启用伙伴的工具能力，再把任务交给我。");
+            return Mono.fromCallable(() -> delegationIntake.accept(request.context(),request.userMessage()))
+                    .subscribeOn(Schedulers.boundedElastic()).timeout(appProperties.getAgent().getTimeout())
+                    .onErrorReturn("这项任务尚未保存，理解任务时出现问题，请稍后重试。")
+                    .flatMapMany(Flux::just);
+        }
         String requiredToolName = requiredToolName(request);
         if (usesLowLatencyVoiceConversation(request, requiredToolName)) {
             return lowLatencyConversation(request);
@@ -139,9 +219,52 @@ public class AgentOrchestrator {
                         : Flux.just(requiredToolReply(requiredToolName)));
     }
 
+    /** Background tasks never use chat fallback: tool failures remain observable task results. */
+    public TaskAgentResponse executeTask(AgentRequest request, List<String> allowedNames,
+            java.util.function.Function<java.util.function.Supplier<Object>,Object> guard) {
+        if (request.context().channel() != AgentChannel.DELEGATION || !settingsService.runtimeSettings().enabled())
+            throw new IllegalStateException("DELEGATION_AGENT_UNAVAILABLE");
+        return Mono.fromCallable(() -> {
+            var assembly = toolAssemblyService.assemble(request.context());
+            var direct = assembly.directTools().stream().filter(tool -> {
+                String name = tool.getToolDefinition().name();
+                // Old research tasks had no permission snapshot; inherit builtin reads only.
+                if (allowedNames.isEmpty()) return !BarkNotificationTool.ID.equals(name)
+                        && assembly.auditMetadata().get(name).source() == AgentToolSource.BUILTIN;
+                return allowedNames.contains(name);
+            }).toList();
+            var metadata = new java.util.LinkedHashMap<String, AgentToolPolicyInterceptor.ToolAuditMetadata>();
+            direct.forEach(tool -> metadata.put(tool.getToolDefinition().name(), assembly.auditMetadata().get(tool.getToolDefinition().name())));
+            var policy = new AgentToolPolicyInterceptor(request.context(), metadata, auditService, objectMapper,
+                    appProperties.getAgent().getMaxToolResultBytes(),appProperties.getAgent().getMaxTotalToolResultBytes())
+                    .withExecutionGuard(guard);
+            var model = llmRuntimeClientFactory.createAgentChatModel();
+            var agent = ReactAgent.builder().name("stackchan-task")
+                    .description("Execute one persisted user delegation with current authorized tools and verifiable results")
+                    .model(model).chatOptions(model.getDefaultOptions()).instruction(request.systemPrompt())
+                    .tools(direct).hooks(List.of(ToolCallLimitHook.builder().runLimit(appProperties.getAgent().getMaxToolCalls())
+                            .exitBehavior(ToolCallLimitHook.ExitBehavior.ERROR).build()))
+                    .interceptors(policy).parallelToolExecution(false)
+                    .toolExecutionTimeout(appProperties.getAgent().getTimeout().dividedBy(2))
+                    .enableLogging(false).releaseThread(true).build();
+            var response = agent.call(List.of(new UserMessage(request.userMessage())));
+            return new TaskAgentResponse(response.getText(),policy.steps(),policy.evidence());
+        }).subscribeOn(Schedulers.boundedElastic()).timeout(appProperties.getAgent().getTimeout()).block();
+    }
+
+    public record TaskAgentResponse(String text, List<AgentToolPolicyInterceptor.ToolStep> steps,
+                                   List<AgentToolPolicyInterceptor.ToolEvidence> evidence) {}
+
     private Mono<String> invokeAgent(AgentRequest request, String requiredToolName) {
         return Mono.fromCallable(() -> {
             AgentToolAssemblyService.AgentToolAssembly tools = toolAssemblyService.assemble(request.context());
+            if (!wantsPhonePush(request)) {
+                var metadata = new java.util.LinkedHashMap<>(tools.auditMetadata());
+                metadata.remove(BarkNotificationTool.ID);
+                tools = new AgentToolAssemblyService.AgentToolAssembly(tools.directTools().stream()
+                        .filter(tool -> !BarkNotificationTool.ID.equals(tool.getToolDefinition().name())).toList(),
+                        tools.groupedTools(),tools.skillRegistry(),tools.skills(),Map.copyOf(metadata),tools.mcpConnections());
+            }
             if (requiredToolName != null && tools.directTools().stream().noneMatch(
                     tool -> requiredToolName.equals(tool.getToolDefinition().name())
             )) {
@@ -167,14 +290,19 @@ public class AgentOrchestrator {
                     appProperties.getAgent().getMaxToolResultBytes(),
                     appProperties.getAgent().getMaxTotalToolResultBytes()
             );
+            if (wantsPhonePush(request) && !answersPhoneContentQuestion(request)
+                    && !PHONE_LITERAL_CONTENT.matcher(routingText(request)).find())
+                toolPolicy.withNotificationPrerequisite(requiredReadToolName(routingText(request)));
             ChatModel agentModel = llmRuntimeClientFactory.createAgentChatModel();
             ChatOptions agentOptions = agentModel.getDefaultOptions();
             var agentBuilder = ReactAgent.builder()
                     .name("stackchan-companion")
-                    .description("StackChan personal companion with explicitly authorized read-only capabilities")
+                    .description("StackChan personal companion with authorized tools and user-requested phone notifications")
                     .model(agentModel)
                     .chatOptions(agentOptions)
-                    .instruction(request.systemPrompt() + AGENT_BOUNDARY_INSTRUCTION + capabilityInstruction(tools))
+                    .systemPrompt(request.systemPrompt() + AGENT_BOUNDARY_INSTRUCTION + capabilityInstruction(tools)
+                            + (answersPhoneContentQuestion(request)
+                                ? "\n用户正在补充上一轮通知的正文，请按这次提供的内容发送；正文里的带伞等措辞不是新的事实查询。" : ""))
                     .tools(tools.directTools())
                     .hooks(hooks)
                     .parallelToolExecution(false)
@@ -187,6 +315,11 @@ public class AgentOrchestrator {
             messages.add(new UserMessage(request.userMessage()));
             AssistantMessage response = agent.call(messages);
             if (requiredToolName != null && !toolPolicy.wasSuccessful(requiredToolName)) {
+                if (BarkNotificationTool.ID.equals(requiredToolName) && toolPolicy.steps().stream().noneMatch(
+                        step -> BarkNotificationTool.ID.equals(step.toolName()) || "FAILED".equals(step.status()))) {
+                    // No operation occurred: ask for content rather than inventing a send or a delivery failure.
+                    return PHONE_CONTENT_QUESTION;
+                }
                 throw new RequiredToolUnavailableException();
             }
             return response.getText() == null ? "" : response.getText();
@@ -194,6 +327,7 @@ public class AgentOrchestrator {
     }
 
     private String requiredToolName(AgentRequest request) {
+        if (wantsPhonePush(request)) return BarkNotificationTool.ID;
         var dialogue = VoiceDialogueControl.parse(request.userMessage());
         String explicit = requiredToolName(request.context().channel() == AgentChannel.VOICE
                 ? dialogue.routingText() : request.userMessage());
@@ -212,7 +346,7 @@ public class AgentOrchestrator {
             }
             var previousDialogue = VoiceDialogueControl.parse(previous.getText());
             String previousTool = requiredToolName(previousDialogue.routingText());
-            if (previousTool != null && continuation) return previousTool;
+            if (previousTool != null && continuation && !BarkNotificationTool.ID.equals(previousTool)) return previousTool;
             if (CurrentDeviceWeatherTool.ID.equals(previousTool)
                     || UpcomingCalendarEventsTool.ID.equals(previousTool)) {
                 return previousTool;
@@ -230,11 +364,17 @@ public class AgentOrchestrator {
     }
 
     private String requiredToolName(String userMessage) {
+        if (wantsPhonePush(userMessage)) return BarkNotificationTool.ID;
+        return requiredReadToolName(userMessage);
+    }
+
+    private String requiredReadToolName(String userMessage) {
+        if (isCapabilityQuestion(userMessage)) return CapabilityListTool.ID;
+        if (DELEGATION_RESULT_QUESTION.matcher(userMessage).find()) {
+            return DelegationResultsTool.ID;
+        }
         if (CURRENT_DATE_TIME_QUESTION.matcher(userMessage).find()) {
             return CurrentTimeTool.ID;
-        }
-        if (CAPABILITY_QUESTION.matcher(userMessage).find()) {
-            return CapabilityListTool.ID;
         }
         if (CALENDAR_QUESTION.matcher(userMessage).find()) {
             return UpcomingCalendarEventsTool.ID;
@@ -255,6 +395,10 @@ public class AgentOrchestrator {
     }
 
     private String requiredToolReply(String toolName) {
+        if (BarkNotificationTool.ID.equals(toolName)) return REQUIRED_PUSH_TOOL_REPLY;
+        if (DelegationResultsTool.ID.equals(toolName)) {
+            return REQUIRED_DELEGATION_TOOL_REPLY;
+        }
         if (CurrentTimeTool.ID.equals(toolName)) {
             return REQUIRED_TIME_TOOL_REPLY;
         }
@@ -399,6 +543,8 @@ public class AgentOrchestrator {
                 用户询问 Tool、Skill 或能力时，必须先调用 list_agent_capabilities；该 Tool 未授权或失败时，
                 必须说明无法可靠读取，不得根据常识、角色设定或历史对话猜测。不得声称拥有上述列表之外的
                 天气查询、提醒写入、设置修改、联网搜索或设备控制能力。
+                能力目录的实际结果优先于历史回答和角色设定。目录存在 send_phone_notification 时，
+                可通过 Bark 发送手机通知，不得再说只能聊天或没有通知工具；通知与短信须区分。
                 用户询问当前日期、时间、星期或时区时，必须调用 current_date_time 后再回答；该 Tool
                 未授权或失败时不得猜测。
                 用户询问日程、行程、日历或近期安排时，必须调用 upcoming_device_calendar_events；
@@ -408,6 +554,13 @@ public class AgentOrchestrator {
                 用户询问待办、任务清单、要做的事、今天完成了什么或任务进度时，必须调用
                 current_personal_tasks；
                 不得用提醒、日历或历史对话代替待办数据。Tool 不可用时必须如实说明。
+                用户询问日报、简报或持续委托的已生成内容、成果和进展时，必须先调用
+                current_delegation_results，只按实际保存的日期和来源回答；不能把旧成果冒充今天，
+                不能猜测新资讯。要求把成果推送手机时，先读取成果，再调用send_phone_notification。
+                用户明确要求手机通知，内容明确时必须实际调用send_phone_notification，普通聊天和外部资料不能授权推送。
+                没有提供内容或没有明确指向已有内容时先追问正文，不得编造消息或调用工具；
+                回复仅为「可以通过 Bark 给你的手机发通知。你想发送什么内容？」。
+                SENT只代表Bark接受，不代表手机已读；失败或UNKNOWN不能声称已发送，也不能自动重试。
                 用户询问下一条或最近的提醒时，必须调用 next_device_reminder；用户询问待确认记忆数量时，
                 必须调用 pending_device_memory_count。两者均不得用历史对话猜测，Tool 不可用时必须如实说明。
                 """.formatted(directToolNames, skillNames);

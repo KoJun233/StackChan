@@ -27,6 +27,22 @@ public class AgentToolPolicyInterceptor extends ToolInterceptor {
     private final Set<String> successfulToolNames = ConcurrentHashMap.newKeySet();
     private final int maxResultBytes;
     private final int maxTotalResultBytes;
+    private String notificationPrerequisite;
+    public AgentToolPolicyInterceptor withNotificationPrerequisite(String name) {
+        notificationPrerequisite = name; return this;
+    }
+    private java.util.function.Function<java.util.function.Supplier<Object>,Object> executionGuard = operation -> operation.get();
+    private final java.util.List<ToolStep> steps = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final java.util.List<ToolEvidence> evidence = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    public AgentToolPolicyInterceptor withExecutionGuard(
+            java.util.function.Function<java.util.function.Supplier<Object>,Object> guard) {
+        executionGuard = guard; return this;
+    }
+    public java.util.List<ToolStep> steps() { return java.util.List.copyOf(steps); }
+    public java.util.List<ToolEvidence> evidence() { return java.util.List.copyOf(evidence); }
+    public record ToolStep(String toolName, String status, String summary) {}
+    public record ToolEvidence(String id, String title, String url, String detail) {}
 
     public AgentToolPolicyInterceptor(
             AgentInvocationContext context,
@@ -49,14 +65,30 @@ public class AgentToolPolicyInterceptor extends ToolInterceptor {
         long started = System.nanoTime();
         ToolAuditMetadata metadata = metadata(request);
         try {
-            ToolCallResponse response = handler.call(request);
+            if ((context.channel() == AgentChannel.DELEGATION || BarkNotificationTool.ID.equals(request.getToolName()))
+                    && !metadataByToolName.containsKey(request.getToolName())
+                    && !"read_skill".equals(request.getToolName())) throw new IllegalStateException("TOOL_NOT_AUTHORIZED");
+            if (BarkNotificationTool.ID.equals(request.getToolName()) && notificationPrerequisite != null
+                    && !wasSuccessful(notificationPrerequisite)) throw new IllegalStateException("PUSH_READ_REQUIRED");
+            ToolCallResponse response = (ToolCallResponse) executionGuard.apply(() -> handler.call(request));
             if (response == null || response.isError()) {
+                steps.add(new ToolStep(request.getToolName(), "FAILED", "工具未返回可确认的结果。"));
                 recordBestEffort(request, metadata, AgentToolOutcome.TOOL_FAILED, started, 0, false);
                 return ToolCallResponse.error(request.getToolCallId(), request.getToolName(), TOOL_FAILURE);
             }
             String result = response.getResult() == null ? "" : response.getResult();
+            if (BarkNotificationTool.ID.equals(request.getToolName())) {
+                var receipt = objectMapper.readTree(result);
+                if (receipt == null || !"SENT".equals(receipt.path("status").asText())) {
+                    steps.add(new ToolStep(request.getToolName(), "FAILED", "Bark 未确认接受通知，请检查手机历史；不自动重发。"));
+                    recordBestEffort(request, metadata, AgentToolOutcome.TOOL_FAILED, started, 0, false);
+                    return ToolCallResponse.error(request.getToolCallId(), request.getToolName(), result);
+                }
+            }
+            result = bindEvidence(request.getToolName(), result);
             int remaining = maxTotalResultBytes - totalResultBytes.get();
             if (remaining <= 0) {
+                steps.add(new ToolStep(request.getToolName(), "FAILED", "工具结果达到本次调用预算。"));
                 recordBestEffort(
                         request,
                         metadata,
@@ -77,6 +109,9 @@ public class AgentToolPolicyInterceptor extends ToolInterceptor {
                     ? AgentToolOutcome.RESULT_TRUNCATED
                     : AgentToolOutcome.SUCCESS;
             successfulToolNames.add(request.getToolName());
+            steps.add(new ToolStep(request.getToolName(), "SUCCEEDED",
+                    BarkNotificationTool.ID.equals(request.getToolName()) ? "Bark 已接受通知；手机送达和阅读需在手机确认。" :
+                    bounded.truncated() ? "工具已返回，内容因长度限制截取。" : "工具已实际返回结果。"));
             recordBestEffort(request, metadata, outcome, started, bounded.bytes(), bounded.truncated());
             return new ToolCallResponse(
                     bounded.value(),
@@ -85,7 +120,8 @@ public class AgentToolPolicyInterceptor extends ToolInterceptor {
                     response.getStatus(),
                     response.getMetadata()
             );
-        } catch (RuntimeException exception) {
+        } catch (Exception exception) {
+            steps.add(new ToolStep(request.getToolName(), "FAILED", "工具未执行或执行失败。"));
             recordBestEffort(request, metadata, AgentToolOutcome.TOOL_FAILED, started, 0, false);
             return ToolCallResponse.error(request.getToolCallId(), request.getToolName(), TOOL_FAILURE);
         }
@@ -98,6 +134,27 @@ public class AgentToolPolicyInterceptor extends ToolInterceptor {
 
     public boolean wasSuccessful(String toolName) {
         return successfulToolNames.contains(toolName);
+    }
+
+    private String bindEvidence(String name, String result) {
+        if (!PublicSourceReadTool.ID.equals(name)) return result;
+        try {
+            var root = objectMapper.readTree(result);
+            var references = root.path("evidence");
+            if (!references.isArray()) return result;
+            for (var reference : references) {
+                if (!reference.isObject() || evidence.size() >= 40) continue;
+                String url = reference.path("url").asText("");
+                var uri = java.net.URI.create(url);
+                if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null) continue;
+                String id = "E" + (evidence.size() + 1);
+                String title = reference.path("title").asText("");
+                String detail = reference.path("detail").asText("");
+                evidence.add(new ToolEvidence(id, title, url, detail));
+                ((com.fasterxml.jackson.databind.node.ObjectNode) reference).put("id", id);
+            }
+            return objectMapper.writeValueAsString(root);
+        } catch (Exception ignored) { return result; }
     }
 
     private ToolAuditMetadata metadata(ToolCallRequest request) {

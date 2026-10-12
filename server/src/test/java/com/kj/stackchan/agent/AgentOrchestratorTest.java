@@ -38,6 +38,27 @@ import static org.mockito.Mockito.when;
 class AgentOrchestratorTest {
 
     @Test
+    void missingDelegationResultsNeverFallsBackToModelGeneratedNews() {
+        var settings = mock(AgentSettingsService.class);
+        var assembly = mock(AgentToolAssemblyService.class);
+        var factory = mock(LlmRuntimeClientFactory.class);
+        var context = new AgentInvocationContext(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), AgentChannel.VOICE);
+        when(settings.runtimeSettings()).thenReturn(new AgentSettingsService.RuntimeSettings(true, true, true, Instant.EPOCH));
+        when(assembly.assemble(context)).thenReturn(new AgentToolAssemblyService.AgentToolAssembly(
+                List.of(), Map.of(), mock(SkillRegistry.class), List.of(), Map.of(), List.of()));
+        var orchestrator = new AgentOrchestrator(settings, assembly, mock(AgentToolAuditService.class), factory,
+                new ObjectMapper(), new AppProperties());
+
+        var answer = orchestrator.stream(new AgentOrchestrator.AgentRequest(context, "测试伙伴", List.of(),
+                "今天的AI日报好了没有？")).collectList().block();
+
+        assertThat(answer).containsExactly("我暂时无法可靠读取当前伙伴的委托成果，所以不能猜测日报内容。");
+        verify(factory, never()).createLowLatencyChatClient();
+        verify(factory, never()).createChatClient();
+        verify(factory, never()).createAgentChatModel();
+    }
+
+    @Test
     void streamsShortVoiceConversationWithoutBuildingTheToolAgent() {
         AgentSettingsService settingsService = mock(AgentSettingsService.class);
         AgentToolAssemblyService assemblyService = mock(AgentToolAssemblyService.class);
