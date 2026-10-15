@@ -1,53 +1,51 @@
 # 服务端工作流
 
 - 状态：READY_FOR_REVIEW
-- 最后更新：2026-10-11
-- 当前分支：`codex/bark-voice-routing`
-- 基准提交：`ec53bfe`
-- 最后验证提交：`ec53bfe`
+- 最后更新：2026-10-15
+- 当前分支：`codex/companion-r01-natural-voice-20261013`
+- 基准提交：`989b3d9`
+- 最后验证提交：`989b3d9`
 
 ## 当前目标
 
-修正 [COMPANION-010](../bark-agent-tool.md) 用户原话的语音路由及能力否认，继续复用已有 Bark Tool 与配置。
+R01 自然语音：截断先澄清、当前表达优先、有界续讲、真实短聊路由和安全诊断；保留 R00 V57/网页绑定及主线委托/Bark。
 
 ## 已完成
 
-「给我的手机发一条消息」支持目标/动词两种顺序，明确请求不再进入无工具语音聊天。具体工具的「有没有功能」、通知能力和设置咨询走真实能力目录读取，保留写工具隔离。角色及真实能力说明通过模型 system prompt 传入，优先于旧历史否认。
+截断录音先确定性澄清，不调用模型、工具或记忆提取；正文含标点 ≤160 码点，一次 TTS/单 WAV。最多四轮成功配对/三十分钟，换题/纠正切旧上下文，无唯一对象追问；拒绝不提取记忆。Bark 明确意图/缺正文/只读能力与 UNKNOWN 不重发保持。
 
-无正文且没有实际操作时返回内容追问，不虚报投递失败；紧接回答可以发送，字面正文不会误作天气查询。取消、否定、咨询、换话题、续讲、普通聊天和已发送历史不能继续写权限。通知正文内的否定和能力词不会误关闭工具。已尝试 FAILED/UNKNOWN 仍保留真实失败，不变成内容追问或聊天成功。
+管理员质量接口默认 24 小时/最多七天，只给固定计数/阶段时长，旧固件可选字段接受、缺证据未知。普通短聊来自实际 route；三十有效样本才给 nearest-rank，DEVICE_MONOTONIC 是 codec 开始参考，实体首声独立。
 
-原通知服务、持久去重、权限重查、任务快照、自动交付去重和 V60 保持。已安装 `bark-voice-a37d220`，冻结源码 `a37d220e7a2a0189b28412ffd420b2173fbbfc13` 保留 V57–V60；最终任务提交的三个修复文件与冻结源码逐文件核验。
+仅新增 V61 会话关联/七日匿名墓碑；删除与阶段共享事务咨询锁，晚到不重建，旧未关联诊断不回填。V1–V60/checksum 不变，直接 60→61 保留十二表及五项加密摘要。
 
 ## 正在进行
 
-软件与安装完成；用户现场复测确认基本正常，已授权推送当前任务分支。模拟自动化不证明手机接收。
+软件完成，等待审核；实体与安装待验。
+
+最终完整 SHA、测试源码指纹、61 SQL/Flyway、生产 image/JAR/全部控制台资源及双固件六制品见本工作树 `.tools/r01/candidate-receipt.json`。989b3d9 为当前祖先元数据，新增代码成绩以工作树回归和最终候选收据为准。实现、状态、交接与 R00 合成一个中文任务提交；用户已于 2026-10-15 明确授权推送本任务分支；推送与远端 SHA 核对结果见 `.tools/r01/push-receipt.json`。PR、人工审核与合并由用户执行。
 
 ## 下一步操作
 
-用户在 GitHub 为 `codex/bark-voice-routing` 创建 PR，审核后完成最终合并；后续通知行为按 runbook 检查实际工具审计与回执。
+读取本交付和收据进行代码审核；用户明确安装后才按测量手册采集。按本次授权推送并核对远端，随后由用户创建 PR，后续 R02/R06 不自动实施。
 
 ## 阻塞项
 
-无。UNKNOWN 先检查手机，不自动再发。
+无软件阻塞。本轮分支推送已授权，刷写或安装尚未授权；实体样本不足保持 UNKNOWN。缺 V57 的既有 V60 库仍默认拒绝升级，需另行兼容方案。
 
 ## 关键文件
 
-`AgentOrchestrator.java`、`CapabilityListTool.java`、`BarkNotificationToolTest.java`；原 `BarkNotificationService` 与 V60 未改。
+实现路径与 FR/AC 对照见下方交付记录，最终源码指纹见收据。
 
 ## 验证命令与最近结果
 
-修复前 `./scripts/test-server-linux.ps1 -Tests 'BarkNotificationToolTest,AgentOrchestratorTest,AgentToolPolicyInterceptorTest'`：32/32。
+`./scripts/test-server-linux.ps1` 1009/1009，失败/错误/跳过 0，BUILD SUCCESS，报告 `.tools/stackchan-companion-tests-6d25eb52a1dd497b82e98b20bcd2268c`。诊断/API 67/67、PG 十项 R01 + 五项 R00 15/15；完整回归覆盖最终源码。已有 Surefire 退出三十秒警告保留。
 
-最终安装集成 `./scripts/test-server-linux.ps1 -Tests 'BarkNotificationToolTest,AgentOrchestratorTest,AgentToolPolicyInterceptorTest,VoiceTurnServiceTest,VoiceDialogueControlTest'`：5 文件、103/103，错误/失败/跳过零；报告 `D:\stackchan\.worktrees\bark-voice-integration\.tools\stackchan-companion-tests-f35b33f2c84c4f1683ab971ae3e91bcc`，冻结 a37d220。新请求与能力咨询均验证 WEB/VOICE，真实 ReactAgent 读取目录/调用通知，历史否认不作为事实；模拟 Bark/模型不外发。
-
-最终候选服务端编译/打包、`git diff --check`、`pnpm docs:check` 通过；ec53bfe 是分支基线，实际修复成绩以上述冻结来源为准。先前完整 840/840 为旧 Bark 版本成绩。
-
-本轮用户复测并授权推送后，在当前任务分支再次运行相同 5 类最小回归：99/99，失败/错误/跳过零；报告 `.tools/stackchan-companion-tests-7a9100f3ea5c4dc89e53e0f4d658c7cb`。安装集成额外包含 V57 的 4 项语音测试，故此前为 103 项。测试后仅更新文档，最终代码仍与已测试源码一致。
+`git diff --check`、`pnpm docs:check` 与检查器 7/7；最终源码/JAR/61 条迁移及真实 Flyway 11.7.2 核验封存收据。
 
 ## 相关设计、计划和决策
 
-[设计](../bark-agent-tool.md)、[ADR0075](../decisions/0075-bark-agent-notification-tool.md)、[原任务](../recurring-research-delivery.md)、[使用说明](../runbooks/recurring-research-and-bark.md)。
+[R01 交付与 FR/AC](../baselines/companion-r01-natural-voice.md)、[R00 历史基线](../baselines/companion-v1-baseline.md)、[R01 规格](../../requirements/companion-v1/R01-natural-voice.md)、[公共契约](../../requirements/companion-v1/00-shared-contracts.md)、[ADR0077](../decisions/0077-measured-private-natural-voice.md)、[实体测量](../../runbooks/natural-voice-quality.md)、[备份恢复](../../runbooks/personal-data-backup.md)。
 
 ## 安全与兼容性约束
 
-没有新迁移；Key、消息正文和认证载荷不进入审计。原工作树、V57、模式、卷、凭据和 r3 固件保持。用户已授权仅推送当前任务分支；PR 创建、审核与合并由用户执行。
+不运行真实模型/Bark、不刷写、安装、改部署模式、轮换凭据或创建 PR；仅按本次授权推送当前任务分支。原用户工作树保持；实体录音/谈话/认证载荷不提交，LAN HTTP 仅局域网开发。

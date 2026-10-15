@@ -46,6 +46,8 @@ bool device_transport_report_voice_turn(device_voice_turn_stage_t stage,
                                         const char *turn_id,
                                         uint32_t elapsed_ms,
                                         device_voice_turn_failure_t failure);
+bool device_transport_report_voice_capture(const char *turn_id, uint32_t elapsed_ms,
+    const device_voice_capture_measurement_t *measurement);
 
 #ifdef __cplusplus
 }

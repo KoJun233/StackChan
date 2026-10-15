@@ -75,6 +75,14 @@ typedef enum {
     DEVICE_VOICE_STAGE_MANUAL_INPUT_READY,
 } device_voice_turn_stage_t;
 
+/** Optional metadata from one device monotonic clock; absent remains unknown. */
+typedef struct {
+    bool present;
+    bool feedback_present;
+    uint32_t endpoint_to_local_feedback_ms;
+    bool capture_limit_reached;
+} device_voice_capture_measurement_t;
+
 typedef enum {
     DEVICE_COMMAND_RESULT_NONE = 0,
     DEVICE_COMMAND_RESULT_CANCELLED,
@@ -204,5 +212,9 @@ esp_err_t device_protocol_encode_voice_turn_stage(char *output, size_t output_si
                                                   device_voice_turn_stage_t stage,
                                                   uint32_t elapsed_ms,
                                                   device_voice_turn_failure_t failure);
+esp_err_t device_protocol_encode_voice_turn_stage_measured(char *output, size_t output_size,
+    uint32_t sequence, const char *turn_id, device_voice_turn_stage_t stage,
+    uint32_t elapsed_ms, device_voice_turn_failure_t failure,
+    const device_voice_capture_measurement_t *measurement);
 esp_err_t device_protocol_encode_workday_toggle(char *output, size_t output_size,
                                                 uint32_t sequence);

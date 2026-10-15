@@ -330,6 +330,46 @@ class DeviceWebSocketHandlerTest {
     }
 
     @Test
+    void acceptsBoundedAuthenticatedCaptureMeasurements() throws Exception {
+        WebSocketSession session = authenticatedSession();
+        handler.afterConnectionEstablished(session);
+        UUID turn = UUID.randomUUID();
+        handler.handleTextMessage(session,new TextMessage("""
+                {"type":"voice_turn_stage","sequence":9,"turn_id":"%s","stage":"SPEECH_CAPTURED",
+                 "elapsed_ms":8000,"measurementSource":"DEVICE_MONOTONIC",
+                 "endpointToLocalFeedbackMs":35,"captureLimitReached":true}
+                """.formatted(turn)));
+        verify(voiceTurnDiagnosticsService).recordDeviceStage(DEVICE_ID,turn,VoiceTurnStage.SPEECH_CAPTURED,
+                8000,null,"DEVICE_MONOTONIC",35,true);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={
+            "\"measurementSource\":\"PHYSICAL_OBSERVATION\"",
+            "\"measurementSource\":\"SERVER_DURATION\"",
+            "\"measurementSource\":null",
+            "\"endpointToLocalFeedbackMs\":10",
+            "\"measurementSource\":\"DEVICE_MONOTONIC\",\"endpointToLocalFeedbackMs\":-1",
+            "\"measurementSource\":\"DEVICE_MONOTONIC\",\"endpointToLocalFeedbackMs\":300001",
+            "\"measurementSource\":\"DEVICE_MONOTONIC\",\"endpointToLocalFeedbackMs\":\"private\"",
+            "\"measurementSource\":\"DEVICE_MONOTONIC\",\"captureLimitReached\":\"true\"",
+            "\"measurementSource\":\"DEVICE_MONOTONIC\",\"endpointToFirstSoundMs\":1",
+            "\"measurementSource\":\"DEVICE_MONOTONIC\",\"transcript\":\"private\""
+    })
+    void rejectsInventedOrMalformedMeasurementPayloads(String extra) throws Exception {
+        WebSocketSession session=authenticatedSession();
+        handler.afterConnectionEstablished(session);
+        handler.handleTextMessage(session,new TextMessage("""
+                {"type":"voice_turn_stage","sequence":9,"turn_id":"%s","stage":"SPEECH_CAPTURED",
+                 "elapsed_ms":20,%s}
+                """.formatted(UUID.randomUUID(),extra)));
+        ArgumentCaptor<TextMessage> reply=ArgumentCaptor.forClass(TextMessage.class);
+        verify(session).sendMessage(reply.capture());
+        assertThat(reply.getValue().getPayload()).contains("invalid_event");
+        verifyNoInteractions(voiceTurnDiagnosticsService);
+    }
+
+    @Test
     void acceptsOnlyStructuredContinuousConversationStages() throws Exception {
         WebSocketSession session = authenticatedSession();
         handler.afterConnectionEstablished(session);

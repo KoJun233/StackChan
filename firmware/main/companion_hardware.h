@@ -70,6 +70,12 @@ esp_err_t companion_hardware_play_wav_interruptible(const uint8_t *wav,
                                                     size_t wav_size,
                                                     bool *cancelled);
 
+/** Observes the first successful codec write, not physical acoustic onset.
+ * The cancellation guard also rejects a late response before speaker access. */
+esp_err_t companion_hardware_play_wav_observed(const uint8_t *wav, size_t wav_size,
+    bool *cancelled, bool (*should_cancel)(void),
+    void (*started)(int64_t written_us, void *context), void *context);
+
 /** Requests that active speaker playback stop; safe to call from the touch-control task. */
 void companion_hardware_request_playback_stop(void);
 
@@ -116,6 +122,9 @@ esp_err_t companion_hardware_configure_turn_expression(uint32_t rgb,
     companion_emotion_t emotion, companion_emotion_intensity_t intensity,
     uint32_t duration_ms, const char *turn_id);
 void companion_hardware_expression_turn_playback_started(const char *turn_id);
+/** Copies a first-write notice without board/display waits; UI checks the current turn before applying it. */
+void companion_hardware_defer_turn_playback_started(const char *turn_id,
+    int64_t written_us, bool (*should_cancel)(void));
 void companion_hardware_expression_turn_end(const char *turn_id);
 void companion_hardware_expression_turn_cancel(const char *turn_id);
 void companion_hardware_expression_clear_turn(void);
@@ -140,6 +149,8 @@ void companion_hardware_set_expression_updating(bool updating);
 
 /** Updates the face and records user-visible activity, exiting the screensaver. */
 void companion_hardware_set_state(companion_face_state_t state);
+/** Returns whether the local logical state was accepted, not LCD frame completion. */
+bool companion_hardware_try_set_state(companion_face_state_t state);
 
 /** Redraws the current state after a resource-pack activation or fallback. */
 void companion_hardware_refresh_face(void);

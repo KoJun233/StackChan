@@ -66,6 +66,31 @@ public class LongTermMemoryEntity {
     private boolean allowProactiveMention;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "continuation_state", nullable = false, length = 24)
+    private ContinuationState continuationState = ContinuationState.NONE;
+
+    @Column(name = "continuation_progress_at")
+    private Instant continuationProgressAt;
+
+    @Column(name = "continuation_paused_until")
+    private Instant continuationPausedUntil;
+
+    @Column(name = "continuation_offered_at")
+    private Instant continuationOfferedAt;
+
+    @Column(name = "continuation_discussed_at")
+    private Instant continuationDiscussedAt;
+
+    @Column(name = "continuation_conversation_id")
+    private UUID continuationConversationId;
+
+    @Column(name = "continuation_progress_conversation_id")
+    private UUID continuationProgressConversationId;
+
+    @Column(name = "continuation_progress", nullable = false, length = 240)
+    private String continuationProgress = "";
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "confirmation_status", nullable = false, length = 24)
     private MemoryConfirmationStatus confirmationStatus;
 
@@ -179,6 +204,10 @@ public class LongTermMemoryEntity {
         this.enabled = true;
         this.confirmedAt = now;
         this.updatedAt = now;
+        if (continuationState == ContinuationState.PENDING) {
+            continuationState = ContinuationState.ACTIVE;
+            continuationProgressAt = now;
+        }
     }
 
     public void reject(Instant now) {
@@ -186,6 +215,7 @@ public class LongTermMemoryEntity {
         this.enabled = false;
         this.confirmedAt = null;
         this.updatedAt = now;
+        if (continuationState != ContinuationState.NONE) continuationState = ContinuationState.STOPPED;
     }
 
     public void setEnabled(boolean enabled, Instant now) {
@@ -207,6 +237,47 @@ public class LongTermMemoryEntity {
     public void markUsed(Instant now) {
         this.lastUsedAt = now;
     }
+
+    public void suggestContinuation() { continuationState = ContinuationState.PENDING; }
+
+    public void offerContinuation(Instant now) { continuationOfferedAt = now; }
+
+    public ContinuationState continuationStateAt(Instant now) {
+        if (continuationState == ContinuationState.ACTIVE || continuationState == ContinuationState.PAUSED) {
+            if (continuationState == ContinuationState.PAUSED && continuationPausedUntil != null
+                    && continuationPausedUntil.isAfter(now)) return ContinuationState.PAUSED;
+            if (continuationProgressAt == null || !continuationProgressAt.plus(java.time.Duration.ofDays(14)).isAfter(now))
+                return ContinuationState.DORMANT;
+            return ContinuationState.ACTIVE;
+        }
+        return continuationState;
+    }
+
+    public void changeContinuation(ContinuationState state, Instant until, Instant now) {
+        continuationState = state;
+        continuationPausedUntil = state == ContinuationState.PAUSED ? until : null;
+        if (state == ContinuationState.ACTIVE) continuationProgressAt = now;
+        updatedAt = now;
+    }
+
+    public void recordContinuationDiscussion(UUID conversationId, Instant now, String progress) {
+        continuationConversationId = conversationId;
+        continuationDiscussedAt = now;
+        if (progress != null && !progress.isBlank()) {
+            continuationProgress = progress;
+            continuationProgressAt = now;
+            continuationProgressConversationId = conversationId;
+            updatedAt = now;
+        }
+    }
+
+    public ContinuationState getContinuationState() { return continuationState; }
+    public Instant getContinuationProgressAt() { return continuationProgressAt; }
+    public Instant getContinuationPausedUntil() { return continuationPausedUntil; }
+    public Instant getContinuationOfferedAt() { return continuationOfferedAt; }
+    public Instant getContinuationDiscussedAt() { return continuationDiscussedAt; }
+    public UUID getContinuationConversationId() { return continuationConversationId; }
+    public String getContinuationProgress() { return continuationProgress; }
 
     public UUID getId() {
         return id;

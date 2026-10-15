@@ -78,12 +78,15 @@ public class PersonalDataService {
 
     @Transactional
     public void deleteMessage(UUID conversationId, UUID messageId) {
-        ConversationEntity conversation = requireConversation(conversationId);
+        ConversationEntity conversation = conversationRepository.findByIdForUpdate(conversationId)
+                .orElseThrow(() -> new PersonalDataNotFoundException("Conversation was not found"));
         ConversationMessageEntity message = messageRepository.findByIdAndConversationId(messageId, conversationId)
                 .orElseThrow(() -> new PersonalDataNotFoundException("Conversation message was not found"));
         if (message.getGenerationStatus() == GenerationStatus.STREAMING) {
             throw new PersonalDataConflictException("A streaming message cannot be deleted");
         }
+        clearContinuationProgress(conversationId);
+        clearVoiceDiagnostics(conversationId);
         messageRepository.delete(message);
         messageRepository.flush();
         Instant latestMessageTime = messageRepository.findAllByConversationIdOrderByCreatedAtAscIdAsc(conversationId)
@@ -96,13 +99,42 @@ public class PersonalDataService {
 
     @Transactional
     public void deleteConversation(UUID conversationId) {
-        requireConversation(conversationId);
+        conversationRepository.findByIdForUpdate(conversationId)
+                .orElseThrow(() -> new PersonalDataNotFoundException("Conversation was not found"));
         if (messageRepository.countByConversationIdAndGenerationStatus(
                 conversationId, GenerationStatus.STREAMING
         ) > 0) {
             throw new PersonalDataConflictException("A conversation with a streaming message cannot be deleted");
         }
+        clearContinuationProgress(conversationId);
+        clearVoiceDiagnostics(conversationId);
         conversationRepository.deleteById(conversationId);
+    }
+
+    private void clearContinuationProgress(UUID conversationId) {
+        // Deleting any part of the source conversation conservatively clears its copied progress.
+        // Independently confirmed facts and their continuation permission remain user-managed memories.
+        jdbcTemplate.update("update long_term_memories set continuation_progress = '', "
+                + "continuation_progress_conversation_id = null, continuation_discussed_at = null "
+                + "where continuation_progress_conversation_id = :conversationId",
+                new MapSqlParameterSource("conversationId", conversationId));
+    }
+
+    private void clearVoiceDiagnostics(UUID conversationId) {
+        // A source-message deletion clears the whole associated turn history, including phase events by FK cascade.
+        MapSqlParameterSource scope = new MapSqlParameterSource("conversationId", conversationId);
+        List<UUID> turns = jdbcTemplate.query("select id from voice_turns where conversation_id = :conversationId order by id",
+                scope, (row, index) -> row.getObject("id", UUID.class));
+        for (UUID turnId : turns) {
+            jdbcTemplate.query("select pg_advisory_xact_lock(hashtextextended(cast(:id as text), 0))",
+                    new MapSqlParameterSource("id", turnId), (row, index) -> 1);
+        }
+        jdbcTemplate.update("insert into voice_turn_privacy_tombstones(turn_id, expires_at) "
+                + "select id, :expiresAt from voice_turns where conversation_id = :conversationId "
+                + "on conflict(turn_id) do nothing", new MapSqlParameterSource("conversationId", conversationId)
+                        .addValue("expiresAt", Timestamp.from(clock.instant().plusSeconds(7 * 86_400L))));
+        jdbcTemplate.update("delete from voice_turns where conversation_id = :conversationId",
+                new MapSqlParameterSource("conversationId", conversationId));
     }
 
     @Transactional(readOnly = true)

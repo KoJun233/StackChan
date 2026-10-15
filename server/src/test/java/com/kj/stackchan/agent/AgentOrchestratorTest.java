@@ -37,6 +37,51 @@ import static org.mockito.Mockito.when;
 
 class AgentOrchestratorTest {
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource(delimiter = '|', value = {
+            "刚才赢了|VOICE_CASUAL", "又输了|VOICE_CASUAL", "今天累坏了|VOICE_CASUAL",
+            "我刚喝了一杯咖啡|VOICE_CASUAL", "你好|VOICE_CASUAL", "太开心了|VOICE_CASUAL",
+            "解释一下月亮为什么发光|MODEL", "详细说说|MODEL", "继续讲|MODEL",
+            "换个话题，聊音乐|MODEL", "我问的是咖啡|MODEL", "不要给我的手机发通知|MODEL"
+    })
+    void actualNoToolRouteSeparatesOrdinaryShortChatFromControlsAndDetailedAnswers(String transcript,
+            AgentOrchestrator.ExecutionRoute expected) {
+        var factory = mock(LlmRuntimeClientFactory.class);
+        var client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
+        when(factory.createLowLatencyChatClient()).thenReturn(client);
+        when(client.prompt().system(any(String.class)).messages(any(List.class)).user(any(String.class))
+                .stream().content()).thenReturn(Flux.just("简短测试回答。"));
+        var assembly = mock(AgentToolAssemblyService.class);
+        var orchestrator = new AgentOrchestrator(mock(AgentSettingsService.class), assembly,
+                mock(AgentToolAuditService.class), factory, new ObjectMapper(), new AppProperties());
+        var observed = new java.util.concurrent.atomic.AtomicReference<AgentOrchestrator.ExecutionRoute>();
+        var context = new AgentInvocationContext(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), AgentChannel.VOICE);
+
+        assertThat(orchestrator.stream(new AgentOrchestrator.AgentRequest(context, "测试伙伴", List.of(), transcript,
+                observed::set)).collectList().block()).containsExactly("简短测试回答。");
+
+        assertThat(observed.get()).isEqualTo(expected);
+        verify(assembly, never()).assemble(any());
+        verify(factory, never()).createAgentChatModel();
+    }
+
+    @Test
+    void optionalRouteObservationCannotBreakAChatOrCreateToolPermissions() {
+        var factory = mock(LlmRuntimeClientFactory.class);
+        var client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
+        when(factory.createLowLatencyChatClient()).thenReturn(client);
+        when(client.prompt().system(any(String.class)).messages(any(List.class)).user(any(String.class))
+                .stream().content()).thenReturn(Flux.just("这把确实可惜。"));
+        var assembly = mock(AgentToolAssemblyService.class);
+        var orchestrator = new AgentOrchestrator(mock(AgentSettingsService.class), assembly,
+                mock(AgentToolAuditService.class), factory, new ObjectMapper(), new AppProperties());
+        var context = new AgentInvocationContext(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), AgentChannel.VOICE);
+        assertThat(orchestrator.stream(new AgentOrchestrator.AgentRequest(context, "测试伙伴", List.of(), "又输了",
+                ignored -> { throw new IllegalStateException("diagnostic unavailable"); })).collectList().block())
+                .containsExactly("这把确实可惜。");
+        verify(assembly, never()).assemble(any());
+    }
+
     @Test
     void missingDelegationResultsNeverFallsBackToModelGeneratedNews() {
         var settings = mock(AgentSettingsService.class);

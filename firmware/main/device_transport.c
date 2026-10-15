@@ -81,6 +81,7 @@ typedef struct {
     device_voice_turn_stage_t stage;
     uint32_t elapsed_ms;
     device_voice_turn_failure_t failure;
+    device_voice_capture_measurement_t measurement;
 } voice_turn_event_t;
 
 typedef struct {
@@ -149,6 +150,20 @@ bool device_transport_report_voice_turn(device_voice_turn_stage_t stage,
         .stage = stage,
         .elapsed_ms = elapsed_ms,
         .failure = failure,
+    };
+    memcpy(event.turn_id, turn_id, sizeof(event.turn_id) - 1);
+    return xQueueSend(s_voice_turn_event_queue, &event, 0) == pdTRUE;
+}
+
+bool device_transport_report_voice_capture(const char *turn_id, uint32_t elapsed_ms,
+    const device_voice_capture_measurement_t *measurement)
+{
+    if (s_voice_turn_event_queue == NULL || turn_id == NULL || strlen(turn_id) != 36 ||
+        measurement == NULL || !measurement->present) return false;
+    voice_turn_event_t event = {
+        .stage = DEVICE_VOICE_STAGE_SPEECH_CAPTURED,
+        .elapsed_ms = elapsed_ms,
+        .measurement = *measurement,
     };
     memcpy(event.turn_id, turn_id, sizeof(event.turn_id) - 1);
     return xQueueSend(s_voice_turn_event_queue, &event, 0) == pdTRUE;
@@ -941,14 +956,15 @@ static __attribute__((noinline)) bool run_websocket_connection(const device_iden
             char payload[DEVICE_PROTOCOL_MAX_MESSAGE_LEN] = {0};
             uint32_t sequence = connection_next_sequence(&connection);
             if (sequence == 0 ||
-                device_protocol_encode_voice_turn_stage(
+                device_protocol_encode_voice_turn_stage_measured(
                     payload,
                     sizeof(payload),
                     sequence,
                     voice_turn_event.turn_id,
                     voice_turn_event.stage,
                     voice_turn_event.elapsed_ms,
-                    voice_turn_event.failure) != ESP_OK ||
+                    voice_turn_event.failure,
+                    &voice_turn_event.measurement) != ESP_OK ||
                 !connection_send_text(&connection, payload)) {
                 ESP_LOGW(TAG, "Voice turn diagnostic event was dropped safely");
             }

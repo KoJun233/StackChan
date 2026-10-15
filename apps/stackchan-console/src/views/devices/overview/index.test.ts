@@ -1,13 +1,41 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h } from 'vue'
 
 import DeviceOverview from './index.vue'
 
 const deviceApi = vi.hoisted(() => ({
+  getDeviceVoiceQuality: vi.fn(),
   listDevices: vi.fn(),
   listDeviceVoiceTurns: vi.fn(),
   stopDeviceMotion: vi.fn(),
 }))
+
+function quality(deviceId: string, totalAttempts = 0) {
+  const metric = {
+    measurementSource: 'DEVICE_MONOTONIC',
+    applicableSamples: 0,
+    missingSamples: 0,
+    minimumSamples: 30,
+    p50Ms: null,
+    p95Ms: null,
+  }
+  return {
+    deviceId,
+    from: '2026-10-12T00:00:00Z',
+    to: '2026-10-13T00:00:00Z',
+    totalAttempts,
+    successfulTurns: totalAttempts,
+    failedTurns: 0,
+    cancelledTurns: 0,
+    incompleteTurns: 0,
+    failureCounts: {},
+    ordinaryChatSuccessfulTurns: totalAttempts,
+    excludedLatencyTurns: 0,
+    endpointToFirstSound: metric,
+    endpointToLocalFeedback: metric,
+    physicalObservationRequired: true,
+  }
+}
 
 const memoryApi = vi.hoisted(() => ({
   getMemoryUsage: vi.fn().mockResolvedValue({ turnId: '', memories: [] }),
@@ -58,10 +86,18 @@ vi.mock('@fantastic-admin/components', () => {
 })
 
 describe('device overview command availability', () => {
+  beforeEach(() => {
+    deviceApi.getDeviceVoiceQuality.mockImplementation((deviceId: string) => Promise.resolve(quality(deviceId)))
+  })
+
   it('keeps the newest robot diagnostics when an older request finishes last', async () => {
     let resolveOld!: (value: unknown[]) => void
     const oldResponse = new Promise<unknown[]>((resolve) => {
       resolveOld = resolve
+    })
+    let resolveOldQuality!: (value: ReturnType<typeof quality>) => void
+    const oldQualityResponse = new Promise<ReturnType<typeof quality>>((resolve) => {
+      resolveOldQuality = resolve
     })
     deviceApi.listDevices.mockResolvedValue([
       { id: 'a', displayName: '机器人 A', online: true, commandAvailable: true },
@@ -76,6 +112,7 @@ describe('device overview command availability', () => {
       events: [],
     })
     deviceApi.listDeviceVoiceTurns.mockImplementation((deviceId: string) => deviceId === 'a' ? oldResponse : Promise.resolve([turn('new-turn')]))
+    deviceApi.getDeviceVoiceQuality.mockImplementation((deviceId: string) => deviceId === 'a' ? oldQualityResponse : Promise.resolve(quality('b', 12)))
     const container = document.createElement('div')
     const app = createApp(DeviceOverview)
     app.mount(container)
@@ -85,9 +122,12 @@ describe('device overview command availability', () => {
     clickDiagnostics('b')
     await vi.waitFor(() => expect(container.querySelector('[data-turn-id="new-turn"]')).not.toBeNull())
     resolveOld([turn('old-turn')])
+    resolveOldQuality(quality('a', 99))
     await vi.waitFor(() => expect(memoryApi.getMemoryUsage).toHaveBeenCalledWith('new-turn'))
     expect(container.querySelector('[data-turn-id="old-turn"]')).toBeNull()
     expect(container.textContent).toContain('机器人 B 的最近语音回合')
+    expect(container.querySelector('[data-voice-quality]')?.textContent).toContain('总尝试 12')
+    expect(container.querySelector('[data-voice-quality]')?.textContent).not.toContain('总尝试 99')
     app.unmount()
   })
 
@@ -101,6 +141,59 @@ describe('device overview command availability', () => {
     Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('交互诊断'))?.click()
     await vi.waitFor(() => expect(container.textContent).toContain('诊断暂不可用'))
     expect(container.textContent).not.toContain('暂无语音回合诊断数据')
+    expect(container.querySelector('[data-voice-quality]')?.textContent).toContain('总尝试 0')
+    app.unmount()
+  })
+
+  it('keeps legacy detail visible when the separate quality summary is unavailable', async () => {
+    deviceApi.listDevices.mockResolvedValue([{ id: 'a', displayName: '机器人 A', online: true, commandAvailable: true }])
+    deviceApi.listDeviceVoiceTurns.mockResolvedValue([{
+      turnId: 'legacy-turn',
+      status: 'COMPLETED',
+      failureCode: null,
+      startedAt: '2026-10-13T00:00:00Z',
+      updatedAt: '2026-10-13T00:00:01Z',
+      events: [],
+    }])
+    deviceApi.getDeviceVoiceQuality.mockRejectedValue(new Error('汇总暂不可用'))
+    const container = document.createElement('div')
+    const app = createApp(DeviceOverview)
+    app.mount(container)
+    await vi.waitFor(() => expect(container.querySelector('[data-device-id]')).not.toBeNull())
+    Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('交互诊断'))?.click()
+    await vi.waitFor(() => expect(container.querySelector('[data-turn-id="legacy-turn"]')).not.toBeNull())
+    expect(container.textContent).toContain('汇总暂不可用')
+    expect(container.textContent).toContain('未知：缺少设备采音端点记录')
+    expect(container.textContent).not.toContain('暂无语音回合诊断数据')
+    app.unmount()
+  })
+
+  it('shows failures and missing stages while withholding percentiles below thirty samples', async () => {
+    deviceApi.listDevices.mockResolvedValue([{ id: 'a', displayName: '机器人 A', online: true, commandAvailable: true }])
+    deviceApi.listDeviceVoiceTurns.mockResolvedValue([])
+    const summary = quality('a', 34)
+    deviceApi.getDeviceVoiceQuality.mockResolvedValue({
+      ...summary,
+      successfulTurns: 31,
+      failedTurns: 3,
+      incompleteTurns: 2,
+      failureCounts: { ASR_UNAVAILABLE: 3 },
+      endpointToFirstSound: { ...summary.endpointToFirstSound, applicableSamples: 29, missingSamples: 2, p50Ms: 2000, p95Ms: 4000 },
+    })
+    const container = document.createElement('div')
+    const app = createApp(DeviceOverview)
+    app.mount(container)
+    await vi.waitFor(() => expect(container.querySelector('[data-device-id]')).not.toBeNull())
+    Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('交互诊断'))?.click()
+    await vi.waitFor(() => expect(container.querySelector('[data-voice-quality]')?.textContent).toContain('总尝试 34'))
+    const summaryText = container.querySelector('[data-voice-quality]')?.textContent
+    expect(summaryText).toContain('失败 3')
+    expect(summaryText).toContain('适用成功样本 29')
+    expect(summaryText).toContain('缺失 2')
+    expect(summaryText).toContain('样本不足，暂不能判断')
+    expect(summaryText).toContain('ASR_UNAVAILABLE 3 次')
+    expect(summaryText).toContain('尚无实体测量')
+    expect(summaryText).not.toContain('p50 2.00')
     app.unmount()
   })
   afterEach(() => {

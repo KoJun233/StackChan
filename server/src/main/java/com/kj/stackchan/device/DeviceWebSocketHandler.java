@@ -110,10 +110,12 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
     );
     private static final Set<String> VOICE_TURN_STAGE_FIELDS = Set.of(
-            "type", "sequence", "turn_id", "stage", "elapsed_ms"
+            "type", "sequence", "turn_id", "stage", "elapsed_ms",
+            "measurementSource", "endpointToLocalFeedbackMs", "captureLimitReached"
     );
     private static final Set<String> VOICE_TURN_FAILURE_FIELDS = Set.of(
-            "type", "sequence", "turn_id", "stage", "elapsed_ms", "failure_code"
+            "type", "sequence", "turn_id", "stage", "elapsed_ms", "failure_code",
+            "measurementSource", "endpointToLocalFeedbackMs", "captureLimitReached"
     );
     private static final Set<String> WORKDAY_TOGGLE_FIELDS = Set.of("type", "sequence");
     private static final int MAX_VOICE_TURN_ELAPSED_MS = 300_000;
@@ -388,13 +390,20 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         if (event instanceof VoiceTurnStageEvent voiceTurnStage) {
             if (voiceTurnDiagnosticsService != null) {
                 try {
-                    voiceTurnDiagnosticsService.recordDeviceStage(
+                    if (voiceTurnStage.measurementSource() == null) {
+                        voiceTurnDiagnosticsService.recordDeviceStage(
                             deviceId,
                             voiceTurnStage.turnId(),
                             voiceTurnStage.stage(),
                             voiceTurnStage.elapsedMs(),
                             voiceTurnStage.failureCode()
-                    );
+                        );
+                    } else {
+                        voiceTurnDiagnosticsService.recordDeviceStage(deviceId, voiceTurnStage.turnId(),
+                                voiceTurnStage.stage(), voiceTurnStage.elapsedMs(), voiceTurnStage.failureCode(),
+                                voiceTurnStage.measurementSource(), voiceTurnStage.endpointToLocalFeedbackMs(),
+                                voiceTurnStage.captureLimitReached());
+                    }
                 } catch (IllegalArgumentException exception) {
                     throw new InvalidDeviceEventException();
                 } catch (RuntimeException exception) {
@@ -687,10 +696,11 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         if (!stage.isDeviceStage()) {
             throw new InvalidDeviceEventException();
         }
-        requireOnlyFields(
-                root,
-                stage == VoiceTurnStage.FAILED ? VOICE_TURN_FAILURE_FIELDS : VOICE_TURN_STAGE_FIELDS
-        );
+        Set<String> allowedFields = stage == VoiceTurnStage.FAILED
+                ? VOICE_TURN_FAILURE_FIELDS : VOICE_TURN_STAGE_FIELDS;
+        if (!root.properties().stream().allMatch(entry -> allowedFields.contains(entry.getKey()))) {
+            throw new InvalidDeviceEventException();
+        }
         long sequence = requiredPositiveSequence(root);
         UUID turnId = requiredUuid(root, "turn_id");
         int elapsedMs = requiredInteger(root, "elapsed_ms");
@@ -705,7 +715,18 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
                 throw new InvalidDeviceEventException();
             }
         }
-        return new VoiceTurnStageEvent(sequence, turnId, stage, elapsedMs, failureCode);
+        String measurementSource = root.has("measurementSource") ? requiredText(root, "measurementSource") : null;
+        Integer feedbackMs = root.has("endpointToLocalFeedbackMs") ? requiredInteger(root, "endpointToLocalFeedbackMs") : null;
+        Boolean captureLimitReached = root.has("captureLimitReached") ? requiredBoolean(root, "captureLimitReached") : null;
+        if (measurementSource != null && !"DEVICE_MONOTONIC".equals(measurementSource)
+                || (feedbackMs != null || captureLimitReached != null) && measurementSource == null
+                || feedbackMs != null && (stage != VoiceTurnStage.SPEECH_CAPTURED
+                    || feedbackMs < 0 || feedbackMs > MAX_VOICE_TURN_ELAPSED_MS)
+                || captureLimitReached != null && stage != VoiceTurnStage.SPEECH_CAPTURED) {
+            throw new InvalidDeviceEventException();
+        }
+        return new VoiceTurnStageEvent(sequence, turnId, stage, elapsedMs, failureCode,
+                measurementSource, feedbackMs, captureLimitReached);
     }
 
     private long requiredPositiveSequence(JsonNode root) {
@@ -855,7 +876,10 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             UUID turnId,
             VoiceTurnStage stage,
             int elapsedMs,
-            VoiceTurnFailureCode failureCode
+            VoiceTurnFailureCode failureCode,
+            String measurementSource,
+            Integer endpointToLocalFeedbackMs,
+            Boolean captureLimitReached
     ) implements DeviceInboundEvent {
     }
 

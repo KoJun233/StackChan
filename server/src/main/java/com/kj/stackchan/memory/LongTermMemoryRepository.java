@@ -15,6 +15,13 @@ import org.springframework.data.domain.Pageable;
 public interface LongTermMemoryRepository
         extends JpaRepository<LongTermMemoryEntity, UUID>, JpaSpecificationExecutor<LongTermMemoryEntity> {
 
+    @Query("select memory from LongTermMemoryEntity memory where memory.roleId = :roleId "
+            + "and memory.deviceId = :deviceId and memory.scopeType = com.kj.stackchan.memory.MemoryScopeType.DEVICE "
+            + "and memory.continuationState <> com.kj.stackchan.memory.ContinuationState.NONE "
+            + "and memory.supersededByMemoryId is null order by memory.updatedAt desc, memory.id desc")
+    List<LongTermMemoryEntity> findContinuationTopics(@Param("roleId") UUID roleId,
+            @Param("deviceId") UUID deviceId, Pageable pageable);
+
     long countByConfirmationStatus(MemoryConfirmationStatus confirmationStatus);
 
     @Query("""

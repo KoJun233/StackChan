@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import type { Device, VoiceTurn, VoiceTurnStatus } from '@/api/modules/devices'
+import type { Device, VoiceQuality, VoiceTurn, VoiceTurnStatus } from '@/api/modules/devices'
 import type { MemoryUsageReference } from '@/api/modules/personaMemory'
-import { listDevices, listDeviceVoiceTurns, stopDeviceMotion } from '@/api/modules/devices'
+import { getDeviceVoiceQuality, listDevices, listDeviceVoiceTurns, stopDeviceMotion } from '@/api/modules/devices'
 import { getMemoryUsage } from '@/api/modules/personaMemory'
-import { formatVoiceDuration, voiceResponseLatency, voiceStageTiming } from './voiceDiagnostics'
+import { formatVoiceDuration, voiceCaptureLimitLabel, voiceDiagnosticCompleteness, voiceEndpointFeedbackLatency, voiceQualityPercentiles, voiceResponseLatency, voiceResponseLatencyExplanation, voiceStageSource, voiceStageTiming } from './voiceDiagnostics'
 
 defineOptions({ name: 'DeviceOverview' })
 const devices = ref<Device[]>([])
@@ -13,6 +13,9 @@ const selectedDevice = ref<Device | null>(null)
 const voiceTurns = ref<VoiceTurn[]>([])
 const voiceTurnsLoading = ref(false)
 const voiceTurnsError = ref('')
+const voiceQuality = ref<VoiceQuality | null>(null)
+const voiceQualityLoading = ref(false)
+const voiceQualityError = ref('')
 let voiceTurnsRequest = 0
 const memoryUsageByTurn = ref<Record<string, MemoryUsageReference[]>>({})
 const columns = [
@@ -91,6 +94,9 @@ async function showVoiceTurns(device: Device) {
   memoryUsageByTurn.value = {}
   voiceTurnsLoading.value = true
   voiceTurnsError.value = ''
+  voiceQuality.value = null
+  voiceQualityError.value = ''
+  void loadVoiceQuality(device.id, request)
   try {
     const turns = await listDeviceVoiceTurns(device.id)
     if (request !== voiceTurnsRequest) {
@@ -123,6 +129,25 @@ async function showVoiceTurns(device: Device) {
   finally {
     if (request === voiceTurnsRequest) {
       voiceTurnsLoading.value = false
+    }
+  }
+}
+async function loadVoiceQuality(deviceId: string, request: number) {
+  voiceQualityLoading.value = true
+  try {
+    const quality = await getDeviceVoiceQuality(deviceId)
+    if (request === voiceTurnsRequest) {
+      voiceQuality.value = quality
+    }
+  }
+  catch (error) {
+    if (request === voiceTurnsRequest) {
+      voiceQualityError.value = error instanceof Error ? error.message : '无法获取语音质量汇总。'
+    }
+  }
+  finally {
+    if (request === voiceTurnsRequest) {
+      voiceQualityLoading.value = false
     }
   }
 }
@@ -189,11 +214,55 @@ onMounted(load)
               仅显示阶段、耗时和安全失败类别；不保存音频、识别文本或机器人回复。
             </p>
           </div>
-          <FaButton variant="outline" size="sm" :loading="voiceTurnsLoading" @click="showVoiceTurns(selectedDevice)">
+          <FaButton variant="outline" size="sm" :loading="voiceTurnsLoading || voiceQualityLoading" @click="showVoiceTurns(selectedDevice)">
             刷新
           </FaButton>
         </div>
       </template>
+
+      <section class="mb-4 p-4 border border-border rounded-lg" data-voice-quality>
+        <h3 class="text-sm font-medium">
+          最近 24 小时的语音质量
+        </h3>
+        <p v-if="voiceQualityLoading" class="text-sm text-muted-foreground mt-2">
+          正在获取汇总…
+        </p>
+        <FaAlert v-else-if="voiceQualityError" class="mt-2" variant="destructive" title="质量汇总未获取" :description="voiceQualityError" />
+        <div v-else-if="voiceQuality" class="text-sm mt-2 space-y-2">
+          <p class="text-xs text-muted-foreground">
+            {{ new Date(voiceQuality.from).toLocaleString('zh-CN') }} 至 {{ new Date(voiceQuality.to).toLocaleString('zh-CN') }}
+          </p>
+          <p>
+            总尝试 {{ voiceQuality.totalAttempts }} · 成功 {{ voiceQuality.successfulTurns }} · 失败 {{ voiceQuality.failedTurns }} · 取消 {{ voiceQuality.cancelledTurns }} · 未结束 {{ voiceQuality.incompleteTurns }}
+          </p>
+          <p class="text-xs text-muted-foreground">
+            首声统计：成功普通短聊 {{ voiceQuality.ordinaryChatSuccessfulTurns }} · 非适用回合 {{ voiceQuality.excludedLatencyTurns }}
+          </p>
+          <div class="p-3 rounded-md bg-muted/50 space-y-1">
+            <p>普通短聊：采音端点至设备开始播放</p>
+            <p>{{ voiceQualityPercentiles(voiceQuality.endpointToFirstSound) }}</p>
+            <p class="text-xs text-muted-foreground">
+              设备单调计时 · 适用成功样本 {{ voiceQuality.endpointToFirstSound.applicableSamples }} · 缺失 {{ voiceQuality.endpointToFirstSound.missingSamples }} · 至少 30 个样本后显示百分位
+            </p>
+          </div>
+          <div class="p-3 rounded-md bg-muted/50 space-y-1">
+            <p>端点至本地处理反馈</p>
+            <p>{{ voiceQualityPercentiles(voiceQuality.endpointToLocalFeedback) }}</p>
+            <p class="text-xs text-muted-foreground">
+              设备单调计时 · 适用样本 {{ voiceQuality.endpointToLocalFeedback.applicableSamples }} · 缺失 {{ voiceQuality.endpointToLocalFeedback.missingSamples }} · 包含后续失败或取消的回合
+            </p>
+            <p v-if="voiceQuality.endpointToLocalFeedback.maximumMs != null" class="text-xs text-muted-foreground">
+              最大 {{ formatVoiceDuration(voiceQuality.endpointToLocalFeedback.maximumMs) }}<span v-if="voiceQuality.endpointToLocalFeedback.overThresholdSamples != null"> · 超过 200ms {{ voiceQuality.endpointToLocalFeedback.overThresholdSamples }} 次</span>
+            </p>
+          </div>
+          <p v-if="Object.keys(voiceQuality.failureCounts).length" class="text-xs text-destructive">
+            失败类别：<span v-for="(count, code) in voiceQuality.failureCounts" :key="code" class="mr-3">{{ code }} {{ count }} 次</span>
+          </p>
+        </div>
+        <p class="text-xs text-muted-foreground mt-3">
+          真实停说至首声、触摸至扬声器静音：尚无实体测量。设备开始播放记录与服务端耗时均不能替代声学观察；复杂工具任务、取消和失败不混入普通短聊首声百分位。
+        </p>
+      </section>
 
       <FaAlert v-if="voiceTurnsError" variant="destructive" title="诊断未获取" :description="voiceTurnsError" />
       <AppEmpty v-else-if="!voiceTurnsLoading && voiceTurns.length === 0" description="暂无语音回合诊断数据" />
@@ -217,8 +286,17 @@ onMounted(load)
               {{ statusLabels[turn.status] }}<span v-if="turn.failureCode"> · {{ turn.failureCode }}</span>
             </div>
           </div>
-          <div class="text-sm text-muted-foreground mb-3">
-            采音结束至首声 {{ formatVoiceDuration(voiceResponseLatency(turn)) }}
+          <div class="text-sm text-muted-foreground mb-3 space-y-1">
+            <div>
+              采音端点至设备开始播放 {{ formatVoiceDuration(voiceResponseLatency(turn)) }}
+              <span class="text-xs block">{{ voiceResponseLatencyExplanation(turn) }}</span>
+            </div>
+            <div>
+              端点至本地处理反馈 {{ formatVoiceDuration(voiceEndpointFeedbackLatency(turn)) }}
+              <span v-if="voiceEndpointFeedbackLatency(turn) === null" class="text-xs block">未知：缺少设备单调计时反馈记录</span>
+            </div>
+            <div>{{ voiceCaptureLimitLabel(turn) }}</div>
+            <div>{{ voiceDiagnosticCompleteness(turn) }}</div>
           </div>
           <ol class="gap-2 grid md:grid-cols-2 xl:grid-cols-3">
             <li v-for="event in turn.events" :key="`${event.source}-${event.stage}`" class="text-sm px-3 py-2 rounded-md bg-muted/50">
@@ -227,7 +305,7 @@ onMounted(load)
                 <span class="text-xs text-muted-foreground">{{ voiceStageTiming(event) }}</span>
               </div>
               <div class="text-xs text-muted-foreground mt-1">
-                {{ event.source === 'DEVICE' ? '设备' : '服务端' }}<span v-if="event.failureCode"> · {{ event.failureCode }}</span>
+                {{ voiceStageSource(event) }}<span v-if="event.failureCode"> · {{ event.failureCode }}</span>
                 <span v-if="event.diagnosticCode && event.diagnosticCode !== 'deterministic_action'" class="block break-all">{{ event.diagnosticCode }}</span>
               </div>
             </li>

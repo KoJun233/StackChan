@@ -816,11 +816,23 @@ esp_err_t device_protocol_encode_voice_turn_stage(char *output,
                                                   uint32_t elapsed_ms,
                                                   device_voice_turn_failure_t failure)
 {
+    return device_protocol_encode_voice_turn_stage_measured(output, output_size,
+        sequence, turn_id, stage, elapsed_ms, failure, NULL);
+}
+
+esp_err_t device_protocol_encode_voice_turn_stage_measured(char *output, size_t output_size,
+    uint32_t sequence, const char *turn_id, device_voice_turn_stage_t stage,
+    uint32_t elapsed_ms, device_voice_turn_failure_t failure,
+    const device_voice_capture_measurement_t *measurement)
+{
     const char *stage_name = voice_stage_name(stage);
     const char *failure_name = voice_failure_name(failure);
     if (output == NULL || output_size == 0 || sequence == 0 || !is_valid_uuid(turn_id) ||
         stage_name == NULL || elapsed_ms > 300000 ||
-        ((stage == DEVICE_VOICE_STAGE_FAILED) != (failure_name != NULL))) {
+        ((stage == DEVICE_VOICE_STAGE_FAILED) != (failure_name != NULL)) ||
+        (measurement != NULL && measurement->present &&
+         (stage != DEVICE_VOICE_STAGE_SPEECH_CAPTURED ||
+          (measurement->feedback_present && measurement->endpoint_to_local_feedback_ms > 300000)))) {
         return ESP_ERR_INVALID_ARG;
     }
     cJSON *root = cJSON_CreateObject();
@@ -834,6 +846,16 @@ esp_err_t device_protocol_encode_voice_turn_stage(char *output,
                     cJSON_AddNumberToObject(root, "elapsed_ms", elapsed_ms) != NULL;
     if (complete && failure_name != NULL) {
         complete = cJSON_AddStringToObject(root, "failure_code", failure_name) != NULL;
+    }
+    if (complete && measurement != NULL) {
+        complete = cJSON_AddStringToObject(root, "measurementSource", "DEVICE_MONOTONIC") != NULL;
+    }
+    if (complete && measurement != NULL && measurement->present) {
+        complete = cJSON_AddBoolToObject(root, "captureLimitReached", measurement->capture_limit_reached) != NULL;
+        if (complete && measurement->feedback_present) {
+            complete = cJSON_AddNumberToObject(root, "endpointToLocalFeedbackMs",
+                measurement->endpoint_to_local_feedback_ms) != NULL;
+        }
     }
     esp_err_t err = complete ? print_json(root, output, output_size) : ESP_ERR_NO_MEM;
     cJSON_Delete(root);

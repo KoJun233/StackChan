@@ -30,6 +30,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class LongTermMemoryController {
 
     private final LongTermMemoryService memoryService;
+    private com.kj.stackchan.memory.TopicContinuationService continuationService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setContinuationService(com.kj.stackchan.memory.TopicContinuationService service) {
+        continuationService = service;
+    }
 
     public LongTermMemoryController(LongTermMemoryService memoryService) {
         this.memoryService = memoryService;
@@ -108,6 +114,14 @@ public class LongTermMemoryController {
     public void delete(@PathVariable UUID id) {
         memoryService.delete(id);
     }
+
+    @PutMapping(path = "/{id}/continuation", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public LongTermMemoryService.MemorySnapshot continuation(@PathVariable UUID id,
+            @Valid @RequestBody ContinuationRequest request) {
+        return continuationService.change(id, request.action());
+    }
+
+    public record ContinuationRequest(@NotNull com.kj.stackchan.memory.TopicContinuationService.Control action) {}
 
     @PostMapping(path = ":clear", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ClearMemoryResponse clear(@Valid @RequestBody ClearMemoryRequest request) {

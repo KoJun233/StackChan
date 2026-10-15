@@ -23,6 +23,75 @@ class VoiceConversationContextPolicyTest {
     );
 
     @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"换个话题，聊音乐", "我问的是天气", "不是咖啡而是茶"})
+    void explicitNewObjectCreatesABoundaryEvenWithoutTheStoredBoundary(String current) {
+        var oldUser = message(MessageRole.USER, "聊咖啡", GenerationStatus.COMPLETED, NOW.minusSeconds(80));
+        var oldReply = message(MessageRole.ASSISTANT, "咖啡适合慢慢品。", GenerationStatus.COMPLETED, NOW.minusSeconds(70));
+        var user = message(MessageRole.USER, current, GenerationStatus.COMPLETED, NOW.minusSeconds(40));
+        var reply = message(MessageRole.ASSISTANT, "本轮新对象的回答。", GenerationStatus.COMPLETED, NOW.minusSeconds(30));
+        assertThat(policy.select(List.of(oldUser, oldReply, user, reply))).containsExactly(user, reply);
+    }
+
+    @Test
+    void continuationUsesOnlyTheLatestObjectAndItsCompletedContinuationChain() {
+        var oldUser = message(MessageRole.USER, "咖啡有什么特点", GenerationStatus.COMPLETED, NOW.minusSeconds(100));
+        var oldReply = message(MessageRole.ASSISTANT, "咖啡有香气。", GenerationStatus.COMPLETED, NOW.minusSeconds(90));
+        var currentUser = message(MessageRole.USER, "说说月亮", GenerationStatus.COMPLETED, NOW.minusSeconds(50));
+        var currentReply = message(MessageRole.ASSISTANT, "月亮绕地球运行。", GenerationStatus.COMPLETED, NOW.minusSeconds(40));
+        var nextUser = message(MessageRole.USER, "继续讲", GenerationStatus.COMPLETED, NOW.minusSeconds(30));
+        var nextReply = message(MessageRole.ASSISTANT, "月亮自身不会发光。", GenerationStatus.COMPLETED, NOW.minusSeconds(20));
+        assertThat(policy.selectContinuation(List.of(oldUser, oldReply, currentUser, currentReply, nextUser, nextReply), null))
+                .containsExactly(currentUser, currentReply, nextUser, nextReply);
+    }
+
+    @Test
+    void equallyRecentObjectsCannotBePickedByRandomUuidOrder() {
+        var firstUser = message(MessageRole.USER, "咖啡", GenerationStatus.COMPLETED, NOW.minusSeconds(50));
+        var firstReply = message(MessageRole.ASSISTANT, "咖啡话题。", GenerationStatus.COMPLETED, NOW.minusSeconds(20));
+        var secondUser = message(MessageRole.USER, "音乐", GenerationStatus.COMPLETED, NOW.minusSeconds(40));
+        var secondReply = message(MessageRole.ASSISTANT, "音乐话题。", GenerationStatus.COMPLETED, NOW.minusSeconds(20));
+        assertThat(policy.selectContinuation(List.of(firstUser, firstReply, secondUser, secondReply), null)).isEmpty();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource(delimiter = '|', value = {
+            "换个话题|想聊点什么？", "继续讲|你想继续哪件事？",
+            "继续讲|你想让我继续讲哪个话题？", "添加任务|这一段可能没说完，请再说一小段。"
+    })
+    void clarificationAndIncompleteCaptureCannotSupplyAContinuationObject(String text, String answer) {
+        var user = message(MessageRole.USER, text, GenerationStatus.COMPLETED, NOW.minusSeconds(30));
+        var reply = message(MessageRole.ASSISTANT, answer, GenerationStatus.COMPLETED, NOW.minusSeconds(20));
+        assertThat(policy.selectContinuation(List.of(user, reply), null)).isEmpty();
+    }
+
+    @Test
+    void duplicateCompletedAssistantsDoNotCountAsTwoSuccessfulTurns() {
+        var user = message(MessageRole.USER, "说说咖啡", GenerationStatus.COMPLETED, NOW.minusSeconds(30));
+        var reply = message(MessageRole.ASSISTANT, "咖啡话题。", GenerationStatus.COMPLETED, NOW.minusSeconds(20));
+        var duplicate = new ConversationMessageSnapshot(UUID.randomUUID(), MessageRole.ASSISTANT,
+                "重复回答", GenerationStatus.COMPLETED, NOW.minusSeconds(25), NOW.minusSeconds(10), user.id());
+        assertThat(policy.select(List.of(user, reply, duplicate))).isEmpty();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = GenerationStatus.class, names = {"FAILED", "INTERRUPTED", "STREAMING"})
+    void unsuccessfulAssistantsCannotProvideFactsOrContinuation(GenerationStatus status) {
+        var user = message(MessageRole.USER, "说说天气", GenerationStatus.COMPLETED, NOW.minusSeconds(30));
+        var reply = message(MessageRole.ASSISTANT, "残留天气回答", status, NOW.minusSeconds(20));
+        assertThat(policy.select(List.of(user, reply))).isEmpty();
+        assertThat(policy.selectContinuation(List.of(user, reply), null)).isEmpty();
+    }
+
+    @Test
+    void futureAndBlankCompletionsDoNotMasqueradeAsRecentFacts() {
+        var firstUser = message(MessageRole.USER, "未来问题", GenerationStatus.COMPLETED, NOW.plusSeconds(2));
+        var futureReply = message(MessageRole.ASSISTANT, "未来回答", GenerationStatus.COMPLETED, NOW.plusSeconds(3));
+        var secondUser = message(MessageRole.USER, "空回答的问题", GenerationStatus.COMPLETED, NOW.minusSeconds(40));
+        var blankReply = message(MessageRole.ASSISTANT, " ", GenerationStatus.COMPLETED, NOW.minusSeconds(30));
+        assertThat(policy.select(List.of(firstUser, futureReply, secondUser, blankReply))).isEmpty();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {"结束聊天。", "不聊这个"})
     void endingClosesOlderHistoryAndTheClosingTurnIsNotAContinuationTopic(String transcript) {
         var oldUser = message(MessageRole.USER, "说说咖啡", GenerationStatus.COMPLETED, NOW.minusSeconds(80));

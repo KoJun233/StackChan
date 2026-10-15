@@ -47,24 +47,57 @@ export interface PairingCode {
 }
 
 export type VoiceTurnStatus = 'IN_PROGRESS' | 'RESPONSE_READY' | 'COMPLETED' | 'CANCELLED' | 'FAILED'
+export type VoiceMeasurementSource = 'DEVICE_MONOTONIC' | 'SERVER_DURATION' | 'PHYSICAL_OBSERVATION'
 
 export interface VoiceTurnEvent {
+  captureLimitReached?: boolean | null
   diagnosticCode?: string | null
   durationMs?: number | null
   elapsedMs: number | null
+  endpointToLocalFeedbackMs?: number | null
   failureCode: string | null
+  measurementSource?: VoiceMeasurementSource | null
   occurredAt: string
   source: 'DEVICE' | 'SERVER'
   stage: string
 }
 
 export interface VoiceTurn {
+  diagnosticCompleteness?: 'COMPLETE' | 'PARTIAL' | 'UNKNOWN'
   events: VoiceTurnEvent[]
   failureCode: string | null
   startedAt: string
   status: VoiceTurnStatus
   turnId: string
   updatedAt: string
+}
+
+export interface VoiceQualityMetric {
+  applicableSamples: number
+  maximumMs?: number | null
+  measurementSource: VoiceMeasurementSource
+  minimumSamples: number
+  missingSamples: number
+  overThresholdSamples?: number
+  p50Ms: number | null
+  p95Ms: number | null
+}
+
+export interface VoiceQuality {
+  cancelledTurns: number
+  deviceId: string
+  endpointToFirstSound: VoiceQualityMetric
+  endpointToLocalFeedback: VoiceQualityMetric
+  excludedLatencyTurns: number
+  failedTurns: number
+  failureCounts: Record<string, number>
+  from: string
+  incompleteTurns: number
+  ordinaryChatSuccessfulTurns: number
+  physicalObservationRequired: boolean
+  successfulTurns: number
+  to: string
+  totalAttempts: number
 }
 
 interface DeviceListResponse {
@@ -84,6 +117,17 @@ export async function listDeviceVoiceTurns(deviceId: string, limit = 10): Promis
     `/api/v1/devices/${encodeURIComponent(deviceId)}/voice-turns?limit=${limit}`,
   )
   return response.turns
+}
+
+export function getDeviceVoiceQuality(deviceId: string, range: { from?: string, to?: string } = {}): Promise<VoiceQuality> {
+  const query = new URLSearchParams({ deviceId })
+  if (range.from) {
+    query.set('from', range.from)
+  }
+  if (range.to) {
+    query.set('to', range.to)
+  }
+  return apiJson(`/api/v1/companion/voice-quality?${query}`)
 }
 
 export function createPairingCode(createdBy: string): Promise<PairingCode> {

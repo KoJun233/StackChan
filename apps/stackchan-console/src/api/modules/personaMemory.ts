@@ -27,6 +27,8 @@ export type MemoryScopeType = 'GLOBAL' | 'DEVICE'
 export type MemoryCategory = 'USER_PROFILE' | 'EVENT'
 export type MemorySource = 'USER_ENTERED' | 'ASSISTANT_SUGGESTED'
 export type MemoryConfirmationStatus = 'PENDING' | 'CONFIRMED' | 'REJECTED'
+export type ContinuationState = 'PENDING' | 'ACTIVE' | 'PAUSED' | 'STOPPED' | 'DORMANT'
+export type ContinuationAction = 'PAUSE_TODAY' | 'STOP' | 'RESUME'
 
 export interface LongTermMemory {
   category: MemoryCategory
@@ -51,6 +53,7 @@ export interface LongTermMemory {
   title: string
   topicKey: string
   updatedAt: string
+  continuation?: { state: ContinuationState, progress: string, progressAt: string | null, pausedUntil: string | null } | null
 }
 
 export interface MemoryInput {
@@ -122,7 +125,9 @@ export function listMemories(params: MemoryListParams): Promise<MemoryPage> {
   if (params.deviceId) {
     query.set('deviceId', params.deviceId)
   }
-  if (params.roleId) query.set('roleId', params.roleId)
+  if (params.roleId) {
+    query.set('roleId', params.roleId)
+  }
   return apiJson(`/api/v1/memories?${query.toString()}`)
 }
 
@@ -164,6 +169,14 @@ export function setMemoryEnabled(id: string, enabled: boolean): Promise<LongTerm
 
 export function deleteMemory(id: string): Promise<void> {
   return apiJson(`/api/v1/memories/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export function changeContinuation(id: string, action: ContinuationAction): Promise<LongTermMemory> {
+  return apiJson(`/api/v1/memories/${encodeURIComponent(id)}/continuation`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }),
+  })
 }
 
 export function clearMemories(input: ClearMemoryInput = {}): Promise<{ deletedCount: number }> {

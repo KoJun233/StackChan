@@ -3,13 +3,16 @@ package com.kj.stackchan.api;
 import java.time.Instant;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
+import com.kj.stackchan.agent.AgentChannel;
 import com.kj.stackchan.agent.AgentOrchestrator;
 import com.kj.stackchan.conversation.ConversationMessageSnapshot;
 import com.kj.stackchan.conversation.ConversationNotFoundException;
 import com.kj.stackchan.conversation.ConversationSnapshot;
 import com.kj.stackchan.conversation.ConversationService;
+import com.kj.stackchan.conversation.DeviceVoiceConversationService;
 import com.kj.stackchan.conversation.GenerationStart;
 import com.kj.stackchan.conversation.GenerationStatus;
 import com.kj.stackchan.conversation.MessageRole;
@@ -23,6 +26,7 @@ import com.kj.stackchan.security.AdminUserRepository;
 import com.kj.stackchan.security.SecurityConfiguration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -34,6 +38,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
@@ -43,6 +48,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.after;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
@@ -69,6 +75,9 @@ class ConversationControllerTest {
     private ConversationService conversationService;
 
     @MockitoBean
+    private DeviceVoiceConversationService deviceVoiceConversationService;
+
+    @MockitoBean
     private AgentOrchestrator agentOrchestrator;
 
     @MockitoBean
@@ -90,7 +99,7 @@ class ConversationControllerTest {
     void preserveTheConfiguredBasePromptByDefault() {
         lenient().when(companionPromptService.assemble(any(UUID.class), any(String.class)))
                 .thenAnswer(invocation -> invocation.getArgument(1, String.class));
-        lenient().when(companionPromptService.assembleWithMemoryContext(
+        lenient().when(companionPromptService.assembleWebWithMemoryContext(
                         any(UUID.class), any(String.class), any(String.class), any(String.class)))
                 .thenAnswer(invocation -> new CompanionPromptService.PromptAssembly(
                         invocation.getArgument(1, String.class), List.of()
@@ -145,11 +154,14 @@ class ConversationControllerTest {
     }
 
     @Test
-    void requestsThinkOnlyWhileAnExplicitlyBoundWebReplyIsStillProcessing() throws Exception {
+    void requestsThinkOnlyForTheServerBoundDeviceWhileWebReplyIsProcessing() throws Exception {
         UUID conversationId = UUID.randomUUID();
         UUID clientMessageId = UUID.randomUUID();
         UUID assistantMessageId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
+        UUID requestedDeviceId = UUID.randomUUID();
+        when(deviceVoiceConversationService.findDeviceIdByConversationId(conversationId))
+                .thenReturn(Optional.of(deviceId));
         when(conversationService.loadHistory(conversationId)).thenReturn(List.of());
         when(conversationService.startGeneration(conversationId, clientMessageId, "慢一点"))
                 .thenReturn(new GenerationStart(conversationId, UUID.randomUUID(), assistantMessageId,
@@ -163,7 +175,7 @@ class ConversationControllerTest {
                         .with(user("admin").roles("ADMIN")).with(csrf())
                         .contentType(APPLICATION_JSON)
                         .content("{\"clientMessageId\":\"" + clientMessageId
-                                + "\",\"content\":\"慢一点\",\"deviceId\":\"" + deviceId + "\"}"))
+                                + "\",\"content\":\"慢一点\",\"deviceId\":\"" + requestedDeviceId + "\"}"))
                 .andExpect(request().asyncStarted()).andReturn();
 
         verify(bodyMotionAutoService, timeout(3_000)).request(deviceId, "THINK",
@@ -171,6 +183,10 @@ class ConversationControllerTest {
         result.getAsyncResult(7_000);
         mockMvc.perform(asyncDispatch(result)).andExpect(status().isOk())
                 .andExpect(content().string(containsString("event:completed")));
+        var requestCaptor = ArgumentCaptor.forClass(AgentOrchestrator.AgentRequest.class);
+        verify(agentOrchestrator).stream(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().context().deviceId()).isEqualTo(deviceId);
+        verify(bodyMotionAutoService, never()).request(eq(requestedDeviceId), any(), any());
     }
 
     @Test
@@ -178,6 +194,8 @@ class ConversationControllerTest {
         UUID conversationId = UUID.randomUUID();
         UUID clientMessageId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
+        when(deviceVoiceConversationService.findDeviceIdByConversationId(conversationId))
+                .thenReturn(Optional.of(deviceId));
         when(conversationService.loadHistory(conversationId)).thenReturn(List.of());
         when(conversationService.startGeneration(conversationId, clientMessageId, "快一点"))
                 .thenReturn(new GenerationStart(conversationId, UUID.randomUUID(), UUID.randomUUID(),
@@ -197,6 +215,75 @@ class ConversationControllerTest {
         result.getAsyncResult(5_000);
         mockMvc.perform(asyncDispatch(result)).andExpect(status().isOk());
         verify(bodyMotionAutoService, after(2_200).never()).request(any(), any(), any());
+    }
+
+    @Test
+    void aRequestedDeviceCannotGrantOrdinaryWebConversationDeviceOrNotificationScope() throws Exception {
+        UUID conversationId = UUID.randomUUID(), clientMessageId = UUID.randomUUID(), assistantMessageId = UUID.randomUUID();
+        UUID requestedDeviceId = UUID.randomUUID();
+        String input = "给手机发一条通知：木工已经完成底座";
+        when(deviceVoiceConversationService.findDeviceIdByConversationId(conversationId)).thenReturn(Optional.empty());
+        when(conversationService.loadHistory(conversationId)).thenReturn(List.of());
+        when(conversationService.startGeneration(conversationId, clientMessageId, input))
+                .thenReturn(new GenerationStart(conversationId, UUID.randomUUID(), assistantMessageId,
+                        false, GenerationStatus.STREAMING, ""));
+        when(llmSettingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings(
+                "https://example.invalid/v1", "model", "system", "key"));
+        when(agentOrchestrator.stream(any(AgentOrchestrator.AgentRequest.class)))
+                .thenReturn(Mono.delay(Duration.ofMillis(2_300)).map(tick -> "没有可用的设备通知范围").flux());
+
+        MvcResult result = mockMvc.perform(post("/api/v1/conversations/{conversationId}/messages:stream", conversationId)
+                        .with(user("admin").roles("ADMIN")).with(csrf()).contentType(APPLICATION_JSON)
+                        .content("{\"clientMessageId\":\"" + clientMessageId + "\",\"content\":\"" + input
+                                + "\",\"deviceId\":\"" + requestedDeviceId + "\"}"))
+                .andExpect(request().asyncStarted()).andReturn();
+
+        result.getAsyncResult(5_000);
+        mockMvc.perform(asyncDispatch(result)).andExpect(status().isOk())
+                .andExpect(content().string(containsString("event:completed")));
+        var requestCaptor = ArgumentCaptor.forClass(AgentOrchestrator.AgentRequest.class);
+        verify(agentOrchestrator).stream(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().context().deviceId()).isNull();
+        assertThat(requestCaptor.getValue().context().channel()).isEqualTo(AgentChannel.WEB);
+        verifyNoInteractions(bodyMotionAutoService);
+        verify(companionPromptService).assembleWebWithMemoryContext(conversationId, "system", "", input);
+        verify(companionPromptService, never()).assembleWithMemoryContext(any(), any(), any(), any());
+        verify(completedTurnMemoryCoordinator).complete(assistantMessageId, assistantMessageId,
+                null, input, "没有可用的设备通知范围", List.of(), true);
+    }
+
+    @Test
+    void serverBoundWebConversationPreservesExplicitPhoneRequestsWithoutAClientDeviceField() throws Exception {
+        UUID conversationId = UUID.randomUUID(), clientMessageId = UUID.randomUUID(), deviceId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID(), assistantMessageId = UUID.randomUUID();
+        String input = "给手机发一条通知：下午见";
+        when(deviceVoiceConversationService.findDeviceIdByConversationId(conversationId)).thenReturn(Optional.of(deviceId));
+        when(conversationService.roleId(conversationId)).thenReturn(roleId);
+        when(conversationService.loadHistory(conversationId)).thenReturn(List.of());
+        when(conversationService.startGeneration(conversationId, clientMessageId, input))
+                .thenReturn(new GenerationStart(conversationId, UUID.randomUUID(), assistantMessageId,
+                        false, GenerationStatus.STREAMING, ""));
+        when(llmSettingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings(
+                "https://example.invalid/v1", "model", "system", "key"));
+        when(agentOrchestrator.stream(any(AgentOrchestrator.AgentRequest.class))).thenReturn(Flux.just("Bark 已接受通知。"));
+
+        MvcResult result = mockMvc.perform(post("/api/v1/conversations/{conversationId}/messages:stream", conversationId)
+                        .with(user("admin").roles("ADMIN")).with(csrf()).contentType(APPLICATION_JSON)
+                        .content("{\"clientMessageId\":\"" + clientMessageId + "\",\"content\":\"" + input + "\"}"))
+                .andExpect(request().asyncStarted()).andReturn();
+
+        result.getAsyncResult(5_000);
+        mockMvc.perform(asyncDispatch(result)).andExpect(status().isOk())
+                .andExpect(content().string(containsString("Bark 已接受通知。")));
+        var requestCaptor = ArgumentCaptor.forClass(AgentOrchestrator.AgentRequest.class);
+        verify(agentOrchestrator).stream(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().context().deviceId()).isEqualTo(deviceId);
+        assertThat(requestCaptor.getValue().context().roleId()).isEqualTo(roleId);
+        assertThat(requestCaptor.getValue().context().channel()).isEqualTo(AgentChannel.WEB);
+        assertThat(requestCaptor.getValue().userMessage()).isEqualTo(input);
+        verify(companionPromptService).assembleWebWithMemoryContext(conversationId, "system", "", input);
+        verify(completedTurnMemoryCoordinator).complete(assistantMessageId, assistantMessageId,
+                null, roleId, input, "Bark 已接受通知。", List.of(), true);
     }
 
     @Test

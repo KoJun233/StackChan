@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import com.kj.stackchan.agent.AgentChannel;
@@ -35,6 +36,12 @@ import reactor.core.scheduler.Schedulers;
 
 @Service
 public class VoiceTurnService {
+    private com.kj.stackchan.memory.TopicContinuationService continuationService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setContinuationService(com.kj.stackchan.memory.TopicContinuationService service) {
+        this.continuationService = service;
+    }
 
     private static final Logger logger = LoggerFactory.getLogger(VoiceTurnService.class);
     private static final Duration VOICE_LLM_TIMEOUT = Duration.ofSeconds(30);
@@ -147,7 +154,11 @@ public class VoiceTurnService {
     }
 
     public VoiceTurnResult handle(UUID deviceId, UUID turnId, byte[] wavAudio) {
-        return handle(deviceId, turnId, wavAudio, null);
+        return handle(deviceId, turnId, wavAudio, null, null);
+    }
+
+    public VoiceTurnResult handle(UUID deviceId, UUID turnId, byte[] wavAudio, Boolean captureLimitReached) {
+        return handle(deviceId, turnId, wavAudio, null, captureLimitReached);
     }
 
     public void handleStreaming(
@@ -157,7 +168,13 @@ public class VoiceTurnService {
             VoiceTurnSegmentSink segmentSink
     ) {
         if (segmentSink == null) throw new IllegalArgumentException("Voice turn segment sink is required");
-        handle(deviceId, turnId, wavAudio, segmentSink);
+        handle(deviceId, turnId, wavAudio, segmentSink, null);
+    }
+
+    public void handleStreaming(UUID deviceId, UUID turnId, byte[] wavAudio,
+                                VoiceTurnSegmentSink segmentSink, Boolean captureLimitReached) {
+        if (segmentSink == null) throw new IllegalArgumentException("Voice turn segment sink is required");
+        handle(deviceId, turnId, wavAudio, segmentSink, captureLimitReached);
     }
 
     public void handleLiveStreaming(
@@ -166,12 +183,18 @@ public class VoiceTurnService {
             byte[] streamingWavAudio,
             VoiceTurnSegmentSink segmentSink
     ) {
+        handleLiveStreaming(deviceId, turnId, streamingWavAudio, segmentSink, null);
+    }
+
+    public void handleLiveStreaming(UUID deviceId, UUID turnId, byte[] streamingWavAudio,
+                                    VoiceTurnSegmentSink segmentSink, Boolean captureLimitReached) {
         if (segmentSink == null) throw new IllegalArgumentException("Voice turn segment sink is required");
         handle(
                 deviceId,
                 turnId,
                 WavPcmAudio.normalizeUploadedMono16KhzWav(streamingWavAudio),
-                segmentSink
+                segmentSink,
+                captureLimitReached
         );
     }
 
@@ -179,7 +202,8 @@ public class VoiceTurnService {
             UUID deviceId,
             UUID turnId,
             byte[] wavAudio,
-            VoiceTurnSegmentSink segmentSink
+            VoiceTurnSegmentSink segmentSink,
+            Boolean captureLimitReached
     ) {
         if (deviceUiService != null && deviceUiService.pendingVisible(deviceId))
             throw new VoiceInputException("请先在屏幕上确认或取消当前操作");
@@ -197,6 +221,7 @@ public class VoiceTurnService {
             boolean generationCompleted = false;
             long phaseStartedNanos = System.nanoTime();
             Integer modelDurationMs = null;
+            AtomicReference<AgentOrchestrator.ExecutionRoute> executionRoute = new AtomicReference<>();
             try {
                 long asrStartedNanos = System.nanoTime();
                 String transcript = speechRuntimeClient.transcribe(wavAudio).trim();
@@ -220,28 +245,41 @@ public class VoiceTurnService {
                 }
 
                 UUID conversationId = deviceVoiceConversationService.getOrCreateConversationId(deviceId);
+                diagnosticsService.bindConversation(deviceId, turnId, conversationId);
                 UUID roleId = conversationService.roleId(conversationId);
                 List<ConversationMessageSnapshot> history = conversationService.loadHistory(conversationId);
                 start = conversationService.startGeneration(conversationId, UUID.randomUUID(), transcript);
                 cancellation.throwIfCancelled();
                 VoiceDialogueControl dialogue = VoiceDialogueControl.parse(transcript);
-                boolean newTopic = dialogue.kind() == VoiceDialogueControl.Kind.NEW_TOPIC;
-                boolean ending = dialogue.closesTopic();
-                Instant topicBoundary = (newTopic || ending)
+                boolean captureTruncated = Boolean.TRUE.equals(captureLimitReached);
+                boolean newTopic = !captureTruncated && dialogue.kind() == VoiceDialogueControl.Kind.NEW_TOPIC;
+                boolean correction = !captureTruncated && dialogue.kind() == VoiceDialogueControl.Kind.CORRECTION;
+                boolean ending = !captureTruncated && dialogue.closesTopic();
+                String continuationControl = continuationService == null || captureTruncated ? null : continuationService.handleControl(
+                        roleId, deviceId, conversationId, conversationService.voiceTopicBoundary(conversationId), transcript);
+                Instant topicBoundary = (newTopic || correction || ending || continuationControl != null)
                         ? conversationService.resetVoiceTopic(conversationId, start.userMessageId())
                         : conversationService.voiceTopicBoundary(conversationId);
                 topicBoundary = conversationContextPolicy.topicBoundary(history, topicBoundary);
-                if ((newTopic || ending || dialogue.kind() == VoiceDialogueControl.Kind.CORRECTION) && voiceActionCoordinator != null) {
+                if ((newTopic || correction || ending || continuationControl != null || captureTruncated) && voiceActionCoordinator != null) {
                     voiceActionCoordinator.cancelPendingOperation(deviceId, conversationId);
                 }
                 String voiceInstruction = VOICE_SYSTEM_INSTRUCTION + dialogue.guidance();
-                List<Message> modelHistory = ((newTopic || ending) ? List.<ConversationMessageSnapshot>of()
-                        : conversationContextPolicy.select(history, topicBoundary)).stream()
+                List<ConversationMessageSnapshot> selectedHistory = (newTopic || correction || ending || captureTruncated)
+                        ? List.of() : dialogue.kind() == VoiceDialogueControl.Kind.CONTINUE
+                        ? conversationContextPolicy.selectContinuation(history, topicBoundary)
+                        : conversationContextPolicy.select(history, topicBoundary);
+                List<Message> modelHistory = selectedHistory.stream()
                         .map(this::toModelMessage)
                         .toList();
-                VoiceActionCoordinator.ActionResult actionResult = ending
+                VoiceActionCoordinator.ActionResult actionResult = captureTruncated
+                        ? new VoiceActionCoordinator.ActionResult("这一段可能没说完，请再说一小段。", true)
+                        : newTopic && dialogue.routingText().isBlank()
+                        ? new VoiceActionCoordinator.ActionResult("想聊点什么？", true)
+                        : continuationControl != null
+                        ? new VoiceActionCoordinator.ActionResult(continuationControl, true) : ending
                         ? new VoiceActionCoordinator.ActionResult(dialogue.kind() == VoiceDialogueControl.Kind.DECLINE
-                            ? "好的，先不聊这个。" : "好的，先聊到这里。", true)
+                            ? "好的，先不聊。" : "好的，先聊到这里。", true)
                         : voiceActionCoordinator == null ? null
                         : voiceActionCoordinator.handle(deviceId, conversationId, turnId, transcript);
                 if (actionResult != null && actionResult.handled()) {
@@ -253,14 +291,16 @@ public class VoiceTurnService {
                     );
                 } else {
                     String proactiveContext = "";
-                    if (recentProactiveContextService != null && !newTopic) {
+                    if (recentProactiveContextService != null && !newTopic && !correction
+                            && (dialogue.kind() != VoiceDialogueControl.Kind.CONTINUE
+                                || conversationContextPolicy.select(history, topicBoundary).isEmpty())) {
                         proactiveContext = topicBoundary == null ? recentProactiveContextService.context(deviceId, roleId)
                                 : recentProactiveContextService.context(deviceId, roleId, topicBoundary);
                     }
                     if (proactiveContext == null) proactiveContext = "";
                     if (dialogue.kind() == VoiceDialogueControl.Kind.CONTINUE
                             && modelHistory.isEmpty() && proactiveContext.isBlank()) {
-                        reply = "你想让我继续讲哪个话题？";
+                        reply = "你想继续哪件事？";
                     } else {
                         CompanionPromptService.PromptAssembly promptAssembly = companionPromptService.assembleWithMemoryContext(
                                 conversationId, llmSettingsService.resolveForInvocation().systemPrompt(), voiceInstruction, transcript);
@@ -288,7 +328,8 @@ public class VoiceTurnService {
                                         ),
                                         systemPrompt,
                                         modelHistory,
-                                        transcript
+                                        transcript,
+                                        executionRoute::set
                                 ))
                                 .takeUntilOther(cancellation.cancellationSignal())
                                 .filter(chunk -> chunk != null && !chunk.isEmpty())
@@ -312,10 +353,29 @@ public class VoiceTurnService {
                     throw new LlmProviderUnavailableException();
                 }
                 if (deviceUiService != null && actionResult != null && actionResult.handled()
+                        && !captureTruncated && !ending && !newTopic
                         && deviceUiService.presentAndAwait(deviceId, conversationId)) {
                     reply = "请确认屏幕上的内容。";
                 }
-                ExpressionSuggestionParser.Suggestion expression = ExpressionSuggestionParser.parse(reply);
+                ExpressionSuggestionParser.Suggestion originalExpression = ExpressionSuggestionParser.parse(reply);
+                if (extractMemorySuggestion && !newTopic && !correction && voiceActionCoordinator != null) {
+                    String offer = null;
+                    try { offer = voiceActionCoordinator.offerContinuation(deviceId, conversationId, transcript); }
+                    catch (RuntimeException exception) { logger.warn("Continuation offer unavailable for turn={}", turnId); }
+                    if (offer != null) {
+                        boolean shown = deviceUiService != null && deviceUiService.presentAndAwait(deviceId, conversationId);
+                        // Keep the response and the complete consent question within the single spoken reply budget.
+                        String answer = ExpressionSuggestionParser.parse(reply).reply();
+                        String question = shown ? "要下次接着聊吗？请确认屏幕。" : offer;
+                        int allowance = Math.max(0, 155 - question.codePointCount(0, question.length()));
+                        if (answer.codePointCount(0, answer.length()) > allowance)
+                            answer = answer.substring(0, answer.offsetByCodePoints(0, allowance)) + "。";
+                        reply = answer + question;
+                    }
+                }
+                ExpressionSuggestionParser.Suggestion expression = new ExpressionSuggestionParser.Suggestion(
+                        ExpressionSuggestionParser.parse(reply).reply(), originalExpression.emotion(),
+                        originalExpression.intensity(), originalExpression.durationSeconds());
                 reply = boundSingleSpokenReply(expression.reply());
                 if (reply.isBlank()) {
                     throw new LlmProviderUnavailableException();
@@ -324,7 +384,8 @@ public class VoiceTurnService {
                     deviceExpressionService.apply(deviceId, roleId, turnId, expression);
                 }
                 recordTimedStage(deviceId, turnId, VoiceTurnStage.LLM_COMPLETED, null,
-                        modelDurationMs, actionResult != null && actionResult.handled() ? "deterministic_action" : null);
+                        modelDurationMs, actionResult != null && actionResult.handled() ? "deterministic_action"
+                                : executionRoute.get() == null ? null : executionRoute.get().diagnosticCode());
                 lastCompletedStage = VoiceTurnStage.LLM_COMPLETED;
                 cancellation.throwIfCancelled();
                 long ttsStartedNanos = System.nanoTime();
@@ -368,6 +429,10 @@ public class VoiceTurnService {
                 }
                 conversationService.completeGeneration(start.assistantMessageId(), reply);
                 generationCompleted = true;
+                if (continuationService != null && extractMemorySuggestion && !newTopic && !correction) {
+                    try { continuationService.recordDiscussion(roleId, deviceId, conversationId, start.userMessageId(), transcript, reply); }
+                    catch (RuntimeException exception) { logger.warn("Continuation progress unavailable for turn={}", turnId); }
+                }
                 if (completedTurnMemoryCoordinator != null && extractMemorySuggestion) {
                     if (roleId == null || CompanionRoleEntity.DEFAULT_ROLE_ID.equals(roleId)) {
                         completedTurnMemoryCoordinator.complete(turnId, turnId, deviceId, transcript, reply, usedMemoryIds, true);
@@ -427,7 +492,10 @@ public class VoiceTurnService {
                 >= MAX_SPOKEN_REPLY_CODE_POINTS / 2) {
             return bounded.substring(0, boundary + 1).stripTrailing();
         }
-        return bounded + "。";
+        // Reserve the final code point for punctuation rather than returning 161 points.
+        return bounded.substring(0, bounded.offsetByCodePoints(0,
+                Math.min(MAX_SPOKEN_REPLY_CODE_POINTS - 1,
+                        bounded.codePointCount(0, bounded.length())))).stripTrailing() + "。";
     }
 
     private int lastStrongBoundary(String value) {

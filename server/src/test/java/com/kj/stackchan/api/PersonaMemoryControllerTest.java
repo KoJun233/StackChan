@@ -46,7 +46,28 @@ class PersonaMemoryControllerTest {
     @MockitoBean
     private LongTermMemoryService memoryService;
     @MockitoBean
+    private com.kj.stackchan.memory.TopicContinuationService continuationService;
+    @MockitoBean
     private AdminUserRepository adminUserRepository;
+
+    @Test
+    void continuationControlsRequireAdminCsrfAndKnownAction() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(continuationService.change(id, com.kj.stackchan.memory.TopicContinuationService.Control.PAUSE_TODAY))
+                .thenReturn(memory(id, MemoryConfirmationStatus.CONFIRMED, true));
+        String path = "/api/v1/memories/" + id + "/continuation";
+        mockMvc.perform(put(path).contentType(APPLICATION_JSON).content("{\"action\":\"STOP\"}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put(path).with(user("admin").roles("ADMIN")).contentType(APPLICATION_JSON).content("{\"action\":\"STOP\"}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put(path).with(user("admin").roles("ADMIN")).with(csrf()).contentType(APPLICATION_JSON).content("{\"action\":\"AUTO\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(put(path).with(user("admin").roles("ADMIN")).with(csrf()).contentType(APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(put(path).with(user("admin").roles("ADMIN")).with(csrf()).contentType(APPLICATION_JSON).content("{\"action\":\"PAUSE_TODAY\"}"))
+                .andExpect(status().isOk());
+        verify(continuationService).change(id, com.kj.stackchan.memory.TopicContinuationService.Control.PAUSE_TODAY);
+    }
 
     @Test
     void readsAndUpdatesStructuredPersonaForAdministrator() throws Exception {

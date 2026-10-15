@@ -167,7 +167,7 @@ class VoiceTurnServiceTest {
         UUID roleId = CompanionRoleEntity.DEFAULT_ROLE_ID;
         Instant boundary = Instant.now().minusSeconds(30);
         byte[] input = new byte[64];
-        String transcript = resettingNow ? "换个话题" : "那明天呢";
+        String transcript = resettingNow ? "换个话题，聊音乐" : "那明天呢";
         when(speechRuntimeClient.transcribe(input)).thenReturn(transcript);
         when(deviceVoiceConversationService.getOrCreateConversationId(deviceId)).thenReturn(conversationId);
         when(conversationService.loadHistory(conversationId)).thenReturn(List.of(
@@ -463,7 +463,7 @@ class VoiceTurnServiceTest {
         UUID conversation = UUID.randomUUID();
         UUID assistant = UUID.randomUUID();
         byte[] input = new byte[64];
-        String clarification = "你想让我继续讲哪个话题？";
+        String clarification = "你想继续哪件事？";
         when(speechRuntimeClient.transcribe(input)).thenReturn("继续讲");
         when(deviceVoiceConversationService.getOrCreateConversationId(device)).thenReturn(conversation);
         when(conversationService.startGeneration(eq(conversation), any(UUID.class), eq("继续讲")))
@@ -481,7 +481,7 @@ class VoiceTurnServiceTest {
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.CsvSource({
             "false,结束聊天？！,好的，先聊到这里。", "true,结束聊天？！,好的，先聊到这里。",
-            "false,不聊这个,好的，先不聊这个。", "true,现在忙,好的，先不聊这个。"})
+            "false,不聊这个,好的，先不聊。", "true,现在忙,好的，先不聊。"})
     void explicitEndClosesTheTopicWithoutCallingTheModelOrExtractingMemory(boolean streaming, String transcript, String reply) {
         UUID device = UUID.randomUUID();
         UUID conversation = UUID.randomUUID();
@@ -537,6 +537,170 @@ class VoiceTurnServiceTest {
         );
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void truncatedCaptureClarifiesBeforeAnyActionModelOrMemoryOperation(boolean streaming) {
+        UUID device = UUID.randomUUID();
+        UUID conversation = UUID.randomUUID();
+        UUID turn = UUID.randomUUID();
+        UUID user = UUID.randomUUID();
+        UUID assistant = UUID.randomUUID();
+        byte[] input = new byte[64];
+        String transcript = "给我的手机发一条消息：";
+        String reply = "这一段可能没说完，请再说一小段。";
+        when(speechRuntimeClient.transcribe(input)).thenReturn(transcript);
+        when(deviceVoiceConversationService.getOrCreateConversationId(device)).thenReturn(conversation);
+        when(conversationService.startGeneration(eq(conversation), any(UUID.class), eq(transcript)))
+                .thenReturn(new GenerationStart(conversation, user, assistant, false, GenerationStatus.STREAMING, ""));
+        byte[] audio = new byte[44];
+        when(speechRuntimeClient.synthesize(reply, CompanionRoleEntity.DEFAULT_ROLE_ID)).thenReturn(audio);
+        var topics = mock(com.kj.stackchan.memory.TopicContinuationService.class);
+        var ui = mock(com.kj.stackchan.device.DeviceUiService.class);
+        var service = service();
+        service.setContinuationService(topics);
+        service.setDeviceUiService(ui);
+        if (streaming) {
+            var sink = mock(VoiceTurnSegmentSink.class);
+            service.handleStreaming(device, turn, input, sink, true);
+            verify(sink).audio(0, audio);
+            verify(sink).complete(1);
+        } else {
+            assertThat(service.handle(device, turn, input, true).reply()).isEqualTo(reply);
+        }
+        verify(voiceActionCoordinator).cancelPendingOperation(device, conversation);
+        verify(voiceActionCoordinator, never()).handle(any(), any(), any(), anyString());
+        verify(ui, never()).presentAndAwait(any(), any());
+        verifyNoInteractions(agentOrchestrator, topics, completedTurnMemoryCoordinator, llmSettingsService, companionPromptService);
+        verify(conversationService).completeGeneration(assistant, reply);
+        var privacyOrder = inOrder(deviceVoiceConversationService, diagnosticsService, conversationService);
+        privacyOrder.verify(deviceVoiceConversationService).getOrCreateConversationId(device);
+        privacyOrder.verify(diagnosticsService).bindConversation(device, turn, conversation);
+        privacyOrder.verify(conversationService).startGeneration(eq(conversation), any(UUID.class), eq(transcript));
+    }
+
+    @Test
+    void privacyAssociationFailureStopsBeforeCreatingAnyPrivateMessage() {
+        UUID device = UUID.randomUUID();
+        UUID conversation = UUID.randomUUID();
+        UUID turn = UUID.randomUUID();
+        byte[] input = new byte[64];
+        when(speechRuntimeClient.transcribe(input)).thenReturn("今天赢了");
+        when(deviceVoiceConversationService.getOrCreateConversationId(device)).thenReturn(conversation);
+        org.mockito.Mockito.doThrow(new IllegalStateException("association unavailable"))
+                .when(diagnosticsService).bindConversation(device, turn, conversation);
+
+        assertThatThrownBy(() -> service().handle(device, turn, input)).isInstanceOf(IllegalStateException.class);
+
+        verify(conversationService, never()).startGeneration(any(), any(), anyString());
+        verify(speechRuntimeClient, never()).synthesize(anyString(), any(UUID.class));
+        verifyNoInteractions(agentOrchestrator, voiceActionCoordinator, completedTurnMemoryCoordinator);
+        verify(diagnosticsService).recordServerStage(eq(device), eq(turn), eq(VoiceTurnStage.FAILED),
+                eq(VoiceTurnFailureCode.INTERNAL_ERROR), anyInt(), eq(null));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"我问的是天气", "不是咖啡而是茶"})
+    void currentCorrectionClearsOldDialogueAndProactiveContextWithoutUpdatingContinuation(String transcript) {
+        UUID device = UUID.randomUUID();
+        UUID conversation = UUID.randomUUID();
+        UUID user = UUID.randomUUID();
+        UUID assistant = UUID.randomUUID();
+        byte[] input = new byte[64];
+        when(speechRuntimeClient.transcribe(input)).thenReturn(transcript);
+        when(deviceVoiceConversationService.getOrCreateConversationId(device)).thenReturn(conversation);
+        when(conversationService.loadHistory(conversation)).thenReturn(List.of(
+                message("我喜欢咖啡", MessageRole.USER, Instant.now().minusSeconds(90)),
+                message("我们继续咖啡话题。", MessageRole.ASSISTANT, Instant.now().minusSeconds(80))));
+        when(conversationService.startGeneration(eq(conversation), any(UUID.class), eq(transcript)))
+                .thenReturn(new GenerationStart(conversation, user, assistant, false, GenerationStatus.STREAMING, ""));
+        when(conversationService.resetVoiceTopic(conversation, user)).thenReturn(Instant.now());
+        when(llmSettingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings("https://example.com/v1", "model", "prompt", "secret"));
+        when(agentOrchestrator.stream(any())).thenReturn(Flux.just("按本次新对象回答。"));
+        when(speechRuntimeClient.synthesize("按本次新对象回答。", CompanionRoleEntity.DEFAULT_ROLE_ID)).thenReturn(new byte[44]);
+        var topics = mock(com.kj.stackchan.memory.TopicContinuationService.class);
+        var service = service();
+        service.setContinuationService(topics);
+
+        service.handle(device, input);
+
+        var captured = ArgumentCaptor.forClass(AgentOrchestrator.AgentRequest.class);
+        verify(agentOrchestrator).stream(captured.capture());
+        assertThat(captured.getValue().history()).isEmpty();
+        assertThat(captured.getValue().systemPrompt()).contains("优先于旧历史、旧记忆和旧计划", "不把本轮纠正自动当作长期偏好变化");
+        verifyNoInteractions(recentProactiveContextService);
+        verify(voiceActionCoordinator, never()).offerContinuation(any(), any(), anyString());
+        verify(topics, never()).recordDiscussion(any(), any(), any(), any(), anyString(), anyString());
+    }
+
+    @Test
+    void bareTopicSwitchAsksOnceWithoutCallingModelOrRevivingOldContext() {
+        UUID device = UUID.randomUUID();
+        UUID conversation = UUID.randomUUID();
+        UUID user = UUID.randomUUID();
+        UUID assistant = UUID.randomUUID();
+        byte[] input = new byte[64];
+        when(speechRuntimeClient.transcribe(input)).thenReturn("换个话题");
+        when(deviceVoiceConversationService.getOrCreateConversationId(device)).thenReturn(conversation);
+        when(conversationService.startGeneration(eq(conversation), any(UUID.class), eq("换个话题")))
+                .thenReturn(new GenerationStart(conversation, user, assistant, false, GenerationStatus.STREAMING, ""));
+        when(conversationService.resetVoiceTopic(conversation, user)).thenReturn(Instant.now());
+        when(speechRuntimeClient.synthesize("想聊点什么？", CompanionRoleEntity.DEFAULT_ROLE_ID)).thenReturn(new byte[44]);
+        assertThat(service().handle(device, input).reply()).isEqualTo("想聊点什么？");
+        verifyNoInteractions(agentOrchestrator, llmSettingsService, companionPromptService, completedTurnMemoryCoordinator, recentProactiveContextService);
+        verify(voiceActionCoordinator).cancelPendingOperation(device, conversation);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"汉", "😀"})
+    void hardLimitIncludesFallbackPunctuationAndDoesNotSplitUnicode(String unit) {
+        UUID device = UUID.randomUUID();
+        UUID conversation = UUID.randomUUID();
+        UUID assistant = UUID.randomUUID();
+        byte[] input = new byte[64];
+        String transcript = "解释一下这个概念";
+        String expected = unit.repeat(159) + "。";
+        when(speechRuntimeClient.transcribe(input)).thenReturn(transcript);
+        when(deviceVoiceConversationService.getOrCreateConversationId(device)).thenReturn(conversation);
+        when(conversationService.startGeneration(eq(conversation), any(UUID.class), eq(transcript)))
+                .thenReturn(new GenerationStart(conversation, UUID.randomUUID(), assistant, false, GenerationStatus.STREAMING, ""));
+        when(llmSettingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings("https://example.com/v1", "model", "prompt", "secret"));
+        when(agentOrchestrator.stream(any())).thenReturn(Flux.just(unit.repeat(200)));
+        when(speechRuntimeClient.synthesize(expected, CompanionRoleEntity.DEFAULT_ROLE_ID)).thenReturn(new byte[44]);
+
+        var result = service().handle(device, input);
+
+        assertThat(result.reply()).isEqualTo(expected);
+        assertThat(result.reply().codePointCount(0, result.reply().length())).isEqualTo(160);
+        verify(conversationService).completeGeneration(assistant, expected);
+    }
+
+    @Test
+    void onlyActualOrchestratorRouteCanClassifyACompletedReplyAsOrdinaryShortChat() {
+        UUID device = UUID.randomUUID();
+        UUID conversation = UUID.randomUUID();
+        UUID turn = UUID.randomUUID();
+        UUID assistant = UUID.randomUUID();
+        byte[] input = new byte[64];
+        when(speechRuntimeClient.transcribe(input)).thenReturn("刚才赢了");
+        when(deviceVoiceConversationService.getOrCreateConversationId(device)).thenReturn(conversation);
+        when(conversationService.startGeneration(eq(conversation), any(UUID.class), eq("刚才赢了")))
+                .thenReturn(new GenerationStart(conversation, UUID.randomUUID(), assistant, false, GenerationStatus.STREAMING, ""));
+        when(llmSettingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings("https://example.com/v1", "model", "prompt", "secret"));
+        when(agentOrchestrator.stream(any())).thenAnswer(invocation -> {
+            var request = invocation.getArgument(0, AgentOrchestrator.AgentRequest.class);
+            request.routeObserver().accept(AgentOrchestrator.ExecutionRoute.VOICE_CASUAL);
+            assertThat(request.systemPrompt()).contains("默认只回应一到两句", "尽量不超过四十个汉字", "不要主动说教", "不要为了延续对话而每次反问");
+            return Flux.just("漂亮，这把打得真稳。\n[[emotion:HAPPY:MEDIUM:5]]");
+        });
+        when(speechRuntimeClient.synthesize("漂亮，这把打得真稳。", CompanionRoleEntity.DEFAULT_ROLE_ID)).thenReturn(new byte[44]);
+
+        service().handle(device, turn, input);
+
+        verify(diagnosticsService).recordServerStage(eq(device), eq(turn), eq(VoiceTurnStage.LLM_COMPLETED),
+                eq(null), anyInt(), eq("voice_casual"));
+        verify(speechRuntimeClient).synthesize("漂亮，这把打得真稳。", CompanionRoleEntity.DEFAULT_ROLE_ID);
+    }
+
     @Test
     void visiblePendingCardRejectsNewAudioBeforeAsrOrProposalResolution() {
         var ui = mock(com.kj.stackchan.device.DeviceUiService.class);
@@ -570,6 +734,74 @@ class VoiceTurnServiceTest {
         verify(conversationService).completeGeneration(assistant, spoken);
         verify(expression).apply(eq(device), eq(CompanionRoleEntity.DEFAULT_ROLE_ID), eq(turn), any());
         verifyNoInteractions(agentOrchestrator);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
+    void continuationOfferPreservesAnswerAndFullConsentAndRecordsProgressAfterSuccessfulSpeech(boolean shown) {
+        var ui = mock(com.kj.stackchan.device.DeviceUiService.class);
+        var topics = mock(com.kj.stackchan.memory.TopicContinuationService.class);
+        var emotion = mock(com.kj.stackchan.expression.DeviceExpressionService.class);
+        UUID device = UUID.randomUUID(), conversation = UUID.randomUUID(), turn = UUID.randomUUID(), assistant = UUID.randomUUID();
+        byte[] input = new byte[64];
+        String transcript = "木工已经做好底座了";
+        String consent = "要记住“我准备木工书架”，以后相关聊天时接着聊，并保存你明确说的新进展。确认吗？";
+        when(speechRuntimeClient.transcribe(input)).thenReturn(transcript);
+        when(deviceVoiceConversationService.getOrCreateConversationId(device)).thenReturn(conversation);
+        when(conversationService.startGeneration(eq(conversation), any(UUID.class), eq(transcript)))
+                .thenReturn(new GenerationStart(conversation, UUID.randomUUID(), assistant, false, GenerationStatus.STREAMING, ""));
+        when(llmSettingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings("https://example.com/v1", "model", "prompt", "secret"));
+        when(agentOrchestrator.stream(any())).thenReturn(Flux.just("底座完成了，接下来可以试着上色。[[emotion:HAPPY:MEDIUM:5]]"));
+        when(voiceActionCoordinator.offerContinuation(device, conversation, transcript)).thenReturn(consent);
+        when(ui.presentAndAwait(device, conversation)).thenReturn(shown);
+        when(speechRuntimeClient.synthesize(anyString(), eq(CompanionRoleEntity.DEFAULT_ROLE_ID))).thenReturn(new byte[44]);
+        var service = service(); service.setContinuationService(topics); service.setDeviceUiService(ui); service.setDeviceExpressionService(emotion);
+        String reply = service.handle(device, turn, input).reply();
+        assertThat(reply).startsWith("底座完成了").endsWith(shown ? "要下次接着聊吗？请确认屏幕。" : consent);
+        assertThat(reply.codePointCount(0, reply.length())).isLessThanOrEqualTo(160);
+        verify(emotion).apply(eq(device), eq(CompanionRoleEntity.DEFAULT_ROLE_ID), eq(turn), org.mockito.ArgumentMatchers.argThat(s -> s.emotion() == com.kj.stackchan.expression.CompanionEmotion.HAPPY));
+        var order = inOrder(speechRuntimeClient, conversationService, topics);
+        order.verify(speechRuntimeClient).synthesize(reply, CompanionRoleEntity.DEFAULT_ROLE_ID);
+        order.verify(conversationService).completeGeneration(assistant, reply);
+        order.verify(topics).recordDiscussion(eq(CompanionRoleEntity.DEFAULT_ROLE_ID), eq(device), eq(conversation), any(UUID.class), eq(transcript), eq(reply));
+    }
+
+    @Test
+    void continuationControlWinsOverLegacyMuteAndResetsHistoryWithoutCallingModel() {
+        var topics = mock(com.kj.stackchan.memory.TopicContinuationService.class);
+        UUID device = UUID.randomUUID(), conversation = UUID.randomUUID(), turn = UUID.randomUUID(), user = UUID.randomUUID(), assistant = UUID.randomUUID();
+        byte[] input = new byte[64];
+        when(speechRuntimeClient.transcribe(input)).thenReturn("别再提这个");
+        when(deviceVoiceConversationService.getOrCreateConversationId(device)).thenReturn(conversation);
+        when(conversationService.startGeneration(eq(conversation), any(UUID.class), eq("别再提这个")))
+                .thenReturn(new GenerationStart(conversation, user, assistant, false, GenerationStatus.STREAMING, ""));
+        when(topics.handleControl(CompanionRoleEntity.DEFAULT_ROLE_ID, device, conversation, null, "别再提这个")).thenReturn("好的，我不再提这件事。");
+        when(speechRuntimeClient.synthesize("好的，我不再提这件事。", CompanionRoleEntity.DEFAULT_ROLE_ID)).thenReturn(new byte[44]);
+        var service = service(); service.setContinuationService(topics);
+        assertThat(service.handle(device, turn, input).reply()).isEqualTo("好的，我不再提这件事。");
+        verify(conversationService).resetVoiceTopic(conversation, user);
+        verify(voiceActionCoordinator).cancelPendingOperation(device, conversation);
+        verify(voiceActionCoordinator, never()).handle(any(), any(), any(), anyString());
+        verifyNoInteractions(agentOrchestrator, completedTurnMemoryCoordinator);
+    }
+
+    @Test
+    void continuationMaintenanceFailureDoesNotDiscardSuccessfulSpeech() {
+        var topics = mock(com.kj.stackchan.memory.TopicContinuationService.class);
+        UUID device = UUID.randomUUID(), conversation = UUID.randomUUID(), turn = UUID.randomUUID(), assistant = UUID.randomUUID();
+        byte[] input = new byte[64];
+        when(speechRuntimeClient.transcribe(input)).thenReturn("木工进展");
+        when(deviceVoiceConversationService.getOrCreateConversationId(device)).thenReturn(conversation);
+        when(conversationService.startGeneration(eq(conversation), any(UUID.class), eq("木工进展")))
+                .thenReturn(new GenerationStart(conversation, UUID.randomUUID(), assistant, false, GenerationStatus.STREAMING, ""));
+        when(llmSettingsService.resolveForInvocation()).thenReturn(new ResolvedLlmSettings("https://example.com/v1", "model", "prompt", "secret"));
+        when(agentOrchestrator.stream(any())).thenReturn(Flux.just("听起来做得不错。"));
+        when(voiceActionCoordinator.offerContinuation(device, conversation, "木工进展")).thenThrow(new IllegalStateException());
+        org.mockito.Mockito.doThrow(new IllegalStateException()).when(topics).recordDiscussion(eq(CompanionRoleEntity.DEFAULT_ROLE_ID), eq(device), eq(conversation), any(UUID.class), eq("木工进展"), eq("听起来做得不错。"));
+        when(speechRuntimeClient.synthesize("听起来做得不错。", CompanionRoleEntity.DEFAULT_ROLE_ID)).thenReturn(new byte[44]);
+        var service = service(); service.setContinuationService(topics);
+        assertThat(service.handle(device, turn, input).reply()).isEqualTo("听起来做得不错。");
+        verify(conversationService).completeGeneration(assistant, "听起来做得不错。");
     }
 
     private ConversationMessageSnapshot message(

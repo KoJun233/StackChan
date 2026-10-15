@@ -8,7 +8,7 @@ StackChan 是一个可自托管的 AI 陪伴机器人项目，包含 M5Stack 设
 - LLM 配置，以及文字/语音共用的受控 ReactAgent 对话链路。
 - 管理员导入且默认停用的完整 Skill ZIP、按设备与授权开放的内置查询 Tool 和 Bark 手机通知 Tool、页面管理且加密认证的 Streamable HTTP MCP、调用预算和隐私安全审计。
 - 设备端本地唤醒、语音识别、完整回答合成与播放闭环。
-- 默认关闭、仅在本地 VAD 命中后上传且受三回合/两分钟上限约束的连续对话。
+- 默认关闭、仅在本地 VAD 命中后上传的连续对话；首轮后最多三次追加回合，新轮启动受两分钟约束。
 - 对话持久化、失败恢复、重试幂等和隐私安全的阶段诊断。
 - 管理员对话搜索、范围导出、单条/整段物理删除，以及 7 日/4 周 PostgreSQL 备份与隔离恢复验证。
 - 设备配对、JWT 凭据、WebSocket 心跳、触摸取消和停止动作命令。
@@ -30,6 +30,10 @@ StackChan 是一个可自托管的 AI 陪伴机器人项目，包含 M5Stack 设
 ## 新会话入口
 
 Agent 先读取 [`AGENTS.md`](AGENTS.md)，人类开发者和 Agent 再进入 [`docs/project/README.md`](docs/project/README.md)。当前进度以 `docs/project/status/` 为准；下一阶段的任务边界、依赖和验收条件见 [`docs/project/todo.md`](docs/project/todo.md)，不以历史聊天或临时工作记录为准。
+
+后续产品建议见[2026-10-12 产品探索与十二周迭代计划](docs/project/companion-product-iteration-plan-2026-10-12.md)（DRAFT），涵盖 Muse/Dots 对标及持续陪伴、自然对话、目标推进和具身表达。
+
+可直接交给 AI 的详细开发规格见[成人桌面伙伴 V1 需求包](docs/requirements/companion-v1/README.md)：R00–R11 每项独立文档，含公共契约、依赖、实现边界、异常处理和验收。R00 与 R01 软件已完成并进入任务分支审核，实体与安装待验；R02–R11 尚未实施，当前事实见工作流状态。
 
 ## 参与开发
 

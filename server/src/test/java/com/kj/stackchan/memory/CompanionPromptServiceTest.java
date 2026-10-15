@@ -16,7 +16,9 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class CompanionPromptServiceTest {
@@ -49,7 +51,7 @@ class CompanionPromptServiceTest {
 
         assertThat(prompt).startsWith("基础系统规则\n\n【结构化人设】");
         assertThat(prompt).contains("名字：小栈", "用户档案", "称呼用户为阿俊", "事件记忆", "已完成 ＜INT-004＞");
-        assertThat(prompt.indexOf("用户档案")).isLessThan(prompt.indexOf("事件记忆"));
+        assertThat(prompt.indexOf("<用户档案>")).isLessThan(prompt.indexOf("<事件记忆>"));
         assertThat(prompt).endsWith("语音渠道规则");
         verify(memoryService).loadContext(roleId, deviceId, "", 8);
     }
@@ -86,6 +88,55 @@ class CompanionPromptServiceTest {
             assertThat(assembly.prompt()).contains("本轮没有可引用", "不代表全部存储记录")
                     .doesNotContain("当前没有已确认且启用的长期记忆", "<事件记忆>", "超长事件");
         }
+    }
+
+    @Test
+    void continuationPermissionTracksItsActualMemoryReferenceEvenOutsideOrdinaryRecall() {
+        UUID conversation = UUID.randomUUID(), device = UUID.randomUUID(), role = UUID.randomUUID(), topic = UUID.randomUUID();
+        var roles = mock(CompanionRoleService.class);
+        var memories = mock(LongTermMemoryService.class);
+        var devices = mock(DeviceVoiceConversationService.class);
+        var conversations = mock(ConversationService.class);
+        var topics = mock(TopicContinuationService.class);
+        when(devices.findDeviceIdByConversationId(conversation)).thenReturn(Optional.of(device));
+        when(conversations.roleId(conversation)).thenReturn(role);
+        when(roles.get(role)).thenReturn(new CompanionRoleService.RoleSnapshot(role, "小栈", PersonaTone.WARM,
+                PersonaReplyLength.SHORT, PersonaProactivity.BALANCED, "", "", "", true, null, Instant.EPOCH, Instant.EPOCH));
+        when(topics.assembleContext(role, device, conversation, null, "木工"))
+                .thenReturn(new TopicContinuationService.ContinuationContext(topic, "\n本轮允许接续：木工"));
+        var service = new CompanionPromptService(roles, memories, devices, conversations);
+        service.setContinuationService(topics);
+        var assembly = service.assembleWithMemoryContext(conversation, "基础规则", "语音渠道规则", "木工");
+        assertThat(assembly.memoryIds()).containsExactly(topic);
+        assertThat(assembly.prompt()).contains("本轮允许接续：木工", "已暂停、停止的话题不得").endsWith("语音渠道规则");
+    }
+
+    @Test
+    void webConversationKeepsConfirmedMemoryWithoutContinuationPermissionEvenWhenDeviceBound() {
+        UUID conversation = UUID.randomUUID(), device = UUID.randomUUID(), role = UUID.randomUUID();
+        var roles = mock(CompanionRoleService.class);
+        var memories = mock(LongTermMemoryService.class);
+        var devices = mock(DeviceVoiceConversationService.class);
+        var conversations = mock(ConversationService.class);
+        var topics = mock(TopicContinuationService.class);
+        var event = memory(MemoryCategory.EVENT, MemoryScopeType.DEVICE, device, "木工", "底座已经完成");
+        var profile = memory(MemoryCategory.USER_PROFILE, MemoryScopeType.GLOBAL, null, "称呼", "用户喜欢被称为阿俊");
+        when(devices.findDeviceIdByConversationId(conversation)).thenReturn(Optional.of(device));
+        when(conversations.roleId(conversation)).thenReturn(role);
+        when(roles.get(role)).thenReturn(new CompanionRoleService.RoleSnapshot(role, "小栈", PersonaTone.WARM,
+                PersonaReplyLength.SHORT, PersonaProactivity.BALANCED, "", "", "", true, null, Instant.EPOCH, Instant.EPOCH));
+        when(memories.loadContext(role, device, "木工", 8)).thenReturn(List.of(event, profile));
+        var service = new CompanionPromptService(roles, memories, devices, conversations);
+        service.setContinuationService(topics);
+
+        var assembly = service.assembleWebWithMemoryContext(conversation, "基础规则", "网页渠道规则", "木工");
+
+        assertThat(assembly.memoryIds()).containsExactly(profile.id(), event.id());
+        assertThat(assembly.prompt()).contains("底座已经完成", "用户喜欢被称为阿俊", "事件记忆只用于回答当前用户问题")
+                .doesNotContain("【本轮允许自然接续的话题】", "用户上次明确说的进展").endsWith("网页渠道规则");
+        verify(memories).loadContext(role, device, "木工", 8);
+        verifyNoInteractions(topics);
+        verify(conversations, never()).voiceTopicBoundary(conversation);
     }
 
     private CompanionPromptService.PromptAssembly assemble(List<LongTermMemoryService.MemorySnapshot> memories) {

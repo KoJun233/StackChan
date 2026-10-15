@@ -44,6 +44,12 @@ public class VoiceActionProposalService {
     private final PersonalTaskService personalTaskService;
     private com.kj.stackchan.conversation.DeviceVoiceConversationService deviceConversations;
     private com.kj.stackchan.device.DeviceRepository devices;
+    private com.kj.stackchan.memory.TopicContinuationService continuationService;
+
+    @Autowired
+    public void setContinuationService(com.kj.stackchan.memory.TopicContinuationService service) {
+        this.continuationService = service;
+    }
 
     @Autowired
     public void setDevices(com.kj.stackchan.device.DeviceRepository devices) { this.devices = devices; }
@@ -250,6 +256,31 @@ public class VoiceActionProposalService {
     }
 
     @Transactional
+    public ProposalSnapshot prepareContinuationConfirmation(UUID deviceId, UUID conversationId, String userText) {
+        if (continuationService == null || roleService == null || devices == null) return null;
+        if (latestPending(deviceId, conversationId) != null) return null;
+        devices.findByIdForUpdate(deviceId).orElseThrow(() -> new VoiceActionException("Device not found"));
+        UUID roleId = resolveRoleId(conversationId);
+        if (!roleId.equals(roleService.getActive(deviceId).id())
+                || proposalRepository.findFirstByActorIdAndDeviceIdAndConversationIdAndStatusOrderByCreatedAtDesc(
+                    SINGLE_ADMIN, deviceId, conversationId, VoiceActionStatus.PENDING).isPresent()) return null;
+        if (deviceConversations != null && !deviceConversations.isCurrentConversation(deviceId, roleId, conversationId)) return null;
+        var memory = continuationService.claimOffer(roleId, deviceId, userText);
+        if (memory == null) return null;
+        return snapshot(persist(deviceId, conversationId, memory.sourceTurnId(),
+                new VoiceActionDraft(VoiceActionType.CONFIRM_MEMORY, true, memory.content(), memory.title(),
+                        null, null, null, null, null, memory.updatedAt(), null, null, memory.id())));
+    }
+
+    public boolean isContinuationConfirmation(ProposalSnapshot proposal) {
+        if (proposal.actionType() != VoiceActionType.CONFIRM_MEMORY) return false;
+        UUID target = proposalRepository.findById(proposal.id()).map(VoiceActionProposalEntity::getTargetReference).orElse(null);
+        if (target == null) return false;
+        try { return memoryService.get(target).continuation() != null; }
+        catch (com.kj.stackchan.memory.MemoryNotFoundException exception) { return false; }
+    }
+
+    @Transactional
     public ProposalSnapshot prepareMemoryConfirmation(UUID suggestionId, UUID deviceId, UUID conversationId) {
         var suggestion = findScopedForUpdate(suggestionId, deviceId, conversationId);
         if (suggestion.getActionType() != VoiceActionType.CREATE_MEMORY_SUGGESTION
@@ -309,6 +340,14 @@ public class VoiceActionProposalService {
                 auditRepository.save(new VoiceActionAuditEntity(proposal, VoiceActionAuditEvent.EXPIRED, null, now));
             } else {
                 proposal.markCancelled(now);
+                if (proposal.getActionType() == VoiceActionType.CONFIRM_MEMORY) {
+                    try {
+                        var candidate = memoryService.get(proposal.getTargetReference());
+                        if (candidate.continuation() != null
+                                && candidate.confirmationStatus() == com.kj.stackchan.memory.MemoryConfirmationStatus.PENDING)
+                            memoryService.reject(candidate.id());
+                    } catch (com.kj.stackchan.memory.MemoryNotFoundException ignored) { }
+                }
                 auditRepository.save(new VoiceActionAuditEntity(proposal, VoiceActionAuditEvent.CANCELLED, null, now));
             }
         }
@@ -339,7 +378,9 @@ public class VoiceActionProposalService {
             case SET_TEMPORARY_DND -> "要将免打扰持续到 " + proposal.targetAt() + "。确认执行吗？";
             case SET_VOLUME -> "要将音量调到 " + proposal.volumePercent() + "%。确认执行吗？";
             case CREATE_MEMORY_SUGGESTION -> "已生成一条待确认记忆建议。";
-            case CONFIRM_MEMORY -> "要为当前伙伴记住：“" + proposal.content() + "”。确认记住吗？同主题旧记忆会被替换。";
+            case CONFIRM_MEMORY -> isContinuationConfirmation(proposal)
+                    ? "要记住“" + proposal.content() + "”，以后相关聊天时接着聊，并保存你明确说的新进展。确认吗？"
+                    : "要为当前伙伴记住：“" + proposal.content() + "”。确认记住吗？同主题旧记忆会被替换。";
             case CREATE_FOLLOW_UP -> "要在 " + proposal.title() + " 问问你“" + proposal.content()
                     + "”。只问一次；安静或暂停时不打扰，错过四小时就作废。确认安排吗？";
             case SWITCH_ROLE -> "要切换到角色“" + proposal.content() + "”。确认执行吗？";

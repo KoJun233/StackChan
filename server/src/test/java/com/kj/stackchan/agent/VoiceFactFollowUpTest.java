@@ -119,6 +119,22 @@ class VoiceFactFollowUpTest {
         verify(clients, never()).createLowLatencyChatClient();
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"继续讲", "接着说", "不要给我的手机发通知"})
+    void voiceContinuationAndNegationCannotReplayACompletedPhoneWrite(String transcript) {
+        var client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
+        when(clients.createLowLatencyChatClient()).thenReturn(client);
+        when(client.prompt().system(any(String.class)).messages(any(List.class)).user(any(String.class))
+                .stream().content()).thenReturn(Flux.just("只是解释通知状态，不会再次发送。"));
+        var completedPush = List.<Message>of(new UserMessage("给我的手机发一条消息：你好"),
+                new AssistantMessage("Bark 已接受通知。"));
+
+        assertThat(reply(completedPush, transcript)).isEqualTo("只是解释通知状态，不会再次发送。");
+
+        verifyNoInteractions(assembly, settings);
+        verify(clients, never()).createAgentChatModel();
+    }
+
     private String reply(List<Message> history, String message) {
         return orchestrator.stream(new AgentOrchestrator.AgentRequest(context, "测试助手", history, message))
                 .collectList().block().stream().reduce("", String::concat);

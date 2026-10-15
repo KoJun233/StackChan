@@ -24,6 +24,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class VoiceActionCoordinator {
+    public String offerContinuation(UUID deviceId, UUID conversationId, String userText) {
+        var proposal = proposalService.prepareContinuationConfirmation(deviceId, conversationId, userText);
+        return proposal == null ? null : proposalService.restatement(proposal);
+    }
     public void cancelPendingOperation(UUID deviceId, UUID conversationId) {
         var pending = proposalService.latestPending(deviceId, conversationId);
         if (pending != null) proposalService.cancel(pending.id(), deviceId, conversationId);

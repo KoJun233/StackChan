@@ -4,6 +4,38 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class VoiceDialogueControlTest {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource(delimiter = '|', value = {
+            "不是日历而是天气|CORRECTION|天气",
+            "不是咖啡，而是茶|CORRECTION|茶",
+            "不对，不是周一，是周二|CORRECTION|周二",
+            "我问的是天气|CORRECTION|天气",
+            "换个话题，聊音乐|NEW_TOPIC|聊音乐",
+            "咱们换一个话题：说说月亮|NEW_TOPIC|说说月亮",
+            "我们聊点别的，聊旅行|NEW_TOPIC|聊旅行",
+            "接着说！|CONTINUE|接着说！",
+            "展开说说|CONTINUE|展开说说",
+            "先不聊。|DECLINE|先不聊。",
+            "现在不聊了|DECLINE|现在不聊了",
+            "结束聊天，|END|结束聊天，"
+    })
+    void controlScenariosPreserveOnlyTheExplicitCurrentObject(String transcript,
+            VoiceDialogueControl.Kind kind, String object) {
+        var control = VoiceDialogueControl.parse(transcript);
+        assertThat(control.kind()).isEqualTo(kind);
+        assertThat(control.routingText()).isEqualTo(object);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "“现在忙”这句话是什么意思", "他说先不聊", "不要结束聊天",
+            "继续教育是什么", "我不想换个话题", "“不是A而是B”是什么意思？",
+            "‘我问的是天气’是引用", "现在忙吗？", "结束聊天以后做什么"
+    })
+    void mentionsQuestionsAndNegationsDoNotCloseOrContinueTheTopic(String transcript) {
+        assertThat(VoiceDialogueControl.parse(transcript).kind())
+                .isEqualTo(VoiceDialogueControl.Kind.NONE);
+    }
     @Test
     void oneTimeDeclineClosesTopicWithoutChangingLongTermPreferences() {
         for (String text : new String[]{"不聊这个", "先不聊了。", "现在忙", "我现在很忙"}) {

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import type { TableColumn } from '@fantastic-admin/components'
 import type { Device } from '@/api/modules/devices'
-import type { LongTermMemory, MemoryCategory, MemoryConfirmationStatus, MemoryScopeType } from '@/api/modules/personaMemory'
+import type { ContinuationAction, ContinuationState, LongTermMemory, MemoryCategory, MemoryConfirmationStatus, MemoryScopeType } from '@/api/modules/personaMemory'
 import type { CompanionRole } from '@/api/modules/roles'
 import { listDevices } from '@/api/modules/devices'
-import { clearMemories, confirmMemory, deleteMemory, listMemories, rejectMemory, setMemoryEnabled } from '@/api/modules/personaMemory'
+import { changeContinuation, clearMemories, confirmMemory, deleteMemory, listMemories, rejectMemory, setMemoryEnabled } from '@/api/modules/personaMemory'
 import { listRoles } from '@/api/modules/roles'
 import eventBus from '@/utils/eventBus'
 
@@ -64,6 +64,22 @@ const tableColumns = computed<TableColumn<LongTermMemory>[]>(() => [
 ])
 function categoryLabel(category: MemoryCategory) {
   return category === 'USER_PROFILE' ? '用户档案' : '事件记忆'
+}
+function continuationLabel(state: ContinuationState) {
+  return { PENDING: '建议下次接着聊', ACTIVE: '可接续', PAUSED: '今日先不聊', STOPPED: '已停止接续', DORMANT: '已休眠，等你提起' }[state]
+}
+function continuationItems(memory: LongTermMemory) {
+  if (!memory.continuation || memory.confirmationStatus !== 'CONFIRMED' || !memory.enabled || memory.supersededByMemoryId) {
+    return []
+  }
+  const actions: Array<{ label: string, action: ContinuationAction }> = memory.continuation.state === 'ACTIVE'
+    ? [{ label: '今天先不聊', action: 'PAUSE_TODAY' }, { label: '别再提这件事', action: 'STOP' }]
+    : [{ label: '恢复接续', action: 'RESUME' }, ...(memory.continuation.state === 'STOPPED' ? [] : [{ label: '别再提这件事', action: 'STOP' as const }])]
+  return actions.map(item => ({ label: item.label, handle: () => applyAction(() => changeContinuation(memory.id, item.action), '待续状态已更新') }))
+}
+function operationItems(memory: LongTermMemory) {
+  const actions = continuationItems(memory)
+  return [...(actions.length ? [actions] : []), [{ label: '删除', variant: 'destructive' as const, handle: () => confirmDelete([memory]) }]]
 }
 function statusLabel(status: MemoryConfirmationStatus) {
   return {
@@ -216,6 +232,11 @@ onBeforeUnmount(() => eventBus.off('get-memory-list'))
       description="各伙伴独立保存记忆，模型建议需确认后才生效；确认替代会停用旧条目。停用或删除只停止长期记忆加载，原聊天仍可能出现在近期对话中，可到「对话与个人数据」管理；已有备份按保留周期轮转。"
       class="mb-4"
     />
+    <FaAlert
+      title="把正在进行的事留到下次接着聊"
+      description="待续建议确认后，仅在这台设备上与同一伙伴的相关语音聊天中接续，并保存你明确说的新进展。每天最多一条新建议。先不聊会暂停到设备当地明天，别再提会持续停止；14 天无进展会休眠，原记忆仍保留。"
+      class="mb-4"
+    />
     <FaSearchBar :show-toggle="false">
       <template #default="{ fold, toggle }">
         <div class="gap-x-8 gap-y-2 grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))]">
@@ -310,6 +331,20 @@ onBeforeUnmount(() => eventBus.off('get-memory-list'))
           <div class="text-xs text-muted-foreground mt-1" :title="row.original.sourceDetail">
             {{ row.original.sourceDetail }}
           </div>
+          <div v-if="row.original.continuation" class="mt-2 space-y-1">
+            <FaTag variant="outline">
+              {{ continuationLabel(row.original.continuation.state) }}
+            </FaTag>
+            <p v-if="row.original.continuation.progress" class="text-sm text-muted-foreground">
+              最近你说：{{ row.original.continuation.progress }}
+            </p>
+            <p v-if="row.original.continuation.state === 'PENDING'" class="text-xs text-muted-foreground">
+              确认也会允许保存这件事的后续进展；拒绝后不再建议接续。
+            </p>
+            <p v-if="row.original.continuation.state === 'PAUSED' && row.original.continuation.pausedUntil" class="text-xs text-muted-foreground">
+              暂停至 {{ formatTime(row.original.continuation.pausedUntil) }}
+            </p>
+          </div>
           <div class="text-xs text-muted-foreground mt-1">
             主题：{{ row.original.topicKey }}
             <span v-if="row.original.possibleDuplicateIds.length"> · 可能重复 {{ row.original.possibleDuplicateIds.length }} 条</span>
@@ -365,7 +400,7 @@ onBeforeUnmount(() => eventBus.off('get-memory-list'))
           <FaButton variant="outline" size="icon-sm" @click="onEdit(row.original)">
             <FaIcon name="i-ri:edit-line" />
           </FaButton>
-          <FaDropdown :items="[[{ label: '删除', variant: 'destructive', handle: () => confirmDelete([row.original]) }]]">
+          <FaDropdown :items="operationItems(row.original)">
             <FaButton variant="outline" size="icon-sm">
               <FaIcon name="i-ri:more-line" />
             </FaButton>

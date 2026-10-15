@@ -66,6 +66,29 @@ class DeviceUiPersistenceTest {
     @Autowired com.kj.stackchan.workday.WorkdaySettingsService workdaySettings;
     @Autowired com.kj.stackchan.workday.WorkdayRuntimeService workdayRuntime;
     @Autowired org.springframework.transaction.PlatformTransactionManager transactions;
+    @Autowired com.kj.stackchan.memory.TopicContinuationService continuation;
+    @Autowired com.kj.stackchan.memory.LongTermMemoryService memories;
+
+    @Test
+    void continuationCardShowsSpecificPermissionAndConfirmsThePinnedTopicThroughExistingProtocol() throws Exception {
+        var f = fixture();
+        continuation.suggest(CompanionRoleEntity.DEFAULT_ROLE_ID, f.device, "我正在准备木工书架",
+                new com.kj.stackchan.memory.LongTermMemoryService.MemorySuggestionCommand(
+                    new com.kj.stackchan.memory.LongTermMemoryService.MemoryCommand(
+                        com.kj.stackchan.memory.MemoryScopeType.DEVICE, f.device, com.kj.stackchan.memory.MemoryCategory.EVENT,
+                        "木工", "我正在准备木工书架", "木工", 3, false), "用户分享项目", UUID.randomUUID()));
+        var offer = proposals.prepareContinuationConfirmation(f.device, f.conversation, "木工");
+        registry.offerConfirmation(f.device, offer.id());
+        http.perform(get(path(offer.id())).header("Authorization", f.authorization))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.action_label").value("下次接着聊"))
+                .andExpect(jsonPath("$.content").value(org.hamcrest.Matchers.containsString("仅在相关聊天时接续，并保存你明确说的新进展")));
+        shown(f, offer.id());
+        var result = ui.act(f.device, offer.id(), "CONFIRM");
+        assertThat(result.status()).isEqualTo("EXECUTED");
+        var memoryId = proposalRepository.findById(offer.id()).orElseThrow().getResultReference();
+        assertThat(memories.get(memoryId).continuation().state()).isEqualTo(com.kj.stackchan.memory.ContinuationState.ACTIVE);
+        assertThat(memories.get(memoryId).allowProactiveMention()).isFalse();
+    }
 
     @Test
     void authenticatedCardPinsLongChineseContentAndRequiresRenderedReceiptBeforeExecuting() throws Exception {
