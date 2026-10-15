@@ -2,7 +2,7 @@
 import type { FormExpose } from '@fantastic-admin/components'
 import type { Delegation } from '@/api/modules/delegations'
 import { toTypedSchema } from '@vee-validate/zod'
-import { createDelegation, DelegationSubmissionError, getDelegation, updateDelegation } from '@/api/modules/delegations'
+import { createDelegation, DelegationOperationPendingError, DelegationSubmissionError, getDelegation, newDelegationOperationKey, updateDelegation } from '@/api/modules/delegations'
 import { listDevices } from '@/api/modules/devices'
 import { getDeviceActiveRole, listRoles } from '@/api/modules/roles'
 import { aiDailyExample, delegationFormSchema, delegationInput, emptyDelegationModel, formatDelegationTime, modelFromDelegation, scheduleLabel, taskExamples } from '../../helpers'
@@ -22,6 +22,8 @@ const model = ref(emptyDelegationModel())
 const validationSchema = toTypedSchema(delegationFormSchema)
 const deliveryOptions = [{ label: '按任务描述理解', value: 'AUTO' }, { label: '控制台', value: 'CONSOLE' }, { label: 'Bark 手机推送', value: 'BARK' }]
 const deliveryChanged = ref(false)
+const uncertain = ref(false)
+let creationKey = ''
 let requestId = 0
 let roleRequestId = 0
 
@@ -29,6 +31,8 @@ function applyExample(description: string) {
   model.value.description = description
   clarification.value = ''
   saveError.value = ''
+  creationKey = ''
+  uncertain.value = false
 }
 
 async function selectActiveRole(deviceId: string) {
@@ -55,6 +59,8 @@ async function load() {
   loadError.value = ''
   clarification.value = ''
   saveError.value = ''
+  creationKey = ''
+  uncertain.value = false
   try {
     const [devices, roles, task] = await Promise.all([
       listDevices(),
@@ -88,7 +94,7 @@ async function load() {
 }
 
 async function submit(): Promise<boolean> {
-  if (loading.value || saving.value || loadError.value || !(await formRef.value?.validate())?.valid) {
+  if (loading.value || saving.value || loadError.value || acceptedTask.value?.cancelledAt || !(await formRef.value?.validate())?.valid) {
     return false
   }
   saving.value = true
@@ -99,7 +105,12 @@ async function submit(): Promise<boolean> {
     if (deliveryChanged.value && model.value.deliveryMode !== 'AUTO') {
       input.deliveryMode = model.value.deliveryMode
     }
-    const task = props.id ? await updateDelegation(props.id, input) : await createDelegation(input)
+    if (!props.id && !creationKey) {
+      creationKey = newDelegationOperationKey()
+    }
+    const task = props.id ? await updateDelegation(props.id, input) : await createDelegation(input, creationKey)
+    uncertain.value = false
+    creationKey = ''
     acceptedTask.value = task
     model.value = modelFromDelegation(task)
     deliveryChanged.value = false
@@ -108,6 +119,10 @@ async function submit(): Promise<boolean> {
     return true
   }
   catch (error) {
+    uncertain.value = error instanceof DelegationOperationPendingError
+    if (!uncertain.value) {
+      creationKey = ''
+    }
     if (error instanceof DelegationSubmissionError && error.code === 'DELEGATION_CLARIFICATION_REQUIRED') {
       clarification.value = error.clarification || error.message
     }
@@ -145,7 +160,7 @@ defineExpose({ submit })
         </FaButton>
       </template>
     </FaAlert>
-    <FaForm ref="formRef" :model="model" :validation-schema="validationSchema" :disabled="loading || saving || Boolean(loadError)" label-placement="top" class="gap-6 grid" keep-values-on-unmount scroll-to-error>
+    <FaForm ref="formRef" :model="model" :validation-schema="validationSchema" :disabled="loading || saving || uncertain || Boolean(loadError) || Boolean(acceptedTask?.cancelledAt)" label-placement="top" class="gap-6 grid" keep-values-on-unmount scroll-to-error>
       <div v-if="deviceOptions.length > 1 || roleOptions.length > 1" class="gap-4 grid md:grid-cols-2">
         <FaFormItem name="deviceId" label="设备" required>
           <FaSelect :options="deviceOptions" :disabled="Boolean(props.id)" placeholder="选择设备" />
@@ -156,8 +171,8 @@ defineExpose({ submit })
       </div>
       <FaAlert v-if="!loading && !deviceOptions.length" title="还没有设备" description="请先配对设备，再交给它一个任务。" />
       <FaAlert v-if="!loading && !roleOptions.length" title="还没有可用伙伴" description="请先创建伙伴或恢复一个已归档伙伴。" />
-      <FaFormItem name="description" label="想让伙伴帮你做什么？" required description="说清想做的事情和时间就好。伙伴会理解安排并接下，缺少信息时会在这里追问。">
-        <FaTextarea rows="7" align="block" placeholder="例如：每个工作日下午六点，帮我回顾今天的待办，告诉我明天最值得先做的一件事。" />
+      <FaFormItem name="description" label="想让伙伴帮你做什么？" required description="可以说「现在做一次」，或交代重复时间。比较公开资料时贴上来源；缺关键信息时，伙伴只追问一项，补齐前任务不会保存。">
+        <FaTextarea rows="7" align="block" placeholder="例如：现在比较这两个公开 HTTPS 页面里的方案，优先容易整理，缺少的资料请明确说明。把结果保存在控制台。" />
       </FaFormItem>
       <div v-if="!props.id" class="flex flex-wrap gap-2">
         <FaButton v-for="taskExample in taskExamples" :key="taskExample.label" variant="outline" size="sm" type="button" @click="applyExample(taskExample.description)">
@@ -169,7 +184,14 @@ defineExpose({ submit })
           <span class="text-sm">将回答补充在上面的任务描述中，再交给伙伴。</span>
         </template>
       </FaAlert>
-      <FaAlert v-if="saveError" variant="destructive" title="任务未保存" :description="saveError" role="alert" />
+      <FaAlert v-if="saveError" variant="destructive" :title="uncertain ? '正在核对任务保存状态' : '任务未保存'" :description="saveError" role="alert">
+        <template v-if="uncertain" #action>
+          <FaButton type="button" :disabled="saving" @click="submit">
+            核对保存状态
+          </FaButton>
+        </template>
+      </FaAlert>
+      <FaAlert v-if="acceptedTask?.cancelledAt" title="任务已取消" :description="acceptedTask.cancellationReason || '不再执行，已有成果仍可查看。需要继续时请明确新建任务。'" />
       <FaCard v-if="acceptedTask" :title="model.description.trim() === (acceptedTask.description || acceptedTask.instruction) ? '伙伴的安排' : '当前已保存的安排'">
         <p class="text-base leading-7 whitespace-pre-wrap break-words">
           {{ acceptedTask.understanding || acceptedTask.description || acceptedTask.instruction }}

@@ -1,7 +1,7 @@
 import type { Delegation } from '@/api/modules/delegations'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick } from 'vue'
-import { DelegationSubmissionError } from '@/api/modules/delegations'
+import { DelegationOperationPendingError, DelegationSubmissionError } from '@/api/modules/delegations'
 import DetailForm from './index.vue'
 
 const api = vi.hoisted(() => ({ listDevices: vi.fn(), listRoles: vi.fn(), getDeviceActiveRole: vi.fn(), getDelegation: vi.fn(), createDelegation: vi.fn(), updateDelegation: vi.fn() }))
@@ -68,7 +68,7 @@ describe('自然描述任务的接受与追问', () => {
     const { instance, container, saved } = await mount()
     state.model!.description = '每天上午九点写一句鼓励。'
     expect(await instance.submit()).toBe(true)
-    expect(api.createDelegation).toHaveBeenCalledWith({ deviceId: 'device', roleId: 'role', description: '每天上午九点写一句鼓励。', zoneId: 'Asia/Shanghai', enabled: true })
+    expect(api.createDelegation).toHaveBeenCalledWith({ deviceId: 'device', roleId: 'role', description: '每天上午九点写一句鼓励。', zoneId: 'Asia/Shanghai', enabled: true }, expect.any(String))
     await nextTick()
     expect(container.textContent).toContain(task.understanding)
     expect(container.textContent).not.toContain('资料来源')
@@ -97,7 +97,7 @@ describe('自然描述任务的接受与追问', () => {
     expect(state.model!.description).toContain('08:30')
     expect(state.model!.description).toContain('iPhone')
     expect(await instance.submit()).toBe(true)
-    expect(api.createDelegation).toHaveBeenCalledWith(expect.objectContaining({ description: expect.stringContaining('5 条') }))
+    expect(api.createDelegation).toHaveBeenCalledWith(expect.objectContaining({ description: expect.stringContaining('5 条') }), expect.any(String))
     expect(api.createDelegation.mock.calls[0][0]).not.toHaveProperty('sourceUrls')
     expect(api.createDelegation.mock.calls[0][0]).not.toHaveProperty('scheduleType')
     expect(api.createDelegation.mock.calls[0][0]).not.toHaveProperty('deliveryMode')
@@ -133,6 +133,19 @@ describe('自然描述任务的接受与追问', () => {
     await nextTick()
     await nextTick()
     expect(state.model!.roleId).toBe('other')
+  })
+
+  it('响应不明时保留原创建键，明确核对后显示原任务', async () => {
+    api.createDelegation.mockRejectedValueOnce(new DelegationOperationPendingError('unknown')).mockResolvedValueOnce(task)
+    const { instance, container, saved } = await mount()
+    state.model!.description = '现在做一次比较'
+    expect(await instance.submit()).toBe(false)
+    await nextTick()
+    expect(container.textContent).toContain('核对保存状态')
+    const originalKey = api.createDelegation.mock.calls[0][1]
+    expect(await instance.submit()).toBe(true)
+    expect(api.createDelegation.mock.calls[1][1]).toBe(originalKey)
+    expect(saved).toHaveBeenCalledOnce()
   })
 
   it('加载或校验失败不能覆盖任务，执行能力缺失不会显示已接下', async () => {

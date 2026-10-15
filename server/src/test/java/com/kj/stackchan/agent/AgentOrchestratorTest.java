@@ -37,6 +37,76 @@ import static org.mockito.Mockito.when;
 
 class AgentOrchestratorTest {
 
+    @Test
+    void researchAbilityOrExampleNeverFallsThroughToAModelOrToolAssembly() {
+        var tasks=mock(com.kj.stackchan.delegation.DelegationService.class);
+        var intake=new com.kj.stackchan.delegation.DelegationConversationIntake(tasks,
+                mock(org.springframework.jdbc.core.JdbcTemplate.class),java.time.Clock.systemUTC());
+        var settings=mock(AgentSettingsService.class); var factory=mock(LlmRuntimeClientFactory.class);
+        var assembly=mock(AgentToolAssemblyService.class);
+        var orchestrator=new AgentOrchestrator(settings,assembly,mock(AgentToolAuditService.class),factory,new ObjectMapper(),new AppProperties());
+        org.springframework.test.util.ReflectionTestUtils.setField(orchestrator,"delegationIntake",intake);
+        for(var channel:List.of(AgentChannel.WEB,AgentChannel.VOICE)) {
+            var context=new AgentInvocationContext(UUID.randomUUID(),UUID.randomUUID(),UUID.randomUUID(),channel);
+            for(String message:List.of("你能比较桌面方案吗","例如帮我比较这两个方案"))
+                assertThat(orchestrator.stream(new AgentOrchestrator.AgentRequest(context,"测试伙伴",List.of(),message))
+                        .collectList().block()).singleElement().asString().contains("没有保存任务","没有读取页面");
+        }
+        org.mockito.Mockito.verifyNoInteractions(tasks,settings,assembly,factory);
+    }
+
+    @Test
+    void persistedProjectQueriesRemainAvailableWhenAgentExecutionIsDisabled() {
+        var intake=mock(com.kj.stackchan.delegation.DelegationConversationIntake.class);
+        var settings=mock(AgentSettingsService.class);
+        var factory=mock(LlmRuntimeClientFactory.class);
+        var orchestrator=new AgentOrchestrator(settings,mock(AgentToolAssemblyService.class),
+                mock(AgentToolAuditService.class),factory,new ObjectMapper(),new AppProperties());
+        org.springframework.test.util.ReflectionTestUtils.setField(orchestrator,"delegationIntake",intake);
+        var context=new AgentInvocationContext(UUID.randomUUID(),UUID.randomUUID(),UUID.randomUUID(),AgentChannel.VOICE);
+        String question="昨天桌面布置那个比较到哪了";
+        when(intake.supports(context,question)).thenReturn(true);
+        when(intake.requiresPlanning(context,question)).thenReturn(false);
+        when(intake.accept(context,question)).thenReturn("已保存的比较保留着，等你审阅。");
+        assertThat(orchestrator.stream(new AgentOrchestrator.AgentRequest(context,"测试伙伴",List.of(),question))
+                .collectList().block()).containsExactly("已保存的比较保留着，等你审阅。");
+        verify(settings,never()).runtimeSettings();
+        verify(factory,never()).createAgentChatModel(); verify(factory,never()).createLowLatencyChatClient();
+    }
+
+    @Test
+    void newProjectPlanningStillHonorsDisabledAgentExecution() {
+        var intake=mock(com.kj.stackchan.delegation.DelegationConversationIntake.class);
+        var settings=mock(AgentSettingsService.class);
+        when(settings.runtimeSettings()).thenReturn(new AgentSettingsService.RuntimeSettings(false,true,true,Instant.EPOCH));
+        var orchestrator=new AgentOrchestrator(settings,mock(AgentToolAssemblyService.class),
+                mock(AgentToolAuditService.class),mock(LlmRuntimeClientFactory.class),new ObjectMapper(),new AppProperties());
+        org.springframework.test.util.ReflectionTestUtils.setField(orchestrator,"delegationIntake",intake);
+        var context=new AgentInvocationContext(UUID.randomUUID(),UUID.randomUUID(),UUID.randomUUID(),AgentChannel.WEB);
+        String command="现在帮我比较两个公开页面";
+        when(intake.supports(context,command)).thenReturn(true);
+        when(intake.requiresPlanning(context,command)).thenReturn(true);
+        assertThat(orchestrator.stream(new AgentOrchestrator.AgentRequest(context,"测试伙伴",List.of(),command))
+                .collectList().block()).containsExactly("任务尚未保存。请先启用伙伴的工具能力，再把任务交给我。");
+        verify(intake,never()).accept(any(),any());
+    }
+
+    @Test
+    void lostIntakeAcknowledgementDoesNotClaimTheCommittedOperationWasUnsaved() {
+        var intake=mock(com.kj.stackchan.delegation.DelegationConversationIntake.class);
+        var settings=mock(AgentSettingsService.class);
+        var orchestrator=new AgentOrchestrator(settings,mock(AgentToolAssemblyService.class),mock(AgentToolAuditService.class),
+                mock(LlmRuntimeClientFactory.class),new ObjectMapper(),new AppProperties());
+        org.springframework.test.util.ReflectionTestUtils.setField(orchestrator,"delegationIntake",intake);
+        var context=new AgentInvocationContext(UUID.randomUUID(),UUID.randomUUID(),UUID.randomUUID(),AgentChannel.WEB);
+        String message="这份比较可以了";
+        when(intake.supports(context,message)).thenReturn(true);
+        when(intake.requiresPlanning(context,message)).thenReturn(false);
+        when(intake.accept(context,message)).thenThrow(new IllegalStateException("synthetic acknowledgement loss after commit"));
+        assertThat(orchestrator.stream(new AgentOrchestrator.AgentRequest(context,"测试伙伴",List.of(),message)).collectList().block())
+                .singleElement().asString().contains("状态暂未确认","核对").doesNotContain("尚未保存","请稍后重试");
+    }
+
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.CsvSource(delimiter = '|', value = {
             "刚才赢了|VOICE_CASUAL", "又输了|VOICE_CASUAL", "今天累坏了|VOICE_CASUAL",

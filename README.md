@@ -33,7 +33,7 @@ Agent 先读取 [`AGENTS.md`](AGENTS.md)，人类开发者和 Agent 再进入 [`
 
 后续产品建议见[2026-10-12 产品探索与十二周迭代计划](docs/project/companion-product-iteration-plan-2026-10-12.md)（DRAFT），涵盖 Muse/Dots 对标及持续陪伴、自然对话、目标推进和具身表达。
 
-可直接交给 AI 的详细开发规格见[成人桌面伙伴 V1 需求包](docs/requirements/companion-v1/README.md)：R00–R11 每项独立文档，含公共契约、依赖、实现边界、异常处理和验收。R00 与 R01 软件已完成并进入任务分支审核，实体与安装待验；R02–R11 尚未实施，当前事实见工作流状态。
+可直接交给 AI 的详细开发规格见[成人桌面伙伴 V1 需求包](docs/requirements/companion-v1/README.md)：R00–R11 每项独立文档，含公共契约、依赖、实现边界、异常处理和验收。R00/R01 已合入主线；当前 R02 一次项目闭环实现与验证见[交付记录](docs/project/baselines/companion-r02-project-loop.md)，真实场景、视觉与安装待验；R03–R11 尚未实施。
 
 ## 参与开发
 

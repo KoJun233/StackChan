@@ -2,36 +2,38 @@
 
 - 状态：READY_FOR_REVIEW
 - 最后更新：2026-10-15
-- 当前分支：`codex/companion-r01-natural-voice-20261013`
-- 实现基准：`989b3d9`
-- 最后验证提交：`989b3d9`
+- 当前分支：`codex/companion-r02-project-loop-20261015`
+- 实现基准：`a961816`
+- 最后验证提交：`a961816`
 
 ## 当前交付
 
-用户要求 R01 开发，R00/R01 合成相对最新 master@989b3d9 一个中文任务提交；2026-10-15 明确授权只推当前任务分支。软件 READY_FOR_REVIEW，实体/安装待后续指令；没有自动开展 R02–R11。
+PR #49 已将 R00/R01 合入 master@a961816。用户要求继续后续开发，本轮实施 [R02 一次项目闭环](../baselines/companion-r02-project-loop.md)；原“R01 等待合并、R02 未授权”状态已 STALE 并在本轮修正。原用户工作树与未提交文件保持。
 
-R00 保留原 V57 与主线委托/Bark，网页设备范围仅服务端绑定。R01 完成限时澄清、当前表达优先、有界上下文、确定性拒绝、实际短聊路由、安全端点/codec 计时、质量汇总和 V61 隐私删除。原用户分支与未提交文件未覆盖或清理。
+R02 复用既有委托、运行与两工作者：自然入口收单、公开来源范围、五区成果、独立待阅卡、成果认可、同任务偏好修订、取消与隔日只读查询。V62 增加审阅、反馈、修订意图和无正文幂等收据；周期委托及旧接口保持兼容。R03–R11 尚未实施。
 
-| 工作流 | 状态 | 新鲜结果 |
+| 工作流 | 状态 | 本轮证据与边界 |
 | --- | --- | --- |
-| [服务端](server.md) | READY_FOR_REVIEW | 完整 1009/1009；PG 15/15；新增 V61、旧六十迁移不变 |
-| [前端](frontend.md) | READY_FOR_REVIEW | 完整 46 文件 181/181；定向 20/20、类型/lint/生产构建 |
-| [固件](firmware.md) | READY_FOR_REVIEW | 双 profile/五栈 gate/宿主通过；LAN 余量 4432 B，未刷写 |
-| [部署](deployment.md) | READY_FOR_REVIEW | 同提交 image/JAR/61 SQL/全部控制台/双固件收据，未安装 |
-| [产品](product.md) | READY_FOR_REVIEW | 30 受控场景通过；匿名分析 23/23，现场样本 0、UNKNOWN |
+| [服务端](server.md) | READY_FOR_REVIEW | 完整 1092/1092；项目事务 17/17、迁移恢复 6/6，V1–V61 不变 |
+| [前端](frontend.md) | READY_FOR_REVIEW | 46 文件 204/204、vue-tsc 与十文件 ESLint/四文件 Stylelint 通过 |
+| [固件](firmware.md) | STABLE | 本轮未改、未重建；R01 历史 LAN 槽余量 4432 B，未刷写 |
+| [部署](deployment.md) | READY_FOR_REVIEW | 同提交 image/JAR/62 SQL/全部控制台资源；核验结果见候选收据，未安装 |
+| [产品](product.md) | READY_FOR_REVIEW | 软件闭环与自动验证完成；真实来源、隔日日用与视觉验收独立待验 |
 
 ## 验证与剩余边界
 
-最终完整 SHA、测试源码指纹、61 SQL/Flyway、生产 image/JAR/全部控制台资源及双固件六制品见本工作树 `.tools/r01/candidate-receipt.json`。989b3d9 为当前祖先元数据，新增代码成绩以工作树回归和最终候选收据为准。实现、状态、交接与 R00 合成一个中文任务提交；用户已于 2026-10-15 明确授权推送本任务分支；推送与远端 SHA 核对结果见 `.tools/r01/push-receipt.json`。PR、人工审核与合并由用户执行。
+当前基准及最后验证祖先元数据均为 a961816；新增代码以本轮回归的源码指纹和最终候选收据绑定。完整服务端 1092/1092、控制台 204/204。实施、状态和交接合成恰好一个中文任务提交；随后从该提交 archive 构建，生产 image/JAR/62 SQL/Flyway/全部控制台的实际结果及完整 SHA 由 `.tools/r02/candidate-receipt.json` 封存。收据缺失或门禁未通过时，不得推断候选核验成功。2026-10-15 用户明确要求“那是你推送吧”，已授权只推当前 R02 任务分支；推送及远端 SHA 核对结果见 `.tools/r02/push-receipt.json`。本次授权不包含安装、刷写或真实外发。
 
-完整服务端失败/错误/跳过 0，控制台失败 0。保留旧 Surefire/Vite/Vitest 退出及大 chunk 警告。固件总静态增量 248 B，3 MiB 槽余量 4432 B 高于 4384 门槛仅 48 B，后续改动必须重新验证容量。诊断的 codec 写入开始与逻辑状态接受是设备参考证据，不能冒充声学首声或 LCD 帧完成；旧设备缺字段仍未知。
+FIELD_PENDING：尚未取得本轮真实二至三个可读 HTTPS 页面及隔日验收。R01 的实体语音计时、第三真实失败与 R06 长期记忆仍待验证，不能据合成测试承诺这些效果。
 
-FIELD_PENDING：用户 F01 记忆与 F02 五六秒反馈尚无逐回合实体记录；第三真实失败未取得。空模板与手册已交付，三十真实短聊/十次触摸、背景/低音量/短答自然性待验；R06 跨天记忆未实施。DEPLOYMENT_PENDING/PUSH_AUTHORIZED：用户已授权分支推送，结果见外置推送收据；没有本轮安装、刷写、真实模型/Bark 或十四天观察。
+VISUAL_PENDING：Browser 无可用实例，Computer Use 因无法可靠识别 Windows 浏览器当前 URL 而停止。尚无 360/1280px 截图；组件与类型检查不替代视觉验收。
 
 ## 当前运行与回退
 
-本轮未再读取线上环境；最后只读事实为 2026-10-12 的 a37d220/V60/r3/motion_disabled，不能当当前新鲜状态。原恢复点与匹配镜像保留。后续授权安装须先停写备份、内部隔离恢复；V61 回退使用匹配数据库/镜像，不能直接换旧应用或修改 migration history。
+本轮未读取线上环境。最后历史只读事实为 2026-10-12 的 a37d220/V60/r3/motion_disabled，不能当作当前状态。未安装、刷写、调用真实模型/Bark 或切换部署模式。
+
+后续安装需独立明确授权，并先停写备份与内部隔离恢复；V62 回退使用匹配的数据库备份和旧镜像，不能直接把旧程序接入新库或改写 migration history。固件沿用 R01 历史证据，容量余量不是本轮新鲜测量。
 
 ## 下一条精确操作
 
-核对[本轮交付](../baselines/companion-r01-natural-voice.md)、候选收据和推送收据后，由用户在 GitHub 创建 PR、审核并合并；Agent 不创建或合并 PR。安装/实体采集按[测量手册](../../runbooks/natural-voice-quality.md)另行授权后执行。后续 R02/R06 需独立任务指令。
+核对 [R02 交接](../baselines/companion-r02-project-loop.md)、本地单一中文提交与 `.tools/r02/candidate-receipt.json` 的完整 SHA、测试和制品摘要，审核差异。按本次明确授权，Agent 仅推当前任务分支并核对远端 SHA；PR 创建、审核与最终合并由用户执行。真实项目与视觉验收按 [R02 交接](../baselines/companion-r02-project-loop.md)继续。

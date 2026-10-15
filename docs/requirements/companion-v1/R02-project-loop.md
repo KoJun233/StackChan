@@ -1,7 +1,7 @@
 # R02 首个真实项目闭环
 
-- 文档状态：`ACTIVE`；需求状态：`SPECIFIED`；实现状态：`NOT_STARTED`（仅规格完成，尚未现场验收）。
-- 版本：1.0；日期：2026-10-12；代码事实基准：`master@989b3d9`。
+- 文档状态：`ACTIVE`；需求状态：`SPECIFIED`；实现状态：`READY_FOR_REVIEW`（软件）；真实场景与视觉验收待验。
+- 版本：1.1；日期：2026-10-15；代码事实基准：`master@a961816`（PR #49 已合入 R00/R01）。
 - 计划映射：十二周计划 `LOOP-01`，W2–W3 首轮闭环；为 W4–W5 目标推进提供真实样例。
 - 使用者：一位成人拥有者；现有管理员网页与经过认证的设备语音；伙伴范围保持独立。
 - 实现入口：[需求索引](README.md)、[共享契约](00-shared-contracts.md)。
@@ -9,6 +9,8 @@
 - 后续扩展：[R03 目标生命周期](R03-goal-lifecycle.md)、[R04 可恢复执行](R04-durable-execution.md)、[R05 权限预算](R05-permissions-and-budgets.md)、[R10 证据](R10-capability-and-evidence.md)。
 - 首轮不要求 R03、R04、R05 的完整实现；已有授权、运行保护、真实来源与有界执行必须有效。
 - 本文不是功能已完成、刷写、部署、外推或真实购买的授权记录。
+
+2026-10-15：用户确认合并后授权继续 R02 开发，交付与 FR/AC 结果见[本轮交接](../../project/baselines/companion-r02-project-loop.md)、[ADR0078](../../project/decisions/0078-versioned-readonly-project-loop.md)。原“V57 未合入”与“未开始”状态已 STALE，按 Git 纠正。下文保留规格；实现仅给新 ONCE 意图开启最小项目模式，周期业务保持旧运行语义。
 
 ## 1. 交付到什么程度
 
@@ -29,7 +31,7 @@
 | 现有 API 返回 task/run，但 TaskSnapshot 未暴露 revision，RunSnapshot 未暴露 attempt | `server/src/main/java/com/kj/stackchan/api/DelegationController.java`、`DelegationService.java` | 新增兼容字段/反馈资源版本；不能假定旧接口已有乐观锁 |
 | 已有持续委托列表与详情、五秒有界轮询、来源链接防护 | `apps/stackchan-console/src/views/companion/delegations/list.vue`、`detail.vue`、`helpers.ts` | 增加最小待阅卡和反馈，不重建页面框架 |
 | 当前网页 API 用管理员会话；设备身份与网页身份不同 | `server/src/main/java/com/kj/stackchan/security/SecurityConfiguration.java` | 网页参数中的 deviceId/roleId 只作范围，不能赋予设备权限 |
-| V57@8ad9822 未合入主线，历史冻结 a37d220 已部署包含 V57–V60 | `docs/project/status/overview.md`、`deployment.md` | 必须先完成 R00 的来源整合，不能以缺 V57 的主线覆盖安装版本 |
+| 最新 a961816 已合入 R00/R01，包含原 V57 与新增 V61；历史安装事实仍为 a37d220/V60 | `docs/project/status/overview.md`、`deployment.md` | 本轮从合并后的主线创建任务分支；不以历史安装记录声称新候选已安装 |
 
 上轮计划见[产品迭代计划](../../project/companion-product-iteration-plan-2026-10-12.md)。
 这些是源码与历史记录事实，本需求编写未访问运行数据库或重新确认设备在线。
@@ -52,7 +54,7 @@ MVP 包含一次明确委托、已有后台执行、最小成果审阅、一次�
 默认交付 `CONSOLE`；用户明确要手机通知且现有配置有效时才采用 `BARK`。
 允许用户主动提供更多公开来源；不要求 RSS、工具名称、模型参数或固定资讯模板。
 固定验收项目的读取范围默认仅为用户给定2–3个URL；从描述提取并经PublicHttpsUrlPolicy校验后保存规范来源，实际工具调用前按保存范围检查，不只靠prompt限制。
-安全重定向的最终URL按现有PublicSourceReader策略处理并记录输入/实际来源对应；页面中的新链接不能自动扩大本任务范围，用户明确补充后才修订范围。
+实际PublicSourceReader拒绝全部3xx，本轮保持拒绝并标来源失败；不声称已支持安全重定向。成功读取记录输入/实际来源对应，feed条目可作为该输入的证据但不自动抓取其链接；页面中的新链接不能自动扩大本任务范围，用户明确补充后才修订范围。
 用户改为允许公开资料探索的真实目标时，可保存明确的只读探索范围并使用现有工具；不得把这个模式硬编码成RSS表单或声称内置全网搜索。
 不包含自动购物、支付、桌面实景相机扫描、空间三维建模、抓取登录网站、通用搜索引擎、新私人连接器。
 不包含全生命周期多阶段 DAG、任意自动续跑、完整目标预算编辑器、独立移动 App；这些按对应后续需求落地。

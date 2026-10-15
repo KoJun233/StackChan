@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kj.stackchan.agent.AgentChannel;
@@ -26,6 +27,8 @@ public class ModelDelegationTaskPlanner implements DelegationTaskPlanner {
             任务没有类别枚举，具体操作由执行时的Agent选择已授权工具；不要求用户填写RSS或工具参数。
             时间或目标不清楚时，clarification用一句中文问最关键缺失信息，不猜测起床时间等个人偏好。
             接受ONCE（onceAt为UTC Instant）、DAILY、WEEKLY（daysOfWeek 1至7）、INTERVAL（intervalMinutes）安排。
+            用户明确说现在、先做一次，或明确交代目标却未指定将来时间/周期时，用ONCE且onceAt=now；
+            不追问每天几点，不自行增加重复安排。仅缺目标或关键资料才追问，每次只问最关键的一项。
             用户未指定时区沿用提供的时区；未说手机/推送时deliveryMode=CONSOLE，明确手机推送时为BARK。
             BARK最终成果由任务服务自动交付，普通手机交付不需要将send_phone_notification列为requiredToolNames。
             只有任务目标本身明确要求调用手机通知工具时才将它列为必需工具；CONSOLE任务不允许调用手机通知工具。
@@ -41,6 +44,10 @@ public class ModelDelegationTaskPlanner implements DelegationTaskPlanner {
     private final ObjectMapper mapper;
     private final Completion model;
     private final Function<PlanningRequest, List<Map<String,String>>> capabilities;
+    private static final Pattern TIMED=Pattern.compile("每天|每日|每周|每隔|定时|明天|后天|下周|下个月|今晚|明早|明晚|[0-9一二三四五六七八九十两]+(?:点|[:：][0-9])|[0-9]{4}-[0-9]{2}-[0-9]{2}|用户明确指定安排：(?!ONCE)");
+    private static final Pattern PHONE=Pattern.compile("(?i)(?:推送|发送|发|通知).{0,18}(?:手机|iphone|bark)|(?:手机|iphone|bark).{0,18}(?:推送|发送|发|通知)");
+    private static final Pattern NO_PHONE=Pattern.compile("(?i)(?:不要|不用|别|无需|停止|取消|关闭|禁止|不再|不).{0,18}(?:推送|发送|通知|发)|(?:如果|假如|例如).{0,18}(?:手机|推送)|(?:只|仅).{0,6}控制台");
+    private static final Pattern SCHEDULE_QUESTION=Pattern.compile("(?:每天|每日|每周|定时).{0,12}(?:几点|时间)|(?:希望|需要|安排).{0,8}(?:几点|何时|什么时候)|(?:几点|何时|什么时候).{0,12}(?:执行|进行|处理|比较|整理)");
 
     @Autowired
     public ModelDelegationTaskPlanner(ObjectMapper mapper, LlmRuntimeClientFactory factory,
@@ -61,8 +68,11 @@ public class ModelDelegationTaskPlanner implements DelegationTaskPlanner {
                 .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
         this.model=model; this.capabilities=capabilities;
     }
+    static boolean disallowsPhoneDelivery(String text) { return text!=null && NO_PHONE.matcher(text).find(); }
     @Override public TaskPlan plan(PlanningRequest request) {
         try {
+            String timingText=request.description().replaceAll("https?://[^\\s<>\"，。；、！？）)\\]】]+","");
+            boolean immediate=!TIMED.matcher(timingText).find();
             var tools=capabilities.apply(request);
             var allowed=tools.stream().map(t->t.get("name")).distinct().toList();
             String answer=model.complete(RULES,mapper.writeValueAsString(Map.of(
@@ -76,6 +86,7 @@ public class ModelDelegationTaskPlanner implements DelegationTaskPlanner {
                     "onceAt","intervalMinutes","deliveryMode","requiresToolEvidence","requiredToolNames","clarification");
             for(var it=root.fieldNames();it.hasNext();) if(!fields.contains(it.next())) throw invalid();
             String question=text(root,"clarification",1000,false);
+            if(question!=null && immediate && SCHEDULE_QUESTION.matcher(question).find()) throw invalid();
             if(question!=null && !question.isBlank()) return new TaskPlan(null,null,null,List.of(),null,
                     request.zoneId(),null,null,null,true,allowed,List.of(),question);
             List<Integer> days=new ArrayList<>();
@@ -92,16 +103,24 @@ public class ModelDelegationTaskPlanner implements DelegationTaskPlanner {
             String local=text(root,"localTime",30,false), once=text(root,"onceAt",60,false);
             JsonNode interval=root.get("intervalMinutes");
             if(interval!=null && !interval.isNull() && !interval.isIntegralNumber()) throw invalid();
+            // A model suggestion is never phone delivery authorization.
+            DelegationService.DeliveryMode.valueOf(text(root,"deliveryMode",20,true));
             var delivery=request.requestedDeliveryMode()!=null?request.requestedDeliveryMode():
-                    DelegationService.DeliveryMode.valueOf(text(root,"deliveryMode",20,true));
+                    PHONE.matcher(request.description()).find() && !disallowsPhoneDelivery(request.description())
+                            ?DelegationService.DeliveryMode.BARK:DelegationService.DeliveryMode.CONSOLE;
             if(delivery==DelegationService.DeliveryMode.CONSOLE) {
                 allowed=allowed.stream().filter(name->!com.kj.stackchan.agent.BarkNotificationTool.ID.equals(name)).toList();
                 if(required.contains(com.kj.stackchan.agent.BarkNotificationTool.ID)) throw invalid();
             }
-            return new TaskPlan(text(root,"title",200,true),text(root,"understanding",4000,true),
-                    DelegationService.ScheduleType.valueOf(text(root,"scheduleType",20,true)),List.copyOf(days),
-                    local==null?null:LocalTime.parse(local),text(root,"zoneId",80,true),once==null?null:Instant.parse(once),
-                    interval==null || interval.isNull()?null:interval.intValue(),
+            var proposedSchedule=DelegationService.ScheduleType.valueOf(text(root,"scheduleType",20,true));
+            String title=text(root,"title",200,true), understanding=text(root,"understanding",4000,true);
+            if(immediate) understanding="现在一次处理「"+title+"」，"+(delivery==DelegationService.DeliveryMode.CONSOLE
+                    ?"成果保存在持续委托。":"成果按授权交付手机，网页保留来源。");
+            return new TaskPlan(title,understanding,
+                    immediate?DelegationService.ScheduleType.ONCE:proposedSchedule,
+                    immediate?List.of():List.copyOf(days),immediate || local==null?null:LocalTime.parse(local),
+                    text(root,"zoneId",80,true),immediate?request.now():once==null?null:Instant.parse(once),
+                    immediate || interval==null || interval.isNull()?null:interval.intValue(),
                     delivery,
                     root.path("requiresToolEvidence").booleanValue(),allowed,List.copyOf(required),null);
         } catch(DelegationException safe) { throw safe; }

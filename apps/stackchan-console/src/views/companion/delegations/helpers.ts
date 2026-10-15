@@ -103,6 +103,11 @@ export function runErrorMessage(code: string | null): string {
     DELEGATION_DISABLED: '任务已经暂停。',
     PUSH_CONTENT_TOO_LARGE: '结果已保存，内容过长无法完整推送到手机。请在这里阅读结果。',
     DELEGATION_CAPACITY: '伙伴正在处理其他任务，请稍后重试。',
+    EXECUTION_CAPACITY_BUSY: '当前有任务在执行，稍后再试。任务与已有成果仍然保留。',
+    SOURCE_SCOPE_VIOLATION: '这份资料超出了你允许的范围，没有读取。补充来源后再重新比较。',
+    EVIDENCE_REQUIRED: '实际读取的资料不足以支持完整比较，请查看已获得的信息与缺失来源。',
+    DEPENDENCY_UNAVAILABLE: '暂时无法取得所需资料，已有成果仍然保留。',
+    INVALID_STATE: '当前任务状态不允许继续执行，请先查看任务是否已暂停或取消。',
   }
   return code ? messages[code] || '本次没有完成，请查看执行说明或稍后重试。' : ''
 }

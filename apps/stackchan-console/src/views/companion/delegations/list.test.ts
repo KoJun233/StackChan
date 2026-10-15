@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick } from 'vue'
 import DelegationList from './list.vue'
 
-const api = vi.hoisted(() => ({ listDelegations: vi.fn(), getBarkSettings: vi.fn(), updateBarkSettings: vi.fn(), listDevices: vi.fn(), listRoles: vi.fn() }))
+const api = vi.hoisted(() => ({ listDelegations: vi.fn(), listDelegationReviewReady: vi.fn(), getBarkSettings: vi.fn(), updateBarkSettings: vi.fn(), listDevices: vi.fn(), listRoles: vi.fn() }))
 vi.mock('@/api/modules/delegations', async original => ({ ...await original<typeof import('@/api/modules/delegations')>(), ...api }))
 vi.mock('@/api/modules/devices', async original => ({ ...await original<typeof import('@/api/modules/devices')>(), listDevices: api.listDevices }))
 vi.mock('@/api/modules/roles', async original => ({ ...await original<typeof import('@/api/modules/roles')>(), listRoles: api.listRoles }))
@@ -90,6 +90,7 @@ describe('持续委托列表与 Bark 设置', () => {
     api.listDevices.mockResolvedValue([])
     api.listRoles.mockResolvedValue([{ id: 'a', name: '伙伴 A' }, { id: 'b', name: '伙伴 B' }])
     api.listDelegations.mockResolvedValue({ list: [], total: 0 })
+    api.listDelegationReviewReady.mockResolvedValue({ list: [], total: 0 })
     api.getBarkSettings.mockResolvedValue({ serverUrl: 'https://api.day.app', keyConfigured: true, enabled: true, updatedAt: null })
     api.updateBarkSettings.mockResolvedValue({ serverUrl: 'https://api.day.app', keyConfigured: true, enabled: true, updatedAt: null })
   })
@@ -140,5 +141,45 @@ describe('持续委托列表与 Bark 设置', () => {
     await nextTick()
     expect(container.querySelector('[data-list]')?.textContent).not.toContain('旧委托')
     expect(container.querySelector('[data-total]')?.getAttribute('data-total')).toBe('8')
+  })
+  it('首屏最多三张待阅卡，成果、来源和用户认可分别展示', async () => {
+    api.listDelegationReviewReady.mockResolvedValue({ list: [1, 2, 3, 4].map(index => ({ id: `task-${index}`, title: `方案比较 ${index}`, roleId: 'a', revision: 1, sourceUrls: ['https://example.com/a'], zoneId: 'Asia/Shanghai', lastRun: { id: `run-${index}`, taskRevision: 1, status: 'SUCCEEDED', output: `比较摘要 ${index}`, evidence: [{ url: 'https://example.com/a' }], createdAt: '2026-10-15T01:00:00Z', review: { reviewState: 'UNREVIEWED', resourceVersion: 1 } } })), total: 4 })
+    const container = await mount()
+    const cards = container.querySelector('[aria-label="等你查看"]')!
+    expect(cards.querySelectorAll('button')).toHaveLength(3)
+    expect(cards.textContent).toContain('比较摘要 1')
+    expect(cards.textContent).toContain('伙伴：伙伴 A')
+    expect(cards.textContent).not.toContain('比较摘要 4')
+    expect(cards.textContent).not.toContain('已认可')
+    expect(cards.querySelector('a')?.getAttribute('rel')).toBe('noopener noreferrer')
+    expect(container.querySelector('[data-list]')?.textContent).toBe('还没有持续委托')
+  })
+  it('刷新断网时保留当前范围已加载委托，切换范围立即清空', async () => {
+    api.listDelegations.mockResolvedValueOnce({ list: [{ title: '已保存的成果' }], total: 1 }).mockRejectedValueOnce(new Error('离线')).mockResolvedValueOnce({ list: [], total: 0 })
+    const container = await mount()
+    const refresh = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === '刷新')!
+    refresh.click()
+    await vi.waitFor(() => expect(container.textContent).toContain('当前连接中断，保留上次成果'))
+    expect(container.querySelector('[data-list]')?.textContent).toContain('已保存的成果')
+    const select = Array.from(container.querySelectorAll('select')).find(item => item.textContent?.includes('伙伴 B'))!
+    select.value = 'b'
+    select.dispatchEvent(new Event('change'))
+    await vi.waitFor(() => expect(container.querySelector('[data-list]')?.textContent).not.toContain('已保存的成果'))
+  })
+  it('独立待阅查询的旧伙伴响应晚到，不覆盖当前范围空态', async () => {
+    let resolveOld!: (value: unknown) => void
+    api.listDelegationReviewReady.mockReturnValueOnce(new Promise((resolve) => {
+      resolveOld = resolve
+    })).mockResolvedValueOnce({ list: [], total: 0 })
+    const container = await mount()
+    const select = Array.from(container.querySelectorAll('select')).find(item => item.textContent?.includes('伙伴 B'))!
+    select.value = 'b'
+    select.dispatchEvent(new Event('change'))
+    await vi.waitFor(() => expect(api.listDelegationReviewReady).toHaveBeenLastCalledWith({ deviceId: undefined, roleId: 'b' }))
+    resolveOld({ list: [{ title: '旧伙伴私人成果', lastRun: { status: 'SUCCEEDED', review: { reviewState: 'UNREVIEWED' } } }], total: 1 })
+    await nextTick()
+    await nextTick()
+    expect(container.textContent).not.toContain('旧伙伴私人成果')
+    expect(container.querySelector('[aria-label="等你查看"]')?.textContent).toContain('还没有成果')
   })
 })

@@ -202,10 +202,12 @@ public class AgentOrchestrator {
     public Flux<String> stream(AgentRequest request) {
         if (delegationIntake != null && delegationIntake.supports(request.context(),request.userMessage())) {
             request.observeRoute(ExecutionRoute.MODEL);
-            if (!settingsService.runtimeSettings().enabled()) return Flux.just("任务尚未保存。请先启用伙伴的工具能力，再把任务交给我。");
+            if (delegationIntake.requiresPlanning(request.context(),request.userMessage())
+                    && !settingsService.runtimeSettings().enabled())
+                return Flux.just("任务尚未保存。请先启用伙伴的工具能力，再把任务交给我。");
             return Mono.fromCallable(() -> delegationIntake.accept(request.context(),request.userMessage()))
                     .subscribeOn(Schedulers.boundedElastic()).timeout(appProperties.getAgent().getTimeout())
-                    .onErrorReturn("这项任务尚未保存，理解任务时出现问题，请稍后重试。")
+                    .onErrorReturn("本次操作状态暂未确认，请先在持续委托核对已保存的任务与成果，再决定下一步。")
                     .flatMapMany(Flux::just);
         }
         String requiredToolName = requiredToolName(request);
@@ -242,6 +244,14 @@ public class AgentOrchestrator {
     /** Background tasks never use chat fallback: tool failures remain observable task results. */
     public TaskAgentResponse executeTask(AgentRequest request, List<String> allowedNames,
             java.util.function.Function<java.util.function.Supplier<Object>,Object> guard) {
+        return executeTask(request,allowedNames,guard,List.of(),false);
+    }
+    public TaskAgentResponse executeTask(AgentRequest request, List<String> allowedNames,
+            java.util.function.Function<java.util.function.Supplier<Object>,Object> guard, List<String> sourceUrls) {
+        return executeTask(request,allowedNames,guard,sourceUrls,true);
+    }
+    private TaskAgentResponse executeTask(AgentRequest request,List<String> allowedNames,
+            java.util.function.Function<java.util.function.Supplier<Object>,Object> guard,List<String> sourceUrls,boolean explicitScope) {
         if (request.context().channel() != AgentChannel.DELEGATION || !settingsService.runtimeSettings().enabled())
             throw new IllegalStateException("DELEGATION_AGENT_UNAVAILABLE");
         return Mono.fromCallable(() -> {
@@ -249,7 +259,7 @@ public class AgentOrchestrator {
             var direct = assembly.directTools().stream().filter(tool -> {
                 String name = tool.getToolDefinition().name();
                 // Old research tasks had no permission snapshot; inherit builtin reads only.
-                if (allowedNames.isEmpty()) return !BarkNotificationTool.ID.equals(name)
+                if (allowedNames.isEmpty()) return !explicitScope && !BarkNotificationTool.ID.equals(name)
                         && assembly.auditMetadata().get(name).source() == AgentToolSource.BUILTIN;
                 return allowedNames.contains(name);
             }).toList();
@@ -257,7 +267,7 @@ public class AgentOrchestrator {
             direct.forEach(tool -> metadata.put(tool.getToolDefinition().name(), assembly.auditMetadata().get(tool.getToolDefinition().name())));
             var policy = new AgentToolPolicyInterceptor(request.context(), metadata, auditService, objectMapper,
                     appProperties.getAgent().getMaxToolResultBytes(),appProperties.getAgent().getMaxTotalToolResultBytes())
-                    .withExecutionGuard(guard);
+                    .withExecutionGuard(guard).withPublicSourceScope(sourceUrls);
             var model = llmRuntimeClientFactory.createAgentChatModel();
             var agent = ReactAgent.builder().name("stackchan-task")
                     .description("Execute one persisted user delegation with current authorized tools and verifiable results")
@@ -268,12 +278,18 @@ public class AgentOrchestrator {
                     .toolExecutionTimeout(appProperties.getAgent().getTimeout().dividedBy(2))
                     .enableLogging(false).releaseThread(true).build();
             var response = agent.call(List.of(new UserMessage(request.userMessage())));
-            return new TaskAgentResponse(response.getText(),policy.steps(),policy.evidence());
+            return new TaskAgentResponse(response.getText(),policy.steps(),policy.evidence(),policy.sourceReads());
         }).subscribeOn(Schedulers.boundedElastic()).timeout(appProperties.getAgent().getTimeout()).block();
     }
 
     public record TaskAgentResponse(String text, List<AgentToolPolicyInterceptor.ToolStep> steps,
-                                   List<AgentToolPolicyInterceptor.ToolEvidence> evidence) {}
+                                   List<AgentToolPolicyInterceptor.ToolEvidence> evidence,
+                                   List<AgentToolPolicyInterceptor.SourceRead> sourceReads) {
+        public TaskAgentResponse(String text,List<AgentToolPolicyInterceptor.ToolStep> steps,
+                                 List<AgentToolPolicyInterceptor.ToolEvidence> evidence) {
+            this(text,steps,evidence,List.of());
+        }
+    }
 
     private Mono<String> invokeAgent(AgentRequest request, String requiredToolName) {
         return Mono.fromCallable(() -> {

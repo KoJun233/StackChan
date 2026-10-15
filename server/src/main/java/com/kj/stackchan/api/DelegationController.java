@@ -16,8 +16,11 @@ public class DelegationController {
         return service.list(deviceId,roleId,from,limit);
     }
     @GetMapping("/{id}") public DelegationService.TaskSnapshot get(@PathVariable UUID id) { return service.get(id); }
+    @GetMapping("/review-ready") public DelegationService.TaskPage reviewReady(@RequestParam(required=false) UUID deviceId,
+            @RequestParam(required=false) UUID roleId,@RequestParam(defaultValue="3") int limit) { return service.reviewReady(deviceId,roleId,limit); }
     @PostMapping(consumes=MediaType.APPLICATION_JSON_VALUE) @ResponseStatus(HttpStatus.CREATED)
-    public DelegationService.TaskSnapshot create(@RequestBody DelegationService.TaskInput input) { return service.create(input); }
+    public DelegationService.TaskSnapshot create(@RequestBody DelegationService.TaskInput input,
+            @RequestHeader(name="Idempotency-Key",required=false) String key) { return key==null?service.create(input):service.createProject(input,key); }
     @PutMapping(path="/{id}",consumes=MediaType.APPLICATION_JSON_VALUE)
     public DelegationService.TaskSnapshot update(@PathVariable UUID id,@RequestBody DelegationService.TaskInput input) { return service.update(id,input); }
     @DeleteMapping("/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) public void delete(@PathVariable UUID id) { service.delete(id); }
@@ -26,4 +29,9 @@ public class DelegationController {
     @PostMapping("/{id}:run") public DelegationService.RunSnapshot run(@PathVariable UUID id) { return service.run(id); }
     @GetMapping("/{id}/runs") public DelegationService.RunPage runs(@PathVariable UUID id,
             @RequestParam(defaultValue="0") int from,@RequestParam(defaultValue="20") int limit) { return service.runs(id,from,limit); }
+    @GetMapping("/{id}/project-summary") public DelegationService.ProjectSummary summary(@PathVariable UUID id) { return service.projectSummary(id); }
+    @PostMapping(path="/{id}:run-revision",consumes=MediaType.APPLICATION_JSON_VALUE)
+    public DelegationService.RunSnapshot runRevision(@PathVariable UUID id,@RequestBody RevisionInput input,
+            @RequestHeader("Idempotency-Key") String key) { return service.runRevision(id,input.expectedRevision(),key); }
+    public record RevisionInput(long expectedRevision) {}
 }
