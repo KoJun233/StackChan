@@ -12,6 +12,7 @@ import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallResponse;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolInterceptor;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kj.stackchan.delegation.PublicSourceScope;
 
 public class AgentToolPolicyInterceptor extends ToolInterceptor {
 
@@ -34,6 +35,14 @@ public class AgentToolPolicyInterceptor extends ToolInterceptor {
     private java.util.function.Function<java.util.function.Supplier<Object>,Object> executionGuard = operation -> operation.get();
     private final java.util.List<ToolStep> steps = new java.util.concurrent.CopyOnWriteArrayList<>();
     private final java.util.List<ToolEvidence> evidence = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final java.util.List<SourceRead> sourceReads = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private java.util.List<String> publicSourceScope = java.util.List.of();
+    private java.time.Clock clock = java.time.Clock.systemUTC();
+
+    public AgentToolPolicyInterceptor withPublicSourceScope(java.util.List<String> sourceUrls) {
+        publicSourceScope = PublicSourceScope.canonical(sourceUrls); return this;
+    }
+    public AgentToolPolicyInterceptor withClock(java.time.Clock value) { clock = value; return this; }
 
     public AgentToolPolicyInterceptor withExecutionGuard(
             java.util.function.Function<java.util.function.Supplier<Object>,Object> guard) {
@@ -41,8 +50,12 @@ public class AgentToolPolicyInterceptor extends ToolInterceptor {
     }
     public java.util.List<ToolStep> steps() { return java.util.List.copyOf(steps); }
     public java.util.List<ToolEvidence> evidence() { return java.util.List.copyOf(evidence); }
+    public java.util.List<SourceRead> sourceReads() { return java.util.List.copyOf(sourceReads); }
     public record ToolStep(String toolName, String status, String summary) {}
-    public record ToolEvidence(String id, String title, String url, String detail) {}
+    public record ToolEvidence(String id, String title, String url, String detail, String inputUrl, java.time.Instant readAt) {
+        public ToolEvidence(String id,String title,String url,String detail) { this(id,title,url,detail,null,null); }
+    }
+    public record SourceRead(String inputUrl, boolean succeeded, java.util.List<String> evidenceIds, java.time.Instant readAt) {}
 
     public AgentToolPolicyInterceptor(
             AgentInvocationContext context,
@@ -55,7 +68,8 @@ public class AgentToolPolicyInterceptor extends ToolInterceptor {
         this.context = context;
         this.metadataByToolName = Map.copyOf(metadataByToolName);
         this.auditService = auditService;
-        this.objectMapper = objectMapper;
+        this.objectMapper = objectMapper.copy().enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+                .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
         this.maxResultBytes = maxResultBytes;
         this.maxTotalResultBytes = maxTotalResultBytes;
     }
@@ -64,14 +78,31 @@ public class AgentToolPolicyInterceptor extends ToolInterceptor {
     public ToolCallResponse interceptToolCall(ToolCallRequest request, ToolCallHandler handler) {
         long started = System.nanoTime();
         ToolAuditMetadata metadata = metadata(request);
+        String inputUrl = null;
+        boolean sourceRecorded = false;
         try {
             if ((context.channel() == AgentChannel.DELEGATION || BarkNotificationTool.ID.equals(request.getToolName()))
                     && !metadataByToolName.containsKey(request.getToolName())
                     && !"read_skill".equals(request.getToolName())) throw new IllegalStateException("TOOL_NOT_AUTHORIZED");
             if (BarkNotificationTool.ID.equals(request.getToolName()) && notificationPrerequisite != null
                     && !wasSuccessful(notificationPrerequisite)) throw new IllegalStateException("PUSH_READ_REQUIRED");
+            if (PublicSourceReadTool.ID.equals(request.getToolName())) {
+                var arguments = objectMapper.readTree(request.getArguments());
+                if (!publicSourceScope.isEmpty()) {
+                    if (arguments == null || !arguments.path("url").isTextual()) throw new IllegalStateException("SOURCE_SCOPE_REQUIRED");
+                    String proposed = PublicSourceScope.canonical(arguments.path("url").textValue());
+                    if (!publicSourceScope.contains(proposed)) throw new IllegalStateException("SOURCE_NOT_AUTHORIZED");
+                    inputUrl = proposed;
+                } else if (arguments != null && arguments.path("url").isTextual()) {
+                    inputUrl = PublicSourceScope.canonical(arguments.path("url").textValue());
+                }
+            }
             ToolCallResponse response = (ToolCallResponse) executionGuard.apply(() -> handler.call(request));
             if (response == null || response.isError()) {
+                if (inputUrl != null) {
+                    sourceReads.add(new SourceRead(inputUrl,false,java.util.List.of(),clock.instant()));
+                    sourceRecorded = true;
+                }
                 steps.add(new ToolStep(request.getToolName(), "FAILED", "工具未返回可确认的结果。"));
                 recordBestEffort(request, metadata, AgentToolOutcome.TOOL_FAILED, started, 0, false);
                 return ToolCallResponse.error(request.getToolCallId(), request.getToolName(), TOOL_FAILURE);
@@ -85,7 +116,13 @@ public class AgentToolPolicyInterceptor extends ToolInterceptor {
                     return ToolCallResponse.error(request.getToolCallId(), request.getToolName(), result);
                 }
             }
-            result = bindEvidence(request.getToolName(), result);
+            result = bindEvidence(request.getToolName(), result, inputUrl);
+            if (inputUrl != null) {
+                String requestedUrl = inputUrl;
+                sourceReads.add(new SourceRead(inputUrl,true,evidence.stream().filter(item -> requestedUrl.equals(item.inputUrl()))
+                        .map(ToolEvidence::id).toList(),clock.instant()));
+                sourceRecorded = true;
+            }
             int remaining = maxTotalResultBytes - totalResultBytes.get();
             if (remaining <= 0) {
                 steps.add(new ToolStep(request.getToolName(), "FAILED", "工具结果达到本次调用预算。"));
@@ -121,6 +158,7 @@ public class AgentToolPolicyInterceptor extends ToolInterceptor {
                     response.getMetadata()
             );
         } catch (Exception exception) {
+            if (inputUrl != null && !sourceRecorded) sourceReads.add(new SourceRead(inputUrl,false,java.util.List.of(),clock.instant()));
             steps.add(new ToolStep(request.getToolName(), "FAILED", "工具未执行或执行失败。"));
             recordBestEffort(request, metadata, AgentToolOutcome.TOOL_FAILED, started, 0, false);
             return ToolCallResponse.error(request.getToolCallId(), request.getToolName(), TOOL_FAILURE);
@@ -136,7 +174,7 @@ public class AgentToolPolicyInterceptor extends ToolInterceptor {
         return successfulToolNames.contains(toolName);
     }
 
-    private String bindEvidence(String name, String result) {
+    private String bindEvidence(String name, String result, String inputUrl) {
         if (!PublicSourceReadTool.ID.equals(name)) return result;
         try {
             var root = objectMapper.readTree(result);
@@ -150,7 +188,7 @@ public class AgentToolPolicyInterceptor extends ToolInterceptor {
                 String id = "E" + (evidence.size() + 1);
                 String title = reference.path("title").asText("");
                 String detail = reference.path("detail").asText("");
-                evidence.add(new ToolEvidence(id, title, url, detail));
+                evidence.add(new ToolEvidence(id, title, url, detail, inputUrl, clock.instant()));
                 ((com.fasterxml.jackson.databind.node.ObjectNode) reference).put("id", id);
             }
             return objectMapper.writeValueAsString(root);

@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import com.kj.stackchan.delegation.DelegationException;
 import com.kj.stackchan.delegation.DelegationService;
+import com.kj.stackchan.delegation.OperationReceiptService;
 import com.kj.stackchan.security.AdminUserRepository;
 import com.kj.stackchan.security.SecurityConfiguration;
 import org.junit.jupiter.api.Test;
@@ -24,11 +25,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import static com.kj.stackchan.delegation.DelegationService.*;
 
-@WebMvcTest({DelegationController.class,DelegationDeliveryController.class})
+@WebMvcTest({DelegationController.class,DelegationDeliveryController.class,CompanionOperationController.class})
 @Import({SecurityConfiguration.class,DelegationExceptionHandler.class})
 class DelegationControllerTest {
     @Autowired MockMvc mvc;
     @MockitoBean DelegationService service;
+    @MockitoBean OperationReceiptService receipts;
     @MockitoBean AdminUserRepository administrators;
     private final UUID id=UUID.randomUUID(),device=UUID.randomUUID(),role=UUID.randomUUID();
 
@@ -37,8 +39,51 @@ class DelegationControllerTest {
                 get("/api/v1/delegation-push/settings"),post("/api/v1/delegations").contentType(APPLICATION_JSON).content("{}"),
                 put("/api/v1/delegations/{id}",id).contentType(APPLICATION_JSON).content("{}"),delete("/api/v1/delegations/{id}",id),
                 post("/api/v1/delegations/{id}:pause",id),post("/api/v1/delegations/{id}:resume",id),post("/api/v1/delegations/{id}:run",id),
-                post("/api/v1/delegation-runs/{id}:retry-delivery",id),put("/api/v1/delegation-push/settings").contentType(APPLICATION_JSON).content("{}"));
+                post("/api/v1/delegation-runs/{id}:retry-delivery",id),put("/api/v1/delegation-push/settings").contentType(APPLICATION_JSON).content("{}"),
+                get("/api/v1/delegations/{id}/project-summary",id),get("/api/v1/delegations/review-ready"),
+                post("/api/v1/delegation-runs/{id}/feedback",id).contentType(APPLICATION_JSON).content("{}"),
+                post("/api/v1/delegations/{id}:run-revision",id).contentType(APPLICATION_JSON).content("{}"),
+                get("/api/v1/companion/operations/{key}",UUID.randomUUID()));
         for(var request:requests) mvc.perform(request.with(csrf())).andExpect(status().isUnauthorized());
+        verifyNoInteractions(service);
+    }
+    @Test void newWritesRequireCsrfAndFeedbackIdempotencyHeader() throws Exception {
+        mvc.perform(post("/api/v1/delegation-runs/{id}/feedback",id).with(user("admin").roles("ADMIN"))
+                .contentType(APPLICATION_JSON).content("{}")).andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/delegation-runs/{id}/feedback",id).with(user("admin").roles("ADMIN")).with(csrf())
+                .contentType(APPLICATION_JSON).content("{}")).andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+    }
+    @Test void keyedCreateAndFeedbackReachTheGuardedServiceWithExactVersions() throws Exception {
+        String key=UUID.randomUUID().toString(); when(service.createProject(any(),eq(key))).thenReturn(snapshot());
+        mvc.perform(post("/api/v1/delegations").with(user("admin").roles("ADMIN")).with(csrf()).header("Idempotency-Key",key)
+                .contentType(APPLICATION_JSON).content(taskJson())).andExpect(status().isCreated());
+        UUID feedback=UUID.randomUUID();when(service.feedback(eq(id),any(),eq(key))).thenReturn(new FeedbackResult(feedback,id,id,2,2,ReviewState.REVISION_REQUESTED,null));
+        mvc.perform(post("/api/v1/delegation-runs/{id}/feedback",id).with(user("admin").roles("ADMIN")).with(csrf()).header("Idempotency-Key",key)
+                .contentType(APPLICATION_JSON).content("{\"kind\":\"REVISE_PREFERENCES\",\"comment\":\"线缆少\",\"expectedRevision\":1,\"resourceVersion\":1,\"runMode\":\"SAVE_ONLY\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.feedbackId").value(feedback.toString())).andExpect(jsonPath("$.revision").value(2));
+        verify(service).feedback(id,new FeedbackInput(FeedbackKind.REVISE_PREFERENCES,"线缆少",1,1,RunMode.SAVE_ONLY),key);
+    }
+    @Test void projectErrorsUseFixedConflictCapacityAndDependencyStatusesWithoutPrivateBody() throws Exception {
+        for(var failure:java.util.Map.of("REVISION_CONFLICT",409,"IDEMPOTENCY_CONFLICT",409,"INVALID_STATE",409,
+                "EVIDENCE_REQUIRED",422,"EXECUTION_CAPACITY_BUSY",429,"DEPENDENCY_UNAVAILABLE",503).entrySet()) {
+            doThrow(new DelegationException(failure.getKey())).when(service).feedback(eq(id),any(),any());
+            mvc.perform(post("/api/v1/delegation-runs/{id}/feedback",id).with(user("admin").roles("ADMIN")).with(csrf())
+                    .header("Idempotency-Key",UUID.randomUUID()).contentType(APPLICATION_JSON).content("{\"comment\":\"private-fixture-body\"}"))
+                    .andExpect(status().is(failure.getValue())).andExpect(jsonPath("$.code").value(failure.getKey()))
+                    .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("private-fixture-body"))));
+        }
+    }
+    @Test void operationQueriesAreAdministratorOnlyScopedAndReadOnly() throws Exception {
+        String key=UUID.randomUUID().toString();var action=OperationReceiptService.Action.DELEGATION_CREATE;
+        when(receipts.get(device,role,action,key,null)).thenReturn(new OperationReceiptService.Receipt(key,action,"COMMITTED",java.util.Map.of("taskId",id),1L,null,Instant.EPOCH,Instant.EPOCH));
+        var request=get("/api/v1/companion/operations/{key}",key).param("deviceId",device.toString()).param("roleId",role.toString()).param("action",action.name());
+        mvc.perform(request.with(user("device").roles("DEVICE"))).andExpect(status().isForbidden());
+        mvc.perform(request.with(user("admin").roles("ADMIN"))).andExpect(status().isOk()).andExpect(header().string("Cache-Control","no-store"))
+                .andExpect(jsonPath("$.resourceIds.taskId").value(id.toString())).andExpect(jsonPath("$.status").value("COMMITTED"));
+        mvc.perform(get("/api/v1/companion/operations/{key}",key).with(user("admin").roles("ADMIN"))
+                .param("deviceId",device.toString()).param("roleId",role.toString()).param("action","read_public_source"))
+                .andExpect(status().isBadRequest());
         verifyNoInteractions(service);
     }
     @Test void deviceOrIntegrationAuthorityCannotManageDelegations() throws Exception {

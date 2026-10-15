@@ -5,10 +5,11 @@ import type { Device } from '@/api/modules/devices'
 import type { CompanionRole } from '@/api/modules/roles'
 import { toTypedSchema } from '@vee-validate/zod'
 import * as z from 'zod'
-import { deleteDelegation, getBarkSettings, listDelegations, pauseDelegation, resumeDelegation, runDelegation, updateBarkSettings } from '@/api/modules/delegations'
+import { deleteDelegation, getBarkSettings, listDelegationReviewReady, listDelegations, pauseDelegation, resumeDelegation, runDelegation, updateBarkSettings } from '@/api/modules/delegations'
 import { listDevices } from '@/api/modules/devices'
 import { listRoles } from '@/api/modules/roles'
 import eventBus from '@/utils/eventBus'
+import ProjectCard from './components/ProjectCard.vue'
 import { deliveryStatusLabel, formatDelegationTime, runStatusLabel, safeSourceUrl, scheduleLabel } from './helpers'
 
 defineOptions({ name: 'CompanionDelegationList' })
@@ -18,6 +19,9 @@ const loading = ref(false)
 const actionBusy = ref(false)
 const listError = ref('')
 const dataList = ref<Delegation[]>([])
+const reviewReady = ref<Delegation[]>([])
+const reviewLoading = ref(false)
+const reviewError = ref('')
 const devices = ref<Device[]>([])
 const roles = ref<CompanionRole[]>([])
 const search = ref({ deviceId: '', roleId: '' })
@@ -25,6 +29,7 @@ const deviceOptions = computed(() => [{ label: '全部设备', value: '' }, ...d
 const roleOptions = computed(() => [{ label: '全部伙伴', value: '' }, ...roles.value.map(item => ({ label: item.name, value: item.id }))])
 const deviceNames = computed(() => new Map(devices.value.map(item => [item.id, item.displayName])))
 const roleNames = computed(() => new Map(roles.value.map(item => [item.id, item.name])))
+const awaitingReview = computed(() => reviewReady.value.filter(task => task.lastRun?.review?.reviewState === 'UNREVIEWED' && task.lastRun.status !== 'RUNNING' && !task.cancelledAt).slice(0, 3))
 const tableColumns = computed<TableColumn<Delegation>[]>(() => [
   { accessorKey: 'title', header: '任务', minWidth: 240 },
   { id: 'partner', header: '设备 / 伙伴', minWidth: 150 },
@@ -34,6 +39,7 @@ const tableColumns = computed<TableColumn<Delegation>[]>(() => [
   { id: 'operation', header: '操作', width: 190, align: 'center', fixed: 'right' },
 ])
 let listRequest = 0
+let reviewRequest = 0
 
 const barkFormRef = useTemplateRef<FormExpose>('barkFormRef')
 const barkSettings = ref<BarkSettings | null>(null)
@@ -97,11 +103,10 @@ async function saveBark() {
 }
 
 async function getDataList() {
+  void loadReviewReady()
   const request = ++listRequest
   loading.value = true
   listError.value = ''
-  dataList.value = []
-  pagination.value.total = 0
   try {
     const result = await listDelegations({ ...getParams(), deviceId: search.value.deviceId || undefined, roleId: search.value.roleId || undefined })
     if (request === listRequest) {
@@ -121,7 +126,33 @@ async function getDataList() {
   }
 }
 
+async function loadReviewReady() {
+  const request = ++reviewRequest
+  reviewLoading.value = true
+  reviewError.value = ''
+  try {
+    const result = await listDelegationReviewReady({ deviceId: search.value.deviceId || undefined, roleId: search.value.roleId || undefined })
+    if (request === reviewRequest) {
+      reviewReady.value = result.list
+    }
+  }
+  catch (error) {
+    if (request === reviewRequest) {
+      reviewError.value = error instanceof Error ? error.message : '暂时无法读取待阅成果。'
+    }
+  }
+  finally {
+    if (request === reviewRequest) {
+      reviewLoading.value = false
+    }
+  }
+}
 function currentChange(page = 1) {
+  ++listRequest
+  ++reviewRequest
+  dataList.value = []
+  reviewReady.value = []
+  pagination.value.total = 0
   return onCurrentChange(page).then(getDataList)
 }
 function sizeChange(size: number) {
@@ -175,6 +206,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   ++listRequest
+  ++reviewRequest
   eventBus.off('get-delegation-list', getDataList)
   barkModel.value.deviceKey = ''
 })
@@ -184,7 +216,23 @@ onDeactivated(() => {
 </script>
 
 <template>
-  <AppPageShell title="持续委托" description="告诉伙伴想做什么，它会理解安排，在约定的时间执行并带回结果。">
+  <AppPageShell title="持续委托" description="交代一次比较、整理，或安排定期任务。伙伴在允许的范围内处理，成果留在这里等你查看。">
+    <section aria-label="等你查看" aria-live="polite" class="mb-6 space-y-4">
+      <h2 class="text-lg font-semibold">
+        等你查看
+      </h2>
+      <FaAlert v-if="reviewError" :title="awaitingReview.length ? '当前连接中断，保留上次待阅成果' : '待阅成果未加载'" :description="reviewError" variant="destructive">
+        <template #action>
+          <FaButton variant="outline" :disabled="reviewLoading" @click="loadReviewReady">
+            重试读取成果
+          </FaButton>
+        </template>
+      </FaAlert>
+      <FaAlert v-else-if="!awaitingReview.length" :title="reviewLoading ? '正在读取待阅成果…' : '还没有成果，接下任务后会出现在这里'" description="结果生成后留在这里，查看不会自动标为认可。" />
+      <div v-loading="reviewLoading" class="gap-4 grid min-w-0 lg:grid-cols-3">
+        <ProjectCard v-for="task in awaitingReview" :key="task.id" :task="task" :run="task.lastRun!" :partner="roleNames.get(task.roleId)" show-open @open="openDetail(task)" />
+      </div>
+    </section>
     <FaCollapsible class="mb-6">
       <template #trigger="{ open }">
         <span class="text-sm px-3 py-2 border rounded-md inline-block">{{ open ? '收起' : '展开' }}手机通知设置</span>
@@ -249,7 +297,7 @@ onDeactivated(() => {
       </template>
     </FaSearchBar>
     <div class="my-4 border-t border-dashed" />
-    <FaAlert v-if="listError" title="委托未加载" :description="listError" variant="destructive" class="mb-4">
+    <FaAlert v-if="listError" :title="dataList.length ? '当前连接中断，保留上次成果' : '委托未加载'" :description="listError" variant="destructive" class="mb-4">
       <template #action>
         <FaButton variant="outline" @click="getDataList">
           重试
@@ -282,7 +330,7 @@ onDeactivated(() => {
       </template>
       <template #cell-schedule="{ row }">
         <FaTag :variant="row.original.enabled ? 'default' : 'outline'">
-          {{ row.original.enabled ? '已启用' : '已暂停' }}
+          {{ row.original.cancelledAt ? '已取消' : row.original.enabled ? '已启用' : '已暂停' }}
         </FaTag><div class="text-sm mt-2">
           {{ scheduleLabel(row.original) }}
         </div><div class="text-xs text-muted-foreground mt-1">
@@ -306,7 +354,7 @@ onDeactivated(() => {
           <FaButton variant="outline" size="sm" :disabled="actionBusy" @click="openDetail(row.original)">
             任务 / 记录
           </FaButton>
-          <FaDropdown :items="[[{ label: row.original.enabled ? '暂停' : '恢复', disabled: actionBusy, handle: () => applyAction(() => row.original.enabled ? pauseDelegation(row.original.id) : resumeDelegation(row.original.id), row.original.enabled ? '任务已暂停' : '任务已恢复') }, { label: '立即执行一次', disabled: actionBusy || !row.original.enabled, handle: () => execute(row.original) }, { label: '删除', variant: 'destructive', disabled: actionBusy, handle: () => remove(row.original) }]]">
+          <FaDropdown :items="[[{ label: row.original.enabled ? '暂停' : '恢复', disabled: actionBusy || Boolean(row.original.cancelledAt), handle: () => applyAction(() => row.original.enabled ? pauseDelegation(row.original.id) : resumeDelegation(row.original.id), row.original.enabled ? '任务已暂停' : '任务已恢复') }, { label: '立即执行一次', disabled: actionBusy || !row.original.enabled || Boolean(row.original.cancelledAt), handle: () => execute(row.original) }, { label: '删除', variant: 'destructive', disabled: actionBusy, handle: () => remove(row.original) }]]">
             <FaButton variant="outline" size="icon-sm" aria-label="委托操作" :disabled="actionBusy">
               <FaIcon name="i-ri:more-line" />
             </FaButton>

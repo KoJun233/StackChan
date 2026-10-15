@@ -91,3 +91,4 @@
 | [0072](0072-confirmed-conversational-topic-continuity.md) | ACCEPTED | 已确认待续许可、日预算和删源锁；R00 整合保留原 V57。 |
 | [0076](0076-server-bound-web-device-scope.md) | ACCEPTED | 网页设备范围仅来自服务端会话绑定，普通请求不获动作/外发范围；WEB不取得待续上下文。 |
 | [0077](0077-measured-private-natural-voice.md) | ACCEPTED | 自然语音采用实际端点/codec 证据与独立实体测量，V61 关联删除及七日匿名墓碑防晚到。 |
+| [0078](0078-versioned-readonly-project-loop.md) | ACCEPTED | 一次只读项目复用原运行器，以真实来源、版本化反馈与操作收据保存成果及同任务修订。 |

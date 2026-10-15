@@ -2,50 +2,48 @@
 
 - 状态：READY_FOR_REVIEW
 - 最后更新：2026-10-15
-- 当前分支：`codex/companion-r01-natural-voice-20261013`
-- 基准提交：`989b3d9`
-- 最后验证提交：`989b3d9`
+- 当前分支：`codex/companion-r02-project-loop-20261015`
+- 基准提交：`a961816`
+- 最后验证提交：`a961816`
 
 ## 当前目标
 
-R01 自然语音：截断先澄清、当前表达优先、有界续讲、真实短聊路由和安全诊断；保留 R00 V57/网页绑定及主线委托/Bark。
+完成 R02 一次只读项目的收单、执行、成果审阅与原任务修订，保留已合入 R00/R01、周期委托和旧接口的行为。原等待 R01 合并的记录已 STALE；PR #49 合并事实已纳入本轮基准。
 
 ## 已完成
 
-截断录音先确定性澄清，不调用模型、工具或记忆提取；正文含标点 ≤160 码点，一次 TTS/单 WAV。最多四轮成功配对/三十分钟，换题/纠正切旧上下文，无唯一对象追问；拒绝不提取记忆。Bark 明确意图/缺正文/只读能力与 UNKNOWN 不重发保持。
+明确 ONCE 项目使用认证 device/role 和稳定意图键；咨询、示例与拒绝不触发读取。来源权限由用户指令独立保存，给定 URL 每次工具调用前校验，纯文本显式空工具集不继承默认联网能力。认证 query 拒绝，原读取器保持拒绝所有 3xx。
 
-管理员质量接口默认 24 小时/最多七天，只给固定计数/阶段时长，旧固件可选字段接受、缺证据未知。普通短聊来自实际 route；三十有效样本才给 nearest-rank，DEVICE_MONOTONIC 是 codec 开始参考，实体首声独立。
+五区成果与来源保存于原 run，未读事实为未知，缺关键证据转 BLOCKED。审阅与执行状态分开；认可绑定所见 run，偏好增加原 task revision 并保留旧成果。修订执行唯一槽、版本冲突、容量失败明确重试及取消后旧入口守卫已实现。
 
-仅新增 V61 会话关联/七日匿名墓碑；删除与阶段共享事务咨询锁，晚到不重建，旧未关联诊断不回填。V1–V60/checksum 不变，直接 60→61 保留十二表及五项加密摘要。
+V62 新增审阅、反馈、修订意图及操作收据。COMMITTED 与业务意图同事务，UNKNOWN 先回查旧键；删除私人任务清正文与审阅，收据只留无正文墓碑。API 使用管理员会话、CSRF 与归属检查；旧周期任务仍用原调度和 occurrence。
 
 ## 正在进行
 
-软件完成，等待审核；实体与安装待验。
-
-最终完整 SHA、测试源码指纹、61 SQL/Flyway、生产 image/JAR/全部控制台资源及双固件六制品见本工作树 `.tools/r01/candidate-receipt.json`。989b3d9 为当前祖先元数据，新增代码成绩以工作树回归和最终候选收据为准。实现、状态、交接与 R00 合成一个中文任务提交；用户已于 2026-10-15 明确授权推送本任务分支；推送与远端 SHA 核对结果见 `.tools/r01/push-receipt.json`。PR、人工审核与合并由用户执行。
+软件实现和完整回归已完成，等待代码审核；真实项目与视觉验收分别待验。a961816 为已验证祖先元数据；新增实现的源码指纹、最终提交与测试报告将由本轮候选收据绑定，不沿用 R01 测试数字证明新代码。
 
 ## 下一步操作
 
-读取本交付和收据进行代码审核；用户明确安装后才按测量手册采集。按本次授权推送并核对远端，随后由用户创建 PR，后续 R02/R06 不自动实施。
+核对本地单一中文任务提交、R02 交付及候选收据，确认 image/JAR/62 SQL 与已测源码对应同一提交后审核。按 2026-10-15 新授权仅推当前任务分支；PR 创建与合并由用户执行。
 
 ## 阻塞项
 
-无软件阻塞。本轮分支推送已授权，刷写或安装尚未授权；实体样本不足保持 UNKNOWN。缺 V57 的既有 V60 库仍默认拒绝升级，需另行兼容方案。
+无软件阻塞。本轮任务分支推送已授权；安装、刷写及真实模型/Bark 仍未授权。真实页面、实体语音与隔日验收不由合成或 PG 测试替代；缺 V57 的既有 V60 库仍默认拒绝升级。
 
 ## 关键文件
 
-实现路径与 FR/AC 对照见下方交付记录，最终源码指纹见收据。
+`DelegationService`、`OperationReceiptService`、`DelegationConversationIntake`、`AgentDelegationTaskExecutor`、`PublicSourceScope`、`ProjectArtifactRenderer`、管理员委托 API 与 V62；完整路径和 FR/AC 对照见 [R02 交付](../baselines/companion-r02-project-loop.md)。
 
 ## 验证命令与最近结果
 
-`./scripts/test-server-linux.ps1` 1009/1009，失败/错误/跳过 0，BUILD SUCCESS，报告 `.tools/stackchan-companion-tests-6d25eb52a1dd497b82e98b20bcd2268c`。诊断/API 67/67、PG 十项 R01 + 五项 R00 15/15；完整回归覆盖最终源码。已有 Surefire 退出三十秒警告保留。
+`./scripts/test-server-linux.ps1` 完整 1092/1092，失败/错误/跳过 0，BUILD SUCCESS；报告 `.tools/stackchan-companion-tests-59f71ccde7e4454abf67f34596ff94ba`。其中项目事务 17/17、迁移 6/6，覆盖调度与手动同修订去重、暂停恢复、周期转换、撤销手机，以及 V61→V62 和隔离 pg_dump/pg_restore。定向兼容回归 63/63。已有 Surefire 三十秒退出警告保留。
 
-`git diff --check`、`pnpm docs:check` 与检查器 7/7；最终源码/JAR/61 条迁移及真实 Flyway 11.7.2 核验封存收据。
+`git diff --check`、`pnpm docs:check` 和检查器 7/7 通过。测试源码 720 项指纹与候选最终源码一致性由收据再次核验；候选还核对 V1–V61 原 SQL、62 条打包 SQL 与真实 Flyway checksum。
 
 ## 相关设计、计划和决策
 
-[R01 交付与 FR/AC](../baselines/companion-r01-natural-voice.md)、[R00 历史基线](../baselines/companion-v1-baseline.md)、[R01 规格](../../requirements/companion-v1/R01-natural-voice.md)、[公共契约](../../requirements/companion-v1/00-shared-contracts.md)、[ADR0077](../decisions/0077-measured-private-natural-voice.md)、[实体测量](../../runbooks/natural-voice-quality.md)、[备份恢复](../../runbooks/personal-data-backup.md)。
+[R02 交付与 FR/AC](../baselines/companion-r02-project-loop.md)、[R02 规格](../../requirements/companion-v1/R02-project-loop.md)、[公共契约](../../requirements/companion-v1/00-shared-contracts.md)、[ADR0078](../decisions/0078-versioned-readonly-project-loop.md)、[委托与 Bark 手册](../runbooks/recurring-research-and-bark.md)、[备份恢复](../../runbooks/personal-data-backup.md)、[R01 历史交付](../baselines/companion-r01-natural-voice.md)。
 
 ## 安全与兼容性约束
 
-不运行真实模型/Bark、不刷写、安装、改部署模式、轮换凭据或创建 PR；仅按本次授权推送当前任务分支。原用户工作树保持；实体录音/谈话/认证载荷不提交，LAN HTTP 仅局域网开发。
+2026-10-15 用户已明确授权只推当前 R02 任务分支；推送及远端 SHA 核对结果见 `.tools/r02/push-receipt.json`。不创建 PR、不安装或刷写，不调用真实模型/Bark，不切换部署模式或轮换凭据。保留用户原工作树；文档与收据不保存秘密、完整认证载荷或私人项目正文。LAN HTTP 仅用于局域网开发，生产保持 HTTPS。

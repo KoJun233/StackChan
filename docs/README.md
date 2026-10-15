@@ -13,7 +13,7 @@
 | [`project/development.md`](project/development.md) | 开发环境与验证命令 |
 | [`project/roadmap.md`](project/roadmap.md) | 产品路线图 |
 | [`project/companion-product-iteration-plan-2026-10-12.md`](project/companion-product-iteration-plan-2026-10-12.md) | Muse/Dots 与 AI 伙伴对标、四类体验缺口、十二周任务与验收（DRAFT） |
-| [`requirements/companion-v1/README.md`](requirements/companion-v1/README.md) | 成人桌面伙伴 V1：十二项独立 AI 开发需求、共同契约、顺序和验收；R00软件基线已完成，R01–R11未实施 |
+| [`requirements/companion-v1/README.md`](requirements/companion-v1/README.md) | 成人桌面伙伴 V1：十二项独立需求；R00/R01 已合入，R02 一次项目闭环软件待审核，R03–R11 未实施 |
 | [`project/console-ux-audit-2026-09-19.md`](project/console-ux-audit-2026-09-19.md) | 控制台交互缺陷、布局、视觉、文案与分阶段改造建议（DRAFT） |
 | [`project/feature-review-2026-09-13.md`](project/feature-review-2026-09-13.md) | 陪伴优先的功能重合、用户价值、深度与迭代评审 |
 | [`project/workday-companion-v1.md`](project/workday-companion-v1.md) | 工作日桌面陪伴 V1 的范围、架构、任务拆分与验收 |

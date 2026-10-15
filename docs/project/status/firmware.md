@@ -1,51 +1,47 @@
 # 固件工作流
 
-- 状态：READY_FOR_REVIEW
+- 状态：STABLE
 - 最后更新：2026-10-15
-- 当前分支：`codex/companion-r01-natural-voice-20261013`
-- 基准提交：`989b3d9`
-- 最后验证提交：`989b3d9`
+- 当前分支：`codex/companion-r02-project-loop-20261015`
+- 基准提交：`a961816`
+- 最后验证提交：`7c22d00`
 
 ## 当前目标
 
-R01 端点、本地状态与首次成功 codec 写入证据；取消优先、不改变采音/连续限额，交付未刷写双 profile。
+保持已合入 R01 的固件行为，支持 R02 沿用现有语音入口。本轮没有固件修改、重新构建或刷写；下述容量、栈与宿主证据均为 R01@7c22d00 历史结果。
 
 ## 已完成
 
-实际采音端点先接受 PROCESSING 再等上传完成；新增可选 DEVICE_MONOTONIC、反馈与限时原因，空采音不上传。等待开口不消耗八秒讲话，120 秒只限制新启动，合法已启动讲话可完成；PTT 不续听。
+R01 已通过 PR #49 合入 master@a961816；旧等待 R01 合并状态已 STALE 并修正。历史实现包括采音端点接受 PROCESSING、可选 DEVICE_MONOTONIC 与反馈原因、首次成功 codec 写入后报告播放开始，以及取消前后复查。codec 证据不能证明 LCD 完成或声学首声。
 
-首次成功写入才报播放开始，codec 锁后/每次写入前复查取消。回调只保存固定通知并报阶段；UI 任务核对当前 turn/取消后应用 SPEAKING，不在音频循环等 UI 锁。来源/时间不证明 LCD 完成或声学首声。
-
-LAN 3,141,296 B，3 MiB 槽余量 4,432 B（门槛 4,384，余 48）；protocol 214,048 B。新增队列 192 B + 固定通知 56 B = 248 B 静态内存；原分区、srmodels、相机/运动开关保持。
+R01 历史 LAN 大小 3,141,296 B，3 MiB 槽余量 4,432 B，门槛 4,384 B，仅余 48 B；protocol 214,048 B。新增固定内存 248 B，分区、srmodels、相机/运动开关保持。这些不是 R02 新鲜测量。
 
 ## 正在进行
 
-软件完成，等待审核；实体与安装待验。
-
-最终完整 SHA、测试源码指纹、61 SQL/Flyway、生产 image/JAR/全部控制台资源及双固件六制品见本工作树 `.tools/r01/candidate-receipt.json`。989b3d9 为当前祖先元数据，新增代码成绩以工作树回归和最终候选收据为准。实现、状态、交接与 R00 合成一个中文任务提交；用户已于 2026-10-15 明确授权推送本任务分支；推送与远端 SHA 核对结果见 `.tools/r01/push-receipt.json`。PR、人工审核与合并由用户执行。
+R02 服务端与控制台软件已验证。固件保持 R01 原树和候选证据，不为未修改固件重新声称构建或容量成绩；实体安装、heap/PSRAM、高水位、LCD 反馈及触摸静音仍待验。
 
 ## 下一步操作
 
-后续任何固件改动先复验 4,384 B 容量门槛和栈；用户另行授权刷写时仅使用匹配收据、profile、设备与 NVS 策略，再采集十次停止和三十短聊。
+核对 R02 固件目录相对基准未变，并在本轮候选收据中明确引用 R01 历史来源。后续若修改固件，先重新验证容量 4,384 B 门槛和栈；若用户另行授权刷写，再核对候选、profile、设备及 NVS 策略，采集停止与短聊实体记录。
 
 ## 阻塞项
 
-无软件阻塞。本轮分支推送已授权，刷写或安装尚未授权；实体样本不足保持 UNKNOWN。缺 V57 的既有 V60 库仍默认拒绝升级，需另行兼容方案。
+无本轮固件开发阻塞；本轮没有刷写授权。历史槽余量紧张，任何后续固件变更必须重新验证。实体语音、显示与硬件资源效果尚无本轮新鲜记录。
 
 ## 关键文件
 
-实现路径与 FR/AC 对照见下方交付记录，最终源码指纹见收据。
+[R01 交付](../baselines/companion-r01-natural-voice.md)与其原任务工作树 `.tools/r01/firmware-candidate-receipt.json` 保留历史制品来源；[R02 交付](../baselines/companion-r02-project-loop.md)说明本轮固件未改和现场边界。
 
 ## 验证命令与最近结果
 
-实际源码 input-timing/codec/协议回归、原十二类宿主、七类受影响复验及完整 LVGL ASan/UBSan 通过。双 profile 与 voice/transport/provisioning/device-ui/display 五栈 gate 通过；voice 4,832、upload 2,256、playback 160、transport 9,024、provisioning 11,488 B。
+R01@7c22d00 历史结果：input-timing/codec/协议回归、十二类宿主、七类受影响复验、LVGL ASan/UBSan、双 profile 与五栈 gate 通过。历史栈用量 voice 4,832、upload 2,256、playback 160、transport 9,024、provisioning 11,488 B。
 
-最终版本绑定 HEAD 的双构建/十二制品见 `.tools/r01/firmware-candidate-receipt.json`；旧 precommit 4,528 B 余量已被当前 4,432 B 替代。真实 heap/PSRAM/高水位、LCD 可见反馈与触摸静音待验。
+本轮只核对 `git diff a961816 -- firmware` 无修改，不运行新固件构建、不刷写；完整源码绑定与历史引用将在 R02 候选收据记录。仓库结束检查仍执行 `git diff --check`、`pnpm docs:check`。
 
 ## 相关设计、计划和决策
 
-[R01 交付与 FR/AC](../baselines/companion-r01-natural-voice.md)、[R00 历史基线](../baselines/companion-v1-baseline.md)、[R01 规格](../../requirements/companion-v1/R01-natural-voice.md)、[公共契约](../../requirements/companion-v1/00-shared-contracts.md)、[ADR0077](../decisions/0077-measured-private-natural-voice.md)、[实体测量](../../runbooks/natural-voice-quality.md)、[备份恢复](../../runbooks/personal-data-backup.md)。
+[R02 交付](../baselines/companion-r02-project-loop.md)、[R02 规格](../../requirements/companion-v1/R02-project-loop.md)、[R01 历史交付](../baselines/companion-r01-natural-voice.md)、[ADR0077](../decisions/0077-measured-private-natural-voice.md)、[ADR0078](../decisions/0078-versioned-readonly-project-loop.md)、[实体测量](../../runbooks/natural-voice-quality.md)。
 
 ## 安全与兼容性约束
 
-不运行真实模型/Bark、不刷写、安装、改部署模式、轮换凭据或创建 PR；仅按本次授权推送当前任务分支。原用户工作树保持；实体录音/谈话/认证载荷不提交，LAN HTTP 仅局域网开发。
+未经另行明确授权不刷写、不改 NVS、凭据或部署模式。2026-10-15 用户已明确授权只推当前 R02 任务分支；推送及远端 SHA 核对结果见 `.tools/r02/push-receipt.json`。不创建 PR、不调用真实模型/Bark；原用户树与历史固件制品保持。LAN HTTP 仅局域网开发，生产 HTTPS 边界保持。

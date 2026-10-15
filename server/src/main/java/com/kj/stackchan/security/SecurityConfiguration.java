@@ -139,7 +139,7 @@ public class SecurityConfiguration {
                         .hasAuthority(NotificationBearerAuthenticationFilter.AUTHORITY)
                         .requestMatchers("/api/v1/delegations/**", "/api/v1/delegation-runs/**", "/api/v1/delegation-push/**")
                         .hasRole("ADMIN")
-                        .requestMatchers("/api/v1/companion/voice-quality").hasRole("ADMIN")
+                        .requestMatchers("/api/v1/companion/voice-quality", "/api/v1/companion/operations/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(notificationBearerAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)

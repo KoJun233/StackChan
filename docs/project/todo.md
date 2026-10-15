@@ -2,18 +2,18 @@
 
 - 文档状态：ACTIVE
 - 最后更新：2026-10-15
-- 实现基准：新鲜 `origin/master@989b3d9`；当前任务分支 `codex/companion-r01-natural-voice-20261013`
-- 当前任务：R00/R01 软件已完成，2026-10-15 已授权只推任务分支，[成人桌面伙伴 V1 详细需求包](../requirements/companion-v1/README.md)，基于[PRODUCT-001 计划书](companion-product-iteration-plan-2026-10-12.md)，见[产品工作流](status/product.md)
-- 下一操作：读取[R01 交付](baselines/companion-r01-natural-voice.md)与本地候选收据进行审核。推送与远端 SHA 核对结果见任务树 `.tools/r01/push-receipt.json`；用户下一步创建 PR/审核/合并，安装等待独立指令；实体按空表采集，不用软件成绩替代。R02–R11 尚未获本轮实施授权。
+- 实现基准：`origin/master@a961816`；当前任务分支 `codex/companion-r02-project-loop-20261015`
+- 当前任务：用户确认 R00/R01 已合并后要求继续，实施 [R02 一次项目闭环](baselines/companion-r02-project-loop.md)；见[产品工作流](status/product.md)
+- 下一操作：核对 R02 单一中文任务提交及同提交候选收据，审核交接与差异；用户已授权只推当前 R02 分支，推送与远端核对见本任务 `.tools/r02/push-receipt.json`；安装/真实场景/视觉验收待后续指令。R03–R11 尚未实施。
 - 产品边界：单管理员、单用户、软件能力优先
 
 当前任务及等待条件置于顶部；以下历史任务保留为旧看板背景，完整合并记录查[里程碑索引](milestones.md)。当前事实以[全局总览](status/overview.md)和四个工作流状态文件为准。
 
-2026-10-12 事实恢复：旧 DEVICE-008/r2/V56 顶部状态标记为 STALE 并修正。PR #47、#48 已合入；下方旧任务和当时许可保持历史范围，不自动成为本轮实施或外推授权。待续话题 V57 未合入主线，历史安装来源仍保留它，后续升级必须先确认兼容整合。
+2026-10-15 事实恢复：原“V57 未合入、R01 待合并”顶部状态已 STALE，PR #49 已合入 R00/R01。下方旧任务和当时许可保持历史范围，不自动成为本轮安装、外发或外推授权。
 
 ## 本轮建议任务
 
-计划书列出 PLAN-00、TALK-01、LOOP-01、GOAL-01、MEMORY-01、PRESENCE-01、HANDOFF-01、PILOT-01 八项建议及依赖、范围和验收。本轮 R00/R01 获授权并完成软件交付，R02–R11 未实施，不将它们加入旧执行看板的 READY 序列；首轮建议为一条真实目标路径，同时覆盖语音、接续、成果和少量状态表达。
+计划书列出 PLAN-00、TALK-01、LOOP-01、GOAL-01、MEMORY-01、PRESENCE-01、HANDOFF-01、PILOT-01 八项建议及依赖、范围和验收。当前只实施 R02，R03–R11 未实施；软件、真实项目、语音实体与视觉验收分别报告，不把旧看板的授权扩展到新现场操作。
 
 用户进一步要求“一项需求一份文档，可交给 AI 开发”。已细拆成 R00–R11，覆盖基线、语音、项目闭环、目标状态、持久执行、权限预算、记忆、注意力、具身、手机、能力证据和观察发布；每项的完成程度与验收以[需求包](../requirements/companion-v1/README.md)为准，需求状态 SPECIFIED 不表示软件已经实现。
 

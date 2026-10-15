@@ -2,48 +2,48 @@
 
 - 状态：READY_FOR_REVIEW
 - 最后更新：2026-10-15
-- 当前分支：`codex/companion-r01-natural-voice-20261013`
-- 基准提交：`989b3d9`
-- 最后验证提交：`989b3d9`
+- 当前分支：`codex/companion-r02-project-loop-20261015`
+- 基准提交：`a961816`
+- 最后验证提交：`a961816`
 
 ## 当前目标
 
-在现有设备详情展示质量汇总、来源、样本/失败/缺失和未知；保留 R00 记忆与委托/Bark控制台。
+在既有持续委托列表、详情和表单完成 R02 待阅成果、明确认可、偏好修订与操作回查；保留设备质量汇总和原有权限、路由合同。原 R01 等待合并状态已 STALE；PR #49 已合入当前基准。
 
 ## 已完成
 
-设备回合详情与质量汇总分别加载、分别显示错误；切设备的旧请求不覆盖新结果。实际 codec 开始与端点标记才计算参考耗时，旧 marker/缺阶段/倒序保持未知。显示实际短聊分组、排除数量、固定失败码和未结束数量；少于三十样本不给百分位。单调计时与实体首声分别说明，无正文、录音或认证值。
+列表通过独立接口获取跨分页的最多三张待阅卡；详情先展示五区成果及输入/实际来源与读取时间，再展示原结果和历史。旧记录缺审阅字段时只读，旧版成果明确标记。
 
-没有新路由、表单或配置，既有设备选择/权限合同保持。
+反馈明确绑定 run、任务修订与审阅版本；可认可、修改偏好、只保存或保存并重新比较、暂停与取消。写入结果未知保留原 UUID 键，先查收据再读取资源，不盲目换键重发。切换伙伴丢弃旧响应；离线保留已有成果并提示状态。
+
+只扩展既有委托页面与 API 模块，没有新增路由或依赖。原用户工作树未改，自动生成类型文件仅在任务树恢复。
 
 ## 正在进行
 
-软件完成，等待审核；实体与安装待验。
-
-最终完整 SHA、测试源码指纹、61 SQL/Flyway、生产 image/JAR/全部控制台资源及双固件六制品见本工作树 `.tools/r01/candidate-receipt.json`。989b3d9 为当前祖先元数据，新增代码成绩以工作树回归和最终候选收据为准。实现、状态、交接与 R00 合成一个中文任务提交；用户已于 2026-10-15 明确授权推送本任务分支；推送与远端 SHA 核对结果见 `.tools/r01/push-receipt.json`。PR、人工审核与合并由用户执行。
+组件、类型与 lint 验证已完成，等待代码审核；生产候选由同提交 archive 构建并封存收据。360/1280px 布局、键盘视觉焦点与截图保持 VISUAL_PENDING，不用组件测试充当视觉证据。
 
 ## 下一步操作
 
-读取交付/收据审核详情与汇总；安装授权及一致恢复后再验证真实设备数据、失败/缺失标签，不以模拟样本作达标。
+核对候选收据中的全部控制台资源、866 项已测源码指纹及最终任务提交，再本地审核页面差异；视觉验收按 [R02 交接](../baselines/companion-r02-project-loop.md)执行。
 
 ## 阻塞项
 
-无软件阻塞。本轮分支推送已授权，刷写或安装尚未授权；实体样本不足保持 UNKNOWN。缺 V57 的既有 V60 库仍默认拒绝升级，需另行兼容方案。
+无已知软件阻塞。Browser 没有可用实例；Computer Use 因 Windows 无法可靠识别当前浏览器 URL 而停止，未取得截图。本轮任务分支推送已授权，安装或真实模型/Bark 仍未授权，真实来源和日用效果仍待验。
 
 ## 关键文件
 
-实现路径与 FR/AC 对照见下方交付记录，最终源码指纹见收据。
+委托 API 模块、`views/companion/delegations` 下的 list、detail、helpers、`DetailForm` 与新 `ProjectCard`；完整路径与 FR/AC 对照见 [R02 交付](../baselines/companion-r02-project-loop.md)。
 
 ## 验证命令与最近结果
 
-定向 20/20；完整 46 文件 181/181，零失败，`.tools/r01/frontend-full-tests.log`。vue-tsc -b、六文件 ESLint/Stylelint 通过，生产候选构建成功。已有 Vite/Vitest 退出与大 chunk 警告保留；三项自动生成 d.ts 在任务树恢复，未改用户原树。
+完整 Vitest 46 文件 204/204、零失败，报告 `.tools/r02/frontend-full-tests.log`；`vue-tsc -b` 通过，报告 `.tools/r02/frontend-typecheck.log`。十文件 ESLint、四文件 Stylelint 通过，报告 `.tools/r02/frontend-lint.log`；生产构建与全部静态文件核验结果见候选收据。既有 Vite/Vitest 退出警告保留。
 
-本机 Node24.19.0/pnpm11.25.0 只执行已装脚本；完整 Vitest 直接由 Node 启动以避开 junction 运行状态限制。生产缓存 Node24.15.0/pnpm11.13.1，锁文件/engine 保持。
+本机 Node24.19.0/pnpm11.25.0 仅执行已安装脚本，Vitest 直接用 Node 启动以避开 junction 状态限制；生产候选使用缓存 Node24.15.0/pnpm11.13.1，锁文件与 engine 保持。最终执行 `git diff --check`、`pnpm docs:check`。
 
 ## 相关设计、计划和决策
 
-[R01 交付与 FR/AC](../baselines/companion-r01-natural-voice.md)、[R00 历史基线](../baselines/companion-v1-baseline.md)、[R01 规格](../../requirements/companion-v1/R01-natural-voice.md)、[公共契约](../../requirements/companion-v1/00-shared-contracts.md)、[ADR0077](../decisions/0077-measured-private-natural-voice.md)、[实体测量](../../runbooks/natural-voice-quality.md)、[备份恢复](../../runbooks/personal-data-backup.md)。
+[R02 交付与 FR/AC](../baselines/companion-r02-project-loop.md)、[R02 规格](../../requirements/companion-v1/R02-project-loop.md)、[公共契约](../../requirements/companion-v1/00-shared-contracts.md)、[ADR0078](../decisions/0078-versioned-readonly-project-loop.md)、[委托与 Bark 手册](../runbooks/recurring-research-and-bark.md)、[R01 历史交付](../baselines/companion-r01-natural-voice.md)。
 
 ## 安全与兼容性约束
 
-不运行真实模型/Bark、不刷写、安装、改部署模式、轮换凭据或创建 PR；仅按本次授权推送当前任务分支。原用户工作树保持；实体录音/谈话/认证载荷不提交，LAN HTTP 仅局域网开发。
+2026-10-15 用户已明确授权只推当前 R02 任务分支；推送及远端 SHA 核对结果见 `.tools/r02/push-receipt.json`。不创建 PR、不安装或刷写，不调用真实模型/Bark，不切换部署模式或轮换凭据。UUID 不授予设备或管理员身份；维持现有会话、CSRF 与范围检查。保留原用户改动，页面与报告不泄露秘密或完整认证载荷。

@@ -2,48 +2,48 @@
 
 - 状态：READY_FOR_REVIEW
 - 最后更新：2026-10-15
-- 当前分支：`codex/companion-r01-natural-voice-20261013`
-- 基准提交：`989b3d9`
-- 最后验证提交：`989b3d9`
+- 当前分支：`codex/companion-r02-project-loop-20261015`
+- 基准提交：`a961816`
+- 最后验证提交：`a961816`
 
 ## 当前目标
 
-交付绑定 R00/R01 合并提交的生产候选与双固件；按 2026-10-15 授权只推任务分支，安装待验。
+准备绑定 R02 单一任务提交的服务端与控制台生产候选，核验 V62 迁移和完整资源来源。本轮完成本地构建与隔离验证；2026-10-15 用户已授权只推当前任务分支，安装和刷写仍未授权。
 
 ## 已完成
 
-`build-companion-candidate.ps1` 从已提交 archive 构建，固定兼容依赖缓存并校验源码依赖树；image OCI revision、JAR、V1–V61 和全部静态资源严格关联。原六十条 SQL/checksum 保持，只有 V61 新增；Windows archive CRLF 与 canonical Git LF 的差异仅允许换行归一化，archive/JAR 原字节相同，实际 Flyway 11.7.2 六十一条核验。
+R00/R01 已通过 PR #49 合入当前基准，旧等待推送/合并记录已 STALE。R02 仅新增 V62；设计要求 V1–V61 原样保留，迁移测试覆盖 V61 数据升级与隔离 pg_dump/pg_restore。没有访问真实运行库或修改恢复点。
 
-双固件版本/十二制品绑定同 HEAD，未安装。原 R00 候选保留于其原工作树；本候选收据位于 `.tools/r01`。
+`scripts/build-companion-candidate.ps1` 从已提交 archive 构建，候选须校验 image OCI revision、JAR、62 SQL 与全部控制台静态资源；本轮固件未变，不把 R01 历史固件制品冒充本轮重新构建。
 
 ## 正在进行
 
-软件完成，等待审核；实体与安装待验。
-
-最终完整 SHA、测试源码指纹、61 SQL/Flyway、生产 image/JAR/全部控制台资源及双固件六制品见本工作树 `.tools/r01/candidate-receipt.json`。989b3d9 为当前祖先元数据，新增代码成绩以工作树回归和最终候选收据为准。实现、状态、交接与 R00 合成一个中文任务提交；用户已于 2026-10-15 明确授权推送本任务分支；推送与远端 SHA 核对结果见 `.tools/r01/push-receipt.json`。PR、人工审核与合并由用户执行。
+软件完整回归已通过。已提交的单一任务提交作为候选来源；随后执行生产构建、62 条实际 Flyway checksum 与资源核验，其实际结果封存在 `.tools/r02/candidate-receipt.json`。收据缺失或任一门禁失败时，不得安装或宣称候选验证通过。a961816 为祖先元数据，最终任务 SHA 与测试源码指纹由候选收据绑定。
 
 ## 下一步操作
 
-按用户 2026-10-15 明确授权仅推当前任务分支；PR/人工审核/合并由用户完成。若授权安装，先停写备份并内部隔离恢复，使用匹配 V61 候选；回退使用匹配备份与旧镜像，不 repair/out-of-order 或直接把旧程序接新库。
+核对本地单一中文任务提交与候选收据，确认 `./scripts/build-companion-candidate.ps1` 及 image/JAR/62 SQL/全部控制台文件门禁通过，再审核。按用户本次明确授权仅推当前任务分支并核对远端 SHA，PR 创建与合并由用户执行。
+
+若后续授权安装，先停写备份与内部隔离恢复，再使用匹配 V62 候选。回退使用匹配数据库备份与旧镜像，不能 repair/out-of-order、改写历史迁移或直接让旧应用连接新库。
 
 ## 阻塞项
 
-无软件阻塞。本轮分支推送已授权，刷写或安装尚未授权；实体样本不足保持 UNKNOWN。缺 V57 的既有 V60 库仍默认拒绝升级，需另行兼容方案。
+无软件阻塞；候选是否通过严格以完整收据为准。本轮任务分支推送已授权；安装、刷写、真实模型/Bark 与部署模式切换仍未授权。缺 V57 的既有 V60 库仍默认拒绝升级，不能隐式补迁移。
 
 ## 关键文件
 
-实现路径与 FR/AC 对照见下方交付记录，最终源码指纹见收据。
+`scripts/build-companion-candidate.ps1`、V62、[R02 交付](../baselines/companion-r02-project-loop.md)及本任务 `.tools/r02` 的测试/构建/候选核验记录；固件历史证据在 R01 原任务工作树保留。
 
 ## 验证命令与最近结果
 
-服务端 1009/1009、控制台 181/181、PG 15/15、生产构建/制品核验、双固件/五栈门槛、docs:check/7 项检查器/diff 通过，完整 SHA 与摘要以外置收据为准。
+控制台 46 文件 204/204 与 `vue-tsc -b` 已通过；完整服务端 1092/1092、项目事务 17/17、迁移恢复 6/6、类型及 lint 通过。候选构建和核验完成后，实际日志、摘要、62 条 Flyway 结果与源码指纹记录到收据；不复用 R01 的候选 SHA 或成绩替代本轮结果。
 
-本轮没有读取线上健康状态。最后历史只读核查为 2026-10-12 的 a37d220/V60/r3/motion_disabled，不能当今天新鲜状态；恢复点 20261011152920 与匹配旧镜像未操作。
+本轮未读取线上健康状态。最后历史只读核查为 2026-10-12 的 a37d220/V60/r3/motion_disabled，不能当作今天的新鲜状态；恢复点 20261011152920 与匹配旧镜像未操作。
 
 ## 相关设计、计划和决策
 
-[R01 交付与 FR/AC](../baselines/companion-r01-natural-voice.md)、[R00 历史基线](../baselines/companion-v1-baseline.md)、[R01 规格](../../requirements/companion-v1/R01-natural-voice.md)、[公共契约](../../requirements/companion-v1/00-shared-contracts.md)、[ADR0077](../decisions/0077-measured-private-natural-voice.md)、[实体测量](../../runbooks/natural-voice-quality.md)、[备份恢复](../../runbooks/personal-data-backup.md)。
+[R02 交付与 FR/AC](../baselines/companion-r02-project-loop.md)、[R02 规格](../../requirements/companion-v1/R02-project-loop.md)、[ADR0078](../decisions/0078-versioned-readonly-project-loop.md)、[公共契约](../../requirements/companion-v1/00-shared-contracts.md)、[备份恢复](../../runbooks/personal-data-backup.md)、[R01 历史交付](../baselines/companion-r01-natural-voice.md)。
 
 ## 安全与兼容性约束
 
-不运行真实模型/Bark、不刷写、安装、改部署模式、轮换凭据或创建 PR；仅按本次授权推送当前任务分支。原用户工作树保持；实体录音/谈话/认证载荷不提交，LAN HTTP 仅局域网开发。
+2026-10-15 用户已明确授权只推当前 R02 任务分支；推送及远端 SHA 核对结果见 `.tools/r02/push-receipt.json`。不创建 PR、不安装或刷写，不调用真实模型/Bark，不改部署模式或轮换凭据。原用户工作树及历史恢复点保持；候选清单不记录秘密或完整认证载荷。生产 HTTPS 边界保持，LAN HTTP 仅局域网开发。

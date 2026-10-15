@@ -35,7 +35,12 @@ public class DelegationRepository {
                 taskId, occurrenceKey).stream().findFirst().orElse(null);
     }
     List<RunEntity> history(UUID taskId, int limit, int offset) {
-        return jdbc.query("select * from delegation_runs where task_id=? order by created_at desc,id desc limit ? offset ?",
+        return jdbc.query("""
+                select r.* from delegation_runs r left join delegation_revision_intents i
+                    on i.task_id=r.task_id and i.task_revision=r.task_revision
+                where r.task_id=? order by r.task_revision desc,case when i.run_id=r.id then 0 else 1 end,
+                    r.created_at desc,r.id desc limit ? offset ?
+                """,
                 this::mapRun, taskId, limit, offset);
     }
     PushSettingsEntity settings(boolean lock) {

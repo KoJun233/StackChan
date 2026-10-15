@@ -2,9 +2,9 @@
 
 - 文档状态：ACTIVE
 - 需求状态：SPECIFIED（需求已经写明，不表示软件已经实现）
-- 实现状态：R00 SOFTWARE_BASELINE_READY；R01 SOFTWARE_READY_FOR_REVIEW；R02–R11 NOT_STARTED；现场与部署待后续指令；2026-10-15 已授权推送任务分支
+- 实现状态：R00/R01 MERGED；R02 READY_FOR_REVIEW（软件）；R03–R11 NOT_STARTED；真实场景、视觉与安装待验
 - 版本：1.0；2026-10-12；Asia/Shanghai
-- 源码核对基准：`origin/master@989b3d9f591a854d9ca26fe05b78fb4af53329b5`
+- 源码核对基准：`origin/master@a96181673e0c401cf63b3fdc920dd03511ab65b1`
 - 来源：[十二周产品迭代计划](../../project/companion-product-iteration-plan-2026-10-12.md)、[产品状态](../../project/status/product.md)。
 
 2026-10-12：用户指定第一项R00，已完成软件兼容、隔离数据/恢复验证与生产候选。记录见[基线交接](../../project/baselines/companion-v1-baseline.md)；两项主观反馈已收集，第三真实样例/设备计时/安装待验。原需求包初始交付说明保留，不能解释为本轮未实施。
@@ -12,6 +12,8 @@
 2026-10-14：用户进一步授权 R01 开发，要求 R00/R01 本地合并、暂不推送。软件回归、V61 升级/删除、双固件与生产候选完成，交付见[R01](../../project/baselines/companion-r01-natural-voice.md)；空匿名表不代表实体门槛通过。
 
 2026-10-15：用户明确要求“推送吧”，只推 R00/R01 当前任务分支；PR、审核及合并由用户执行，现场与部署仍待授权。
+
+2026-10-15：用户确认 PR #49 已合并，并要求继续后续开发。已独立实施下一项 R02，详见[交付与待验边界](../../project/baselines/companion-r02-project-loop.md)。用户随后明确授权只推 R02 当前任务分支，实际推送与远端 SHA 核对见本任务 `.tools/r02/push-receipt.json`；未自动进入 R03。
 
 ## 1. 这套文件怎么使用
 

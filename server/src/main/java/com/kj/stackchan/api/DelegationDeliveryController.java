@@ -22,4 +22,7 @@ public class DelegationDeliveryController {
     @PostMapping("/delegation-runs/{id}:retry-delivery") public DelegationService.RunSnapshot retry(@PathVariable UUID id) {
         return service.retryDelivery(id);
     }
+    @PostMapping(path="/delegation-runs/{id}/feedback",consumes=MediaType.APPLICATION_JSON_VALUE)
+    public DelegationService.FeedbackResult feedback(@PathVariable UUID id,@RequestBody DelegationService.FeedbackInput input,
+            @RequestHeader("Idempotency-Key") String key) { return service.feedback(id,input,key); }
 }
